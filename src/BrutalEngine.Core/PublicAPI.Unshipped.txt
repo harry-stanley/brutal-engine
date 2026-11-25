@@ -38,6 +38,61 @@ BrutalEngine.Core.HandleAllocator.MaxSlots.get -> int
 BrutalEngine.Core.HandleAllocator.RetiredCount.get -> int
 BrutalEngine.Core.HandleAllocator.TryAllocate(out BrutalEngine.Core.Handle handle) -> bool
 BrutalEngine.Core.HandleAllocator.TryFree(BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.Logging.CriticalLevel
+BrutalEngine.Core.Logging.CriticalLevel.CriticalLevel() -> void
+BrutalEngine.Core.Logging.DebugLevel
+BrutalEngine.Core.Logging.DebugLevel.DebugLevel() -> void
+BrutalEngine.Core.Logging.DynamicLevel
+BrutalEngine.Core.Logging.DynamicLevel.DynamicLevel() -> void
+BrutalEngine.Core.Logging.ErrorLevel
+BrutalEngine.Core.Logging.ErrorLevel.ErrorLevel() -> void
+BrutalEngine.Core.Logging.ILogLevel
+BrutalEngine.Core.Logging.ILogLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.ILogSink
+BrutalEngine.Core.Logging.ILogSink.Flush() -> void
+BrutalEngine.Core.Logging.ILogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
+BrutalEngine.Core.Logging.InformationLevel
+BrutalEngine.Core.Logging.InformationLevel.InformationLevel() -> void
+BrutalEngine.Core.Logging.LogEntry
+BrutalEngine.Core.Logging.LogEntry.CallerFilePath.get -> string!
+BrutalEngine.Core.Logging.LogEntry.CallerFilePath.init -> void
+BrutalEngine.Core.Logging.LogEntry.CallerLineNumber.get -> int
+BrutalEngine.Core.Logging.LogEntry.CallerLineNumber.init -> void
+BrutalEngine.Core.Logging.LogEntry.Category.get -> string!
+BrutalEngine.Core.Logging.LogEntry.Category.init -> void
+BrutalEngine.Core.Logging.LogEntry.Level.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogEntry.Level.init -> void
+BrutalEngine.Core.Logging.LogEntry.LogEntry() -> void
+BrutalEngine.Core.Logging.LogEntry.Message.get -> System.ReadOnlySpan<byte>
+BrutalEngine.Core.Logging.LogEntry.Message.init -> void
+BrutalEngine.Core.Logging.LogEntry.ThreadId.get -> int
+BrutalEngine.Core.Logging.LogEntry.ThreadId.init -> void
+BrutalEngine.Core.Logging.LogEntry.Timestamp.get -> System.DateTimeOffset
+BrutalEngine.Core.Logging.LogEntry.Timestamp.init -> void
+BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.Critical = 5 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.Debug = 1 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.Error = 4 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.Information = 2 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.None = 6 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.Trace = 0 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogLevel.Warning = 3 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LoggerOptions
+BrutalEngine.Core.Logging.LoggerOptions.<Clone>$() -> BrutalEngine.Core.Logging.LoggerOptions!
+BrutalEngine.Core.Logging.LoggerOptions.Equals(BrutalEngine.Core.Logging.LoggerOptions? other) -> bool
+BrutalEngine.Core.Logging.LoggerOptions.LoggerOptions() -> void
+BrutalEngine.Core.Logging.LoggerOptions.MaxMessageBytes.get -> int
+BrutalEngine.Core.Logging.LoggerOptions.MaxMessageBytes.init -> void
+BrutalEngine.Core.Logging.LoggerOptions.MinimumLevel.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LoggerOptions.MinimumLevel.init -> void
+BrutalEngine.Core.Logging.LoggerOptions.Sinks.get -> System.Collections.Generic.IReadOnlyList<BrutalEngine.Core.Logging.ILogSink!>!
+BrutalEngine.Core.Logging.LoggerOptions.Sinks.init -> void
+BrutalEngine.Core.Logging.LoggerOptions.TimeProvider.get -> System.TimeProvider!
+BrutalEngine.Core.Logging.LoggerOptions.TimeProvider.init -> void
+BrutalEngine.Core.Logging.TraceLevel
+BrutalEngine.Core.Logging.TraceLevel.TraceLevel() -> void
+BrutalEngine.Core.Logging.WarningLevel
+BrutalEngine.Core.Logging.WarningLevel.WarningLevel() -> void
 BrutalEngine.Core.Memory.HeapAllocator
 BrutalEngine.Core.Memory.HeapAllocator.Allocate(nuint byteCount, nuint alignment, string! callerFile = "", int callerLine = 0) -> void*
 BrutalEngine.Core.Memory.HeapAllocator.Free(void* memory) -> void
@@ -110,6 +165,9 @@ override BrutalEngine.Core.EngineError.ToString() -> string!
 override BrutalEngine.Core.Handle.Equals(object? obj) -> bool
 override BrutalEngine.Core.Handle.GetHashCode() -> int
 override BrutalEngine.Core.Handle.ToString() -> string!
+override BrutalEngine.Core.Logging.LoggerOptions.Equals(object? obj) -> bool
+override BrutalEngine.Core.Logging.LoggerOptions.GetHashCode() -> int
+override BrutalEngine.Core.Logging.LoggerOptions.ToString() -> string!
 override BrutalEngine.Core.Result.ToString() -> string!
 override BrutalEngine.Core.Result<T>.ToString() -> string!
 static BrutalEngine.Core.EngineError.Native(int nativeCode, string! message) -> BrutalEngine.Core.EngineError
@@ -119,6 +177,15 @@ static BrutalEngine.Core.Handle.FromRawValue(ulong rawValue) -> BrutalEngine.Cor
 static BrutalEngine.Core.Handle.Null.get -> BrutalEngine.Core.Handle
 static BrutalEngine.Core.Handle.operator !=(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
 static BrutalEngine.Core.Handle.operator ==(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
+static BrutalEngine.Core.Logging.CriticalLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.DebugLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.DynamicLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.ErrorLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.InformationLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.LoggerOptions.operator !=(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
+static BrutalEngine.Core.Logging.LoggerOptions.operator ==(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
+static BrutalEngine.Core.Logging.TraceLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.WarningLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Result.Failure(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
 static BrutalEngine.Core.Result.Success.get -> BrutalEngine.Core.Result
 static BrutalEngine.Core.Result.implicit operator BrutalEngine.Core.Result(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
