@@ -271,6 +271,15 @@ jobs:
         run: >-
           dotnet publish samples/HelloWindow -c Release -r ${{ matrix.rid }} -o artifacts/hello-window/${{ matrix.rid }}
           ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
+      # BRUTAL LICENSE 2.3 and 4.0: NOTICE.txt and each package's third-party licences ship with the product.
+      - name: Check HelloWindow ships BRUTAL's NOTICE.txt and LICENSES/
+        env:
+          OUT: artifacts/hello-window/${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          test -s "$OUT/NOTICE.txt"
+          find "$OUT/LICENSES" -type f -size +0 | sort | tee "$RUNNER_TEMP/hello-window-licences.txt"
+          test -s "$RUNNER_TEMP/hello-window-licences.txt"
       # What a macOS game ships: the loader, MoltenVK and its ICD manifest next to the executable, where HelloWindow's
       # BundledVulkan finds them.
       - name: Bundle the Vulkan loader and MoltenVK with HelloWindow (macOS)

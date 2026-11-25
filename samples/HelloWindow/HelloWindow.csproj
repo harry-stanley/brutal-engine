@@ -24,4 +24,51 @@
   <ItemGroup>
     <InternalsVisibleTo Include="HelloWindow.Tests" />
   </ItemGroup>
+
+  <!--
+    The official BRUTAL logo (BRUTAL/docs/branding/LOGO_BRUTAL_WHT.png, byte for byte), shown as the splash before the
+    scene. BRUTAL LICENSE 2.2 requires it unaltered except for scaling.
+  -->
+  <ItemGroup>
+    <Content Include="Assets/LOGO_BRUTAL_WHT.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    BRUTAL LICENSE 2.3: NOTICE.txt ships alongside the product. LICENSE 4.0: each package's LICENSES/ directory lists the
+    third-party components it redistributes, with their licences. The packages have no contentFiles or build targets
+    that would copy these, so collect them from the root of every BRUTAL package that contributes a runtime asset
+    (managed or native, direct or transitive) and copy them next to the executable. Nothing is vendored into the repo.
+    Every package carries the same NOTICE.txt; the build fails if they ever differ, rather than picking one silently.
+  -->
+  <Target Name="HelloWindowCollectBrutalLicenceFiles" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_HelloWindowBrutalAsset Include="@(RuntimeCopyLocalItems);@(NativeCopyLocalItems);@(RuntimeTargetsCopyLocalItems)"
+                               Condition="$([System.String]::Copy('%(NuGetPackageId)').StartsWith('Ahwoo.Brutal.', System.StringComparison.OrdinalIgnoreCase))" />
+      <!-- A restore graph holds one version per package, so the ID alone identifies the package. -->
+      <_HelloWindowBrutalPackage Include="@(_HelloWindowBrutalAsset->'%(NuGetPackageId)'->Distinct())" />
+      <_HelloWindowBrutalPackageRoot Include="$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))$([System.String]::Copy('%(_HelloWindowBrutalPackage.Identity)').ToLowerInvariant())/%(_HelloWindowBrutalPackage.NuGetPackageVersion)/"
+                                     PackageId="%(_HelloWindowBrutalPackage.Identity)" />
+      <_HelloWindowBrutalNotice Include="%(_HelloWindowBrutalPackageRoot.Identity)NOTICE.txt" />
+      <!-- One folder per package: packages ship different files under the same name (Sdl and Sdl.Native, for example). -->
+      <_HelloWindowBrutalLicence Include="%(_HelloWindowBrutalPackageRoot.Identity)LICENSES/**/*" PackageId="%(_HelloWindowBrutalPackageRoot.PackageId)" />
+    </ItemGroup>
+
+    <Error Condition="'@(_HelloWindowBrutalPackage)' == ''" Text="No Ahwoo.Brutal package assets were resolved, so BRUTAL's NOTICE.txt and LICENSES can't be collected." />
+    <Error Condition="!Exists('%(_HelloWindowBrutalNotice.Identity)')" Text="BRUTAL package without NOTICE.txt: %(_HelloWindowBrutalNotice.Identity)" />
+    <GetFileHash Files="@(_HelloWindowBrutalNotice)">
+      <Output TaskParameter="Items" ItemName="_HelloWindowBrutalNoticeHash" />
+    </GetFileHash>
+    <ItemGroup>
+      <_HelloWindowBrutalNoticeDistinct Include="@(_HelloWindowBrutalNoticeHash->'%(FileHash)'->Distinct())" />
+    </ItemGroup>
+    <Error Condition="@(_HelloWindowBrutalNoticeDistinct->Count()) != 1" Text="The BRUTAL packages' NOTICE.txt files differ: @(_HelloWindowBrutalNotice, '; ')" />
+
+    <PropertyGroup>
+      <_HelloWindowBrutalNoticeFile>%(_HelloWindowBrutalNotice.FullPath)</_HelloWindowBrutalNoticeFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <None Include="$(_HelloWindowBrutalNoticeFile)" Link="NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <None Include="@(_HelloWindowBrutalLicence)" Link="LICENSES/%(_HelloWindowBrutalLicence.PackageId)/%(_HelloWindowBrutalLicence.RecursiveDir)%(_HelloWindowBrutalLicence.Filename)%(_HelloWindowBrutalLicence.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>
