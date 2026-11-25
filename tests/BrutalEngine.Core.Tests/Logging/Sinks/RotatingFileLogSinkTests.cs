@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Logging.Sinks;
 using CsCheck;
@@ -395,6 +397,77 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     }
 
     [Fact]
+    public void Write_FromManyThreads_AllLinesWholeAndPresent()
+    {
+        const int ThreadCount = 8;
+        const int EntriesPerThread = 500;
+        using Barrier start = new(ThreadCount);
+
+        // Exceptions (failed asserts and barrier waits included) are collected and checked on the test thread, so
+        // a broken sink fails this test instead of crashing the test host.
+        ConcurrentQueue<Exception> failures = new();
+        var threads = new Thread[ThreadCount];
+        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 100 }))
+        {
+            for (int t = 0; t < ThreadCount; t++)
+            {
+                int thread = t;
+                threads[t] = new Thread(() => Capture(failures, () =>
+                {
+                    start.SignalAndWait(TestContext.Current.CancellationToken);
+                    for (int i = 0; i < EntriesPerThread; i++)
+                    {
+                        Write(sink, LogLevel.Information, ThreadMessage(thread, i));
+                    }
+                }));
+                threads[t].Start();
+            }
+
+            foreach (Thread thread in threads)
+            {
+                thread.Join();
+            }
+        }
+
+        Assert.Empty(failures);
+
+        // The lines rotate across several files; each file holds whole lines and stays within the maximum.
+        List<string> written = [];
+        string[] names = Files(_root);
+        Assert.True(names.Length > 2, "The test should rotate several times.");
+        foreach (string name in names)
+        {
+            string content = Read(name);
+            Assert.True(Encoding.UTF8.GetByteCount(content) <= SmallestMax);
+            Assert.EndsWith("\n", content, StringComparison.Ordinal);
+            written.AddRange(content.Split('\n')[..^1].Select(line => line + "\n"));
+        }
+
+        string[] expected = [.. Enumerable.Range(0, ThreadCount).SelectMany(t => Enumerable.Range(0, EntriesPerThread).Select(i => Line(ThreadMessage(t, i))))];
+        Assert.Equal(expected.Order(StringComparer.Ordinal), written.Order(StringComparer.Ordinal));
+
+        // Messages of different lengths per thread, so a torn or interleaved write would be visible.
+        static string ThreadMessage(int thread, int i) => $"{thread}:{i}:{new string((char)('a' + thread), 10 + (thread * 37))}";
+    }
+
+    [Fact]
+    public void Write_IoFailureThroughLogger_IsIsolatedAndCounted()
+    {
+        using RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 });
+        BlockArchiveOne();
+        MemoryLogSink other = new(capacityEntries: 4, capacityBytes: 128 * 1024);
+        using Logger logger = new(new LoggerOptions { Sinks = [sink, other], TimeProvider = new FixedTimeProvider(DateTimeOffset.UnixEpoch), MaxMessageBytes = 65536 });
+        LogCategory category = logger.CreateCategory("Core");
+        string large = new('x', 40_000);
+
+        category.Information($"{large}");
+        category.Information($"{large}");
+
+        Assert.Equal(1, logger.SinkFailureCount);
+        Assert.Equal(2, other.CopyTo(new MemoryLogRecord[4], new byte[128 * 1024]));
+    }
+
+    [Fact]
     public void Write_RotationFails_PropagatesTheIoException()
     {
         using RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 });
@@ -422,6 +495,18 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         Assert.Equal(["engine.1.log", "engine.log"], Files(_root));
         Assert.Equal(Line(Message(0, 40_000)), Read("engine.1.log"));
         Assert.Equal(Line("next"), Read("engine.log"));
+    }
+
+    private static void Capture(ConcurrentQueue<Exception> failures, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            failures.Enqueue(exception);
+        }
     }
 
     private static void Write(RotatingFileLogSink sink, LogLevel level, string message)
