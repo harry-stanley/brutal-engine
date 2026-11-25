@@ -9,11 +9,11 @@ Versions marked *(verified)* were checked against the published NuGet packages o
 | Item | Choice | Why |
 |------|--------|-----|
 | Runtime | .NET 10 LTS (`net10.0`) | Same as BRUTAL. Supported until November 2028. [ADR-0001](adr/0001-dotnet-10-lts.md) |
-| SDK | .NET 10 SDK, pinned in `global.json` (`10.0.1xx`, `rollForward: latestFeature`) | Reproducible builds. Contributors with only a newer SDK get a clear error instead of a silent drift |
+| SDK | .NET 10 SDK, pinned in `global.json` (`10.0.404`, `rollForward: latestPatch`). Dependabot proposes SDK bumps | Reproducible builds: CI and contributors use the same feature band, and only patch (servicing) updates roll forward automatically. A missing SDK gives a clear error instead of a silent drift |
 | Language | C# 14 (the .NET 10 default) | `unsafe`, function pointers, `ref struct`, generic math and `field` keyword all available |
 | Release publishing | NativeAOT, trimmed | Fast startup, no JIT, single native executable. JIT for development. [ADR-0007](adr/0007-nativeaot-release.md) |
 
-Development machines need the .NET 10 SDK (any `10.0.x` feature band. The maintainer's Windows machine has 10.0.404) and the Vulkan SDK for validation layers (1.4.363 installed on the maintainer's machine).
+Development machines need the .NET 10 SDK in the pinned `10.0.4xx` feature band (10.0.404 or a later patch) and the Vulkan SDK for validation layers (1.4.363 installed on the maintainer's machine).
 
 ## BRUTAL packages used
 

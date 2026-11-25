@@ -5,7 +5,7 @@ The repository is a single monorepo for engine libraries, tools, tests, samples 
 ```
 brutal-engine/
 ├── BrutalEngine.slnx                 # solution (XML .slnx format)
-├── global.json                       # pins the .NET 10 SDK
+├── global.json                       # pins the .NET 10 SDK and selects the Microsoft.Testing.Platform test runner
 ├── Directory.Build.props             # shared MSBuild settings (see below)
 ├── Directory.Build.targets
 ├── Directory.Packages.props          # central package versions (all Ahwoo.Brutal.* pinned here)
