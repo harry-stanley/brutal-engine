@@ -52,6 +52,69 @@ public sealed class SplashWindowLimitsTests
     }
 
     [Fact]
+    public void TryUpdate_FirstCopy_SetsTheMinimum()
+    {
+        PixelSize applied = default;
+
+        Assert.True(SplashWindowLimits.TryUpdate(ref applied, SplashTransfer.Copy, Logo, 32, 1.0f));
+
+        Assert.Equal(new PixelSize(776, 232), applied);
+    }
+
+    [Fact]
+    public void TryUpdate_SameDensity_KeepsTheMinimum()
+    {
+        // A resize at the same density needs no new SDL call.
+        var applied = new PixelSize(388, 116);
+
+        Assert.False(SplashWindowLimits.TryUpdate(ref applied, SplashTransfer.Copy, Logo, 32, 2.0f));
+
+        Assert.Equal(new PixelSize(388, 116), applied);
+    }
+
+    [Fact]
+    public void TryUpdate_LowerDensity_RaisesTheMinimum()
+    {
+        // The window moved from a 2x display to a 1x one during the splash: the same window coordinates now hold half
+        // the pixels, so the minimum must double to keep the logo and its margins.
+        var applied = new PixelSize(388, 116);
+
+        Assert.True(SplashWindowLimits.TryUpdate(ref applied, SplashTransfer.Copy, Logo, 32, 1.0f));
+
+        Assert.Equal(new PixelSize(776, 232), applied);
+    }
+
+    [Fact]
+    public void TryUpdate_HigherDensity_LowersTheMinimum()
+    {
+        var applied = new PixelSize(776, 232);
+
+        Assert.True(SplashWindowLimits.TryUpdate(ref applied, SplashTransfer.Copy, Logo, 32, 1.5f));
+
+        Assert.Equal(new PixelSize(518, 155), applied);
+    }
+
+    [Fact]
+    public void TryUpdate_Blit_SetsNoLimit()
+    {
+        PixelSize applied = default;
+
+        Assert.False(SplashWindowLimits.TryUpdate(ref applied, SplashTransfer.Blit, Logo, 32, 1.0f));
+
+        Assert.Equal(default, applied);
+    }
+
+    [Fact]
+    public void TryUpdate_InvalidDensity_ThrowsAndKeepsTheMinimum()
+    {
+        var applied = new PixelSize(776, 232);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => SplashWindowLimits.TryUpdate(ref applied, SplashTransfer.Copy, Logo, 32, 0.0f));
+
+        Assert.Equal(new PixelSize(776, 232), applied);
+    }
+
+    [Fact]
     public void MinimumWindowSize_Unsupported_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => SplashWindowLimits.MinimumWindowSize(SplashTransfer.Unsupported, Logo, 32, 1.0f));

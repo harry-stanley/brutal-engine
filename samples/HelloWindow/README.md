@@ -65,8 +65,14 @@ The logo is shown, unaltered except for scaling, on a black background before th
   margin and scaled down (never up) to fit.
 - **Fallback:** if the surface or format can't blit, it uses `vkCmdCopyImage` at 1:1, provided the logo fits. The
   window then can't be made smaller than the logo plus its margins until the splash is over, so the copy keeps
-  working through resizes. If neither works for the first swapchain, the run fails with a setup error naming what is
-  missing (exit 3). The splash is never silently skipped.
+  working through resizes. That minimum is in window coordinates, so it is recomputed from the pixel density for
+  every swapchain during the splash, and stays right after the window moves to a display with another density. One
+  case remains: a move to a lower density that itself leaves the window smaller than the logo plus margins in pixels.
+  The swapchain made at that size can't show the logo before the new minimum takes effect, so the run fails with a
+  runtime error (exit 4). Avoiding it would need the sample to grow the window and wait before making a swapchain,
+  relying on SDL resizing windows synchronously, which isn't true on every platform. If neither blit nor copy works
+  for the first swapchain, the run fails with a setup error naming what is missing (exit 3). The splash is never
+  silently skipped.
 - **Limits:** the swapchain must use an 8-bit RGBA or BGRA format with `SRGB_NONLINEAR` and offer `TRANSFER_DST`
   images; every driver tried so far does. The splash clock keeps running while the window is minimised.
 
@@ -126,7 +132,8 @@ Not verified yet:
   `VK_EXT_headless_surface`, so the run stops with exit 3 and says so.
 - **The 1:1 copy fallback on a device without blit support.** Every driver tried so far can blit. The copy path has
   run only with blit support masked out by a temporary code change: on the RTX 2070 SUPER it passed with no validation
-  messages, through resizes during the splash (the window stayed at least the logo plus margins).
+  messages, through resizes during the splash (the window stayed at least the logo plus margins). The recomputed
+  minimum after a pixel-density change is unit-tested only: no mixed-density desktop has been tried.
 - **The SUBOPTIMAL path,** which no run has produced so far.
 - **Swapchain recreation without `VK_EXT_swapchain_maintenance1`.** The old swapchain's present semaphores are
   destroyed after `vkDeviceWaitIdle`. Validation accepts this, but the spec doesn't strictly guarantee that the
