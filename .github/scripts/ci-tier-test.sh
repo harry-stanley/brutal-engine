@@ -24,6 +24,7 @@ check docs "docs folder" "docs/06-ci-cd-and-release.md${nl}docs/spikes/README.md
 check docs "community files" "CONTRIBUTING.md${nl}CHANGELOG.md${nl}SECURITY.md${nl}CODE_OF_CONDUCT.md"
 check docs "GitHub templates and owners" ".github/ISSUE_TEMPLATE/bug_report.yml${nl}.github/pull_request_template.md${nl}.github/CODEOWNERS"
 check docs "name only starts like a backend" "docs/src/BrutalEngine.Graphics/notes.md"
+check docs "docs page about samples" "docs/samples/HelloWindow.md"
 
 # Fast tier: no path can affect native interop, NativeAOT or GPU tests.
 check fast "README is packed into every package" "docs/06-ci-cd-and-release.md${nl}README.md"
@@ -50,6 +51,9 @@ check full "central package versions" "Directory.Packages.props"
 check full "nested build props" "tests/Directory.Build.props"
 check full "SDK pin" "global.json"
 check full "one native path among docs" "docs/a.md${nl}src/BrutalEngine.Graphics/Renderer.cs${nl}docs/b.md"
+check full "sample code" "samples/HelloWindow/Program.cs"
+check full "sample README (no docs carve-out for samples)" "samples/HelloWindow/README.md"
+check full "sample next to docs" "docs/a.md${nl}samples/HelloWindow/HelloWindow.csproj"
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures tier rule check(s) failed."

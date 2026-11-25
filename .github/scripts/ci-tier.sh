@@ -7,8 +7,9 @@
 # The tiers are described in docs/06-ci-cd-and-release.md ("CI tiers"). Keep the two in sync.
 set -euo pipefail
 
-# Extend this when a module starts touching native code, or the smoke harness starts using a module.
-readonly FULL_TIER_PATHS='^(src/BrutalEngine\.(Platform|Graphics|Audio|Runtime)[^/]*/|tests/BrutalEngine\.Aot\.Smoke/|natives/|\.github/(actions|scripts)/|\.github/workflows/ci\.yml$|global\.json$|[Nn]u[Gg]et\.config$|(.*/)?Directory\.(Build|Packages)\.(props|targets)$)'
+# Extend this when a module starts touching native code, or the smoke harness starts using a module. Samples are
+# run on every OS by the vulkan-smoke job, so any change under samples/ (README included) gets the full tier.
+readonly FULL_TIER_PATHS='^(src/BrutalEngine\.(Platform|Graphics|Audio|Runtime)[^/]*/|tests/BrutalEngine\.Aot\.Smoke/|samples/|natives/|\.github/(actions|scripts)/|\.github/workflows/ci\.yml$|global\.json$|[Nn]u[Gg]et\.config$|(.*/)?Directory\.(Build|Packages)\.(props|targets)$)'
 
 # Documentation only. README.md and NOTICE.txt are not here: every package includes them (src/Directory.Build.props).
 readonly DOCS_TIER_PATHS='^(docs/|(CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$|\.github/(ISSUE_TEMPLATE/|pull_request_template\.md$|CODEOWNERS$))'
