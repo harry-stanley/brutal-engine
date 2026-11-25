@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    M0 sample: an SDL3 window presenting a Vulkan 1.3 clear-colour swapchain, written directly on BRUTAL's bindings
+    (README.md). Runs with the JIT and as NativeAOT. Trim/AOT warnings are errors (TreatWarningsAsErrors), and
+    TrimmerSingleWarn=false reports them per call site instead of one summary warning per assembly.
+  -->
+  <PropertyGroup>
+    <AssemblyName>HelloWindow</AssemblyName>
+    <RootNamespace>HelloWindow</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- Listed so the lock file covers the NativeAOT compiler packages for every supported RID. -->
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Sdl" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HelloWindow.Tests" />
+  </ItemGroup>
+</Project>
