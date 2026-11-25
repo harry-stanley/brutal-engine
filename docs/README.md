@@ -19,6 +19,7 @@ These documents are the engineering plan. They are the reference for every pull 
 | 9 | [Roadmap](09-roadmap.md) | Milestones M0 to M6 with exit criteria |
 | 10 | [Risks](10-risks.md) | Known risks, mitigations and the spikes that retire them |
 | - | [Architecture decision records](adr/README.md) | One file per decision, with its context and consequences |
+| - | [Spike results](spikes/README.md) | What the M0 spikes proved, with links to their code |
 
 ## Status
 

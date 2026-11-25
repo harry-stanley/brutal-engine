@@ -45,7 +45,7 @@ Not used: GLFW (SDL3 replaces it, [ADR-0003](adr/0003-sdl3-platform.md)), OpenGL
 
 | Item | Platform | Plan |
 |------|----------|------|
-| Vulkan loader (`libvulkan.1.dylib`) and MoltenVK (`libMoltenVK.dylib` + ICD JSON) | macOS | Built from Khronos release tags in our own `natives` workflow, signed, shipped inside the app bundle. BRUTAL's resolver already tries `libvulkan.1.dylib` before the Homebrew and SDK paths (`Brutal.Vulkan/ImportResolver.cs`, which carries a TODO for exactly this). Spike S1 proves it end to end |
+| Vulkan loader (`libvulkan.1.dylib`) and MoltenVK (`libMoltenVK.dylib` + ICD JSON) | macOS | Pinned upstream builds (MoltenVK release asset + SHA-256, Vulkan-Loader by tag and commit) from our own `natives` workflow, shipped as `runtimes/osx-arm64/native/` NuGet assets and signed later. Proven on GitHub's macOS runner ([S1/S3 results](spikes/README.md#s1--s3-macos-on-githubs-macos-15-runner)), with two engine duties: BRUTAL's resolver doesn't search the app directory, so the Vulkan backend **preloads the loader by absolute path**; and the bundled loader doesn't find MoltenVK by itself, so the backend **sets `VK_DRIVER_FILES`** to the bundled ICD before creating the instance |
 | Vulkan loader | Windows, Linux | Provided by the GPU driver (Windows) or the distro package `libvulkan1` (Linux). Documented as a runtime requirement, checked at startup with a clear error |
 
 ## Shaders

@@ -26,8 +26,8 @@
 GitHub-hosted runners have no usable GPUs. GPU tests therefore run on software Vulkan drivers:
 
 - **Linux:** Mesa **lavapipe** (`mesa-vulkan-drivers`) plus the Vulkan validation layers. This is the primary golden-image platform. Reference images are generated here.
-- **Windows:** lavapipe from a pinned Mesa Windows build, or SwiftShader. Spike S3 picks one, pinned by version and checksum.
-- **macOS:** MoltenVK needs Metal. Spike S3 checks whether GitHub's Apple-silicon runners expose a usable Metal device. If they don't, there is currently **no way to run macOS GPU tests**, because the maintainer has no Mac (open question Q6 in the [Roadmap](09-roadmap.md)). PR CI on macOS still covers everything except GPU execution.
+- **Windows:** lavapipe from pal1000 `mesa-dist-win` (pinned release + SHA-256) with the loader and layers from a silently installed, SHA-256-pinned LunarG Vulkan SDK (S3).
+- **macOS:** the macos-15 runner exposes a paravirtual Metal device, and our bundled MoltenVK + loader run on it with validation layers (S3). macOS GPU **correctness** tests therefore run on every PR. Performance and real GPU families still need real hardware (Q6 in the [Roadmap](09-roadmap.md)). The validation layers are built from source on macOS, so that build is cached.
 - **Real GPUs:** self-hosted runners on the maintainer's hardware (see [CI/CD](06-ci-cd-and-release.md#self-hosted-runners)) run the full conformance and golden suites nightly, with real drivers: NVIDIA RTX 2070 SUPER on Windows 11 and on a bare-metal Arch Linux install.
 
 Golden images are produced on lavapipe. Real-GPU runs compare against the same references with a slightly wider tolerance, because rasterisation rules allow small differences. Any test needing a wider tolerance than the global default must say why in a comment.
