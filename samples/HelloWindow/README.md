@@ -16,8 +16,7 @@ What it does:
   (`libvulkan.1.dylib`, `libMoltenVK.dylib`, `MoltenVK_icd.json`), so it needs no Vulkan SDK, Homebrew or
   `VK_DRIVER_FILES`. It preloads that loader by absolute path for both BRUTAL and SDL, and points `VK_DRIVER_FILES` at
   the bundled manifest unless the user already set it or `VK_ICD_FILENAMES`. An explicit `--vulkan-loader` wins.
-- Ships BRUTAL's `NOTICE.txt` (LICENSE 2.3) and every BRUTAL package's third-party licences, in
-  `LICENSES/<package>/`, next to the executable.
+- Ships BRUTAL's licence files and the credits next to the executable. See [Credits](#credits).
 - Recreates the swapchain on OUT_OF_DATE, SUBOPTIMAL or a real change of window size. While the window is minimised it
   sleeps in `SDL_WaitEvent` instead of rendering.
 - Checks every native status, and tears everything down in reverse order after `vkDeviceWaitIdle`.
@@ -60,13 +59,32 @@ The logo is shown, unaltered except for scaling, on a black background before th
   the CPU, in the swapchain's format. It is then uploaded once through a staging buffer into a device-local image.
   Each splash frame clears the swapchain image to black and `vkCmdBlitImage`s the logo into it, centred with a 32-pixel
   margin and scaled down (never up) to fit.
-- **Fallback:** if the surface or format can't blit, it uses `vkCmdCopyImage` at 1:1, provided the logo fits. If
-  neither works, the run fails with a setup error naming what is missing (exit 3). The splash is never silently
-  skipped.
+- **Fallback:** if the surface or format can't blit, it uses `vkCmdCopyImage` at 1:1, provided the logo fits. The
+  window then can't be made smaller than the logo plus its margins until the splash is over, so the copy keeps
+  working through resizes. If neither works for the first swapchain, the run fails with a setup error naming what is
+  missing (exit 3). The splash is never silently skipped.
 - **Limits:** the swapchain must use an 8-bit RGBA or BGRA format with `SRGB_NONLINEAR` and offer `TRANSFER_DST`
   images; every driver tried so far does. The splash clock keeps running while the window is minimised.
 
 On the reference machine, a screenshot of the windowed splash matches the logo composited onto black pixel for pixel.
+
+## Credits
+
+A product built on BRUTAL must meet the BRUTAL License's conditions. HelloWindow meets them like this:
+
+- **The logo (2.2):** the splash above, before the scene, unaltered except for scaling.
+- **The licence (1.0):** BRUTAL's `LICENSE.txt` ships next to the executable.
+- **The credits (2.1):** `CREDITS.txt`, next to the executable, credits BRUTAL with its copyright line and BrutalEngine
+  with its licence name and copyright lines. The build generates it from BRUTAL's `LICENSE.txt` and this repository's
+  `LICENSE`, so no copyright line is retyped.
+- **The notice (2.3):** BRUTAL's `NOTICE.txt` ships next to the executable.
+- **Third-party licences (4.0):** each BRUTAL package lists the components it redistributes, with their licences, in
+  its `LICENSES/` folder. They ship as `LICENSES/<package>/`, one folder per package, because packages use the same
+  file names for different contents.
+
+The build copies all of these from the restored BRUTAL packages, so none of them is kept in this repository. Every
+BRUTAL package carries the same `LICENSE.txt` and `NOTICE.txt`, and the build fails if a copy differs. CI checks the
+published output for `LICENSE.txt`, `NOTICE.txt`, `LICENSES/` and BRUTAL's copyright line in `CREDITS.txt`.
 
 ## Exit codes
 
@@ -74,7 +92,7 @@ On the reference machine, a screenshot of the windowed splash matches the logo c
 |------|---------|
 | 0 | Pass |
 | 2 | The validation layer reported at least one error or warning |
-| 3 | Setup failed: no suitable device, a missing layer or extension, the wrong loader, a surface that can't show the splash, or a native error during setup |
+| 3 | Setup failed: no suitable device, a missing layer or extension, the wrong loader, a first swapchain that can't show the splash, or a native error during setup |
 | 4 | A native call failed after setup, or `--exercise-resize` saw no swapchain recreation |
 | 64 | Bad command line |
 
@@ -85,7 +103,8 @@ Verified:
 - **Windows 11, NVIDIA RTX 2070 SUPER** (JIT and NativeAOT win-x64, locally): windowed runs with the splash (blit at
   1:1, and scaled down in a 400x300 window), `--exercise-resize` (including resizes during the splash),
   `--inject-validation-error`, and windowed on Mesa lavapipe for Windows. Minimise and restore (no CPU used while
-  minimised) was verified before the splash existed (#24), and hasn't been rechecked since.
+  minimised) was verified before the splash existed (#24). A NativeAOT run minimised during the splash was checked in
+  review: no validation messages, and the scene followed after restore.
 - **CI** (`vulkan-smoke`, JIT and NativeAOT, with validation and the negative tests), first green in
   [run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930):
   - **Linux** (ubuntu-24.04, Mesa llvmpipe), `--headless`.
@@ -93,7 +112,7 @@ Verified:
     loader and MoltenVK, with `VK_DRIVER_FILES` unset, and CI checks the log for both bundled paths.
   - **Windows** (windows-2025, Mesa lavapipe), windowed with `--exercise-resize`.
   - Since the splash, CI also checks that each run presented scene frames after the splash, and that the published
-    output contains `NOTICE.txt` and `LICENSES/`.
+    output contains the files listed under [Credits](#credits).
 
 Not verified yet:
 
@@ -101,8 +120,9 @@ Not verified yet:
   the RTX 2070 SUPER. There is no Mac: macOS has only run on GitHub's paravirtual device.
 - **`--headless` on Windows.** It can't run there: neither the NVIDIA driver nor Mesa lavapipe for Windows offers
   `VK_EXT_headless_surface`, so the run stops with exit 3 and says so.
-- **The 1:1 copy fallback for the splash.** It is unit-tested, but every driver tried so far can blit, so no GPU run
-  has used it.
+- **The 1:1 copy fallback on a device without blit support.** Every driver tried so far can blit. The copy path has
+  run only with blit support masked out by a temporary code change: on the RTX 2070 SUPER it passed with no validation
+  messages, through resizes during the splash (the window stayed at least the logo plus margins).
 - **The SUBOPTIMAL path,** which no run has produced so far.
 - **Swapchain recreation without `VK_EXT_swapchain_maintenance1`.** The old swapchain's present semaphores are
   destroyed after `vkDeviceWaitIdle`. Validation accepts this, but the spec doesn't strictly guarantee that the
