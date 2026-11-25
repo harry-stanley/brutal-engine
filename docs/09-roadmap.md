@@ -27,6 +27,8 @@ Spikes (throwaway code in a `spikes/` branch, each ending in a written result ad
 | S4 | Slang: compile a Slang shader to SPIR-V with `Ahwoo.Brutal.Slang` on all 3 OSes, extract reflection | Cooker-usable API confirmed. Otherwise switch to ShaderC (update ADR-0002) |
 | S5 | World model prototype benchmark (once ADR-0006 is decided) | Iteration, spawn/despawn and structural-change costs measured against the targets in ADR-0006 |
 
+Results for S1 to S5 are in [docs/spikes](spikes/README.md). Still open in M0: S1 windowed on Linux (Arch) and S2 on Linux and macOS, both covered by the HelloWindow AOT smoke job.
+
 **Exit criteria:** CI green on 3 OSes. Spikes S1 to S4 resolved. ADR-0006 accepted. `HelloWindow` sample (window, clear colour, BRUTAL splash) published with NativeAOT for all 3 RIDs.
 
 ---
@@ -115,5 +117,5 @@ ImGui-based editor on the same runtime (scene view, inspector, asset browser, pl
 | Q3 | Skeletal animation authoring tool support (own format only, Spine import after licence review, DragonBones, or other) | M3 |
 | Q4 | Networking transport (spike S7) | M5 |
 | Q5 | Ahwoo's view on the "BrutalEngine" name and NuGet IDs (R9). The maintainer accepts the name for now | Revisit before 1.0 |
-| Q6 | macOS hardware: no Mac available. Options are a used M1/M2 Mac mini as a self-hosted runner, a rented cloud Mac, or macOS support limited to what GitHub's runners can verify | Before M1 GPU work (after spike S3) |
+| Q6 | macOS hardware: no Mac available. S3 showed GitHub's macos-15 runner can run MoltenVK (paravirtual Metal) for **correctness tests on every PR**. A real Mac (Mac mini or rented cloud Mac) is still needed for real GPU families, performance, windowed presentation, and `.app` signing/notarisation | Before the first release that claims macOS support (end of M2) |
 | Q7 | Min-spec hardware for performance budgets (e.g. an integrated-GPU laptop). Until then, budgets are measured on the reference machine only | Before M6 |
