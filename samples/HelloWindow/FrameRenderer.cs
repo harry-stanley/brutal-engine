@@ -38,6 +38,7 @@ internal sealed unsafe class FrameRenderer : IDisposable
     private readonly VkSemaphore[] _imageAcquired = new VkSemaphore[FramesInFlight];
     private readonly VkFence[] _inFlight = new VkFence[FramesInFlight];
     private long _frame;
+    private bool _disposed;
 
     /// <summary>Creates the per-frame objects. Destroys what it created if a step fails.</summary>
     /// <param name="vulkan">The device and queue.</param>
@@ -125,7 +126,9 @@ internal sealed unsafe class FrameRenderer : IDisposable
             ImageIndices = &imageIndex,
         };
 
-        // Raw call: BRUTAL's Queue serialises Submit2 and PresentKHR under one lock, and only this thread uses the queue.
+        // Raw call: BRUTAL's Queue.PresentKHR throws on OUT_OF_DATE (VkDeviceExtensions.gen.cs, PresentKHRInternal), and
+        // here that is a routine resize. The raw call also skips Queue's submit lock, which is safe only because this
+        // thread is the only one that uses the queue.
         VkResult presentResult = _queue.PInvoke.vkQueuePresentKHR.Invoke(_queue.Handle, &presentInfo);
         FrameDecision present = FrameResultPolicy.Map(presentResult);
         if (present.Action == FrameAction.Fatal)
@@ -139,6 +142,13 @@ internal sealed unsafe class FrameRenderer : IDisposable
     /// <summary>Destroys the per-frame objects. The device must be idle.</summary>
     public void Dispose()
     {
+        // Idempotent: _pool is readonly and can't be cleared, so a second call would destroy it twice.
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         for (int i = FramesInFlight - 1; i >= 0; i--)
         {
             if (!_inFlight[i].IsNull())

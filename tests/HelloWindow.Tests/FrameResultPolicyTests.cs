@@ -41,6 +41,14 @@ public sealed class FrameResultPolicyTests
     }
 
     [Fact]
+    public void Describe_UnnamedResult_PrintsTheNumberOnce()
+    {
+        FrameDecision decision = FrameResultPolicy.Map((VkResult)(-123456));
+
+        Assert.Equal("vkQueuePresentKHR returned -123456", decision.Describe("vkQueuePresentKHR"));
+    }
+
+    [Fact]
     public void Map_RecoverableResults_DoNotAllocate()
     {
         // Runs every frame, so it must not allocate (docs/07-coding-standards.md, hot paths).

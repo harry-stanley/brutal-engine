@@ -31,7 +31,12 @@ internal sealed unsafe class HelloWindowApp
         {
             result = _setupComplete ? ExitCode.RuntimeFailure : ExitCode.SetupFailure;
             SampleConsole.Error($"{(_setupComplete ? "Runtime failure" : "Setup failure")}: {exception.Message}");
-            SampleConsole.Error(exception.ToString());
+
+            // Typed failures name the failing call or requirement in their message; only unexpected ones need the trace.
+            if (exception is not (SampleFailureException or VkResultError or SdlException))
+            {
+                SampleConsole.Error(exception.ToString());
+            }
         }
 
         if (_options.Validation)
@@ -88,21 +93,25 @@ internal sealed unsafe class HelloWindowApp
     private void RunFrames(SdlWindow window, VulkanContext vulkan, FrameRenderer renderer)
     {
         Swapchain? swapchain = null;
-        int presented = 0, recreations = 0, outOfDate = 0, suboptimal = 0;
-        long frameBytes = 0;
+        int presented = 0, recreations = 0, outOfDate = 0, suboptimal = 0, steadyFrames = 0;
+        long steadyBytes = 0;
         bool checkExtent = true, recreate = false;
         var clock = Stopwatch.StartNew();
         try
         {
             while (_options.Frames is not { } frames || presented < frames)
             {
+                // Steady-state frames must not allocate managed memory (docs/07-coding-standards.md). Measure the whole
+                // iteration, except the first frame (warm-up) and iterations that resize or recreate the swapchain.
+                long iterationStart = GC.GetAllocatedBytesForCurrentThread();
+                bool steadyState = presented > 0;
                 if (!PumpEvents(ref checkExtent))
                 {
                     SampleConsole.Info($"Quit requested after {presented} frames.");
                     break;
                 }
 
-                ExerciseResize(window, presented);
+                steadyState &= !ExerciseResize(window, presented);
                 if (checkExtent || recreate || swapchain is null)
                 {
                     VkSurfaceCapabilitiesKHR capabilities = vulkan.PhysicalDevice.GetSurfaceCapabilitiesKHR(vulkan.Surface);
@@ -123,6 +132,7 @@ internal sealed unsafe class HelloWindowApp
                     // SDL reports a resize right after creating the window, so recreate only if the size really changed.
                     if (recreate || swapchain is null || extent != swapchain.Extent)
                     {
+                        steadyState = false;
                         NativeCheck.Vk(vulkan.WaitIdle(), "vkDeviceWaitIdle");
                         Swapchain? old = swapchain;
                         swapchain = null;
@@ -144,14 +154,16 @@ internal sealed unsafe class HelloWindowApp
                     checkExtent = recreate = false;
                 }
 
-                // Frames must not allocate managed memory (docs/07-coding-standards.md); the first one may, while it warms up.
-                long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
                 FrameAction action = renderer.RenderFrame(swapchain, _options.InjectValidationError && presented == 0);
-                frameBytes += presented == 0 ? 0 : GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
                 presented += action == FrameAction.Recreate ? 0 : 1;
                 outOfDate += action == FrameAction.Recreate ? 1 : 0;
                 suboptimal += action == FrameAction.RenderThenRecreate ? 1 : 0;
                 recreate = action != FrameAction.Render;
+                if (steadyState)
+                {
+                    steadyBytes += GC.GetAllocatedBytesForCurrentThread() - iterationStart;
+                    steadyFrames++;
+                }
             }
 
             NativeCheck.Vk(vulkan.WaitIdle(), "vkDeviceWaitIdle");
@@ -171,19 +183,20 @@ internal sealed unsafe class HelloWindowApp
         double seconds = clock.Elapsed.TotalSeconds;
         SampleConsole.Info($"Presented {presented} frames in {seconds:F2} s ({presented / seconds:F1} fps); "
             + $"swapchain recreations {recreations}, out-of-date {outOfDate}, suboptimal {suboptimal}; "
-            + $"{frameBytes} managed bytes allocated by frames after the first.");
+            + $"{steadyBytes} managed bytes allocated over {steadyFrames} steady-state loop iterations.");
         if (_options.ExerciseResize && recreations == 0)
         {
-            throw new InvalidOperationException("--exercise-resize: the swapchain was never recreated.");
+            throw new SampleFailureException("--exercise-resize: the swapchain was never recreated.");
         }
     }
 
-    private void ExerciseResize(SdlWindow window, int presented)
+    // Returns true if it resized the window in this iteration.
+    private bool ExerciseResize(SdlWindow window, int presented)
     {
         // Shrink at a third of the run and restore at two thirds: two size changes, each needing a new swapchain.
         if (!_options.ExerciseResize || _options.Frames is not { } frames)
         {
-            return;
+            return false;
         }
 
         if ((_resizes == 0 && presented >= frames / 3) || (_resizes == 1 && presented >= 2 * frames / 3))
@@ -193,7 +206,10 @@ internal sealed unsafe class HelloWindowApp
             int height = shrink ? Math.Max(1, _options.Height * 3 / 4) : _options.Height;
             SampleConsole.Info($"Resizing the window to {width}x{height} (at frame {presented})");
             NativeCheck.Sdl(Sdl.Video.SetWindowSize(window, width, height), "SDL_SetWindowSize");
+            return true;
         }
+
+        return false;
     }
 
     private static bool PumpEvents(ref bool checkExtent)
@@ -240,9 +256,11 @@ internal sealed unsafe class HelloWindowApp
         // (spike S1, docs/spikes/README.md). Check it really did, rather than silently using another loader.
         nint library = NativeLibrary.Load(path);
         nint entryPoint = NativeLibrary.GetExport(library, "vkGetInstanceProcAddr");
+
+        // Sound: only the function pointer's address is compared; it is never called through this cast.
         if ((nint)Vulkan.GetInstanceProcAddr.Invoke != entryPoint)
         {
-            throw new InvalidOperationException($"BRUTAL resolved a different Vulkan loader than {path}.");
+            throw new SampleFailureException($"BRUTAL resolved a different Vulkan loader than {path}.");
         }
 
         NativeCheck.Sdl(Sdl.PInvoke.SetHint(Sdl.Constants.HintVulkanLibrary, path) != 0, "SDL_SetHint(SDL_VULKAN_LIBRARY)");

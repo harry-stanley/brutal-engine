@@ -1,4 +1,3 @@
-using System;
 using Brutal.VulkanApi;
 
 namespace HelloWindow;
@@ -48,13 +47,13 @@ internal sealed unsafe class Swapchain
     /// <param name="capabilities">The surface capabilities the extent was chosen from.</param>
     /// <param name="old">The swapchain being replaced, or null.</param>
     /// <returns>The swapchain.</returns>
-    /// <exception cref="InvalidOperationException">The surface can't be rendered to.</exception>
+    /// <exception cref="SampleFailureException">The surface can't be rendered to.</exception>
     /// <exception cref="VkResultError">A Vulkan call failed.</exception>
     public static Swapchain Create(VulkanContext vulkan, SwapchainExtent extent, in VkSurfaceCapabilitiesKHR capabilities, Swapchain? old)
     {
         if ((capabilities.SupportedUsageFlags & VkImageUsageFlags.ColorAttachmentBit) == 0)
         {
-            throw new InvalidOperationException("The surface doesn't support colour-attachment images.");
+            throw new SampleFailureException("The surface doesn't support colour-attachment images.");
         }
 
         Device device = vulkan.Device;
