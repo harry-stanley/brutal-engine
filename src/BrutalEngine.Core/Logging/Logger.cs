@@ -94,6 +94,10 @@ public sealed class Logger : IDisposable
     /// Number of times a sink threw from <see cref="ILogSink.Write"/> or <see cref="ILogSink.Flush"/>. Those
     /// exceptions are caught so they can't stop other sinks or the code that logged.
     /// </summary>
+    /// <remarks>
+    /// Thread-safe; doesn't allocate. Like every member except <see cref="Dispose"/> and logging, it throws once the
+    /// logger is disposed: read it before disposing, e.g. for a shutdown report.
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">The logger is disposed.</exception>
     public long SinkFailureCount
     {
