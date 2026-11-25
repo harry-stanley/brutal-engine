@@ -47,14 +47,16 @@ Required approvals are 0 for now. PRs are opened under the maintainer's own acco
 
 CI is split so a typical PR gets feedback in about two minutes, while native and GPU coverage still runs before and after every merge:
 
-| Tier | When | Adds |
+| Tier | When | Runs |
 |------|------|------|
+| **Docs** | PRs that change only documentation nothing builds, tests or packs | Only the tier selection. Format, build, test, pack and smoke are skipped. CodeQL and dependency review still run (they are required checks) |
 | **Fast** | PRs whose changed paths can't affect native interop, NativeAOT or GPU tests | Format, build and test on all 3 OSes, pack, and the Linux Vulkan + NativeAOT smoke |
 | **Full** | PRs touching native-relevant paths, every push to `main`, nightly (15:00 UTC), manual runs | The fast tier plus the Windows and macOS Vulkan + NativeAOT smoke |
 
-- The `Select CI tier` job classifies a PR's changed paths, including the old name of renamed files, with `.github/scripts/ci-tier.sh`. The paths that force the full tier are listed in that script: backend modules (Platform, Graphics, Audio, Runtime), the smoke harness, `.github/actions` and `.github/scripts`, `ci.yml`, `global.json`, NuGet config, and any `Directory.Build`/`Directory.Packages` file.
+- The `Select CI tier` job classifies a PR's changed paths, including the old name of renamed files, with `.github/scripts/ci-tier.sh`. The paths that force the full tier are listed in that script: backend modules (Platform, Graphics, Audio, Runtime), the smoke harness, `natives/`, `.github/actions` and `.github/scripts`, `ci.yml`, `global.json`, NuGet config, and any `Directory.Build`/`Directory.Packages` file.
+- The docs tier applies only when every path is under `docs/`, is one of `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` or `SECURITY.md`, or is a GitHub issue template, the PR template or `CODEOWNERS`. `README.md` and `NOTICE.txt` are not docs-tier paths, because every package includes them.
 - The job runs `ci-tier-test.sh` first, so a broken rule fails CI instead of silently skipping coverage. Add a case there when the list changes.
-- Nothing is skipped: the smoke matrix is computed by the tier job, so `CI passed` still requires every job it needs to succeed.
+- `CI passed` accepts a skipped job only in the docs tier. In the fast and full tiers, every job it needs must succeed, and it fails if the tier can't be selected.
 - Anything the fast tier misses is caught by the full run on the merge to `main`.
 - **Time budget:** a fast-tier PR should finish in under 3 minutes, and no single step should take over 2 minutes on a warm cache. A step that grows past that gets cached, prebuilt or moved to the nightly run.
 
