@@ -368,12 +368,16 @@
           "xunit.v3.runner.common": "[4.0.3]"
         }
       },
+      "brutalengine.core": {
+        "type": "Project"
+      },
       "hellowindow": {
         "type": "Project",
         "dependencies": {
           "Ahwoo.Brutal.Sdl": "[2026.10.3, )",
           "Ahwoo.Brutal.Vulkan": "[2026.10.3, )",
-          "Ahwoo.Brutal.Vulkan.Abstractions": "[2026.10.3, )"
+          "Ahwoo.Brutal.Vulkan.Abstractions": "[2026.10.3, )",
+          "BrutalEngine.Core": "[1.0.0, )"
         }
       },
       "Ahwoo.BRUTAL.Sdl": {

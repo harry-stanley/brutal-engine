@@ -4,10 +4,11 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Brutal;
 using Brutal.VulkanApi;
+using BrutalEngine.Core.Logging;
 
 namespace HelloWindow;
 
-/// <summary>Counts and prints messages from the Khronos validation layer.</summary>
+/// <summary>Counts and logs messages from the Khronos validation layer.</summary>
 /// <remarks>
 /// <para>
 /// The callback is an <see cref="UnmanagedCallersOnlyAttribute"/> function pointer, which can't capture state, so it
@@ -26,12 +27,19 @@ namespace HelloWindow;
 /// </remarks>
 internal sealed unsafe class ValidationMessenger : IDisposable
 {
+    private readonly LogCategory _log;
     private GCHandle _self;
     private int _errors;
     private int _warnings;
 
     /// <summary>Initializes a new instance of the <see cref="ValidationMessenger"/> class.</summary>
-    public ValidationMessenger() => _self = GCHandle.Alloc(this);
+    /// <param name="log">Where messages are logged: errors at <see cref="LogLevel.Error"/>, warnings at
+    /// <see cref="LogLevel.Warning"/>.</param>
+    public ValidationMessenger(LogCategory log)
+    {
+        _log = log;
+        _self = GCHandle.Alloc(this);
+    }
 
     /// <summary>Gets the number of error-severity messages so far.</summary>
     public int Errors => Volatile.Read(ref _errors);
@@ -89,8 +97,9 @@ internal sealed unsafe class ValidationMessenger : IDisposable
         bool isError = (severity & VkDebugUtilsMessageSeverityFlagsEXT.ErrorBitEXT) != 0;
         _ = isError ? Interlocked.Increment(ref _errors) : Interlocked.Increment(ref _warnings);
 
-        // The layer passes a NUL-terminated UTF-8 message that stays valid for the duration of the callback.
-        string message = data == null || data->Message == null ? string.Empty : Marshal.PtrToStringUTF8((nint)data->Message) ?? string.Empty;
-        SampleConsole.Error($"[validation {(isError ? "ERROR" : "WARNING")} {type}] {message}");
+        // Sound: the layer passes a NUL-terminated UTF-8 message that stays valid for the duration of the callback, and
+        // the logger copies it before returning. Invalid UTF-8 is replaced, so the span is logged as it is.
+        ReadOnlySpan<byte> message = data == null || data->Message == null ? default : MemoryMarshal.CreateReadOnlySpanFromNullTerminated(data->Message);
+        _log.Log(isError ? LogLevel.Error : LogLevel.Warning, $"validation ({type}): {message}");
     }
 }

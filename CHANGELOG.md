@@ -8,9 +8,14 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ## [Unreleased]
 
+### Changed
+
+- `samples/HelloWindow` logs through `BrutalEngine.Core`'s `Logger` and `ConsoleLogSink` (categories `HelloWindow` and `HelloWindow.Vulkan`) instead of plain console writes, so each line now reads `2026-11-26T01:02:03.456Z INFO [HelloWindow] message`. The validation messenger keeps its counts per instance and reaches them through the callback's user data, with no static state. CI's splash check matches the new line format.
+
 ### Fixed
 
 - `Logger.SetLevel` no longer allocates after a garbage collection. It validated the level with `Enum.IsDefined`, which rebuilds a weakly held runtime cache (240 bytes) on its first call after any collection.
+- `samples/HelloWindow`: `--require-driver MaxEnum` is rejected (it's Vulkan's sentinel value, not a driver), an unnamed `VkResult` appears once in error messages instead of twice, and a failure inside an SDL callback is reported with its stack trace and the inner exception.
 
 ## [0.1.0-alpha] - 2026-11-26
 

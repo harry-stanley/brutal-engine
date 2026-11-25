@@ -20,6 +20,10 @@ What it does:
 - Recreates the swapchain on OUT_OF_DATE, SUBOPTIMAL or a real change of window size. While the window is minimised it
   sleeps in `SDL_WaitEvent` instead of rendering.
 - Checks every native status, and tears everything down in reverse order after `vkDeviceWaitIdle`.
+- Logs through `BrutalEngine.Core`'s logger and console sink, one UTF-8 line per entry:
+  `2026-11-26T01:02:03.456Z INFO [HelloWindow] message`. The categories are `HelloWindow` (the sample) and
+  `HelloWindow.Vulkan` (Vulkan setup and the validation layer's messages). Warnings and errors go to standard error,
+  everything else to standard output.
 
 ## Running
 
@@ -54,7 +58,7 @@ The logo is shown, unaltered except for scaling, on a black background before th
 - **How long:** at least 2.0 s in a window, measured with a monotonic clock from the first frame, however many frames
   that takes. Headless runs have no viewer and no fixed frame rate, so they count frames instead: the first 120
   (2.0 s at 60 frames a second). Nothing can skip or shorten it. At exit the sample logs
-  `splash: X frames over Y s, scene: Z frames`.
+  `splash: X frames over Y s, scene: Z frames` (an `INFO` line in the `HelloWindow` category).
 - **How it is drawn:** without shaders. `SDL_LoadPNG` decodes the logo at startup, and it is composited onto black on
   the CPU, in the swapchain's format. It is then uploaded once through a staging buffer into a device-local image.
   Each splash frame clears the swapchain image to black and `vkCmdBlitImage`s the logo into it, centred with a 32-pixel

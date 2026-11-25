@@ -1,5 +1,8 @@
 using System;
+using System.Text;
 using Brutal.VulkanApi;
+using BrutalEngine.Core.Logging;
+using BrutalEngine.Core.Logging.Sinks;
 using Xunit;
 
 namespace HelloWindow.Tests;
@@ -11,7 +14,7 @@ public sealed unsafe class ValidationMessengerTests
     [Fact]
     public void Callback_ErrorSeverity_CountsAnError()
     {
-        using var messenger = new ValidationMessenger();
+        using var messenger = new ValidationMessenger(default);
 
         Assert.False(Invoke(messenger.CreateInfo(), VkDebugUtilsMessageSeverityFlagsEXT.ErrorBitEXT, "vkCmdPipelineBarrier2: bad layout"u8));
 
@@ -22,7 +25,7 @@ public sealed unsafe class ValidationMessengerTests
     [Fact]
     public void Callback_WarningSeverity_CountsAWarning()
     {
-        using var messenger = new ValidationMessenger();
+        using var messenger = new ValidationMessenger(default);
 
         Assert.False(Invoke(messenger.CreateInfo(), VkDebugUtilsMessageSeverityFlagsEXT.WarningBitEXT, "a warning"u8));
 
@@ -31,11 +34,42 @@ public sealed unsafe class ValidationMessengerTests
     }
 
     [Fact]
+    public void Callback_Error_LogsAnErrorWithTheMessage()
+    {
+        var sink = new MemoryLogSink(8, 4096);
+        using (var logger = new Logger(new LoggerOptions { Sinks = [sink] }))
+        {
+            using var messenger = new ValidationMessenger(logger.CreateCategory("HelloWindow.Vulkan"));
+            Invoke(messenger.CreateInfo(), VkDebugUtilsMessageSeverityFlagsEXT.ErrorBitEXT, "vkCmdPipelineBarrier2: bad layout"u8);
+        }
+
+        MemoryLogRecord record = Assert.Single(Records(sink));
+        Assert.Equal(LogLevel.Error, record.Level);
+        Assert.Equal("HelloWindow.Vulkan", record.Category);
+        Assert.Equal("validation (ValidationBitEXT): vkCmdPipelineBarrier2: bad layout", Encoding.UTF8.GetString(record.Message.Span));
+    }
+
+    [Fact]
+    public void Callback_Warning_LogsAWarning()
+    {
+        var sink = new MemoryLogSink(8, 4096);
+        using (var logger = new Logger(new LoggerOptions { Sinks = [sink] }))
+        {
+            using var messenger = new ValidationMessenger(logger.CreateCategory("HelloWindow.Vulkan"));
+            Invoke(messenger.CreateInfo(), VkDebugUtilsMessageSeverityFlagsEXT.WarningBitEXT, "a warning"u8);
+        }
+
+        MemoryLogRecord record = Assert.Single(Records(sink));
+        Assert.Equal(LogLevel.Warning, record.Level);
+        Assert.Equal("validation (ValidationBitEXT): a warning", Encoding.UTF8.GetString(record.Message.Span));
+    }
+
+    [Fact]
     public void Callback_TwoMessengers_CountsOnlyTheOneInItsUserData()
     {
         // The callback finds its messenger through pUserData, so the counts aren't shared (no static state).
-        using var first = new ValidationMessenger();
-        using var second = new ValidationMessenger();
+        using var first = new ValidationMessenger(default);
+        using var second = new ValidationMessenger(default);
 
         Invoke(first.CreateInfo(), VkDebugUtilsMessageSeverityFlagsEXT.ErrorBitEXT, "first"u8);
         Invoke(second.CreateInfo(), VkDebugUtilsMessageSeverityFlagsEXT.WarningBitEXT, "second"u8);
@@ -48,7 +82,7 @@ public sealed unsafe class ValidationMessengerTests
     [Fact]
     public void Callback_NullMessage_StillCounts()
     {
-        using var messenger = new ValidationMessenger();
+        using var messenger = new ValidationMessenger(default);
         VkDebugUtilsMessengerCreateInfoEXT info = messenger.CreateInfo();
         VkDebugUtilsMessengerCallbackDataEXT data = new();
 
@@ -60,7 +94,7 @@ public sealed unsafe class ValidationMessengerTests
     [Fact]
     public void CreateInfo_SetsUserDataAndSeverities()
     {
-        using var messenger = new ValidationMessenger();
+        using var messenger = new ValidationMessenger(default);
 
         VkDebugUtilsMessengerCreateInfoEXT info = messenger.CreateInfo();
 
@@ -71,11 +105,18 @@ public sealed unsafe class ValidationMessengerTests
     [Fact]
     public void CreateInfo_AfterDispose_Throws()
     {
-        var messenger = new ValidationMessenger();
+        var messenger = new ValidationMessenger(default);
         messenger.Dispose();
         messenger.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => messenger.CreateInfo());
+    }
+
+    private static MemoryLogRecord[] Records(MemoryLogSink sink)
+    {
+        var records = new MemoryLogRecord[sink.CapacityEntries];
+        int count = sink.CopyTo(records, new byte[sink.CapacityBytes]);
+        return records[..count];
     }
 
     private static bool Invoke(VkDebugUtilsMessengerCreateInfoEXT info, VkDebugUtilsMessageSeverityFlagsEXT severity, ReadOnlySpan<byte> message)

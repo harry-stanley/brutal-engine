@@ -16,6 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Ahwoo.Brutal.Sdl" />
     <PackageReference Include="Ahwoo.Brutal.Vulkan" />
     <PackageReference Include="Ahwoo.Brutal.Vulkan.Abstractions" />

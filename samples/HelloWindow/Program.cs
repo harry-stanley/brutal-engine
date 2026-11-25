@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using BrutalEngine.Core.Logging.Sinks;
 
 namespace HelloWindow;
 
@@ -8,14 +9,14 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        SampleConsole.Info($"HelloWindow on {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture}), .NET {Environment.Version}");
+        using var log = new SampleLog(new ConsoleLogSinkOptions());
+        log.App.Information($"HelloWindow on {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture}), .NET {Environment.Version}");
         if (!HelloWindowOptions.TryParse(args, out HelloWindowOptions? options, out string error))
         {
-            SampleConsole.Error(error);
-            SampleConsole.Error(HelloWindowOptions.Usage);
+            log.App.Error($"{error}\n{HelloWindowOptions.Usage}");
             return (int)ExitCode.Usage;
         }
 
-        return (int)HelloWindowApp.Run(options);
+        return (int)HelloWindowApp.Run(options, log);
     }
 }
