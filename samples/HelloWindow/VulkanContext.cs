@@ -17,6 +17,7 @@ internal sealed unsafe class VulkanContext : IDisposable
     private Device? _device;
     private PhysicalDevice? _physicalDevice;
     private Queue? _queue;
+    private bool _disposed;
 
     private VulkanContext(Instance instance) => _instance = instance;
 
@@ -39,7 +40,8 @@ internal sealed unsafe class VulkanContext : IDisposable
     /// <param name="window">The SDL window, created with <see cref="SdlWindowFlags.Vulkan"/>.</param>
     /// <param name="options">The command-line options (validation and device requirements).</param>
     /// <returns>The context.</returns>
-    /// <exception cref="InvalidOperationException">The validation layer is missing, or no device is suitable.</exception>
+    /// <exception cref="SampleFailureException">The validation layer or headless-surface extension is missing, or no
+    /// device is suitable.</exception>
     /// <exception cref="VkResultError">A Vulkan call failed.</exception>
     /// <exception cref="SdlException">SDL couldn't create the surface.</exception>
     public static VulkanContext Create(SdlWindow window, HelloWindowOptions options)
@@ -71,6 +73,14 @@ internal sealed unsafe class VulkanContext : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
+        // Idempotent: a second Instance.Dispose would destroy the instance and free its function table twice.
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
         // Reverse creation order. The surface and messenger are destroyed only if they were created.
         _device?.Dispose();
         _device = null;
@@ -98,7 +108,7 @@ internal sealed unsafe class VulkanContext : IDisposable
         // lavapipe) don't offer it, and SDL would only fail later with a less specific message.
         if (options.Headless && !available.Contains(VK.EXT_HEADLESS_SURFACE_EXTENSION_NAME))
         {
-            throw new InvalidOperationException($"--headless needs {VK.EXT_HEADLESS_SURFACE_EXTENSION_NAME}, which no installed Vulkan driver offers.");
+            throw new SampleFailureException($"--headless needs {VK.EXT_HEADLESS_SURFACE_EXTENSION_NAME}, which no installed Vulkan driver offers.");
         }
 
         HashSet<string> extensions = [.. Sdl.Vulkan.GetInstanceExtensions()];
@@ -113,6 +123,8 @@ internal sealed unsafe class VulkanContext : IDisposable
         }
 
         // Chained into instance creation too, so vkCreateInstance and vkDestroyInstance are validated and counted.
+        // Sound: the chain points at these stack locals, which live until Vulkan.CreateInstance below has returned,
+        // and the loader copies what it keeps (the messenger callback is a static function pointer).
         VkDebugUtilsMessengerCreateInfoEXT messengerInfo = ValidationMessenger.CreateInfo();
         VkValidationFeatureEnableEXT synchronizationValidation = VkValidationFeatureEnableEXT.SynchronizationValidationEXT;
         VkValidationFeaturesEXT validationFeatures = new()
@@ -125,7 +137,7 @@ internal sealed unsafe class VulkanContext : IDisposable
         {
             if (!HasValidationLayer())
             {
-                throw new InvalidOperationException($"{ValidationLayer} is not available. Install the Vulkan validation layers.");
+                throw new SampleFailureException($"{ValidationLayer} is not available. Install the Vulkan validation layers.");
             }
 
             layers.Add(ValidationLayer);
@@ -140,7 +152,7 @@ internal sealed unsafe class VulkanContext : IDisposable
             Flags = flags,
             EnabledExtensions = extensions,
             EnabledLayers = layers,
-            Next = validation ? &validationFeatures : null,
+            Next = validation ? &validationFeatures : null, // a stack local that outlives this call (see above)
         });
     }
 
@@ -197,7 +209,7 @@ internal sealed unsafe class VulkanContext : IDisposable
 
         if (!selection.Found)
         {
-            throw new InvalidOperationException(selection.FailureMessage);
+            throw new SampleFailureException(selection.FailureMessage);
         }
 
         _physicalDevice = devices[selection.ChosenIndex];
@@ -211,6 +223,8 @@ internal sealed unsafe class VulkanContext : IDisposable
         }
 
         SampleConsole.Info($"Using device {selection.ChosenIndex}, queue family {QueueFamily}, extensions {string.Join(", ", extensions)}");
+        // Sound: &priority and &enabled point at stack locals that live until CreateDevice has returned, and Vulkan
+        // doesn't keep the pointers.
         float priority = 1.0f;
         VkPhysicalDeviceVulkan13Features enabled = new() { DynamicRendering = true, Synchronization2 = true };
         _device = _physicalDevice.CreateDevice(new Device.CreateInfo
@@ -232,6 +246,8 @@ internal sealed unsafe class VulkanContext : IDisposable
         bool isVulkan13 = properties.ApiVersion >= VK.API_VERSION_1_3;
         if (isVulkan13)
         {
+            // Sound: the chains point at driver and features, stack locals of this method that outlive both queries,
+            // which fill them in place.
             VkPhysicalDeviceProperties2 properties2 = new() { Next = &driver };
             device.GetProperties2(ref properties2);
             VkPhysicalDeviceFeatures2 features2 = new() { Next = &features };

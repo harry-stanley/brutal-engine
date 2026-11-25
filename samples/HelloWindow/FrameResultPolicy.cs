@@ -4,6 +4,8 @@ namespace HelloWindow;
 
 /// <summary>Maps the result of <c>vkAcquireNextImageKHR</c> or <c>vkQueuePresentKHR</c> to what the frame loop does
 /// next (docs/03-architecture.md 3.5, "Recoverable GPU events").</summary>
+/// <remarks>This M0 sample treats <c>VK_ERROR_DEVICE_LOST</c> as fatal on purpose. Recovering from device loss, as
+/// docs/03 3.5 describes, is engine work for the M1 graphics backend.</remarks>
 internal static class FrameResultPolicy
 {
     /// <summary>Maps a swapchain call's result to an action. Never allocates.</summary>

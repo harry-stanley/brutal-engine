@@ -1,3 +1,4 @@
+using System;
 using Brutal.VulkanApi;
 
 namespace HelloWindow;
@@ -9,6 +10,8 @@ internal readonly record struct FrameDecision(FrameAction Action, VkResult Resul
 {
     /// <summary>Describes a fatal result for an error message. Allocates, so call it only when failing.</summary>
     /// <param name="call">The Vulkan function that returned <see cref="Result"/>.</param>
-    /// <returns>For example <c>vkQueuePresentKHR returned ErrorDeviceLost (-4)</c>.</returns>
-    public string Describe(string call) => $"{call} returned {Result} ({(int)Result})";
+    /// <returns>For example <c>vkQueuePresentKHR returned ErrorDeviceLost (-4)</c>, or just the number for a result
+    /// that has no name.</returns>
+    public string Describe(string call) =>
+        Enum.IsDefined(Result) ? $"{call} returned {Result} ({(int)Result})" : $"{call} returned {(int)Result}";
 }
