@@ -15,7 +15,7 @@
 | Allocation | Steady-state reference scenes run 1,000 frames. Total managed allocations across all engine threads must be **0 bytes** | Every PR | Required |
 | Leak | Debug tracking allocators and GPU resource tracker must be empty at shutdown in every integration and conformance test | Every PR (built into the test harness) | Required |
 | Determinism | Record inputs, replay, compare world state hashes per tick: same run twice, and across OSes (hashes uploaded and compared in a final job) | Every PR | Required (single-OS). Cross-OS monitored at first |
-| AOT smoke | `dotnet publish -p:PublishAot=true` every sample per RID, run headless for N frames, exit code 0, no trim warnings | Every PR (one sample). Nightly (all) | Required |
+| AOT smoke | `tests/BrutalEngine.Aot.Smoke`: published with NativeAOT per RID (trim/AOT warnings are errors) and run, along with its JIT build. The `vulkan-offscreen` scenario clears and reads back an image on lavapipe with validation, and has a negative test that must exit 2. Later: every sample, run headless for N frames | Every PR on Linux and Windows (`vulkan-smoke` job). macOS once bundled MoltenVK lands. Nightly: all samples | Required |
 | Fuzz | Asset readers, pack TOC, text/JSON importers, network packet parsers (SharpFuzz) | Nightly, 30 min per target. Crashes become regression tests | Monitored |
 | Benchmarks | BenchmarkDotNet suites plus frame-time budgets for reference scenes (e.g. 100k sprites) | Nightly, results stored and compared against a baseline | A >10% regression opens an issue automatically |
 | Soak | Sample games played by a scripted input bot for 60 minutes: memory flat, no errors, no leaks | Nightly on self-hosted machines | Monitored |

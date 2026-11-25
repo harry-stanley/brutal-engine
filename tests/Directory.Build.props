@@ -1,17 +1,24 @@
 <Project>
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- Test projects: xUnit v3 on Microsoft.Testing.Platform v2, run by `dotnet test` (see global.json). -->
+  <!-- Everything under tests/ is an executable that is never packed. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
     <!-- Needed so IDE0005 (unnecessary usings) runs in the build. Tests don't need XML docs, so CS1591 is off. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
+  <!--
+    Projects named *.Tests are xUnit v3 test projects on Microsoft.Testing.Platform v2, run by `dotnet test`
+    (see global.json). Other projects here (e.g. BrutalEngine.Aot.Smoke) are plain console harnesses run by CI.
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
     <PackageReference Include="xunit.v3.mtp-v2" />
     <PackageReference Include="CsCheck" />
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
