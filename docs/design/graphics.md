@@ -260,3 +260,257 @@ public enum FrameStatus { Ready, DeviceLost }
 - **A frame is begun, recorded and submitted, always in that order.** `BeginFrame` with a frame already open, or `SubmitFrame` with a stale or foreign `CommandList`, throws `InvalidOperationException`. A `CommandList` copy used after its frame was submitted throws `InvalidOperationException` (each call checks its frame number against the open frame). There is no abandon: a host that wants to skip rendering submits an empty frame, which still retires deletion queues.
 - **A frame always completes.** A failed acquire (`Minimised`, `Skipped`) doesn't stop the frame: the host may still render offscreen work, or submit it empty. The M0 sample resets its fence only once a submit is certain (`FrameRenderer.cs:11-13`); the front end does the same, so no failure path leaves a slot waiting forever.
 - `CompletedFrameNumber` advances when `BeginFrame` observes completed fences (and on `WaitIdle`). It drives readback (section 6) and timestamp results (section 11).
+
+## 5. Resource descriptions
+
+Descriptions are immutable records validated by the front end before the backend sees them. Every one has an optional `DebugName` (section 13).
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public Result<BufferHandle> CreateBuffer(in BufferDescription description);
+    public Result<TextureHandle> CreateTexture(in TextureDescription description);
+    public TextureViewHandle GetDefaultView(TextureHandle texture);          // created with the texture
+    public Result<TextureViewHandle> CreateTextureView(in TextureViewDescription description);
+    public Result<SamplerHandle> CreateSampler(in SamplerDescription description);
+}
+
+public readonly record struct BufferDescription
+{
+    public required long Size { get; init; }                     // > 0
+    public required BufferUsage Usage { get; init; }             // != None
+    public MemoryIntent Memory { get; init; }                    // default GpuOnly
+    public string? DebugName { get; init; }
+}
+
+[Flags] public enum BufferUsage { None = 0, Vertex = 1, Index = 2, Uniform = 4, Storage = 8, Indirect = 16, CopySource = 32, CopyDestination = 64 }
+
+public enum MemoryIntent
+{
+    GpuOnly,    // device-local; written through the upload ring (section 6)
+    Upload,     // rewritten often from the CPU: a placement hint (host-visible device memory when available);
+                // same WriteBuffer semantics as GpuOnly
+    Readback,   // host-visible, cached: the destination of GPU-to-CPU copies; only CopyDestination usage
+}
+
+public readonly record struct TextureDescription
+{
+    public required TextureFormat Format { get; init; }
+    public required int Width { get; init; }
+    public required int Height { get; init; }
+    public int ArrayLayers { get; init; } = 1;
+    public int MipLevels { get; init; } = 1;                     // M1 content uses 1; mips are supported by the API
+    public int SampleCount { get; init; } = 1;                   // > 1 needs FormatSupport.Multisample
+    public required TextureUsage Usage { get; init; }
+    public string? DebugName { get; init; }
+}
+
+[Flags] public enum TextureUsage { None = 0, Sampled = 1, Storage = 2, ColorTarget = 4, DepthStencilTarget = 8, CopySource = 16, CopyDestination = 32 }
+
+public enum TextureFormat
+{
+    Undefined, R8Unorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb, Bgra8Unorm, Bgra8UnormSrgb,
+    R16Float, Rg16Float, Rgba16Float, R32Float, Rg32Float, Rgba32Float, R32Uint, Rgba8Uint,
+    Depth16Unorm, Depth32Float,
+}
+
+public readonly record struct TextureViewDescription
+{
+    public required TextureHandle Texture { get; init; }
+    public TextureViewDimension Dimension { get; init; }         // Texture2D, Texture2DArray
+    public int BaseMipLevel { get; init; }
+    public int MipLevelCount { get; init; } = 1;
+    public int BaseArrayLayer { get; init; }
+    public int ArrayLayerCount { get; init; } = 1;
+    public string? DebugName { get; init; }
+}
+
+public readonly record struct SamplerDescription
+{
+    public Filter MinFilter { get; init; }                       // Nearest (default), Linear
+    public Filter MagFilter { get; init; }
+    public Filter MipmapFilter { get; init; }
+    public AddressMode AddressU { get; init; }                   // ClampToEdge (default), Repeat, MirrorRepeat, ClampToBorder
+    public AddressMode AddressV { get; init; }
+    public BorderColor BorderColor { get; init; }                // TransparentBlack, OpaqueBlack, OpaqueWhite
+    public float MaxAnisotropy { get; init; } = 1;               // > 1 needs GraphicsFeatures.SamplerAnisotropy
+    public CompareFunction? Compare { get; init; }               // depth-compare samplers
+    public string? DebugName { get; init; }
+}
+```
+
+The texture formats are the set every M1 consumer needs (sprites, render targets, the overlay, conformance), plus the two depth formats. `Depth16Unorm` is guaranteed as a depth attachment by the Vulkan specification; `Depth32Float` is near-universal but checked like any other format. Depth-stencil formats (stencil masking for UI, M3), 3D and cube textures are added when a consumer needs them. Nearest filtering is the default because pixel-art is the common 2D case.
+
+**Which failures are exceptions and which are results:**
+
+| Failure | Mechanism |
+|---------|-----------|
+| Structurally invalid description: zero size or usage, mip count above `floor(log2(max(w,h)))+1`, a view outside its texture, `Readback` with a non-copy usage, a non-positive `MaxAnisotropy` | `ArgumentException` (`ArgumentOutOfRangeException` for ranges) |
+| A limit exceeded (`Width > MaxTextureDimension2D`) or a feature not enabled (`MaxAnisotropy > 1` without `SamplerAnisotropy`) | `ArgumentOutOfRangeException` / `InvalidOperationException`: the caller can check `Capabilities` |
+| Format, usage or sample count the device doesn't support (`GetFormatSupport` says no) | `Result` failure, `ErrorKind.Unsupported`: depends on hardware, so callers fall back |
+| Device or host out of memory | `Result` failure, `ErrorKind.OutOfMemory` |
+| Device lost | `Result` failure, `ErrorKind.Unavailable` (section 12) |
+
+## 6. Uploads, transient data and readback
+
+All CPU-to-GPU data goes through a per-frame **upload ring** (docs/03 3.8 "per-frame upload rings", "a staging ring"):
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public Result WriteBuffer(BufferHandle buffer, long offset, ReadOnlySpan<byte> data);
+    public Result WriteTexture(in TextureWrite write, ReadOnlySpan<byte> data);
+    public bool TryReadBuffer(BufferHandle buffer, long offset, Span<byte> destination);
+}
+
+public readonly record struct TextureWrite
+{
+    public required TextureHandle Texture { get; init; }
+    public int MipLevel { get; init; }
+    public int ArrayLayer { get; init; }
+    public required TextureRegion Region { get; init; }          // X, Y, Width, Height in texels
+    public int BytesPerRow { get; init; }                        // 0 = tightly packed
+}
+
+public readonly struct CommandList
+{
+    public TransientAllocation AllocateTransient(long byteCount, TransientUsage usage);
+    public void CopyBufferToBuffer(in BufferCopy copy);
+    public void CopyTextureToBuffer(in TextureBufferCopy copy);
+    public void CopyBufferToTexture(in TextureBufferCopy copy);
+    public void CopyTextureToTexture(in TextureCopy copy);      // same format and size; no scaling in M1
+}
+
+public readonly ref struct TransientAllocation
+{
+    public BufferHandle Buffer { get; }      // owned by the device; valid in this frame only
+    public long Offset { get; }              // aligned for the usage (uniform: MinUniformBufferOffsetAlignment)
+    public Span<byte> Data { get; }          // CPU-writable until SubmitFrame
+}
+
+[Flags] public enum TransientUsage { Vertex = 1, Index = 2, Uniform = 4, Storage = 8, Indirect = 16 }
+```
+
+- **Write semantics (the same as WebGPU's `queue.writeBuffer`):** `WriteBuffer` and `WriteTexture` copy `data` into the ring at once, so the caller's span can be reused when the call returns. The GPU copies run at the start of the next submitted frame, before any of its passes, and the frame planner orders them after every earlier frame's use of the destination (section 10). So a write is visible to every pass of the next frame, never to work already submitted, and never races a frame in flight. Writes made between frames (loading) go into the next frame. To give two passes of one frame different data, use two buffers or transient allocations.
+- **Transient allocations** are for data rebuilt every frame (sprite instances, overlay vertices, per-frame uniforms): the CPU writes straight into ring memory that the GPU reads in the same frame, without a copy. They can be bound with an offset as vertex, index or indirect buffers, or in a frame bind group (section 8). Using one after its frame was submitted is a stale handle.
+- **Overflow:** the ring holds `UploadRingBytesPerFrame` per slot. A write or allocation that doesn't fit gets a dedicated block for that frame only, freed with the frame's deletion queue, counted in `GraphicsStatistics.UploadOverflowBytes` and logged at most once per frame at `Warning`. If that block can't be allocated the call returns `ErrorKind.OutOfMemory` and nothing was written. Overflow costs one GPU allocation; it never stalls or drops data.
+- **Readback** (needed by conformance): copy into a `Readback` buffer in a frame, then `TryReadBuffer` returns `false` until `CompletedFrameNumber` reaches the frame that last wrote it, and copies the bytes once it has. It never waits. Tests that need the result now call `WaitIdle()` first. Out-of-range reads or a non-`Readback` buffer throw `ArgumentException`.
+- **Validation:** offsets and sizes must lie inside the destination, `TextureWrite` regions inside the mip level, `data` must be at least `BytesPerRow * Height` bytes, and the destination must have `CopyDestination` usage; otherwise `ArgumentException`.
+
+## 7. Shaders and pipelines
+
+By decision (maintainer, 2026-11-26; ADR-0012, #52), M1 shaders are Slang sources cooked offline to SPIR-V by `tools/BrutalEngine.Cook`, committed, and embedded as resources in the consuming assembly. The runtime never parses shader source (docs/03 3.8).
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public Result<ShaderModuleHandle> CreateShaderModule(in ShaderModuleDescription description);
+    public Result<BindGroupLayoutHandle> CreateBindGroupLayout(in BindGroupLayoutDescription description);
+    public Result<PipelineLayoutHandle> CreatePipelineLayout(in PipelineLayoutDescription description);
+    public Result<GraphicsPipelineHandle> CreateGraphicsPipeline(GraphicsPipelineDescription description);
+    public Result<ComputePipelineHandle> CreateComputePipeline(ComputePipelineDescription description);
+}
+
+public readonly record struct ShaderModuleDescription
+{
+    public required ReadOnlyMemory<ShaderCode> Code { get; init; }  // one or more formats; the backend picks its own
+    public string? DebugName { get; init; }
+}
+
+public readonly record struct ShaderCode(ShaderCodeFormat Format, ReadOnlyMemory<byte> Bytes);
+public enum ShaderCodeFormat { SpirV }                               // later backends add their formats
+```
+
+- A module can carry several code formats, so a future Metal or D3D12 backend only adds a `ShaderCodeFormat` and the cooker emits it; SPIR-V is just bytes here. A module with no format the backend consumes returns `Unsupported`.
+- The front end checks SPIR-V structurally (length a multiple of 4, the magic number `0x07230203`) and throws `ArgumentException`, because embedded bytecode that fails this is a build error, not a runtime condition. A driver rejecting valid-looking code returns `ErrorKind.InvalidData`.
+- **Pipeline layouts are declared in C#**: there is no reflection data in M1, so the code that owns a shader declares its bind group layouts and push-constant range next to it. M2's cooker adds reflection blobs, and a conformance check will then compare declared layouts with reflected ones. This is the one place M1 deviates from docs/03 3.8 ("cooked SPIR-V plus reflection data"), by the shader-bytecode decision above.
+
+```csharp
+public readonly record struct PipelineLayoutDescription
+{
+    public required ReadOnlyMemory<BindGroupLayoutHandle> BindGroupLayouts { get; init; } // index = group (set) number
+    public PushConstantRange PushConstants { get; init; }            // Size 0 = none; <= MaxPushConstantBytes
+    public string? DebugName { get; init; }
+}
+
+public readonly record struct PushConstantRange(ShaderStages Stages, int Size);  // Size a multiple of 4
+[Flags] public enum ShaderStages { None = 0, Vertex = 1, Fragment = 2, Compute = 4 }
+
+public sealed record GraphicsPipelineDescription
+{
+    public required PipelineLayoutHandle Layout { get; init; }
+    public required ShaderStage Vertex { get; init; }
+    public ShaderStage? Fragment { get; init; }
+    public ReadOnlyMemory<VertexBufferLayout> VertexBuffers { get; init; }
+    public PrimitiveTopology Topology { get; init; }                 // TriangleList (default), TriangleStrip, LineList, LineStrip
+    public RasterState Raster { get; init; }                         // CullMode None (default), FrontFace CounterClockwise
+    public DepthState? Depth { get; init; }                          // Format, Write, Compare; no stencil in M1
+    public required ReadOnlyMemory<ColorTargetState> ColorTargets { get; init; } // Format, Blend?, WriteMask
+    public int SampleCount { get; init; } = 1;
+    public string? DebugName { get; init; }
+}
+
+public sealed record ComputePipelineDescription
+{
+    public required PipelineLayoutHandle Layout { get; init; }
+    public required ShaderStage Compute { get; init; }
+    public string? DebugName { get; init; }
+}
+
+public readonly record struct ShaderStage(ShaderModuleHandle Module, string EntryPoint);
+public readonly record struct VertexBufferLayout(int Stride, VertexStepMode StepMode, ReadOnlyMemory<VertexAttribute> Attributes);
+public readonly record struct VertexAttribute(int Location, VertexFormat Format, int Offset);
+public readonly record struct ColorTargetState(TextureFormat Format, BlendState? Blend, ColorWriteMask WriteMask = ColorWriteMask.All);
+public readonly record struct BlendState(BlendComponent Color, BlendComponent Alpha)
+{
+    public static BlendState AlphaBlending { get; }           // src-alpha, one-minus-src-alpha
+    public static BlendState PremultipliedAlpha { get; }
+    public static BlendState Additive { get; }
+}
+// VertexFormat: Float32, Float32x2, Float32x3, Float32x4, Float16x2, Float16x4, Unorm8x4, Uint8x4, Uint32, Uint32x2, Sint32.
+```
+
+- **Render target formats are part of the pipeline** (`ColorTargets`, `Depth.Format`, `SampleCount`), because dynamic rendering has no render pass objects: the backend passes them as `VkPipelineRenderingCreateInfo` (#55). A pass whose attachments don't match the bound pipeline's formats throws `InvalidOperationException` at `SetPipeline`.
+- Viewport and scissor are always dynamic state (section 9). Everything else is baked, so a pipeline never needs recompiling at draw time.
+- Pipeline descriptions are `sealed record` classes: they hold arrays and are created at load time, never per frame. Creating a pipeline may take milliseconds (driver compilation); pipeline caching on disk is out of scope for M1.
+
+## 8. Bind groups
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public Result<BindGroupHandle> CreateBindGroup(in BindGroupDescription description);
+}
+
+public readonly record struct BindGroupLayoutDescription
+{
+    public required ReadOnlyMemory<BindGroupLayoutEntry> Entries { get; init; }
+    public string? DebugName { get; init; }
+}
+
+public readonly record struct BindGroupLayoutEntry(int Binding, ShaderStages Visibility, BindingType Type, int Count = 1);
+public enum BindingType { UniformBuffer, StorageBuffer, ReadOnlyStorageBuffer, SampledTexture, StorageTexture, Sampler }
+
+public readonly ref struct BindGroupDescription
+{
+    public required BindGroupLayoutHandle Layout { get; init; }
+    public required ReadOnlySpan<BindGroupEntry> Entries { get; init; }
+    public BindGroupLifetime Lifetime { get; init; }               // Persistent (default) or Frame
+    public string? DebugName { get; init; }                        // ignored for Frame groups
+}
+
+public readonly record struct BindGroupEntry          // created through the factories, one per binding (and array element)
+{
+    public static BindGroupEntry Buffer(int binding, BufferHandle buffer, long offset = 0, long size = 0); // 0 = to the end
+    public static BindGroupEntry Transient(int binding, in TransientAllocation allocation, long size);
+    public static BindGroupEntry Texture(int binding, TextureViewHandle view, int arrayElement = 0);
+    public static BindGroupEntry Sampler(int binding, SamplerHandle sampler, int arrayElement = 0);
+}
+
+public enum BindGroupLifetime { Persistent, Frame }
+```
+
+- **Immutable.** A bind group never changes after creation. To bind different resources, create another group. That keeps the frame planner's resource-usage tracking exact (section 10) and maps to every backend.
+- **Persistent groups** live until destroyed: material textures, samplers, long-lived buffers. Creating one allocates (a copy of its entries for usage tracking) and belongs to load time.
+- **Frame groups** are valid only in the frame they were created in and are released with it. They are created in the frame loop with no managed allocation (the description is a `ref struct` over a span), and are the way to bind transient allocations. The backend serves them from per-frame pools reset with the frame slot (#55). Creating one outside an open frame throws `InvalidOperationException`; using one in a later frame throws `StaleHandleException`.
+- **Validation** against the layout: every binding filled exactly once with a resource of the declared type and the needed usage (`Uniform`, `Storage`, `Sampled`, ...), uniform offsets aligned to `MinUniformBufferOffsetAlignment`. Violations throw `ArgumentException`. Layouts reject duplicate binding numbers and `Count < 1`.
