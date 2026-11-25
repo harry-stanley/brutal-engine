@@ -182,3 +182,194 @@ An **archetype** is a unique set of component ids. It owns a column table (compo
 - **Edges:** per archetype, add and remove edges map a component id to the neighbouring archetype through a small open-addressing table in unmanaged memory. S5 used a dense 256-entry `int` table per archetype, 3 KB each (`DESIGN-NOTES.md:158`, `Ecs.cs:69`). A miss looks the signature up in a world-level map, creating the archetype if needed.
 - **Allocation:** creating an archetype allocates managed metadata once per new signature. Operations that only reuse existing archetypes allocate nothing managed.
 - **Determinism:** archetype indices follow creation order; chunk and row order follow the operations, never addresses or hash order. Internal hash maps use fixed seeds and are never iterated to produce an order.
+
+## 5. Queries
+
+```csharp
+public sealed class QueryBuilder                                 // from EcsWorld.Query() or SystemBuilder.Query(); setup only
+{
+    public QueryBuilder Read<T>() where T : unmanaged, IComponent;            // required, read access
+    public QueryBuilder Write<T>() where T : unmanaged, IComponent;           // required, write access
+    public QueryBuilder With<T>() where T : unmanaged, IComponent;            // required, no data access (tags)
+    public QueryBuilder Without<T>() where T : unmanaged, IComponent;
+    public QueryBuilder OptionalRead<T>() where T : unmanaged, IComponent;
+    public QueryBuilder OptionalWrite<T>() where T : unmanaged, IComponent;
+    public QueryBuilder Changed<T>() where T : unmanaged, IComponent;         // required; chunk filter
+    public QueryBuilder Added<T>() where T : unmanaged, IComponent;           // required; chunk filter
+    public Query Build();
+}
+
+public sealed class Query : IDisposable                          // owned by its world; Dispose releases it early
+{
+    public EcsWorld World { get; }
+    public uint LastRunTick { get; }
+    public ChunkEnumerator GetEnumerator();                      // foreach (ChunkView chunk in query)
+    public int CountEntities();                                  // matching rows, ignoring Changed/Added filters
+    public void Dispose();
+}
+
+public ref struct ChunkEnumerator
+{
+    public ChunkView Current { get; }
+    public bool MoveNext();
+    public void Dispose();                                       // foreach calls it; ends the iteration guard
+}
+
+public readonly ref struct ChunkView
+{
+    public int Count { get; }
+    public ReadOnlySpan<Entity> Entities { get; }
+    public ReadOnlySpan<T> Read<T>() where T : unmanaged, IComponent;  // declared Read, Write or optional and present
+    public Span<T> Write<T>() where T : unmanaged, IComponent;         // declared Write; stamps T's Changed tick
+    public bool Has<T>() where T : unmanaged, IComponent;               // for optional terms
+    public bool Changed<T>() where T : unmanaged, IComponent;           // newer than the query's LastRunTick
+    public bool Added<T>() where T : unmanaged, IComponent;
+}
+```
+
+`EcsWorld.Query()` returns a new `QueryBuilder`. The primary shape is the chunk loop (S5 shape 1, `DESIGN-NOTES.md:64-66`), which runs at span speed with no allocation:
+
+```csharp
+Query movers = world.Query().Write<LocalTransform2D>().Read<Velocity>().Without<Frozen>().Build();   // setup
+
+foreach (ChunkView chunk in movers)                              // per frame
+{
+    Span<LocalTransform2D> transforms = chunk.Write<LocalTransform2D>();
+    ReadOnlySpan<Velocity> velocities = chunk.Read<Velocity>();
+    for (int i = 0; i < transforms.Length; i++)
+    {
+        transforms[i].Position += velocities[i].Value * dt;
+    }
+}
+```
+
+- **Shapes.** Chunk loops for hand-written code, and generated system loops for the per-entity form (section 9), which compile to the same chunk loop (S5's struct-callback shape measured within noise of span loops, `DESIGN-NOTES.md:67`). There is **no per-entity enumerator**: S5's `ref` pair enumerator took 1.31 ms for 1M x 2 and failed the 1 ms target (`DESIGN-NOTES.md:69`). There is no public struct-callback interface either: generated code calls the user's method directly.
+- **Matching:** an archetype matches when its mask contains every required term (`Read`, `Write`, `With`, `Changed`, `Added`) and none of the `Without` terms.
+- **Caching:** a query keeps an unmanaged list of matched archetypes with the column offset of each term per archetype (`DESIGN-NOTES.md:75-76`). Enumeration first scans only the archetypes created since the last refresh, because archetypes are append-only, so it never allocates managed memory.
+- **Declared access is enforced:** `Read<T>` on a type the query didn't declare, or `Write<T>` on one not declared `Write`, throws `InvalidOperationException` (one mask test). So a query's terms are exactly what it touches, which is what schedule conflict detection relies on (section 7). An absent optional column: `Has<T>` is false and `Read`/`Write` throw.
+- **Iteration guard:** while any chunk enumerator of a world is live, structural changes to that world throw `InvalidOperationException`. Nested enumeration of several queries is allowed. `foreach` always disposes the enumerator; code that calls `GetEnumerator` by hand must dispose it.
+
+**Change detection** (ADR-0006: per-component, per-chunk version counters):
+
+- `EcsWorld.ChangeTick` is a `uint` that starts at 1. A schedule advances it before each system runs (section 7); code outside schedules calls `AdvanceChangeTick()`. Writes stamp the current tick: `EcsWorld.Write`/`Set` stamp the entity's chunk, and `ChunkView.Write<T>()` stamps T's column when called, whether or not rows are then written. `Read` never stamps (`DESIGN-NOTES.md:66`, `:101`).
+- `Changed<T>` and `Added<T>` filter **chunks**: a chunk is yielded when T's tick there is newer than the query's `LastRunTick`. Several filters must all hold. Consumers re-check rows themselves; the granularity is one chunk (about 2,700 rows when a row is 24 bytes and chunks are 64 KiB). The `Added` tick is separate from `Changed` (`DESIGN-NOTES.md:104`), so physics and render extract can tell new rows from modified ones.
+- `LastRunTick` becomes the tick at which an enumeration started, but only when that enumeration ran to completion; a loop that breaks early sees the same chunks again next time. Queries owned by a system use the system's last-run tick instead (section 7), so a system never sees its own writes as changes.
+- **Wrap-safe comparison:** "newer" means `(int)(tick - since) > 0` (`DESIGN-NOTES.md:102`, `Ecs.cs:491-492`), valid while ages stay under 2³¹ ticks. To keep them there, whenever `ChangeTick` crosses a multiple of 2³⁰ the world rewrites every chunk tick and `LastRunTick` older than `ChangeTick - 2³⁰` to that value: one pass over chunk x column ticks and queries, no allocation. At 100 system runs per frame and 60 frames per second that is about every 50 hours, and at 1,000 runs and 240 frames per second about every 75 minutes; tests reach it through an internal seam that sets the tick.
+
+## 6. Command buffers
+
+```csharp
+public sealed class CommandBuffer : IDisposable
+{
+    public CommandBuffer(EcsWorld world, int initialCapacityBytes = 4096);   // stream from the world's allocator
+    public EcsWorld World { get; }
+    public int CommandCount { get; }
+    public int ByteCount { get; }
+    public int LastPlaybackSkippedCount { get; }                 // commands dropped for dead targets
+
+    public Entity Spawn();
+    public Entity Spawn<T1>(in T1 c1) where T1 : unmanaged, IComponent;
+    // ... up to Spawn<T1, T2, T3, T4>
+    public void SpawnBatch<T1>(ReadOnlySpan<T1> c1, Span<Entity> entities) where T1 : unmanaged, IComponent;
+    public void SpawnBatch<T1, T2>(ReadOnlySpan<T1> c1, ReadOnlySpan<T2> c2, Span<Entity> entities)
+        where T1 : unmanaged, IComponent where T2 : unmanaged, IComponent;
+    // ... up to four columns; every span must have entities.Length elements (ArgumentException)
+    public void Despawn(Entity entity);
+    public void Set<T>(Entity entity, in T value) where T : unmanaged, IComponent;   // add or replace
+    public void Remove<T>(Entity entity) where T : unmanaged, IComponent;            // no-op if absent
+    public void SetParent(Entity child, Entity parent);          // section 8
+    public void ClearParent(Entity child);
+
+    public void Playback();                                      // apply to World, then reset (capacity kept)
+    public void Clear();                                         // discard, releasing reserved entities
+    public void Dispose();                                       // Clear, then free the stream
+}
+```
+
+- **Record format:** an unmanaged byte stream of 8-byte-aligned records `[header: op, flags, component count, payload bytes][target Entity][per component: ComponentId + value bytes]` (S5's stream, `DESIGN-NOTES.md:82`). A `SpawnBatch` record holds the entity range and each column's values contiguously. Values are copied at record time. The stream and the playback scratch keep their capacity after `Playback`/`Clear`, so steady-state recording and playback allocate no managed memory (`DESIGN-NOTES.md:83`).
+- **Reservation at record time:** `Spawn*` reserves the entity immediately (pending, section 2) and returns it, so later commands in this or a later-played buffer can target it, and it can be stored in components before it exists (`DESIGN-NOTES.md:84`).
+- **Archetypes are resolved at playback**, never at record time (`DESIGN-NOTES.md:96`), so recording doesn't mutate the world's archetype tables. That is what lets recording move to job threads in M2 without an API change.
+- **Playback order** is recording order, with two batching rules that don't change the result:
+  - A run of consecutive spawn records with the same component set becomes one batch: rows are reserved a chunk at a time and each column is copied as contiguous runs (`DESIGN-NOTES.md:88-89`). The archetype lookup is cached across the run.
+  - A run of consecutive `Despawn` records is gathered into unmanaged scratch, resolved once, with dead and duplicate targets dropped and descendants appended (section 8), sorted by archetype, then chunk and row descending, and removed. Swap-removes then rarely move a row that is about to be deleted (`DESIGN-NOTES.md:90`). This changes only the positions of surviving rows, deterministically for a given buffer.
+  - Each command checks its target's liveness once (S5 checked twice, `DESIGN-NOTES.md:91`).
+- **Dead targets are skipped**, not thrown, and counted in `LastPlaybackSkippedCount` (`DESIGN-NOTES.md:85`): another system may legitimately have despawned the target. `Set` adds or replaces and `Remove` of an absent component is a no-op, for the same reason.
+- **Misuse at playback throws `InvalidOperationException`:** a target that is still pending because another buffer reserved it and hasn't been played back (wrong playback order), or a hierarchy cycle or depth overflow (section 8). Commands before it stay applied; the rest of the buffer is discarded and its reservations released, so the world stays consistent at command granularity.
+- `Clear` and `Dispose` of an unplayed buffer free its reserved entities with advanced generations, so handles to them are stale.
+- **Thread rules.** M1: recording and playback happen on the owner thread (checked), and a buffer is not thread-safe. M2: systems record from job threads, each into its own buffer (`DESIGN-NOTES.md:94`), and reservation becomes lock-free: an atomic cursor over a snapshot of the free queue plus atomic growth of fresh indices (`DESIGN-NOTES.md:95`). Playback stays on the owner thread at sync points, in system order.
+- **Budget:** 100,000 spawns plus 100,000 despawns per frame through a buffer in under 5 ms on the reference machine (ADR-0006), including **shuffled** despawn order and at p99, the cases S5 failed at about 6 ms (`DESIGN-NOTES.md:87`). The benchmark issue gates it; a miss is reported before the API is frozen.
+
+## 7. Schedules
+
+```csharp
+public interface ISystem
+{
+    void Configure(SystemBuilder builder);                       // once, when its schedule is built
+    void Run(in SystemContext context);
+}
+
+public sealed class SystemBuilder
+{
+    public QueryBuilder Query();                                 // the query belongs to the system and declares its access
+    public SystemBuilder Reads<T>() where T : unmanaged, IComponent;    // random access: EcsWorld.Get/TryGet/Has
+    public SystemBuilder Writes<T>() where T : unmanaged, IComponent;   // random access: EcsWorld.Write/Set
+    public SystemBuilder Exclusive();                            // direct structural calls; conflicts with every system
+}
+
+public readonly struct SystemContext
+{
+    public EcsWorld World { get; }
+    public CommandBuffer Commands { get; }                       // this system's buffer, played at the next sync point
+    public TimeSpan Delta { get; }
+    public float DeltaSeconds { get; }
+    public uint LastRunTick { get; }                             // 0 on the first run
+}
+
+public readonly record struct ScheduleLabel(string Name)
+{
+    public static ScheduleLabel FixedUpdate { get; }
+    public static ScheduleLabel Update { get; }
+    public static ScheduleLabel PostUpdate { get; }
+}
+
+public sealed record SystemOptions
+{
+    public required string Name { get; init; }                  // unique within the schedule
+    public IReadOnlyList<string> After { get; init; } = [];
+    public IReadOnlyList<string> Before { get; init; } = [];
+}
+
+public sealed class Schedule
+{
+    public ScheduleLabel Label { get; }
+    public int SystemCount { get; }
+    public void Add(ISystem system, SystemOptions options);
+    public void AddSyncPoint(SystemOptions options);             // ordered like a system
+    public ScheduleReport Build();                               // Run builds first if needed
+    public void Run(TimeSpan delta);
+    public int GetTimings(Span<SystemTiming> destination);       // last run, in execution order
+}
+
+public sealed class ScheduleCollection
+{
+    public Schedule this[ScheduleLabel label] { get; }           // ArgumentException if absent
+    public Schedule Create(ScheduleLabel label);                 // ArgumentException if it exists
+    public bool TryGet(ScheduleLabel label, [NotNullWhen(true)] out Schedule? schedule);
+}
+
+public sealed record ScheduleReport(IReadOnlyList<string> Order, IReadOnlyList<SystemConflict> UnorderedConflicts);
+public readonly record struct SystemConflict(string First, string Second, string ComponentName);
+public readonly record struct SystemTiming(string Name, TimeSpan Elapsed);
+```
+
+On `EcsWorld`: `public void RunSchedule(ScheduleLabel label, TimeSpan delta)` runs `Schedules[label]`. A new world has the three empty schedules `FixedUpdate`, `Update` and `PostUpdate` ([Architecture 3.2](../03-architecture.md#32-application-host-and-main-loop) runs them; the Runtime host decides when), and installs the transform system in `PostUpdate` (section 8).
+
+- **Ordering:** `Build` topologically sorts the systems and sync points by `After`/`Before`; ties go to insertion order. An unknown name throws `ArgumentException`, a duplicate name throws at `Add`, and a cycle throws `InvalidOperationException` listing it. Adding after a build marks the schedule for rebuild on the next `Run`. `Build` calls each system's `Configure`, creates its command buffer, and allocates; `Run` doesn't.
+- **Access and conflicts:** a system's access is the union of its queries' terms, `Reads`, `Writes` and `Exclusive`. Two systems conflict when one writes a component the other reads or writes, or either is exclusive. `ScheduleReport.UnorderedConflicts` lists conflicting pairs with no ordering path between them, for the log and the debug overlay. That is not an error: such a pair runs in insertion order in M1, and the M2 executor never runs conflicting systems concurrently and keeps the same order, so results don't depend on threading.
+- **Enforcement while a schedule runs:** the world knows the running system. Random access outside its `Reads`/`Writes`/query terms throws `InvalidOperationException`, and so does a direct structural call from a non-exclusive system (use `context.Commands`).
+- **Sync points:** every system gets its own command buffer. A sync point plays back, in system order, the buffers of all systems ordered before it that haven't been played. The end of every `Run` is an implicit sync point, and so is the start of each exclusive system.
+- **Ticks:** before each system runs, the world advances `ChangeTick`. `context.LastRunTick` is the tick of that system's previous run, and its queries filter against it.
+- **Timings:** each system's run is timed with `WorldOptions.Clock.GetTimestamp()`, for the debug overlay's per-system CPU panel. No allocation.
+- **Exceptions** thrown by a system propagate unchanged out of `Run`; the run's unplayed command buffers are cleared (reservations released) and the schedule stays usable. Structural state stays consistent, because non-exclusive systems change structure only through buffers.
+- **Determinism:** for the same initial world, schedule and inputs, a run produces the same world: system order is fixed as above, buffers play back in system order and then recording order, entity indices are reused FIFO, and iteration order follows archetype creation, chunk and row order. Nothing depends on addresses, hash order or wall-clock time.
+- **Parallel execution in M2**, behind this API: the executor runs waves of ready, mutually non-conflicting systems on BRUTAL's `JobScheduler`, one preallocated `IJob` per system (`Brutal.Concurrency/Jobs/IJob.cs:6-9`), with `Queue` (`Brutal.Concurrency/Jobs/JobScheduler.cs:65-74`), `ExecuteJobs` (`Brutal.Concurrency/Jobs/JobScheduler.cs:89`) and `Wait` (`Brutal.Concurrency/Jobs/JobScheduler.cs:79-83`) per wave (S5's proposal, `DESIGN-NOTES.md:146`). `Queue` throws while jobs run (`Brutal.Concurrency/Jobs/JobScheduler.cs:67-68`), which is why the executor works in waves, and `Wait` busy-spins. `JobRunner` doesn't catch a job's exception (`Brutal.Concurrency/Jobs/JobRunner.cs:281-308`), so the executor catches inside each job and rethrows on the owner thread. Chunk-parallel iteration inside one system splits slices of at most 16k rows (`DESIGN-NOTES.md:119`). `ISystem`, `SystemBuilder` and `SystemContext` already contain nothing thread-specific.
