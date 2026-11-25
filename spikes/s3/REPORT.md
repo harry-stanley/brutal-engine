@@ -4,19 +4,25 @@ Question: can the GitHub-hosted `ubuntu-24.04` and `windows-2025` runners run he
 rendering on a software driver with `VK_LAYER_KHRONOS_validation` on, driven from BRUTAL's Vulkan
 bindings in a .NET 10 program that renders offscreen and reads the pixels back?
 
+**Answer: yes, on both.** Lavapipe passes the test with 0 validation errors and every pixel correct, and the injected bug is caught. Setup takes about 30 s per OS
+(run https://github.com/harry-stanley/brutal-engine/actions/runs/45549608616).
+
+Not verified: SwiftShader (not tried); whether `VK_DRIVER_FILES` alone works in the elevated Windows runner (HKLM registration was used as well);
+real rendering beyond a clear (no pipeline/shaders exercised); behaviour under load or with parallel jobs.
+
 Branch: `spike/s3-software-vulkan` (throwaway). Files: `spikes/s3/VulkanHeadless.cs`, `.github/workflows/spike-s3.yml`.
 
 ## CI status
 
-<!--CI-STATUS-->
-**Not run on GitHub yet.** The push of the spike branch was rejected:
-`refusing to allow an OAuth App to create or update workflow .github/workflows/spike-s3.yml without workflow scope`.
-The gh token's scopes are `gist, read:org, repo`, and a push that adds a file under `.github/workflows/`
-needs the `workflow` scope too. Fix: `gh auth refresh -h github.com -s workflow`, which is interactive and needs
-the maintainer. Then push:
-`git -C <worktree> -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -u https://github.com/harry-stanley/brutal-engine.git spike/s3-software-vulkan`.
-The branch is committed locally and ready to push.
-<!--/CI-STATUS-->
+**Both pass on GitHub-hosted runners.** Run [45549608616](https://github.com/harry-stanley/brutal-engine/actions/runs/45549608616) (commit `8cb8c2a`):
+- linux (ubuntu-24.04), success: https://github.com/harry-stanley/brutal-engine/actions/runs/45549608616/job/138987356771
+- windows (windows-2025), success: https://github.com/harry-stanley/brutal-engine/actions/runs/45549608616/job/138987357080
+
+An earlier run, [45548871014](https://github.com/harry-stanley/brutal-engine/actions/runs/45548871014), passed on Linux but ran the test on .NET 11 (see Problems).
+Its Windows job died in a diagnostic step before reaching Vulkan: `Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse` on a missing key
+overflowed the pwsh stack after 4 minutes.
+
+The first push was rejected because the gh token lacked the `workflow` scope (it had `gist, read:org, repo`). The maintainer then refreshed the token.
 
 ## Test program (`spikes/s3/VulkanHeadless.cs`)
 
@@ -45,10 +51,8 @@ The branch is committed locally and ready to push.
 | Local Win11 (26300), NVIDIA RTX 2070 SUPER, driver 621.24, LunarG SDK 1.4.363.0 layers | DiscreteGpu, NvidiaProprietary | 1.4.357 | 0 err / 0 warn | 4096/4096 OK | exit 2 (2 errors: layout mismatch) |
 | Local Win11, **lavapipe from pal1000 mesa-dist-win 26.3.1** via `VK_DRIVER_FILES` (non-elevated) | `llvmpipe (LLVM 23.1.6, 256 bits)`, Cpu, MESALlvmpipe, "Mesa 26.3.1 (git-f367ac0da2)", conformance 1.3.1.1 | 1.4.363 | 0 / 0 | 4096/4096 OK | exit 2 |
 | Local WSL2 Ubuntu 26.04.1, distro `mesa-vulkan-drivers` 26.0.8 + `vulkan-validationlayers` 1.4.341 (unpacked .deb, `VK_ADD_LAYER_PATH`) | `llvmpipe (LLVM 21.1.8, 256 bits)`, Cpu, MESALlvmpipe, "Mesa 26.0.8-1ubuntu0.3", conformance 1.3.1.1 | 1.4.335 | 0 / 0 | 4096/4096 OK | exit 2 |
-<!--CI-ROWS-->
-| GitHub ubuntu-24.04 | not run (push blocked) | | | | |
-| GitHub windows-2025 | not run (push blocked) | | | | |
-<!--/CI-ROWS-->
+| **GitHub ubuntu-24.04** (image 20261116.133.1, Ubuntu 24.04.5), .NET 10.0.15 | `llvmpipe (LLVM 20.1.2, 256 bits)`, Cpu, MESALlvmpipe, "Mesa 25.2.8-0ubuntu0.24.04.5", conformance 1.3.1.1; loader 1.3.275, VVL 1.3.275 | 1.4.318 | **0 / 0** | **4096/4096 OK** | **exit 2** (VUID-VkImageMemoryBarrier2-oldLayout-01211, -01197) |
+| **GitHub windows-2025** (image `windows-2025-vs2026` 20261116.315.1, build 26100, elevated), .NET 10.0.15 | `llvmpipe (LLVM 23.1.6, 256 bits)`, Cpu, MESALlvmpipe, "Mesa 26.3.1 (git-f367ac0da2)", conformance 1.3.1.1; loader 1.4.363.1, VVL 1.4.363 | 1.4.363 | **0 / 0** | **4096/4096 OK** | **exit 2** (2 layout errors) |
 
 Local timings: the Vulkan work itself takes 0.27–0.75 s per run (instance + validation ≈ 0.1–0.5 s, submit + fence ≈ 2–3 ms).
 
@@ -62,52 +66,68 @@ Shared: `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` (v7.0.1),
   Noble versions per Launchpad (2026-11-25): `mesa` **25.2.8-0ubuntu0.24.04.5** (noble-updates, main), `vulkan-validationlayers`
   **1.3.275.0-1** (universe), `vulkan-loader`/`libvulkan1` **1.3.275.0-1build1**. Apt packages are pinned by the
   Ubuntu archive's signatures rather than SHA-256. Pin `=version` if exact reproducibility matters.
-- `VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json)`. **The ICD file name varies**: Ubuntu 26.04's Mesa
-  ships `lvp_icd.json`, while older builds ship `lvp_icd.x86_64.json`. The workflow globs for it.
+- `VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json)`. **The ICD file name varies**: Ubuntu's Mesa packages (24.04's
+  25.2.8 and 26.04's 26.0.8) ship `lvp_icd.json`, while mesa-dist-win and older builds use `lvp_icd.x86_64.json`. The workflow globs for it. **Observed:**
+  the runner image already had `libvulkan1` 1.3.275.0-1build1 but no ICDs or layers; apt installed Mesa 25.2.8-0ubuntu0.24.04.5 and VVL 1.3.275.0-1.
+- .NET: `spikes/s3/global.json` pins SDK `10.0.100` with `rollForward: latestFeature`, which resolved to 10.0.404 on both runners.
 - BRUTAL loads `libvulkan.so.1` (`ImportResolver.cs`), which `libvulkan1` provides.
 
 ### Windows (windows-2025)
 - **Loader location matters:** BRUTAL calls `NativeLibrary.Load("vulkan-1", asm, DllImportSearchPath.System32)`, so
-  `vulkan-1.dll` must be in `C:\Windows\System32`. Shipping it next to the app does **not** work. The workflow copies the
-  SDK's `Bin\vulkan-1.dll` into System32 if it's missing.
+  `vulkan-1.dll` must be in `C:\Windows\System32`. Shipping it next to the app does **not** work. **Observed on the runner:** the image
+  already has `System32\vulkan-1.dll` **1.3.300.0**, and the SDK silent install upgraded it to **1.4.363.1** (so the workflow's fallback copy
+  never ran). No Khronos registry keys exist before setup (no ICDs, no layers).
 - Lavapipe comes from `https://github.com/pal1000/mesa-dist-win/releases/download/26.3.1/mesa3d-26.3.1-release-msvc.7z`,
   SHA-256 `64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1` (66,270,373 bytes; matches GitHub's asset
   digest and was re-hashed locally). It extracts `x64\vulkan_lvp.dll` (56 MB, no other DLL dependencies needed locally) and
   `x64\lvp_icd.x86_64.json` (`library_path: .\vulkan_lvp.dll`, api 1.4.363).
 - The driver is registered as a DWORD 0 value under `HKLM\SOFTWARE\Khronos\Vulkan\Drivers`. `VK_DRIVER_FILES` is also set, but the
-  loader ignores driver/layer path env vars in **elevated** processes, and hosted Windows runners run elevated. This is
-  based on loader behaviour I know of and is **unverified on the runner**; the workflow prints the elevation state.
+  loader ignores driver/layer path env vars in **elevated** processes, and the runner is elevated (`elevated: True` was logged). Because both
+  were set, the run doesn't show which mechanism the loader used. Local non-elevated runs show that `VK_DRIVER_FILES` alone works. Registry registration is the safe choice.
 - Loader and validation layers come from the LunarG Vulkan SDK **1.4.363.1**:
   `https://sdk.lunarg.com/sdk/download/1.4.363.1/windows/vulkansdk-windows-X64-1.4.363.1.exe`,
   SHA-256 `c02932bd9a968b22d404536108adaacac908c081cd6b0113f5bfefc523dd0a6a` (303,066,832 bytes, hashed locally).
-  It installs silently with `--root C:\VulkanSDK\1.4.363.1 --accept-licenses --default-answer --confirm-command install`, and the workflow
-  registers `Bin\VkLayer_khronos_validation.json` in `HKLM\...\ExplicitLayers` if the installer didn't.
+  It installs silently with `--root C:\VulkanSDK\1.4.363.1 --accept-licenses --default-answer --confirm-command install` (exit 0). **Observed:** the
+  installer itself registers `C:\VulkanSDK\1.4.363.1\Bin\VkLayer_khronos_validation.json` in `HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers`,
+  so the workflow's fallback wasn't needed.
 - Alternatives I looked at and rejected for pinning: Khronos `Vulkan-ValidationLayers` publishes Windows binaries only in the mutable
   `nightly` release (the tagged `vulkan-sdk-*` releases are Android-only), and `Vulkan-Loader` releases are Android-only.
   LunarG's standalone VulkanRT URLs I guessed returned 404. SwiftShader was not tried, because lavapipe worked.
 
 ## Setup time cost
-<!--TIMING-->
-Not measured on runners yet (push blocked). Locally the SDK download took 3.3 s on a fast link. The runner cost to expect is
-apt ≈ 20–60 s on Linux, and on Windows a 303 MB SDK download plus silent install plus a 66 MB Mesa download. **Estimates, unverified.**
-<!--/TIMING-->
+Measured from the step timestamps of run 45549608616:
+
+| | Linux | Windows |
+|---|---|---|
+| Vulkan setup | apt **30 s** (20 s in the earlier run) | Mesa download+verify+extract **3 s**, SDK download **9 s** + silent install **20 s** = **32 s** |
+| Build the file-based app (restore + compile, cold NuGet) | 13–16 s | 27–30 s |
+| Test run + negative test | < 1 s each (Vulkan work ≈ 150 ms) | ≈ 1 s each (≈ 170–300 ms) |
+| Whole job, wall clock | 62 s (44 s earlier) | 75 s |
 
 ## Problems found
-1. **The gh token lacks the `workflow` scope**, so no workflow file can be pushed from this machine until `gh auth refresh -s workflow`.
-2. BRUTAL's Windows loader lookup is **System32 only**, so a CI job (or an end-user machine without GPU drivers) must install `vulkan-1.dll` system-wide.
-3. The lavapipe ICD JSON name differs between Mesa packagings (`lvp_icd.json` vs `lvp_icd.x86_64.json`).
-4. Core `Brutal.Vulkan` keeps `MapMemory` and `AllocateCommandBuffers` internal, so even a minimal test needs `Brutal.Vulkan.Abstractions`.
-5. Ubuntu 24.04's validation layers are old (1.3.275, Jan 2024) compared with the Windows SDK's 1.4.363. Validation coverage differs between the two OSes.
+1. The gh token lacked the `workflow` scope, so the first push of a workflow file was rejected. The maintainer fixed it with `gh auth refresh -s workflow`.
+2. **The runner images preinstall the .NET 11 SDK (11.0.100).** `setup-dotnet` with `10.0.x` installs 10, but the CLI still picks 11, so the first Linux
+   run built and ran on **.NET 11.0.0**. Fixed with `global.json`, and both runners then reported .NET 10.0.15. ci.yml needs a repo-root `global.json`.
+3. `Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse` on a non-existent key makes pwsh walk all of HKLM and die with a stack overflow after
+   about 4 minutes. Read specific keys with `Test-Path` + `Get-Item` instead.
+4. BRUTAL's Windows loader lookup is **System32 only**, so a CI job (or an end-user machine without GPU drivers) must install `vulkan-1.dll` system-wide.
+5. The lavapipe ICD JSON name differs between Mesa packagings (`lvp_icd.json` vs `lvp_icd.x86_64.json`).
+6. Core `Brutal.Vulkan` keeps `MapMemory` and `AllocateCommandBuffers` internal, so even a minimal test needs `Brutal.Vulkan.Abstractions`.
+7. Ubuntu 24.04's validation layers are old (1.3.275, Jan 2024) compared with the Windows SDK's 1.4.363. Validation coverage differs between the two OSes.
    For parity, use the LunarG Linux SDK tarball or build the layers.
 
 ## Recommendation for ci.yml GPU test jobs
-<!--RECOMMENDATION-->
-Provisional, until the runner results are in:
-- Linux: add a `gpu-tests-linux` job on `ubuntu-24.04` with the apt packages above plus the globbed `VK_DRIVER_FILES`. It's cheap, and the
-  software path is proven locally on Mesa 26.0.8.
-- Windows: use the same pattern with the pinned LunarG SDK and mesa-dist-win lavapipe, both SHA-256-checked, plus HKLM driver registration.
-  Cache the extracted SDK `Bin` and `vulkan_lvp.dll` with `actions/cache` keyed on version+hash, to skip the 303 MB download.
-  Strip the install down to `vulkan-1.dll` + the `VkLayer_khronos_validation` dll/json once the runner run confirms which files are needed.
-- Always run the negative (injected-error) test alongside the GPU tests so that a missing layer can't pass silently.
-- Pin `S3_REQUIRE_CPU`-style device selection in tests so that a runner which gains a GPU/ICD doesn't change the results.
-<!--/RECOMMENDATION-->
+**Go: put software-Vulkan GPU tests in ci.yml on both OSes.** They cost about 30 s of setup per job, and validation errors fail the build.
+- **Linux job** (`ubuntu-24.04`): `apt-get install --no-install-recommends libvulkan1 mesa-vulkan-drivers vulkan-validationlayers`
+  (drop `vulkan-tools` unless you want `vulkaninfo`), then `VK_DRIVER_FILES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json)`.
+  If layer parity with Windows matters, use the LunarG Linux SDK tarball 1.4.363.1 instead of the old 1.3.275 distro layers (not tried here).
+- **Windows job** (`windows-2025`): pinned + SHA-256-checked pal1000 mesa-dist-win `release-msvc.7z` (extract only `vulkan_lvp.dll` +
+  `lvp_icd.x86_64.json`), registered in `HKLM\SOFTWARE\Khronos\Vulkan\Drivers`, plus the pinned + SHA-256-checked LunarG SDK silent install
+  (which registers the layer in HKLM and upgrades System32 `vulkan-1.dll`). Add `actions/cache` for the two downloads, keyed on version+hash, if
+  the 9 s SDK download ever becomes flaky. Make the step idempotent and don't recurse registry keys in pwsh.
+- **Pin the SDK with `global.json`** (`10.0.100`, `rollForward: latestFeature`). The images preinstall .NET 11 SDK 11.0.100, and without it
+  `setup-dotnet 10.0.x` doesn't stop the CLI from building/running on .NET 11.
+- Run `S3_REQUIRE_CPU`-style device selection, so a runner that gains a real GPU/ICD can't change results silently, and always run the
+  **negative injected-error test**, so a missing layer can't pass as "0 errors".
+- Treat validation warnings as reported but not failing for now (0 today). Consider failing on them once the engine renderer exists.
+- Keep `VK_EXT_validation_features` sync validation on. It costs nothing measurable at this scale.
