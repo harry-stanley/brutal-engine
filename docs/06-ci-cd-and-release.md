@@ -8,7 +8,7 @@ The source of truth is `github.com/harry-stanley/brutal-engine`. CI runs on GitH
 |----|---------------|----------|
 | Windows | `windows-2025` (x64) | Build, unit, native-boundary, software-Vulkan GPU tests, AOT smoke |
 | Linux | `ubuntu-24.04` (x64) | Same, plus primary golden-image tests (lavapipe), coverage, docs, packaging |
-| macOS | `macos-15` (arm64) | Build, unit, native-boundary, AOT smoke, `.app` bundling. GPU tests depend on spike S3 |
+| macOS | `macos-15` (arm64) | Build, unit, native-boundary, `.app` bundling, and the Vulkan + NativeAOT smoke on bundled MoltenVK (the runner's paravirtual Metal GPU) |
 
 ### Self-hosted runners
 
@@ -50,7 +50,7 @@ CI is split so a typical PR gets feedback in about two minutes, while native and
 | Tier | When | Adds |
 |------|------|------|
 | **Fast** | PRs whose changed paths can't affect native interop, NativeAOT or GPU tests | Format, build and test on all 3 OSes, pack, and the Linux Vulkan + NativeAOT smoke |
-| **Full** | PRs touching native-relevant paths, every push to `main`, nightly (15:00 UTC), manual runs | The fast tier plus the Windows (and, once added, macOS) Vulkan + NativeAOT smoke |
+| **Full** | PRs touching native-relevant paths, every push to `main`, nightly (15:00 UTC), manual runs | The fast tier plus the Windows and macOS Vulkan + NativeAOT smoke |
 
 - The `Select CI tier` job classifies a PR's changed paths, including the old name of renamed files, with `.github/scripts/ci-tier.sh`. The paths that force the full tier are listed in that script: backend modules (Platform, Graphics, Audio, Runtime), the smoke harness, `.github/actions` and `.github/scripts`, `ci.yml`, `global.json`, NuGet config, and any `Directory.Build`/`Directory.Packages` file.
 - The job runs `ci-tier-test.sh` first, so a broken rule fails CI instead of silently skipping coverage. Add a case there when the list changes.
@@ -71,6 +71,8 @@ CI is split so a typical PR gets feedback in about two minutes, while native and
 ### `natives.yml`: manual dispatch / version bump
 
 Builds the natives BRUTAL doesn't ship (macOS Vulkan loader and MoltenVK) from pinned upstream tags. Records checksums, signs the macOS binaries (once a Developer ID is available), and produces the `BrutalEngine.Natives.MoltenVK` package. Builds are reproducible from the recorded tags.
+
+It will also build the CI-only **Khronos validation layers for macOS** once, and publish them as a pinned, SHA-256-checked release asset that `setup-macos-vulkan` downloads, so CI never compiles them. Until then, `setup-macos-vulkan` builds them from the pinned commit (about 10.5 min) and caches the result, keyed on the pins, the build script and the runner OS. A warm restore takes about 5 s. A cold build happens only when one of those changes, or the first time a new cache scope (a PR, or `main`) runs the full tier. Homebrew was rejected for this: it can't be pinned, and it installs its own Vulkan loader where BRUTAL's resolver looks, so the job would no longer prove that the bundled loader is the one used.
 
 ### `release.yml`: on a `v*` tag
 
