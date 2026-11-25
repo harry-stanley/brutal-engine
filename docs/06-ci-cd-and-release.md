@@ -39,7 +39,12 @@ Arch is a rolling release, so its runner also catches driver and Mesa regression
 5. **Pack:** `dotnet pack`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
 6. **Security** (separate workflows so they can also run on a schedule): `codeql.yml` (C# and Actions, `security-and-quality` queries, also weekly) and `dependency-review.yml` (blocks new dependencies with moderate or worse known vulnerabilities). Dependabot (`.github/dependabot.yml`) proposes weekly NuGet, .NET SDK and Actions updates.
 
-The aggregate `CI passed` job, `CodeQL (csharp)`, `CodeQL (actions)` and `Dependency review` are the required status checks on `main`. Branch protection: PRs required, 1 approving review (the maintainer), linear history, no force pushes, required checks up to date before merge.
+`main` is protected by the repository ruleset **Protect Main**:
+
+- Changes only through pull requests, merged with **squash only**.
+- No force pushes, no branch deletion, no bypass actors.
+- Required status checks: `CI passed` (the aggregate of format, build/test on all three OSes, and pack), `CodeQL (csharp)`, `CodeQL (actions)` and `Dependency review`.
+- **0 required approving reviews.** PRs are opened from the maintainer's own account, and GitHub doesn't let an author approve their own PR. The maintainer's review is the merge itself. Raise this to 1 once there are other maintainers or a separate bot account opens PRs.
 
 **Every merge into `main` is a squash merge**, so `main` has one commit per PR and its history stays clean. The repository allows only squash merging (merge commits and rebase merging are disabled), uses the PR title as the squash commit title, and deletes head branches after merge.
 
