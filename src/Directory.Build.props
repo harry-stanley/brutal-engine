@@ -39,9 +39,12 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnablePackageValidation>true</EnablePackageValidation>
 
-    <!-- Versions come from git tags (vX.Y.Z). Untagged commits are 0.1.0-alpha.0.N. -->
+    <!--
+      Versions come from git tags (vX.Y.Z). Untagged commits are 0.2.0-alpha.0.N until v0.2.0.
+      MinVer raises an untagged commit's version to this minimum when it is lower (after v0.1.0-alpha it would be 0.1.0-alpha.N).
+    -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
-    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
+    <MinVerMinimumMajorMinor>0.2</MinVerMinimumMajorMinor>
   </PropertyGroup>
 
   <ItemGroup>
