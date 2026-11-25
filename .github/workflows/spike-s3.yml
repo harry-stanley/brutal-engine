@@ -1,0 +1,174 @@
+# Spike S3 (throwaway): headless Vulkan 1.3 on software drivers + Khronos validation on hosted runners.
+name: spike-s3
+
+on:
+  push:
+    branches: [spike/s3-software-vulkan]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  S3_REQUIRE_CPU: "1"
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Runner info
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          lsb_release -a || true
+          dotnet --info | head -20
+          echo "pre-existing vulkan packages:"; dpkg -l | grep -Ei 'vulkan|mesa-vulkan' || echo "  none"
+          ls /usr/share/vulkan/icd.d /usr/share/vulkan/explicit_layer.d 2>/dev/null || true
+
+      - name: Install lavapipe + validation layers
+        run: |
+          start=$(date +%s)
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            libvulkan1 mesa-vulkan-drivers vulkan-validationlayers vulkan-tools
+          echo "apt took $(( $(date +%s) - start )) s"
+          dpkg -l libvulkan1 mesa-vulkan-drivers vulkan-validationlayers | tail -n +6
+          ls -la /usr/share/vulkan/icd.d /usr/share/vulkan/explicit_layer.d
+          echo "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+
+      - name: vulkaninfo --summary
+        run: vulkaninfo --summary || true
+
+      - name: Build test
+        working-directory: spikes/s3
+        run: |
+          start=$(date +%s)
+          dotnet build VulkanHeadless.cs -c Release
+          echo "build took $(( $(date +%s) - start )) s"
+
+      - name: Run test (must pass with 0 validation errors)
+        working-directory: spikes/s3
+        run: dotnet run --no-build -c Release VulkanHeadless.cs
+
+      - name: Negative test (injected layout bug must be caught, exit 2)
+        working-directory: spikes/s3
+        run: |
+          set +e
+          S3_INJECT_ERROR=1 dotnet run --no-build -c Release VulkanHeadless.cs
+          rc=$?
+          echo "exit code $rc"
+          test "$rc" -eq 2
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      VULKAN_SDK_VERSION: 1.4.363.1
+      VULKAN_SDK_SHA256: c02932bd9a968b22d404536108adaacac908c081cd6b0113f5bfefc523dd0a6a
+      MESA_VERSION: 26.3.1
+      MESA_SHA256: 64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Runner info
+        run: |
+          "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion"
+          [System.Environment]::OSVersion.VersionString
+          "elevated: " + ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          "vulkan-1.dll in System32 before setup: " + (Test-Path C:\Windows\System32\vulkan-1.dll)
+          Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse -ErrorAction SilentlyContinue | Out-String
+          Get-ChildItem C:\VulkanSDK -ErrorAction SilentlyContinue
+
+      - name: Install Mesa lavapipe (pal1000/mesa-dist-win, pinned + SHA-256)
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\mesa.7z"
+          $hash = (Get-FileHash "$env:RUNNER_TEMP\mesa.7z" -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:MESA_SHA256) { throw "mesa SHA-256 mismatch: $hash" }
+          $dir = "C:\mesa-lvp"
+          & 7z e "$env:RUNNER_TEMP\mesa.7z" "-o$dir" x64\vulkan_lvp.dll x64\lvp_icd.x86_64.json -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7z failed" }
+          Get-ChildItem $dir
+          Get-Content "$dir\lvp_icd.x86_64.json"
+          # Elevated processes ignore VK_DRIVER_FILES/VK_ICD_FILENAMES (loader_secure_getenv), so register in HKLM.
+          New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
+          New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name "$dir\lvp_icd.x86_64.json" -PropertyType DWord -Value 0 -Force | Out-Null
+          "VK_DRIVER_FILES=$dir\lvp_icd.x86_64.json" >> $env:GITHUB_ENV
+          "mesa step took $([int]$sw.Elapsed.TotalSeconds) s"
+
+      - name: Install LunarG Vulkan SDK (loader + validation layers, pinned + SHA-256)
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $v = $env:VULKAN_SDK_VERSION
+          $exe = "$env:RUNNER_TEMP\vulkansdk.exe"
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe" -OutFile $exe
+          "download took $([int]$sw.Elapsed.TotalSeconds) s"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:VULKAN_SDK_SHA256) { throw "SDK SHA-256 mismatch: $hash" }
+          $root = "C:\VulkanSDK\$v"
+          $p = Start-Process -FilePath $exe -ArgumentList "--root", $root, "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait -PassThru -NoNewWindow
+          "installer exit code $($p.ExitCode); total $([int]$sw.Elapsed.TotalSeconds) s"
+          if ($p.ExitCode -ne 0) { throw "SDK install failed" }
+          Get-ChildItem "$root\Bin" -Filter *.dll | Select-Object Name, Length
+          Get-ChildItem "$root\Bin" -Filter VkLayer_khronos_validation.json
+          if (-not (Test-Path C:\Windows\System32\vulkan-1.dll)) {
+            "SDK did not install vulkan-1.dll into System32; copying from $root\Bin (BRUTAL loads it from System32 only)"
+            Copy-Item "$root\Bin\vulkan-1.dll" C:\Windows\System32\vulkan-1.dll
+          }
+          (Get-Item C:\Windows\System32\vulkan-1.dll).VersionInfo | Format-List FileVersion, ProductVersion
+          $layers = "HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers"
+          $layerJson = "$root\Bin\VkLayer_khronos_validation.json"
+          if (-not ((Get-ItemProperty $layers -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains $layerJson)) {
+            "registering validation layer in HKLM"
+            New-Item -Path $layers -Force | Out-Null
+            New-ItemProperty -Path $layers -Name $layerJson -PropertyType DWord -Value 0 -Force | Out-Null
+          }
+          Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse | Out-String
+          "VULKAN_SDK=$root" >> $env:GITHUB_ENV
+          "$root\Bin" >> $env:GITHUB_PATH
+          "SDK step took $([int]$sw.Elapsed.TotalSeconds) s"
+
+      - name: vulkaninfo --summary
+        run: |
+          vulkaninfo --summary
+          "exit $LASTEXITCODE"
+          exit 0
+
+      - name: Build test
+        working-directory: spikes/s3
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          dotnet build VulkanHeadless.cs -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "build took $([int]$sw.Elapsed.TotalSeconds) s"
+
+      - name: Run test (must pass with 0 validation errors)
+        working-directory: spikes/s3
+        run: |
+          dotnet run --no-build -c Release VulkanHeadless.cs
+          exit $LASTEXITCODE
+
+      - name: Negative test (injected layout bug must be caught, exit 2)
+        working-directory: spikes/s3
+        run: |
+          $env:S3_INJECT_ERROR = "1"
+          dotnet run --no-build -c Release VulkanHeadless.cs
+          $rc = $LASTEXITCODE
+          "exit code $rc"
+          if ($rc -ne 2) { exit 1 }
+          exit 0
