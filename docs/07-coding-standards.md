@@ -55,4 +55,6 @@ More are added as patterns appear. Each analyzer has its own tests (positive and
 ## Commits
 
 - **Conventional Commits** (`feat(render): …`, `fix(audio): …`, `test: …`, `docs: …`, `ci: …`, `refactor: …`, `perf: …`, `build: …`, `chore: …`), with scope = module name. A `BREAKING CHANGE:` footer marks breaking changes.
-- PRs are squash-merged, so the PR title must be a valid conventional commit.
+- **One logical change per commit.** A commit should make sense on its own and be small enough to review and revert easily. Examples: "add build configuration", "add CI workflow", "add `Handle` with tests". Never one huge commit that adds everything at once. A commit is not split so finely that it no longer makes sense alone (e.g. a type in one commit and its tests in another).
+- **Every commit leaves the repository working.** It builds with zero warnings and all tests pass. A type and its tests land in the same commit. Fix-ups found during review are separate commits on the branch, not rewrites of reviewed commits, unless the reviewer asks for a rebase.
+- PRs are squash-merged, so the PR title must be a valid conventional commit. The squashed commit on `main` is the unit of revert there, which is why PRs stay small too (see [Workflow](08-workflow.md)).
