@@ -12,8 +12,9 @@
   </ItemGroup>
 
   <!--
-    Roslyn components. Microsoft.CodeAnalysis.CSharp stays at 5.0.0: the compiler in every .NET 10 SDK is at
-    least that version, and an analyzer built against a newer Roslyn than the host compiler fails to load.
+    Roslyn components. Microsoft.CodeAnalysis.CSharp stays at 5.0.0: the compiler in the pinned .NET 11 SDK (5.12)
+    and in every .NET 10 SDK is at least that version, and an analyzer built against a newer Roslyn than the host
+    compiler fails to load.
   -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.3.0" />

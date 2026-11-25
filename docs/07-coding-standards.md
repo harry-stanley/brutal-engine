@@ -4,7 +4,7 @@
 
 ## General C#
 
-- Target `net10.0`, C# `latest`, nullable reference types enabled everywhere, warnings are errors.
+- Target `net11.0`, C# `latest`, nullable reference types enabled everywhere, warnings are errors.
 - File-scoped namespaces. One public type per file. The file name matches the type name.
 - Namespaces match folder paths under the project's root namespace (`BrutalEngine.Rendering2D.Batching`).
 - Explicit `using` directives (no implicit usings in shipped libraries), so public API files are self-describing.

@@ -1,6 +1,6 @@
 # ADR-0001: Target .NET 10 LTS
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0014](0014-dotnet-11.md)
 - **Date:** 2026-11-25
 - **Deciders:** Harry Stanley (maintainer)
 

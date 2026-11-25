@@ -1,12 +1,12 @@
 # BrutalEngine
 
-An open-source, production-grade 2D game engine for C#, running on Windows and Linux. macOS is a best-effort target that isn't tested yet ([ADR-0015](docs/adr/0015-tested-platforms-windows-linux.md)). Built on the [BRUTAL framework](https://github.com/ahwootech/BRUTAL) and .NET 10.
+An open-source, production-grade 2D game engine for C#, running on Windows and Linux. macOS is a best-effort target that isn't tested yet ([ADR-0015](docs/adr/0015-tested-platforms-windows-linux.md)). Built on the [BRUTAL framework](https://github.com/ahwootech/BRUTAL) and .NET 11.
 
 > **Status: planning.** No code yet. The engineering plan lives in [docs/](docs/README.md).
 
 ## At a glance
 
-- Code-first engine shipped as NuGet packages. Games are ordinary .NET 10 applications.
+- Code-first engine shipped as NuGet packages. Games are ordinary .NET 11 applications.
 - Vulkan 1.3 behind an abstract render interface (MoltenVK on macOS, unverified), SDL3 for platform, input and audio.
 - Data-oriented world model: an in-house archetype ECS with hierarchy ([ADR-0006](docs/adr/0006-world-model.md)).
 - Offline asset cooking into versioned packs, with hot reload during development.

@@ -24,8 +24,8 @@ updates:
       day: monday
     commit-message:
       prefix: "build"
-    # ADR-0001: the engine targets .NET 10 LTS. Only propose patch/feature-band SDK updates
-    # within 10.0.x; moving to a new major SDK is a deliberate decision recorded in a new ADR.
+    # ADR-0014: the engine targets .NET 11. Only propose patch/feature-band SDK updates
+    # within 11.0.x; moving to a new major SDK is a deliberate decision recorded in a new ADR.
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]

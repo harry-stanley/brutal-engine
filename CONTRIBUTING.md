@@ -13,7 +13,7 @@ The engine is in its planning stage: the engineering plan in [docs/](docs/README
 
 ## Prerequisites
 
-- **.NET 10 SDK** (any `10.0.x` feature band). The repository pins it with `global.json` from M0 on.
+- **.NET 11 SDK**, 11.0.100 or a later `11.0.1xx` patch. The repository pins it with `global.json` ([ADR-0014](docs/adr/0014-dotnet-11.md)).
 - **Vulkan SDK**, for the validation layers used in development and GPU tests.
 - **Git LFS**, only if you work on golden-image tests or samples. Library-only contributors can build and run the unit tests without LFS content.
 - Windows (x64) or Linux (x64), the tested platforms. macOS (arm64) is best-effort and unverified: CI doesn't build or test it ([ADR-0015](docs/adr/0015-tested-platforms-windows-linux.md)).
