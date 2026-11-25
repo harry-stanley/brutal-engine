@@ -8,6 +8,10 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ## [Unreleased]
 
+### Fixed
+
+- `Logger.SetLevel` no longer allocates after a garbage collection. It validated the level with `Enum.IsDefined`, which rebuilds a weakly held runtime cache (240 bytes) on its first call after any collection.
+
 ## [0.1.0-alpha] - 2026-11-26
 
 ### Added
