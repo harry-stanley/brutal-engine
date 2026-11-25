@@ -65,6 +65,13 @@ public sealed class LoggerTests
         using Logger logger = CreateLogger(new RecordingSink());
 
         _ = Assert.Throws<ArgumentException>(() => logger.CreateCategory(name));
+    }
+
+    [Fact]
+    public void CreateCategory_NullName_Throws()
+    {
+        using Logger logger = CreateLogger(new RecordingSink());
+
         _ = Assert.Throws<ArgumentNullException>(() => logger.CreateCategory(null!));
     }
 
@@ -137,6 +144,15 @@ public sealed class LoggerTests
         _ = Assert.Throws<ArgumentOutOfRangeException>(() => logger.SetLevel(category, (LogLevel)7));
         _ = Assert.Throws<ArgumentException>(() => logger.SetLevel(default, LogLevel.Trace));
         _ = Assert.Throws<ArgumentException>(() => other.SetLevel(category, LogLevel.Trace));
+    }
+
+    [Fact]
+    public void IsEnabled_ForeignOrDefaultCategory_Throws()
+    {
+        using Logger logger = CreateLogger(new RecordingSink());
+        using Logger other = CreateLogger(new RecordingSink());
+        LogCategory category = logger.CreateCategory("Core");
+
         _ = Assert.Throws<ArgumentException>(() => other.IsEnabled(category, LogLevel.Trace));
         _ = Assert.Throws<ArgumentException>(() => logger.IsEnabled(default, LogLevel.Trace));
     }
