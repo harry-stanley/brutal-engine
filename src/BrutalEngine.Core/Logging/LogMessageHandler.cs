@@ -25,12 +25,16 @@ namespace BrutalEngine.Core.Logging;
 /// <c>…</c> (U+2026); later parts aren't formatted.
 /// </para>
 /// <para>
-/// No allocation for <see cref="IUtf8SpanFormattable"/> value types (all numeric types, <see cref="char"/>,
-/// <see cref="Guid"/>, dates and times), <see cref="bool"/>, strings and spans. Other types may allocate (see
-/// <see cref="AppendFormatted{T}(T, string?)"/>). If formatting a value throws, the exception reaches the caller,
-/// nothing is logged, and the rented buffer is left to the garbage collector.
+/// No allocation for <see cref="IUtf8SpanFormattable"/> values (all numeric types, <see cref="char"/>,
+/// <see cref="Guid"/>, dates and times, and custom value types that implement it), <see cref="bool"/>, strings and
+/// spans. Other values, including enums and nullable values such as <c>int?</c>, go through
+/// <see cref="AppendFormatted(object?, string?)"/>, which boxes them. If formatting a value throws, the exception
+/// reaches the caller, nothing is logged, and the rented buffer is left to the garbage collector.
 /// </para>
-/// <para>Confined to the calling thread, like any <see langword="ref"/> struct.</para>
+/// <para>
+/// Confined to the calling thread, like any <see langword="ref"/> struct. <b>Don't copy a handler:</b> each copy
+/// would return the same pooled buffer when completed, which corrupts the pool. The compiler never copies one.
+/// </para>
 /// </remarks>
 [InterpolatedStringHandler]
 public ref struct LogMessageHandler<TLevel>
@@ -106,32 +110,69 @@ public ref struct LogMessageHandler<TLevel>
     /// <param name="value">The value.</param>
     public void AppendFormatted(bool value) => AppendFormatted(value ? "True"u8 : "False"u8);
 
-    /// <summary>Appends a value, formatted with the invariant culture.</summary>
-    /// <typeparam name="T">The value's type.</typeparam>
+    /// <summary>Appends a value that formats itself to UTF-8, with the invariant culture.</summary>
+    /// <typeparam name="T">The value's type: any <see cref="IUtf8SpanFormattable"/>.</typeparam>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
-    /// <param name="format">Optional format string, e.g. <c>F2</c> or <c>X8</c>.</param>
+    /// <remarks>Never boxes a value type; see <see cref="AppendFormatted{T}(T, string?)"/>.</remarks>
+    public void AppendFormatted<T>(T value)
+        where T : IUtf8SpanFormattable => AppendFormatted(value, null);
+
+    /// <summary>Appends a value that formats itself to UTF-8, with a format string and the invariant culture.</summary>
+    /// <typeparam name="T">
+    /// The value's type: any <see cref="IUtf8SpanFormattable"/>, such as the numeric types, <see cref="char"/>,
+    /// <see cref="Guid"/>, the date and time types, or the engine's own maths types.
+    /// </typeparam>
+    /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
+    /// <param name="format">Format string, e.g. <c>F2</c> or <c>X8</c>, or <see langword="null"/>.</param>
     /// <remarks>
-    /// <see cref="IUtf8SpanFormattable"/> values format straight into the buffer. The built-in numeric types,
-    /// <see cref="char"/>, <see cref="Guid"/>, <see cref="DateTime"/>, <see cref="DateTimeOffset"/> and
-    /// <see cref="TimeSpan"/> never allocate. Other value types that implement <see cref="IUtf8SpanFormattable"/>
-    /// don't allocate in optimised code. Other types fall back to <see cref="ISpanFormattable"/>, then
-    /// <see cref="IFormattable.ToString(string?, IFormatProvider?)"/>, then <see cref="object.ToString"/>; that
-    /// fallback may allocate (as do enums, which box to format).
+    /// Formats straight into the buffer through a constrained call, so a value type is never boxed: no
+    /// allocation, whatever the JIT optimises (unoptimised and coverage-instrumented code included).
     /// </remarks>
-    // Compiled fully optimised from the first call, so the JIT removes the box of the interface check below for
-    // value types even before tiering up. Unoptimised or instrumented code (e.g. code coverage) still boxes there,
-    // which is why the common types are dispatched first without one.
-    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public void AppendFormatted<T>(T value, string? format = null)
+    public void AppendFormatted<T>(T value, string? format)
+        where T : IUtf8SpanFormattable
     {
-        if (_buffer is null || _truncated || TryAppendCommon(ref value, format))
+        // The IsValueType test keeps the null check (a box) out of value-type instantiations in unoptimised code.
+        if (_buffer is null || _truncated || (!typeof(T).IsValueType && value is null))
+        {
+            return;
+        }
+
+        Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
+        if (value.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
+        {
+            CommitFormatted(written);
+        }
+        else
+        {
+            AppendOverflowing(value, format);
+        }
+    }
+
+    /// <summary>Appends any other value, formatted with the invariant culture where it supports one.</summary>
+    /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
+    /// <remarks><b>Allocates</b>; see <see cref="AppendFormatted(object?, string?)"/>.</remarks>
+    public void AppendFormatted(object? value) => AppendFormatted(value, null);
+
+    /// <summary>Appends any other value with a format string, formatted with the invariant culture where it supports one.</summary>
+    /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
+    /// <param name="format">Format string, passed on if the value is formattable, or <see langword="null"/>.</param>
+    /// <remarks>
+    /// The fallback for values that aren't <see cref="IUtf8SpanFormattable"/>. It tries
+    /// <see cref="IUtf8SpanFormattable"/> on the boxed value, then <see cref="ISpanFormattable"/>, then
+    /// <see cref="IFormattable.ToString(string?, IFormatProvider?)"/>, then <see cref="object.ToString"/>.
+    /// <b>Allocates:</b> value types are boxed to get here. That includes enums and nullable values such as
+    /// <c>int?</c> (24 bytes per value), and <c>ToString</c> allocates a string.
+    /// </remarks>
+    public void AppendFormatted(object? value, string? format)
+    {
+        if (_buffer is null || _truncated || value is null)
         {
             return;
         }
 
         if (value is IUtf8SpanFormattable utf8Formattable)
         {
-            AppendUtf8Formattable(utf8Formattable, format);
+            AppendFormatted(utf8Formattable, format);
             return;
         }
 
@@ -147,12 +188,13 @@ public ref struct LogMessageHandler<TLevel>
 
         AppendChars(value is IFormattable formattable
             ? formattable.ToString(format, CultureInfo.InvariantCulture)
-            : value?.ToString());
+            : value.ToString());
     }
 
     /// <summary>
-    /// Dispatches the finished message, then returns the buffer. Safe to call more than once. The logging call
-    /// passes its own category and level: a handler built by hand for another one is misuse.
+    /// Dispatches the finished message, then returns the buffer. Safe to call more than once on the same handler,
+    /// but not on copies of it (see the type's remarks). The logging call passes its own category and level: a
+    /// handler built by hand for another one is misuse.
     /// </summary>
     internal void Complete(LogCategoryState? category, LogLevel level, string callerFile, int callerLine)
     {
@@ -228,15 +270,10 @@ public ref struct LogMessageHandler<TLevel>
             return;
         }
 
-        // utf8[cut] is the first byte left out: back up until it starts a code point.
-        int cut = destination.Length;
-        while (cut > 0 && IsContinuationByte(utf8[cut]))
-        {
-            cut--;
-        }
-
-        utf8[..cut].CopyTo(destination);
-        _length += cut;
+        // Fill the buffer, possibly ending inside a code point: Truncate cuts back to a code-point boundary below
+        // the ellipsis anyway, which always removes this tail.
+        utf8[..destination.Length].CopyTo(destination);
+        _length += destination.Length;
         Truncate();
     }
 
@@ -255,115 +292,6 @@ public ref struct LogMessageHandler<TLevel>
         formatted.CopyTo(copy);
         AppendUtf8(copy.AsSpan(0, written));
         ArrayPool<byte>.Shared.Return(copy);
-    }
-
-    // The built-in types that log most, sent to the constrained path without boxing. typeof(T) checks are
-    // constants per instantiation once optimised, and allocate nothing even in unoptimised or instrumented code.
-    // Unsafe.As is sound: each branch reinterprets T only as the exact type it was just compared with.
-    private bool TryAppendCommon<T>(ref T value, string? format)
-    {
-        if (!typeof(T).IsValueType)
-        {
-            return false;
-        }
-
-        if (typeof(T) == typeof(int))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, int>(ref value), format);
-        }
-        else if (typeof(T) == typeof(long))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, long>(ref value), format);
-        }
-        else if (typeof(T) == typeof(float))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, float>(ref value), format);
-        }
-        else if (typeof(T) == typeof(double))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, double>(ref value), format);
-        }
-        else if (typeof(T) == typeof(uint))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, uint>(ref value), format);
-        }
-        else if (typeof(T) == typeof(ulong))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, ulong>(ref value), format);
-        }
-        else if (typeof(T) == typeof(short))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, short>(ref value), format);
-        }
-        else if (typeof(T) == typeof(ushort))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, ushort>(ref value), format);
-        }
-        else if (typeof(T) == typeof(byte))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, byte>(ref value), format);
-        }
-        else if (typeof(T) == typeof(sbyte))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, sbyte>(ref value), format);
-        }
-        else if (typeof(T) == typeof(nint))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, nint>(ref value), format);
-        }
-        else if (typeof(T) == typeof(nuint))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, nuint>(ref value), format);
-        }
-        else if (typeof(T) == typeof(Half))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, Half>(ref value), format);
-        }
-        else if (typeof(T) == typeof(decimal))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, decimal>(ref value), format);
-        }
-        else if (typeof(T) == typeof(char))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, char>(ref value), format);
-        }
-        else if (typeof(T) == typeof(Guid))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, Guid>(ref value), format);
-        }
-        else if (typeof(T) == typeof(DateTime))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, DateTime>(ref value), format);
-        }
-        else if (typeof(T) == typeof(DateTimeOffset))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, DateTimeOffset>(ref value), format);
-        }
-        else if (typeof(T) == typeof(TimeSpan))
-        {
-            AppendUtf8Formattable(Unsafe.As<T, TimeSpan>(ref value), format);
-        }
-        else
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    // Constrained calls: a value-type TFormattable is never boxed.
-    private void AppendUtf8Formattable<TFormattable>(TFormattable value, string? format)
-        where TFormattable : IUtf8SpanFormattable
-    {
-        Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
-        if (value.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
-        {
-            CommitFormatted(written);
-        }
-        else
-        {
-            AppendOverflowing(value, format);
-        }
     }
 
     // The value didn't fit the space left: format it into a larger temporary buffer, then append what fits.

@@ -93,8 +93,11 @@ BrutalEngine.Core.Logging.LogMessageHandler<TLevel>
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(System.ReadOnlySpan<byte> utf8) -> void
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(System.ReadOnlySpan<char> value) -> void
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(bool value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(object? value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(object? value, string? format) -> void
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(string? value) -> void
-BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted<T>(T value, string? format = null) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted<T>(T value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted<T>(T value, string? format) -> void
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendLiteral(string! value) -> void
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.LogMessageHandler() -> void
 BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.LogMessageHandler(int literalLength, int formattedCount, BrutalEngine.Core.Logging.LogCategory category, BrutalEngine.Core.Logging.LogLevel level, out bool isEnabled) -> void

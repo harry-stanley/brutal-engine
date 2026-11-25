@@ -64,6 +64,71 @@ public sealed class LoggingAllocationTests
         Assert.Equal(0, sink.WriteCount);
     }
 
+    [Fact]
+    public void Log_EnabledCustomUtf8Formattable_DoesNotAllocate()
+    {
+        CountingSink sink = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [sink] });
+        LogCategory category = logger.CreateCategory("Allocation");
+
+        for (int i = 1; i <= WarmUpIterations; i++)
+        {
+            LogCustom(category, i);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 1; i <= Iterations; i++)
+        {
+            LogCustom(category, i);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.Equal((WarmUpIterations + Iterations) * 2, sink.WriteCount);
+    }
+
+    [Fact]
+    public void LoggerQueries_DoNotAllocate()
+    {
+        using Logger logger = new(new LoggerOptions { Sinks = [new CountingSink()] });
+        LogCategory category = logger.CreateCategory("Allocation");
+        long failures = 0;
+        int enabled = 0;
+
+        for (int i = 0; i < WarmUpIterations; i++)
+        {
+            Query(logger, category, i, ref enabled, ref failures);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < Iterations; i++)
+        {
+            Query(logger, category, i, ref enabled, ref failures);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.Equal(0, failures);
+        Assert.True(enabled > 0);
+
+        static void Query(Logger logger, LogCategory category, int i, ref int enabled, ref long failures)
+        {
+            logger.SetLevel(category, (LogLevel)(i % 7));
+            enabled += logger.IsEnabled(category, LogLevel.Warning) ? 1 : 0;
+            enabled += category.IsEnabled(LogLevel.Error) ? 1 : 0;
+            failures += logger.SinkFailureCount;
+        }
+    }
+
+    private static void LogCustom(LogCategory category, int i)
+    {
+        Vector2Value position = new(i, i * 0.5f);
+        category.Information($"position {position}");
+        category.Warning($"velocity {new Vector2Value(-i, 2.5f):F2}");
+    }
+
     private static void LogCommonTypes(LogCategory category, int i, string longText)
     {
         ReadOnlySpan<char> chars = "chars";
@@ -82,6 +147,42 @@ public sealed class LoggingAllocationTests
         category.Log(LogLevel.Debug, $"{i}");
         silenced.Critical($"{i} {longText}");
         default(LogCategory).Error($"{i}");
+    }
+
+    /// <summary>A custom value type that formats itself to UTF-8, like the engine's maths types.</summary>
+    private readonly struct Vector2Value(float x, float y) : IUtf8SpanFormattable
+    {
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+        {
+            bytesWritten = 0;
+            int position = 0;
+            if (!TryWrite(utf8Destination, ref position, "("u8)
+                || !x.TryFormat(utf8Destination[position..], out int written, format, provider)
+                || !TryWrite(utf8Destination, ref position, written, ", "u8)
+                || !y.TryFormat(utf8Destination[position..], out written, format, provider)
+                || !TryWrite(utf8Destination, ref position, written, ")"u8))
+            {
+                return false;
+            }
+
+            bytesWritten = position;
+            return true;
+        }
+
+        private static bool TryWrite(Span<byte> destination, ref int position, ReadOnlySpan<byte> text) =>
+            TryWrite(destination, ref position, 0, text);
+
+        private static bool TryWrite(Span<byte> destination, ref int position, int advance, ReadOnlySpan<byte> text)
+        {
+            position += advance;
+            if (!text.TryCopyTo(destination[position..]))
+            {
+                return false;
+            }
+
+            position += text.Length;
+            return true;
+        }
     }
 
     /// <summary>Counts writes and touches the message, without allocating.</summary>
