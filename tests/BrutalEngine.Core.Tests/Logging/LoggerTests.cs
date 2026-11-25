@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Threading;
 using BrutalEngine.Core.Logging;
 using Xunit;
 
@@ -301,6 +305,64 @@ public sealed class LoggerTests
     }
 
     [Fact]
+    public void Log_FromManyThreads_EveryEntryDeliveredOnceAndWhole()
+    {
+        const int ThreadCount = 8;
+        const int EntriesPerThread = 2000;
+        SerialCheckingSink sink = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [sink] });
+        LogCategory category = logger.CreateCategory("Threads");
+        using Barrier start = new(ThreadCount);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+
+        var threads = new Thread[ThreadCount];
+        var failures = new Exception?[ThreadCount];
+        for (int t = 0; t < ThreadCount; t++)
+        {
+            int thread = t;
+            threads[t] = new Thread(() =>
+            {
+                try
+                {
+                    start.SignalAndWait(cancellationToken);
+                    for (int i = 0; i < EntriesPerThread; i++)
+                    {
+                        category.Information($"thread {thread} entry {i} value {i * 0.5} end");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    // Reported below: an exception escaping a raw thread would crash the test host.
+                    failures[thread] = exception;
+                }
+            });
+            threads[t].Start();
+        }
+
+        foreach (Thread thread in threads)
+        {
+            thread.Join();
+        }
+
+        Assert.All(failures, Assert.Null);
+        Assert.Equal(0, sink.OverlappingWrites);
+        Assert.Equal(ThreadCount * EntriesPerThread, sink.Messages.Count);
+        int[] nextEntry = new int[ThreadCount];
+        foreach (string message in sink.Messages)
+        {
+            string[] parts = message.Split(' ');
+            Assert.Equal(7, parts.Length);
+            int thread = int.Parse(parts[1], CultureInfo.InvariantCulture);
+            int entry = int.Parse(parts[3], CultureInfo.InvariantCulture);
+            Assert.Equal(nextEntry[thread], entry);
+            Assert.Equal(FormattableString.Invariant($"thread {thread} entry {entry} value {entry * 0.5} end"), message);
+            nextEntry[thread]++;
+        }
+
+        Assert.All(nextEntry, count => Assert.Equal(EntriesPerThread, count));
+    }
+
+    [Fact]
     public void LogAfterDispose_IsNoOp()
     {
         RecordingSink sink = new();
@@ -321,6 +383,32 @@ public sealed class LoggerTests
         new(new LoggerOptions { Sinks = sinks });
 
     private static int CurrentLine([CallerLineNumber] int line = 0) => line;
+
+    /// <summary>Records messages, and counts writes that started while another was still running.</summary>
+    private sealed class SerialCheckingSink : ILogSink
+    {
+        private int _activeWrites;
+        private int _overlappingWrites;
+
+        public List<string> Messages { get; } = [];
+
+        public int OverlappingWrites => Volatile.Read(ref _overlappingWrites);
+
+        public void Write(scoped in LogEntry entry)
+        {
+            if (Interlocked.Increment(ref _activeWrites) != 1)
+            {
+                _ = Interlocked.Increment(ref _overlappingWrites);
+            }
+
+            Messages.Add(Encoding.UTF8.GetString(entry.Message));
+            _ = Interlocked.Decrement(ref _activeWrites);
+        }
+
+        public void Flush()
+        {
+        }
+    }
 
     /// <summary>A sink that logs through the logger that is calling it.</summary>
     private sealed class ReentrantSink : ILogSink
