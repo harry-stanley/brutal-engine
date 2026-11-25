@@ -91,7 +91,9 @@ Three layers of `Directory.Build.props`. Each one imports the one above it.
 | `src/Directory.Build.props` | shipped libraries | `IsPackable`, `IsAotCompatible`, XML docs, package ID = root namespace = project name, MIT licence expression, README + `NOTICE.txt` packed, SourceLink + `.snupkg` symbols, package validation, MinVer versioning (`v` tag prefix, 0.1 minimum), public API tracking (`PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`), `InternalsVisibleTo` for the matching test project only |
 | `tests/Directory.Build.props` | test projects | xUnit v3 on Microsoft.Testing.Platform v2 (executable test apps), CsCheck, code coverage and TRX report extensions, not packable |
 
-`Directory.Packages.props` pins every package version centrally, with transitive pinning on. Runtime identifiers are set only by executables (samples, games, AOT smoke tests), not by libraries. Analyzer and generator projects will target `netstandard2.0`, as Roslyn requires.
+`Directory.Packages.props` pins every package version centrally, with transitive pinning on. Runtime identifiers are set only by executables (samples, games, AOT smoke tests), not by libraries.
+
+**Roslyn components** (`src/*.Analyzers`, `src/*.Generators`) target `netstandard2.0` and reference `Microsoft.CodeAnalysis.CSharp` 5.0.0, the compiler version in every .NET 10 SDK. `src/Directory.Build.props` recognises them by name: they aren't AOT-compiled, aren't packed yet, and have no tracked public API. Every other `src/` project gets `BrutalEngine.Analyzers` as a build-time analyzer (no runtime or package dependency).
 
 ## Large binary assets
 

@@ -38,7 +38,7 @@
 
 | ID | Rule |
 |----|------|
-| BE1001 | Native status/result value discarded |
+| BE1001 | Status/result value discarded: a call used as a statement whose return type is `Result`, `Result<T>` or `Brutal.VulkanApi.VkResult` (awaited and `?.` calls included). Add more types per project with `brutal_engine.be1001.additional_status_types` in `.editorconfig`. An explicit `_ = Call();` is allowed, with a comment saying why. **Implemented** |
 | BE1002 | Allocation in a `[HotPath]` method (new reference type, boxing, closures, LINQ, string building) |
 | BE1003 | Static mutable field holding a reference type in an engine assembly |
 | BE1004 | Native binding type (`Brutal.*Api`) in a public signature outside backend projects |
