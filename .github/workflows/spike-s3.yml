@@ -42,7 +42,11 @@ jobs:
           echo "apt took $(( $(date +%s) - start )) s"
           dpkg -l libvulkan1 mesa-vulkan-drivers vulkan-validationlayers | tail -n +6
           ls -la /usr/share/vulkan/icd.d /usr/share/vulkan/explicit_layer.d
-          echo "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+          # The ICD file name differs between Mesa builds (lvp_icd.x86_64.json vs lvp_icd.json), so glob for it.
+          icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
+          test -n "$icd"
+          cat "$icd"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
 
       - name: vulkaninfo --summary
         run: vulkaninfo --summary || true
