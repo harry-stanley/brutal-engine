@@ -38,6 +38,13 @@ BrutalEngine.Core.HandleAllocator.MaxSlots.get -> int
 BrutalEngine.Core.HandleAllocator.RetiredCount.get -> int
 BrutalEngine.Core.HandleAllocator.TryAllocate(out BrutalEngine.Core.Handle handle) -> bool
 BrutalEngine.Core.HandleAllocator.TryFree(BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.Memory.HeapAllocator
+BrutalEngine.Core.Memory.HeapAllocator.Allocate(nuint byteCount, nuint alignment, string! callerFile = "", int callerLine = 0) -> void*
+BrutalEngine.Core.Memory.HeapAllocator.Free(void* memory) -> void
+BrutalEngine.Core.Memory.HeapAllocator.HeapAllocator() -> void
+BrutalEngine.Core.Memory.INativeAllocator
+BrutalEngine.Core.Memory.INativeAllocator.Allocate(nuint byteCount, nuint alignment, string! callerFile = "", int callerLine = 0) -> void*
+BrutalEngine.Core.Memory.INativeAllocator.Free(void* memory) -> void
 BrutalEngine.Core.Result
 BrutalEngine.Core.Result.Error.get -> BrutalEngine.Core.EngineError
 BrutalEngine.Core.Result.IsFailure.get -> bool
