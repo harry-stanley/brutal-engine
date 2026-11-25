@@ -28,6 +28,9 @@ internal sealed unsafe class Swapchain
     /// <summary>Gets the image size.</summary>
     public SwapchainExtent Extent { get; }
 
+    /// <summary>Gets the images' usage (<see cref="SwapchainPlanner.ChooseImageUsage"/>).</summary>
+    public VkImageUsageFlags Usage { get; private init; }
+
     /// <summary>Gets the image format and colour space.</summary>
     public VkSurfaceFormatKHR Format { get; }
 
@@ -51,11 +54,7 @@ internal sealed unsafe class Swapchain
     /// <exception cref="VkResultError">A Vulkan call failed.</exception>
     public static Swapchain Create(VulkanContext vulkan, SwapchainExtent extent, in VkSurfaceCapabilitiesKHR capabilities, Swapchain? old)
     {
-        if ((capabilities.SupportedUsageFlags & VkImageUsageFlags.ColorAttachmentBit) == 0)
-        {
-            throw new SampleFailureException("The surface doesn't support colour-attachment images.");
-        }
-
+        VkImageUsageFlags usage = SwapchainPlanner.ChooseImageUsage(capabilities.SupportedUsageFlags);
         Device device = vulkan.Device;
         VkSurfaceFormatKHR format = SwapchainPlanner.ChooseSurfaceFormat(SurfaceFormats(vulkan.PhysicalDevice, vulkan.Surface));
         VkSwapchainKHR handle = device.CreateSwapchainKHR(
@@ -67,7 +66,7 @@ internal sealed unsafe class Swapchain
                 ImageColorSpace = format.ColorSpace,
                 ImageExtent = extent.ToVk(),
                 ImageArrayLayers = 1,
-                ImageUsage = VkImageUsageFlags.ColorAttachmentBit,
+                ImageUsage = usage,
                 ImageSharingMode = VkSharingMode.Exclusive,
                 PreTransform = capabilities.CurrentTransform,
                 CompositeAlpha = SwapchainPlanner.ChooseCompositeAlpha(capabilities.SupportedCompositeAlpha),
@@ -81,7 +80,7 @@ internal sealed unsafe class Swapchain
         try
         {
             int count = device.GetSwapchainImagesKHR_Count(handle);
-            swapchain = new Swapchain(device, extent, format, count) { Handle = handle };
+            swapchain = new Swapchain(device, extent, format, count) { Handle = handle, Usage = usage };
             NativeCheck.Vk(device.GetSwapchainImagesKHR_Write(handle, swapchain.Images), "vkGetSwapchainImagesKHR");
             for (int i = 0; i < count; i++)
             {
