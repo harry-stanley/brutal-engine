@@ -53,6 +53,11 @@ BrutalEngine.Core.Logging.ILogSink.Flush() -> void
 BrutalEngine.Core.Logging.ILogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
 BrutalEngine.Core.Logging.InformationLevel
 BrutalEngine.Core.Logging.InformationLevel.InformationLevel() -> void
+BrutalEngine.Core.Logging.LogCategory
+BrutalEngine.Core.Logging.LogCategory.Equals(BrutalEngine.Core.Logging.LogCategory other) -> bool
+BrutalEngine.Core.Logging.LogCategory.IsEnabled(BrutalEngine.Core.Logging.LogLevel level) -> bool
+BrutalEngine.Core.Logging.LogCategory.LogCategory() -> void
+BrutalEngine.Core.Logging.LogCategory.Name.get -> string!
 BrutalEngine.Core.Logging.LogEntry
 BrutalEngine.Core.Logging.LogEntry.CallerFilePath.get -> string!
 BrutalEngine.Core.Logging.LogEntry.CallerFilePath.init -> void
@@ -77,6 +82,14 @@ BrutalEngine.Core.Logging.LogLevel.Information = 2 -> BrutalEngine.Core.Logging.
 BrutalEngine.Core.Logging.LogLevel.None = 6 -> BrutalEngine.Core.Logging.LogLevel
 BrutalEngine.Core.Logging.LogLevel.Trace = 0 -> BrutalEngine.Core.Logging.LogLevel
 BrutalEngine.Core.Logging.LogLevel.Warning = 3 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.Logger
+BrutalEngine.Core.Logging.Logger.CreateCategory(string! name) -> BrutalEngine.Core.Logging.LogCategory
+BrutalEngine.Core.Logging.Logger.Dispose() -> void
+BrutalEngine.Core.Logging.Logger.Flush() -> void
+BrutalEngine.Core.Logging.Logger.IsEnabled(BrutalEngine.Core.Logging.LogCategory category, BrutalEngine.Core.Logging.LogLevel level) -> bool
+BrutalEngine.Core.Logging.Logger.Logger(BrutalEngine.Core.Logging.LoggerOptions! options) -> void
+BrutalEngine.Core.Logging.Logger.SetLevel(BrutalEngine.Core.Logging.LogCategory category, BrutalEngine.Core.Logging.LogLevel level) -> void
+BrutalEngine.Core.Logging.Logger.SinkFailureCount.get -> long
 BrutalEngine.Core.Logging.LoggerOptions
 BrutalEngine.Core.Logging.LoggerOptions.<Clone>$() -> BrutalEngine.Core.Logging.LoggerOptions!
 BrutalEngine.Core.Logging.LoggerOptions.Equals(BrutalEngine.Core.Logging.LoggerOptions? other) -> bool
@@ -165,6 +178,8 @@ override BrutalEngine.Core.EngineError.ToString() -> string!
 override BrutalEngine.Core.Handle.Equals(object? obj) -> bool
 override BrutalEngine.Core.Handle.GetHashCode() -> int
 override BrutalEngine.Core.Handle.ToString() -> string!
+override BrutalEngine.Core.Logging.LogCategory.Equals(object? obj) -> bool
+override BrutalEngine.Core.Logging.LogCategory.GetHashCode() -> int
 override BrutalEngine.Core.Logging.LoggerOptions.Equals(object? obj) -> bool
 override BrutalEngine.Core.Logging.LoggerOptions.GetHashCode() -> int
 override BrutalEngine.Core.Logging.LoggerOptions.ToString() -> string!
@@ -182,6 +197,8 @@ static BrutalEngine.Core.Logging.DebugLevel.Level.get -> BrutalEngine.Core.Loggi
 static BrutalEngine.Core.Logging.DynamicLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Logging.ErrorLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Logging.InformationLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
+static BrutalEngine.Core.Logging.LogCategory.operator !=(BrutalEngine.Core.Logging.LogCategory left, BrutalEngine.Core.Logging.LogCategory right) -> bool
+static BrutalEngine.Core.Logging.LogCategory.operator ==(BrutalEngine.Core.Logging.LogCategory left, BrutalEngine.Core.Logging.LogCategory right) -> bool
 static BrutalEngine.Core.Logging.LoggerOptions.operator !=(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
 static BrutalEngine.Core.Logging.LoggerOptions.operator ==(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
 static BrutalEngine.Core.Logging.TraceLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
