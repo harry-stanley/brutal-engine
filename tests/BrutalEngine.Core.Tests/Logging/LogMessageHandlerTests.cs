@@ -83,9 +83,11 @@ public sealed class LogMessageHandlerTests
         byte[] invalidUtf8 = [(byte)'a', 0xFF, (byte)'b', 0xE2, 0x82];
         string loneSurrogate = "x\uD800y";
 
-        string message = FormatString(c => c.Information($"{loneSurrogate} {invalidUtf8.AsSpan()} {new BrokenUtf8()}"));
+        // Compare bytes: decoding the message to a string would itself hide invalid UTF-8 behind U+FFFD.
+        byte[] message = Format(c => c.Information($"{loneSurrogate} {invalidUtf8.AsSpan()} {new BrokenUtf8()}"));
 
-        Assert.Equal("x\uFFFDy a\uFFFDb\uFFFD \uFFFDok", message);
+        Assert.True(Utf8.IsValid(message));
+        Assert.Equal(Encoding.UTF8.GetBytes("x\uFFFDy a\uFFFDb\uFFFD \uFFFDok"), message);
     }
 
     [Fact]
