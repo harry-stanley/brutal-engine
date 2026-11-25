@@ -58,8 +58,12 @@ public sealed class AllocationMeasurementTests
         _ = NewObject();
         long before = GC.GetAllocatedBytesForCurrentThread();
         collector.OpenWindow();
-        thread.Join();
+
+        // Close the window before joining: Thread.Join allocates on .NET 11 (32 bytes even when the thread has
+        // already exited), so a window that contains it can't count zero.
+        collector.WaitUntilFinished();
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        thread.Join();
         GC.KeepAlive(live);
 
         Assert.Empty(failures);
@@ -138,6 +142,14 @@ public sealed class AllocationMeasurementTests
         }
 
         public void OpenWindow() => Volatile.Write(ref _windowOpen, 1);
+
+        public void WaitUntilFinished()
+        {
+            while (Volatile.Read(ref _finished) == 0)
+            {
+                Thread.Yield();
+            }
+        }
 
         public void Finish()
         {
