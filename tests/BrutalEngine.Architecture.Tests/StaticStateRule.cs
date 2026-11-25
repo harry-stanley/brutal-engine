@@ -12,7 +12,8 @@ namespace BrutalEngine.Architecture.Tests;
 /// engine assemblies, so no static state can hold game types across a reload of the game assembly. A field is mutable
 /// when it is neither const nor readonly. Allowed types are primitives, enums, and unmanaged and function pointers,
 /// none of which can reference a managed game type. Static auto-properties and field-like events count, through
-/// their backing fields. Compiler-generated types (lambda caches, closures, PrivateImplementationDetails) are skipped.
+/// their backing fields. Compiler-generated types (lambda caches, closures, PrivateImplementationDetails) and tooling-injected types
+/// (<see cref="InjectedTypes"/>) are skipped.
 /// </summary>
 internal static partial class StaticStateRule
 {
@@ -25,7 +26,7 @@ internal static partial class StaticStateRule
         ArgumentNullException.ThrowIfNull(types);
 
         List<string> violations = [];
-        foreach (Type type in types.Where(t => !IsCompilerGenerated(t)).OrderBy(t => t.FullName, StringComparer.Ordinal))
+        foreach (Type type in types.Where(t => !IsCompilerGenerated(t) && !InjectedTypes.IsInjected(t)).OrderBy(t => t.FullName, StringComparer.Ordinal))
         {
             foreach (FieldInfo field in type.GetFields(StaticFields).OrderBy(f => f.Name, StringComparer.Ordinal))
             {

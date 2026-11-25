@@ -50,7 +50,7 @@ internal static class BindingSurfaceRule
         ArgumentNullException.ThrowIfNull(types);
 
         List<string> violations = [];
-        foreach (Type type in types.Where(IsExposed).OrderBy(t => t.FullName, StringComparer.Ordinal))
+        foreach (Type type in types.Where(t => IsExposed(t) && !InjectedTypes.IsInjected(t)).OrderBy(t => t.FullName, StringComparer.Ordinal))
         {
             CheckType(type, violations);
         }

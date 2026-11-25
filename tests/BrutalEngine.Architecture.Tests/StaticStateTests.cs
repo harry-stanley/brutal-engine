@@ -71,4 +71,10 @@ public sealed class StaticStateTests
     {
         Assert.Equal(expected, StaticStateRule.IsAllowedType(type));
     }
+
+    [Fact]
+    public void Check_SkipsTypesInjectedByCodeCoverage()
+    {
+        Assert.Empty(StaticStateRule.Check([typeof(Microsoft.CodeCoverage.Instrumentation.Static.Tracker.FakeStaticManagedTrackerTemplate)]));
+    }
 }

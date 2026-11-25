@@ -97,4 +97,10 @@ public sealed class BindingSurfaceTests
 
         Assert.Empty(BindingSurfaceRule.Check(types));
     }
+
+    [Fact]
+    public void Check_SkipsTypesInjectedByCodeCoverage()
+    {
+        Assert.Empty(BindingSurfaceRule.Check([typeof(Microsoft.CodeCoverage.Instrumentation.Static.Tracker.FakeStaticManagedTrackerTemplate)]));
+    }
 }
