@@ -37,8 +37,9 @@ namespace BrutalEngine.Core.Logging.Sinks;
 /// Failures: for now, I/O exceptions (<see cref="IOException"/>, <see cref="UnauthorizedAccessException"/>)
 /// propagate from every member, as <see cref="ConsoleLogSink"/>'s do; a logger isolates those from
 /// <see cref="Write"/> and <see cref="Flush"/> and counts them. A failed rotation leaves no file open, and the next
-/// <see cref="Write"/> tries the rotation again. This is interim: a later change (#23) reports I/O failures
-/// through a fault state instead of throwing.
+/// <see cref="Write"/> tries the rotation again. Retrying loses no archives: archives only ever move into a free
+/// slot, so a retry after a rotation that shifted them, but failed to rename the current file, moves nothing. This
+/// is interim: a later change (#23) reports I/O failures through a fault state instead of throwing.
 /// </para>
 /// <para>
 /// Thread-safe: every member may be called from any thread, takes the sink's lock, and lines from concurrent
@@ -240,14 +241,20 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
         bool hasCurrent = File.Exists(_path);
         if (hasCurrent)
         {
-            // Oldest first, so each archive moves into a free slot: n becomes n + 1.
-            for (int n = _keptArchives; n >= 1; n--)
+            // Make archive 1 free by moving the run of archives 1, 2, ... up by one, oldest first. Only that run
+            // moves: archives after the first free slot stay where they are. So a retry after a rotation that
+            // shifted the archives but couldn't rename the current file finds slot 1 free and moves nothing, instead
+            // of ageing (and finally deleting) every archive once per attempt. When all slots are taken, the oldest
+            // moves to MaxFiles, overwriting whatever an earlier run or a crash left there, and is deleted below.
+            int free = 1;
+            while (free <= _keptArchives && File.Exists(ArchivePath(free)))
             {
-                string archive = ArchivePath(n);
-                if (File.Exists(archive))
-                {
-                    File.Move(archive, ArchivePath(n + 1), overwrite: true);
-                }
+                free++;
+            }
+
+            for (int n = free - 1; n >= 1; n--)
+            {
+                File.Move(ArchivePath(n), ArchivePath(n + 1), overwrite: true);
             }
         }
 

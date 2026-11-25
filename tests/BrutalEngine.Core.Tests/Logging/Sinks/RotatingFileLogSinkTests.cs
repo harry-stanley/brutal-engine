@@ -497,6 +497,41 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         Assert.Equal(Line("next"), Read("engine.log"));
     }
 
+    [Fact]
+    public void Write_RotationFailsTwice_KeepsOlderArchivesAndCompletesOnceUnblocked()
+    {
+        // Two 40,000-byte lines never share a 64 KiB file, so each write after the first rotates.
+        const int LineBytes = 40_000;
+        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 4 }))
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                Write(sink, LogLevel.Information, Message(i, LineBytes));
+            }
+
+            // engine.log holds line 3 and archives 1 to 3 hold lines 2, 1 and 0. Replace archive 1 with a non-empty
+            // directory: the state a rotation leaves when it shifted the archives but couldn't rename engine.log.
+            File.Delete(PathOf("engine.1.log"));
+            BlockArchiveOne();
+            _ = Assert.ThrowsAny<Exception>(() => Write(sink, LogLevel.Information, Message(4, LineBytes)));
+            _ = Assert.ThrowsAny<Exception>(() => Write(sink, LogLevel.Information, Message(5, LineBytes)));
+
+            // The retries shifted nothing: the older archives are all still there.
+            Assert.Equal(["engine.2.log", "engine.3.log", "engine.log"], Files(_root));
+            Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
+            Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
+
+            Directory.Delete(PathOf("engine.1.log"), recursive: true);
+            Write(sink, LogLevel.Information, "next");
+        }
+
+        Assert.Equal(["engine.1.log", "engine.2.log", "engine.3.log", "engine.log"], Files(_root));
+        Assert.Equal(Line(Message(3, LineBytes)), Read("engine.1.log"));
+        Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
+        Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
+        Assert.Equal(Line("next"), Read("engine.log"));
+    }
+
     private static void Capture(ConcurrentQueue<Exception> failures, Action action)
     {
         try
