@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
+using BrutalEngine.Core.Logging;
 
 namespace HelloWindow;
 
@@ -13,13 +14,18 @@ internal sealed unsafe class VulkanContext : IDisposable
     private const string ValidationLayer = "VK_LAYER_KHRONOS_validation";
 
     private readonly Instance _instance;
+    private readonly LogCategory _log;
     private VkDebugUtilsMessengerEXT _messenger;
     private Device? _device;
     private PhysicalDevice? _physicalDevice;
     private Queue? _queue;
     private bool _disposed;
 
-    private VulkanContext(Instance instance) => _instance = instance;
+    private VulkanContext(Instance instance, LogCategory log)
+    {
+        _instance = instance;
+        _log = log;
+    }
 
     /// <summary>Gets the window surface.</summary>
     public VkSurfaceKHR Surface { get; private set; }
@@ -39,19 +45,29 @@ internal sealed unsafe class VulkanContext : IDisposable
     /// <summary>Creates everything up to the queue. Destroys what it created if a step fails.</summary>
     /// <param name="window">The SDL window, created with <see cref="SdlWindowFlags.Vulkan"/>.</param>
     /// <param name="options">The command-line options (validation and device requirements).</param>
+    /// <param name="validation">The validation messenger if <see cref="HelloWindowOptions.Validation"/> is set, otherwise
+    /// null. The caller disposes it after this context: the instance calls it until it is destroyed.</param>
+    /// <param name="log">Where the instance, the devices and the choice between them are logged.</param>
     /// <returns>The context.</returns>
+    /// <exception cref="ArgumentException"><paramref name="validation"/> is null with validation on, or set with it
+    /// off.</exception>
     /// <exception cref="SampleFailureException">The validation layer or headless-surface extension is missing, or no
     /// device is suitable.</exception>
     /// <exception cref="VkResultError">A Vulkan call failed.</exception>
     /// <exception cref="SdlException">SDL couldn't create the surface.</exception>
-    public static VulkanContext Create(SdlWindow window, HelloWindowOptions options)
+    public static VulkanContext Create(SdlWindow window, HelloWindowOptions options, ValidationMessenger? validation, LogCategory log)
     {
-        var context = new VulkanContext(CreateInstance(options));
+        if (options.Validation != validation is not null)
+        {
+            throw new ArgumentException("A validation messenger is needed exactly when validation is on.", nameof(validation));
+        }
+
+        var context = new VulkanContext(CreateInstance(options, validation, log), log);
         try
         {
-            if (options.Validation)
+            if (validation is not null)
             {
-                context._messenger = context._instance.CreateDebugUtilsMessengerEXT(ValidationMessenger.CreateInfo(), null);
+                context._messenger = context._instance.CreateDebugUtilsMessengerEXT(validation.CreateInfo(), null);
             }
 
             context.Surface = new VkSurfaceKHR(Sdl.Vulkan.CreateSurface(window, context._instance.VkHandle));
@@ -99,9 +115,9 @@ internal sealed unsafe class VulkanContext : IDisposable
         _instance.Dispose();
     }
 
-    private static Instance CreateInstance(HelloWindowOptions options)
+    private static Instance CreateInstance(HelloWindowOptions options, ValidationMessenger? messenger, LogCategory log)
     {
-        bool validation = options.Validation;
+        bool validation = messenger is not null;
         HashSet<string> available = InstanceExtensionNames();
 
         // SDL's offscreen driver needs VK_EXT_headless_surface. The Windows drivers checked so far (NVIDIA, Mesa
@@ -124,8 +140,9 @@ internal sealed unsafe class VulkanContext : IDisposable
 
         // Chained into instance creation too, so vkCreateInstance and vkDestroyInstance are validated and counted.
         // Sound: the chain points at these stack locals, which live until Vulkan.CreateInstance below has returned,
-        // and the loader copies what it keeps (the messenger callback is a static function pointer).
-        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = ValidationMessenger.CreateInfo();
+        // and the loader copies what it keeps: the callback, a static function pointer, and its user data, a GCHandle
+        // that the caller keeps allocated until the instance is destroyed.
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = messenger is null ? new() : messenger.CreateInfo();
         VkValidationFeatureEnableEXT synchronizationValidation = VkValidationFeatureEnableEXT.SynchronizationValidationEXT;
         VkValidationFeaturesEXT validationFeatures = new()
         {
@@ -145,7 +162,7 @@ internal sealed unsafe class VulkanContext : IDisposable
             extensions.Add(VK.EXT_VALIDATION_FEATURES_EXTENSION_NAME);
         }
 
-        SampleConsole.Info($"Instance extensions: {string.Join(", ", extensions)}; layers: {(validation ? ValidationLayer : "(none)")}");
+        log.Information($"Instance extensions: {string.Join(", ", extensions)}; layers: {(validation ? ValidationLayer : "(none)")}");
         return Vulkan.CreateInstance(new Instance.CreateInfo
         {
             AppInfo = new VkApplicationInfo { ApiVersion = VK.API_VERSION_1_3 },
@@ -198,13 +215,13 @@ internal sealed unsafe class VulkanContext : IDisposable
         for (int i = 0; i < devices.Length; i++)
         {
             candidates[i] = Describe(devices[i]);
-            SampleConsole.Info($"Device {i}: {candidates[i].Name} ({candidates[i].Type}), Vulkan {DeviceSelector.FormatVersion(candidates[i].ApiVersion)}, driver {candidates[i].DriverId}");
+            _log.Information($"Device {i}: {candidates[i].Name} ({candidates[i].Type}), Vulkan {DeviceSelector.FormatVersion(candidates[i].ApiVersion)}, driver {candidates[i].DriverId}");
         }
 
         DeviceSelection selection = DeviceSelector.Select(candidates, options.RequireCpu, options.RequireDriver);
         foreach (string rejection in selection.Rejections)
         {
-            SampleConsole.Info($"  rejected {rejection}");
+            _log.Information($"  rejected {rejection}");
         }
 
         if (!selection.Found)
@@ -222,7 +239,7 @@ internal sealed unsafe class VulkanContext : IDisposable
             extensions.Add(VK.KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
         }
 
-        SampleConsole.Info($"Using device {selection.ChosenIndex}, queue family {QueueFamily}, extensions {string.Join(", ", extensions)}");
+        _log.Information($"Using device {selection.ChosenIndex}, queue family {QueueFamily}, extensions {string.Join(", ", extensions)}");
         // Sound: &priority and &enabled point at stack locals that live until CreateDevice has returned, and Vulkan
         // doesn't keep the pointers.
         float priority = 1.0f;

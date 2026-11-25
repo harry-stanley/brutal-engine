@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
+using BrutalEngine.Core.Logging;
 using HelloWindow.Splash;
 
 namespace HelloWindow;
@@ -15,61 +16,79 @@ internal sealed unsafe class HelloWindowApp
     private const int SplashMargin = 32;
 
     private readonly HelloWindowOptions _options;
+    private readonly LogCategory _log;
+    private readonly LogCategory _vulkanLog;
     private bool _setupComplete;
     private int _resizes;
 
-    private HelloWindowApp(HelloWindowOptions options) => _options = options;
+    private HelloWindowApp(HelloWindowOptions options, SampleLog log)
+    {
+        _options = options;
+        _log = log.App;
+        _vulkanLog = log.Vulkan;
+    }
 
     /// <summary>Runs the sample and maps the outcome to an exit code.</summary>
     /// <param name="options">The parsed command line.</param>
+    /// <param name="log">The sample's log.</param>
     /// <returns><see cref="ExitCode.Pass"/>, or why the run failed.</returns>
-    public static ExitCode Run(HelloWindowOptions options) => new HelloWindowApp(options).RunAndReport();
+    public static ExitCode Run(HelloWindowOptions options, SampleLog log) => new HelloWindowApp(options, log).RunAndReport();
 
     private ExitCode RunAndReport()
     {
+        // Disposed last: the instance calls the messenger until vkDestroyInstance, inside RunWithSdl, has returned.
+        using ValidationMessenger? validation = _options.Validation ? new ValidationMessenger(_vulkanLog) : null;
         ExitCode result = ExitCode.Pass;
         try
         {
-            RunWithSdl();
+            RunWithSdl(validation);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             result = _setupComplete ? ExitCode.RuntimeFailure : ExitCode.SetupFailure;
-            SampleConsole.Error($"{(_setupComplete ? "Runtime failure" : "Setup failure")}: {exception.Message}");
+            _log.Error($"{(_setupComplete ? "Runtime failure" : "Setup failure")}: {exception.Message}");
 
             // Typed failures name the failing call or requirement in their message; only unexpected ones need the trace.
-            if (exception is not (SampleFailureException or VkResultError or SdlException))
+            if (FailureReport.NeedsStackTrace(exception))
             {
-                SampleConsole.Error(exception.ToString());
+                _log.Error($"{exception}");
             }
         }
 
-        if (_options.Validation)
+        if (validation is not null)
         {
-            SampleConsole.Info($"Validation: {ValidationMessenger.Errors} error(s), {ValidationMessenger.Warnings} warning(s).");
-            if (result == ExitCode.Pass && ValidationMessenger.Errors + ValidationMessenger.Warnings > 0)
+            int messages = validation.Errors + validation.Warnings;
+            _log.Log(messages == 0 ? LogLevel.Information : LogLevel.Error, $"Validation: {validation.Errors} error(s), {validation.Warnings} warning(s).");
+            if (result == ExitCode.Pass && messages > 0)
             {
                 result = ExitCode.ValidationMessages;
             }
         }
 
-        SampleConsole.Info(result == ExitCode.Pass ? "PASS" : $"FAIL ({result})");
+        if (result == ExitCode.Pass)
+        {
+            _log.Information($"PASS");
+        }
+        else
+        {
+            _log.Error($"FAIL ({result})");
+        }
         return result;
     }
 
-    private void RunWithSdl()
+    private void RunWithSdl(ValidationMessenger? validation)
     {
         // BRUTAL resolves the Vulkan loader once, on first use of its Vulkan class. Do that before SDL loads Vulkan for
         // the window, so both use the same library. A published macOS build brings its own loader and MoltenVK; an
         // explicit --vulkan-loader wins over the bundled loader.
-        if (BundledVulkan.TryConfigure(AppContext.BaseDirectory, _options.VulkanLoader, new BundledVulkan.ProcessHost()))
+        if (BundledVulkan.TryConfigure(AppContext.BaseDirectory, _options.VulkanLoader, new BundledVulkan.ProcessHost(_vulkanLog)))
         {
-            SampleConsole.Info($"Using the Vulkan natives bundled in {AppContext.BaseDirectory}");
+            _vulkanLog.Information($"Using the Vulkan natives bundled in {AppContext.BaseDirectory}");
         }
 
         if (_options.VulkanLoader is { } loader)
         {
-            BundledVulkan.PreloadLoader(loader, "--vulkan-loader");
+            BundledVulkan.PreloadLoader(loader, "--vulkan-loader", _vulkanLog);
         }
         else
         {
@@ -85,18 +104,18 @@ internal sealed unsafe class HelloWindowApp
         Sdl.Init.Initialize(SdlInitFlags.Video);
         try
         {
-            SampleConsole.Info($"SDL video driver: {Sdl.Video.GetCurrentVideoDriver()}");
+            _log.Information($"SDL video driver: {Sdl.Video.GetCurrentVideoDriver()}");
 
             // BRUTAL LICENSE 2.2: the logo comes before the scene. A missing or unreadable logo fails setup.
             string logoPath = Path.Join(AppContext.BaseDirectory, SplashLogo.AssetsFolder, SplashLogo.FileName);
             var logo = SplashLogo.Load(logoPath);
-            SampleConsole.Info($"Splash logo: {logoPath} ({logo.Size})");
+            _log.Information($"Splash logo: {logoPath} ({logo.Size})");
             using SdlWindow window = Sdl.Video.CreateWindow(
                 "BrutalEngine HelloWindow",
                 _options.Width,
                 _options.Height,
                 SdlWindowFlags.Vulkan | SdlWindowFlags.Resizable | SdlWindowFlags.HighPixelDensity);
-            using var vulkan = VulkanContext.Create(window, _options);
+            using var vulkan = VulkanContext.Create(window, _options, validation, _vulkanLog);
             using var renderer = new FrameRenderer(vulkan);
             RunFrames(window, vulkan, renderer, logo);
         }
@@ -113,7 +132,7 @@ internal sealed unsafe class HelloWindowApp
         var splashStatistics = new SplashStatistics();
         SplashImage? splashImage = null;
         SplashDraw splash = default;
-        bool splashMinimumSize = false;
+        PixelSize splashMinimum = default; // the window's minimum size during the splash, 0x0 for none
         Swapchain? swapchain = null;
         int presented = 0, recreations = 0, outOfDate = 0, suboptimal = 0, steadyFrames = 0;
         long steadyBytes = 0;
@@ -129,7 +148,7 @@ internal sealed unsafe class HelloWindowApp
                 bool steadyState = presented > 0;
                 if (!PumpEvents(ref checkExtent))
                 {
-                    SampleConsole.Info($"Quit requested after {presented} frames.");
+                    _log.Information($"Quit requested after {presented} frames.");
                     break;
                 }
 
@@ -169,14 +188,14 @@ internal sealed unsafe class HelloWindowApp
                         }
 
                         recreations += old is null ? 0 : 1;
-                        SampleConsole.Info($"Swapchain {extent} {swapchain.Format.Format}/{swapchain.Format.ColorSpace}, {swapchain.Images.Length} images, {swapchain.Usage}, {SwapchainPlanner.PresentMode} (at frame {presented})");
+                        _vulkanLog.Information($"Swapchain {extent} {swapchain.Format.Format}/{swapchain.Format.ColorSpace}, {swapchain.Images.Length} images, {swapchain.Usage}, {SwapchainPlanner.PresentMode} (at frame {presented})");
 
                         // For the first swapchain this runs before setup counts as complete, so a surface that can't show
                         // the splash is a setup failure (exit 3). Later swapchains keep the format and its features, and
                         // on the copy path the window can't shrink below the logo while the splash lasts.
                         if (!timeline.IsComplete)
                         {
-                            splash = PrepareSplash(window, vulkan, swapchain, logo, ref splashImage, ref splashMinimumSize);
+                            splash = PrepareSplash(window, vulkan, swapchain, logo, ref splashImage, ref splashMinimum);
                         }
                         else if (splashImage is not null)
                         {
@@ -194,13 +213,14 @@ internal sealed unsafe class HelloWindowApp
 
                 long decided = Stopwatch.GetTimestamp();
                 bool showSplash = timeline.ShowsSplash(presented, decided);
-                if (!showSplash && splashMinimumSize)
+                // A property pattern, not record equality, which allocates its comparer on first use in a steady frame.
+                if (!showSplash && splashMinimum is not { Width: 0, Height: 0 })
                 {
                     // The splash is over: the window may shrink freely again.
                     steadyState = false;
-                    splashMinimumSize = false;
+                    splashMinimum = default;
                     NativeCheck.Sdl(Sdl.Video.SetWindowMinimumSize(window, 0, 0), "SDL_SetWindowMinimumSize");
-                    SampleConsole.Info($"Splash over: window minimum size cleared (at frame {presented})");
+                    _log.Information($"Splash over: window minimum size cleared (at frame {presented})");
                 }
 
                 FrameAction action = renderer.RenderFrame(swapchain, showSplash ? splash : null, _options.InjectValidationError && presented == 0);
@@ -228,7 +248,7 @@ internal sealed unsafe class HelloWindowApp
             VkResult idle = vulkan.WaitIdle();
             if (idle != VkResult.Success)
             {
-                SampleConsole.Error($"vkDeviceWaitIdle returned {idle} during teardown.");
+                _vulkanLog.Error($"vkDeviceWaitIdle returned {idle} during teardown.");
             }
 
             swapchain?.Destroy();
@@ -236,10 +256,10 @@ internal sealed unsafe class HelloWindowApp
         }
 
         double seconds = clock.Elapsed.TotalSeconds;
-        SampleConsole.Info($"Presented {presented} frames in {seconds:F2} s ({presented / seconds:F1} fps); "
+        _log.Information($"Presented {presented} frames in {seconds:F2} s ({presented / seconds:F1} fps); "
             + $"swapchain recreations {recreations}, out-of-date {outOfDate}, suboptimal {suboptimal}; "
             + $"{steadyBytes} managed bytes allocated over {steadyFrames} steady-state loop iterations.");
-        SampleConsole.Info(splashStatistics.Format(Stopwatch.Frequency));
+        _log.Information($"{splashStatistics.Format(Stopwatch.Frequency)}");
         if (_options.ExerciseResize && recreations == 0)
         {
             throw new SampleFailureException("--exercise-resize: the swapchain was never recreated.");
@@ -248,9 +268,10 @@ internal sealed unsafe class HelloWindowApp
 
     // Chooses how this swapchain shows the splash, and uploads the logo in its format if that changed. Runs with the
     // device idle (right after a swapchain was created), so replacing the image is safe. On the copy path, it also stops
-    // the window from shrinking below the logo for as long as the splash lasts (SplashWindowLimits).
-    private static SplashDraw PrepareSplash(
-        SdlWindow window, VulkanContext vulkan, Swapchain swapchain, SplashLogo logo, ref SplashImage? image, ref bool minimumSizeSet)
+    // the window from shrinking below the logo for as long as the splash lasts (SplashWindowLimits), recomputing the
+    // limit from the current pixel density for every swapchain, since a pixel-size change can mean a new density.
+    private SplashDraw PrepareSplash(
+        SdlWindow window, VulkanContext vulkan, Swapchain swapchain, SplashLogo logo, ref SplashImage? image, ref PixelSize minimum)
     {
         VkFormatProperties formatProperties = vulkan.PhysicalDevice.GetFormatProperties(swapchain.Format.Format);
         PixelRect destination = SplashLayout.Fit(logo.Size, new PixelSize(swapchain.Extent.Width, swapchain.Extent.Height), SplashMargin);
@@ -269,8 +290,8 @@ internal sealed unsafe class HelloWindowApp
             image = SplashImage.Upload(vulkan, logo, plan);
         }
 
-        SampleConsole.Info($"Splash: {plan.Transfer} of the {logo.Size} logo to {destination} ({plan.LogoFormat})");
-        if (plan.Transfer == SplashTransfer.Copy && !minimumSizeSet)
+        _log.Information($"Splash: {plan.Transfer} of the {logo.Size} logo to {destination} ({plan.LogoFormat})");
+        if (plan.Transfer == SplashTransfer.Copy)
         {
             float density = Sdl.Video.GetWindowPixelDensity(window);
             if (density <= 0)
@@ -278,10 +299,11 @@ internal sealed unsafe class HelloWindowApp
                 throw SdlException.FromError("SDL_GetWindowPixelDensity failed");
             }
 
-            PixelSize minimum = SplashWindowLimits.MinimumWindowSize(plan.Transfer, logo.Size, SplashMargin, density);
-            NativeCheck.Sdl(Sdl.Video.SetWindowMinimumSize(window, minimum.Width, minimum.Height), "SDL_SetWindowMinimumSize");
-            minimumSizeSet = true;
-            SampleConsole.Info($"Splash: window minimum size {minimum} while the splash lasts (1:1 copy)");
+            if (SplashWindowLimits.TryUpdate(ref minimum, plan.Transfer, logo.Size, SplashMargin, density))
+            {
+                NativeCheck.Sdl(Sdl.Video.SetWindowMinimumSize(window, minimum.Width, minimum.Height), "SDL_SetWindowMinimumSize");
+                _log.Information($"Splash: window minimum size {minimum} at pixel density {density} while the splash lasts (1:1 copy)");
+            }
         }
 
         return new SplashDraw(image.Image, image.Size, plan.Transfer, destination);
@@ -301,7 +323,7 @@ internal sealed unsafe class HelloWindowApp
             bool shrink = _resizes++ == 0;
             int width = shrink ? Math.Max(1, _options.Width * 3 / 4) : _options.Width;
             int height = shrink ? Math.Max(1, _options.Height * 3 / 4) : _options.Height;
-            SampleConsole.Info($"Resizing the window to {width}x{height} (at frame {presented})");
+            _log.Information($"Resizing the window to {width}x{height} (at frame {presented})");
             NativeCheck.Sdl(Sdl.Video.SetWindowSize(window, width, height), "SDL_SetWindowSize");
             return true;
         }

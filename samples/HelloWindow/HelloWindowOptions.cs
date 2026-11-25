@@ -151,11 +151,12 @@ internal sealed record HelloWindowOptions
 
     // Exactly one enum member name (any case). Enum.TryParse alone also accepts numbers, surrounding whitespace and
     // comma-separated lists whose values it ORs together, any of which could silently select a different real driver.
+    // MaxEnum is VK_DRIVER_ID_MAX_ENUM, a sentinel that no driver reports, so it is not a driver name.
     private static bool TryParseDriverName(string name, out VkDriverId driver)
     {
         foreach (string candidate in Enum.GetNames<VkDriverId>())
         {
-            if (string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase) && candidate != nameof(VkDriverId.MaxEnum))
             {
                 driver = Enum.Parse<VkDriverId>(candidate);
                 return true;

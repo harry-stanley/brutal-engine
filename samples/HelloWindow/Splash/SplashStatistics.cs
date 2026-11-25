@@ -5,8 +5,10 @@ namespace HelloWindow.Splash;
 
 /// <summary>What a run presented: splash frames, how long the splash lasted, and scene frames. Only presented frames
 /// count.</summary>
-/// <remarks>CI greps <see cref="Format"/>'s exact form and fails a run whose scene frame count is 0, so the scene is
-/// exercised after the splash on every OS. Not thread-safe: the frame loop owns it.</remarks>
+/// <remarks>The sample logs <see cref="Format"/>'s text as an <c>Information</c> entry in the <c>HelloWindow</c>
+/// category, so the line ends with <c> INFO [HelloWindow] splash: X frames over Y.YY s, scene: Z frames</c>. CI greps
+/// for exactly that and fails a run whose scene frame count is 0, so the scene is exercised after the splash on every
+/// OS. Not thread-safe: the frame loop owns it.</remarks>
 internal sealed class SplashStatistics
 {
     private long _splashStart;

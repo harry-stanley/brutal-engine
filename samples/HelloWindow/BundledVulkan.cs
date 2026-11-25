@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
+using BrutalEngine.Core.Logging;
 
 namespace HelloWindow;
 
@@ -38,6 +39,11 @@ internal static partial class BundledVulkan
     public const string LegacyDriverFilesVariable = "VK_ICD_FILENAMES";
 
     /// <summary>What <see cref="TryConfigure"/> needs from the process. Tests substitute a fake.</summary>
+    /// <remarks>Every member runs on the main thread, before SDL or Vulkan start. <c>setenv</c> isn't thread-safe
+    /// against a concurrent <c>getenv</c>, and SDL, the Vulkan loader and its drivers read the environment from their
+    /// own threads once they're running, so <see cref="SetEnvironmentVariable"/> is only safe while the process is still
+    /// single-threaded as far as native code is concerned. Keep this rule wherever this code moves (the platform or
+    /// graphics layer).</remarks>
     internal interface IHost
     {
         /// <summary>Gets a value indicating whether the process runs on macOS.</summary>
@@ -117,12 +123,13 @@ internal static partial class BundledVulkan
     /// <summary>Loads the Vulkan loader at <paramref name="path"/>, checks that BRUTAL uses it, and points SDL at it.</summary>
     /// <param name="path">The loader's absolute path.</param>
     /// <param name="origin">Where the path came from, for the log line.</param>
+    /// <param name="log">Where the loader is logged.</param>
     /// <exception cref="DllNotFoundException">The library could not be loaded.</exception>
     /// <exception cref="EntryPointNotFoundException">The library is not a Vulkan loader.</exception>
     /// <exception cref="SampleFailureException">BRUTAL had already resolved a different loader.</exception>
     /// <exception cref="SdlException">SDL rejected the hint.</exception>
     /// <remarks>Must run before anything touches BRUTAL's <c>Vulkan</c> class.</remarks>
-    public static unsafe void PreloadLoader(string path, string origin)
+    public static unsafe void PreloadLoader(string path, string origin, LogCategory log)
     {
         // BRUTAL looks the loader up by bare name, which binds to a library of that name already in the process
         // (spike S1, docs/spikes/README.md). Check it really did, rather than silently using another loader.
@@ -136,11 +143,15 @@ internal static partial class BundledVulkan
         }
 
         NativeCheck.Sdl(Sdl.PInvoke.SetHint(Sdl.Constants.HintVulkanLibrary, path) != 0, "SDL_SetHint(SDL_VULKAN_LIBRARY)");
-        SampleConsole.Info($"Vulkan loader: {path} ({origin}; preloaded, used by BRUTAL and SDL)");
+        log.Information($"Vulkan loader: {path} ({origin}; preloaded, used by BRUTAL and SDL)");
     }
 
     /// <summary>The real process: the file system, the C runtime's environment and <see cref="PreloadLoader"/>.</summary>
-    internal readonly partial struct ProcessHost : IHost
+    /// <remarks>Call it only on the main thread, before SDL or Vulkan start: its <c>setenv</c> must not race the
+    /// <c>getenv</c> calls that SDL, the Vulkan loader and its drivers make from their own threads (see
+    /// <see cref="IHost"/>).</remarks>
+    /// <param name="log">Where the environment it sets and the loader it preloads are logged.</param>
+    internal readonly partial struct ProcessHost(LogCategory log) : IHost
     {
         /// <inheritdoc/>
         public bool IsMacOS => OperatingSystem.IsMacOS();
@@ -169,11 +180,11 @@ internal static partial class BundledVulkan
             }
 
             Environment.SetEnvironmentVariable(name, value);
-            SampleConsole.Info($"{name}={value} (bundled driver)");
+            log.Information($"{name}={value} (bundled driver)");
         }
 
         /// <inheritdoc/>
-        public void PreloadLoader(string path) => BundledVulkan.PreloadLoader(path, "bundled");
+        public void PreloadLoader(string path) => BundledVulkan.PreloadLoader(path, "bundled", log);
 
         // libSystem holds the C runtime on macOS. An absolute path, so neither the JIT nor NativeAOT has to probe for it.
         [LibraryImport("/usr/lib/libSystem.B.dylib", EntryPoint = "setenv", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]

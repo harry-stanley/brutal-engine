@@ -20,6 +20,10 @@ What it does:
 - Recreates the swapchain on OUT_OF_DATE, SUBOPTIMAL or a real change of window size. While the window is minimised it
   sleeps in `SDL_WaitEvent` instead of rendering.
 - Checks every native status, and tears everything down in reverse order after `vkDeviceWaitIdle`.
+- Logs through `BrutalEngine.Core`'s logger and console sink, one UTF-8 line per entry:
+  `2026-11-26T01:02:03.456Z INFO [HelloWindow] message`. The categories are `HelloWindow` (the sample) and
+  `HelloWindow.Vulkan` (Vulkan setup and the validation layer's messages). Warnings and errors go to standard error,
+  everything else to standard output.
 
 ## Running
 
@@ -54,15 +58,21 @@ The logo is shown, unaltered except for scaling, on a black background before th
 - **How long:** at least 2.0 s in a window, measured with a monotonic clock from the first frame, however many frames
   that takes. Headless runs have no viewer and no fixed frame rate, so they count frames instead: the first 120
   (2.0 s at 60 frames a second). Nothing can skip or shorten it. At exit the sample logs
-  `splash: X frames over Y s, scene: Z frames`.
+  `splash: X frames over Y s, scene: Z frames` (an `INFO` line in the `HelloWindow` category).
 - **How it is drawn:** without shaders. `SDL_LoadPNG` decodes the logo at startup, and it is composited onto black on
   the CPU, in the swapchain's format. It is then uploaded once through a staging buffer into a device-local image.
   Each splash frame clears the swapchain image to black and `vkCmdBlitImage`s the logo into it, centred with a 32-pixel
   margin and scaled down (never up) to fit.
 - **Fallback:** if the surface or format can't blit, it uses `vkCmdCopyImage` at 1:1, provided the logo fits. The
   window then can't be made smaller than the logo plus its margins until the splash is over, so the copy keeps
-  working through resizes. If neither works for the first swapchain, the run fails with a setup error naming what is
-  missing (exit 3). The splash is never silently skipped.
+  working through resizes. That minimum is in window coordinates, so it is recomputed from the pixel density for
+  every swapchain during the splash, and stays right after the window moves to a display with another density. One
+  case remains: a move to a lower density that itself leaves the window smaller than the logo plus margins in pixels.
+  The swapchain made at that size can't show the logo before the new minimum takes effect, so the run fails with a
+  runtime error (exit 4). Avoiding it would need the sample to grow the window and wait before making a swapchain,
+  relying on SDL resizing windows synchronously, which isn't true on every platform. If neither blit nor copy works
+  for the first swapchain, the run fails with a setup error naming what is missing (exit 3). The splash is never
+  silently skipped.
 - **Limits:** the swapchain must use an 8-bit RGBA or BGRA format with `SRGB_NONLINEAR` and offer `TRANSFER_DST`
   images; every driver tried so far does. The splash clock keeps running while the window is minimised.
 
@@ -82,7 +92,7 @@ A product built on BRUTAL must meet the BRUTAL License's conditions. HelloWindow
   its `LICENSES/` folder. They ship as `LICENSES/<package>/`, one folder per package, because packages use the same
   file names for different contents.
 
-The build copies all of these from the restored BRUTAL packages, so none of them is kept in this repository. Every
+The build takes all of these from the restored BRUTAL packages, never from this repository. Every
 BRUTAL package carries the same `LICENSE.txt` and `NOTICE.txt`, and the build fails if a copy differs. CI checks the
 published output for `LICENSE.txt`, `NOTICE.txt`, `LICENSES/` and BRUTAL's copyright line in `CREDITS.txt`.
 
@@ -122,7 +132,8 @@ Not verified yet:
   `VK_EXT_headless_surface`, so the run stops with exit 3 and says so.
 - **The 1:1 copy fallback on a device without blit support.** Every driver tried so far can blit. The copy path has
   run only with blit support masked out by a temporary code change: on the RTX 2070 SUPER it passed with no validation
-  messages, through resizes during the splash (the window stayed at least the logo plus margins).
+  messages, through resizes during the splash (the window stayed at least the logo plus margins). The recomputed
+  minimum after a pixel-density change is unit-tested only: no mixed-density desktop has been tried.
 - **The SUBOPTIMAL path,** which no run has produced so far.
 - **Swapchain recreation without `VK_EXT_swapchain_maintenance1`.** The old swapchain's present semaphores are
   destroyed after `vkDeviceWaitIdle`. Validation accepts this, but the spec doesn't strictly guarantee that the
