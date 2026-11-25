@@ -43,13 +43,15 @@ EOF
 chmod +x "$work/gh"
 
 # Starts a case with no fixtures, so each case gets only the API answers it sets up. pushed is the commit the PR list
-# is served for; checks_on is the commit the check runs are served for.
+# is served for; checks_on is the commit the check runs are served for; full_os is the merge check's SMOKE_FULL_OS
+# input (ci.yml's value unless a case overrides it).
 fresh() {
   fixtures="$work/case$((++case_number))"
   mkdir -p "$fixtures"
   : > "$fixtures/calls"
   pushed=$SQUASH
   checks_on=$HEAD
+  full_os=windows-2025
 }
 case_number=0
 
@@ -114,7 +116,7 @@ same_tree_pr() {
 run_check() {
   local event=$1 ref=${2-refs/heads/main} sha=${3-$SQUASH}
   EVENT_NAME=$event REF=$ref REPO=$REPO_NAME SHA=$sha SMOKE_FAST_OS="ubuntu-24.04" \
-    SMOKE_FULL_OS="windows-2025" CI_MERGE_GH="$work/gh" FAKE_GH_DIR="$fixtures" bash "$script" 2> /dev/null
+    SMOKE_FULL_OS="$full_os" CI_MERGE_GH="$work/gh" FAKE_GH_DIR="$fixtures" bash "$script" 2> /dev/null
 }
 
 # check <expected decision> <description> [event] [ref] [sha]
@@ -164,6 +166,11 @@ fresh; same_tree_pr; check_runs "${FAST_RUNS[@]}" "Vulkan smoke, JIT + NativeAOT
 check smoke-delta "same tree + fast tier plus a smoke run on an OS the full tier doesn't add"
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "Vulkan smoke, JIT + NativeAOT (windows-2025)=failure"
 check smoke-delta "same tree + a full-tier smoke run failed on the head"
+# Every full-tier OS must pass, not only the last one checked: with two full-tier OSes, the first one failed.
+fresh; full_os="windows-2025 ubuntu-24.04-arm"; same_tree_pr
+check_runs "${FAST_RUNS[@]}" "Vulkan smoke, JIT + NativeAOT (windows-2025)=failure" \
+  "Vulkan smoke, JIT + NativeAOT (ubuntu-24.04-arm)=success"
+check smoke-delta "same tree + two full-tier OSes, and the first one's smoke failed"
 
 # Full: the tree differs.
 fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")"; commit "$SQUASH" "$TREE"; commit "$HEAD" "$OTHER_TREE"
