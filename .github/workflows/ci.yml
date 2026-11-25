@@ -236,6 +236,94 @@ jobs:
           echo "exit code: $code"
           test "$code" -eq 2
 
+      # HelloWindow (samples/HelloWindow) reuses this job's Vulkan setup and NativeAOT toolchain. Linux and macOS present
+      # headless (SDL's offscreen driver, through VK_EXT_headless_surface). No Windows driver offers that extension,
+      # lavapipe included, so Windows runs windowed in the runner's desktop session and resizes the window as well.
+      - name: Choose HelloWindow's arguments
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            args="--frames 120 --exercise-resize --validation"
+          else
+            args="--headless --frames 120 --validation"
+          fi
+          echo "HelloWindow arguments: $args $SMOKE_ARGS"
+          echo "HELLO_WINDOW_ARGS=$args" >> "$GITHUB_ENV"
+      - name: Build HelloWindow
+        run: dotnet build samples/HelloWindow -c Release
+      # HELLO_WINDOW_ARGS and SMOKE_ARGS are split into words on purpose.
+      - name: Run HelloWindow (JIT)
+        run: >-
+          dotnet run --project samples/HelloWindow -c Release --no-build -- $HELLO_WINDOW_ARGS $SMOKE_ARGS
+          ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
+      - name: Negative tests (HelloWindow JIT, injected validation error must exit 2, bad option must exit 64)
+        run: |
+          set +e
+          dotnet run --project samples/HelloWindow -c Release --no-build -- $HELLO_WINDOW_ARGS $SMOKE_ARGS \
+            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
+          injected=$?
+          dotnet run --project samples/HelloWindow -c Release --no-build -- --bogus
+          usage=$?
+          set -e
+          echo "exit codes: injected validation error $injected, bad option $usage"
+          test "$injected" -eq 2
+          test "$usage" -eq 64
+      - name: Publish HelloWindow (NativeAOT, ${{ matrix.rid }})
+        run: >-
+          dotnet publish samples/HelloWindow -c Release -r ${{ matrix.rid }} -o artifacts/hello-window/${{ matrix.rid }}
+          ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
+      # What a macOS game ships: the loader, MoltenVK and its ICD manifest next to the executable, where HelloWindow's
+      # BundledVulkan finds them.
+      - name: Bundle the Vulkan loader and MoltenVK with HelloWindow (macOS)
+        if: runner.os == 'macOS'
+        env:
+          OUT: artifacts/hello-window/${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          bundle=$(dirname "$BUNDLED_VULKAN_LOADER")
+          cp "$bundle/libvulkan.1.dylib" "$bundle/libMoltenVK.dylib" "$bundle/MoltenVK_icd.json" "$OUT/"
+          # The loader resolves a relative library_path against the manifest's directory, so the files stay together.
+          python3 -I -c 'import json, sys; p = json.load(open(sys.argv[1]))["ICD"]["library_path"]; print("library_path:", p); sys.exit(p != "./libMoltenVK.dylib")' \
+            "$OUT/MoltenVK_icd.json"
+          ls -l "$OUT"
+      # On macOS the published app runs self-contained: no --vulkan-loader and no VK_DRIVER_FILES. VK_LAYER_PATH stays,
+      # because the validation layers are a test tool, not something a game ships.
+      - name: Run HelloWindow (NativeAOT)
+        env:
+          OUT: artifacts/hello-window/${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          log=$RUNNER_TEMP/hello-window-aot.log
+          if [ "$RUNNER_OS" = macOS ]; then
+            unset VK_DRIVER_FILES
+          fi
+          "$OUT/HelloWindow" $HELLO_WINDOW_ARGS $SMOKE_ARGS | tee "$log"
+          if [ "$RUNNER_OS" = macOS ]; then
+            # Prove the bundled loader and driver were used, not ones found elsewhere on the runner.
+            dir=$(cd "$OUT" && pwd -P)
+            grep -F "Vulkan loader: $dir/libvulkan.1.dylib (bundled;" "$log"
+            grep -F "VK_DRIVER_FILES=$dir/MoltenVK_icd.json (bundled driver)" "$log"
+          fi
+      - name: Negative test (HelloWindow NativeAOT, injected validation error must exit 2)
+        env:
+          OUT: artifacts/hello-window/${{ matrix.rid }}
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            unset VK_DRIVER_FILES
+          fi
+          set +e
+          "$OUT/HelloWindow" $HELLO_WINDOW_ARGS $SMOKE_ARGS --inject-validation-error
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test "$code" -eq 2
+      - name: Upload HelloWindow (NativeAOT, ${{ matrix.rid }})
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hello-window-${{ matrix.rid }}
+          path: artifacts/hello-window/${{ matrix.rid }}/
+          if-no-files-found: error
+          retention-days: 14
+
   # Single required status check for branch protection. Passes only if the tier was selected and every other job
   # passed. A skipped job counts as passed only in the docs tier, where the tier job skips them on purpose.
   ci-ok:
