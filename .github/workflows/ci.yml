@@ -249,6 +249,29 @@ jobs:
           set -e
           echo "exit code: $code"
           test "$code" -eq 2
+      # --require-driver takes exactly one VkDriverId name. A comma list (OR-ed into another real ID: 1 | 2 is
+      # MESARadv), a number and the MaxEnum sentinel must each be a usage error (64), not a device search.
+      - name: Negative tests (smoke JIT, bad driver names must exit with the usage code)
+        run: |
+          failed=0
+          for driver in AmdProprietary,AmdOpenSource 7 MaxEnum; do
+            set +e
+            dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen \
+              --require-driver "$driver"
+            code=$?
+            set -e
+            echo "--require-driver $driver: exit code $code"
+            if [ "$code" -ne 64 ]; then
+              echo "::error::--require-driver $driver exited with $code, not the usage code 64."
+              failed=1
+            fi
+          done
+          test "$failed" -eq 0
+      # Every smoke runner uses lavapipe, whose driver ID is MESALlvmpipe: a valid name is still accepted in any case.
+      - name: Run (JIT, driver name in any case)
+        run: >-
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS
+          --require-driver mesallvmpipe
       # The runner image has versioned clang (clang-18 and so on) and zlib1g-dev, but no plain `clang`, which is
       # what NativeAOT invokes by default. Point NativeAOT at the newest one rather than apt-installing the
       # `clang` metapackage. Fall back to apt only if the image stops shipping them.
@@ -333,6 +356,21 @@ jobs:
           grep -F "BRUTAL game development framework is Copyright (c) 2024 Ahwoo Limited." "$OUT/CREDITS.txt"
           find "$OUT/LICENSES" -type f -size +0 | sort | tee "$RUNNER_TEMP/hello-window-licences.txt"
           test -s "$RUNNER_TEMP/hello-window-licences.txt"
+      # Samples generate XML docs only so IDE0005 runs in the build (samples/Directory.Build.props). They aren't
+      # shipped: neither HelloWindow.xml nor a referenced project's (BrutalEngine.Core.xml) is in the publish output.
+      - name: Check HelloWindow ships no XML doc files
+        env:
+          OUT: artifacts/hello-window/${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          test -d "$OUT"
+          find "$OUT" -type f -iname '*.xml' | sort > "$RUNNER_TEMP/hello-window-xml.txt"
+          if [ -s "$RUNNER_TEMP/hello-window-xml.txt" ]; then
+            echo "::error::The HelloWindow publish output contains XML doc files:"
+            cat "$RUNNER_TEMP/hello-window-xml.txt"
+            exit 1
+          fi
+          echo "No *.xml files in $OUT ($(find "$OUT" -type f | wc -l) files)."
       - name: Run HelloWindow (NativeAOT)
         env:
           OUT: artifacts/hello-window/${{ matrix.rid }}
