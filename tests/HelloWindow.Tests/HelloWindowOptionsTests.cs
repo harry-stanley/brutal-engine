@@ -78,6 +78,9 @@ public sealed class HelloWindowOptionsTests
     [InlineData("1")]
     [InlineData("-1")]
     [InlineData("+3")]
+    [InlineData("AmdProprietary,AmdOpenSource")]
+    [InlineData("Moltenvk, Moltenvk")]
+    [InlineData("Moltenvk ")]
     [InlineData("")]
     public void TryParse_UnknownOrNumericDriverName_Fails(string name)
     {

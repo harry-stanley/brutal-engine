@@ -19,7 +19,7 @@ internal sealed record HelloWindowOptions
           --validation               enable the Khronos validation layer; any message fails the run (exit 2)
           --exercise-resize          resize the window twice during the run; needs --frames
           --require-cpu              accept only a CPU (software) device, e.g. lavapipe
-          --require-driver <id>      accept only a device whose VkDriverId has this name, e.g. Moltenvk
+          --require-driver <name>    accept only a device whose VkDriverId has this name, e.g. Moltenvk
           --vulkan-loader <path>     load the Vulkan loader from this absolute path before BRUTAL looks for one
           --inject-validation-error  record an invalid barrier on purpose (implies --validation; must exit 2)
         """;
@@ -115,10 +115,7 @@ internal sealed record HelloWindowOptions
                     break;
                 case "--require-driver":
                     string name = args[++i];
-
-                    // Names only: Enum.TryParse also accepts numbers, so a typo could otherwise match a real ID.
-                    if (name.Length == 0 || !char.IsAsciiLetter(name[0])
-                        || !Enum.TryParse(name, ignoreCase: true, out VkDriverId driver) || !Enum.IsDefined(driver))
+                    if (!TryParseDriverName(name, out VkDriverId driver))
                     {
                         error = $"'{name}' is not a VkDriverId name.";
                         return false;
@@ -150,6 +147,23 @@ internal sealed record HelloWindowOptions
 
         options = parsed;
         return true;
+    }
+
+    // Exactly one enum member name (any case). Enum.TryParse alone also accepts numbers, surrounding whitespace and
+    // comma-separated lists whose values it ORs together, any of which could silently select a different real driver.
+    private static bool TryParseDriverName(string name, out VkDriverId driver)
+    {
+        foreach (string candidate in Enum.GetNames<VkDriverId>())
+        {
+            if (string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase))
+            {
+                driver = Enum.Parse<VkDriverId>(candidate);
+                return true;
+            }
+        }
+
+        driver = default;
+        return false;
     }
 
     private static bool TryParsePositive(string text, out int value) =>
