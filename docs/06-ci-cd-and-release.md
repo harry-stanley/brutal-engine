@@ -8,7 +8,8 @@ The source of truth is `github.com/harry-stanley/brutal-engine`. CI runs on GitH
 |----|---------------|----------|
 | Windows | `windows-2025` (x64) | Build, unit, native-boundary, software-Vulkan GPU tests, AOT smoke |
 | Linux | `ubuntu-24.04` (x64) | Same, plus primary golden-image tests (lavapipe), coverage, docs, packaging |
-| macOS | `macos-15` (arm64) | Build, unit, native-boundary, `.app` bundling, and the Vulkan + NativeAOT smoke on bundled MoltenVK (the runner's paravirtual Metal GPU) |
+
+macOS isn't in CI ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)): Windows and Linux are the tested targets. In M0, `macos-15` ran the build, the tests and the Vulkan + NativeAOT smoke on bundled MoltenVK; `.github/actions/setup-macos-vulkan` is kept, unused, so that can be restored.
 
 ### Self-hosted runners
 
@@ -33,9 +34,9 @@ Arch is a rolling release, so its runner also catches driver and Mesa regression
 ### `ci.yml`: every PR and every push to `main`, plus nightly
 
 1. **Lint:** `dotnet format --verify-no-changes`, markdown link check on docs, licence-header check.
-2. **Build matrix** (3 OSes): restore in locked mode, then `dotnet build -c Release` (warnings are errors). Linux also runs `dotnet build -c Debug`: Debug differs from Release only in `DEBUG`-conditional code, which isn't OS-specific.
-3. **Test matrix** (3 OSes): unit, property, native-boundary, integration, allocation, leak, determinism, plus GPU conformance and golden tests on software Vulkan. Test results go to the job summary. Failed golden images upload their diff artifacts.
-4. **AOT smoke** (the `vulkan-smoke` job): publish `tests/BrutalEngine.Aot.Smoke` and `samples/HelloWindow` with NativeAOT for the runner's RID and run them, with their JIT builds and negative tests (an injected validation error must exit 2; for HelloWindow, a bad option must also exit 64). HelloWindow presents 120 frames with validation: headless on Linux and macOS, and windowed on Windows, because no Windows driver offers `VK_EXT_headless_surface` (lavapipe included), with two window resizes on top. On macOS, the bundled loader, MoltenVK and its ICD manifest are copied next to the published executable, and it runs with no `--vulkan-loader` and no `VK_DRIVER_FILES`, which proves a published game is self-contained. The published HelloWindow is uploaded as the `hello-window-<rid>` artifact (kept 14 days). Linux runs in every tier. Windows and macOS run in the full tier (see *CI tiers*).
+2. **Build matrix** (Windows and Linux): restore in locked mode, then `dotnet build -c Release` (warnings are errors). Linux also runs `dotnet build -c Debug`: Debug differs from Release only in `DEBUG`-conditional code, which isn't OS-specific.
+3. **Test matrix** (Windows and Linux): unit, property, native-boundary, integration, allocation, leak, determinism, plus GPU conformance and golden tests on software Vulkan. Test results go to the job summary. Failed golden images upload their diff artifacts.
+4. **AOT smoke** (the `vulkan-smoke` job): publish `tests/BrutalEngine.Aot.Smoke` and `samples/HelloWindow` with NativeAOT for the runner's RID and run them, with their JIT builds and negative tests (an injected validation error must exit 2; for HelloWindow, a bad option must also exit 64). HelloWindow presents 120 frames with validation: headless on Linux, and windowed on Windows, because no Windows driver offers `VK_EXT_headless_surface` (lavapipe included), with two window resizes on top. The published HelloWindow is uploaded as the `hello-window-<rid>` artifact (kept 14 days). Linux runs in every tier. Windows runs in the full tier (see *CI tiers*).
 5. **Pack** (in the Linux build job, from the Release build the tests use): `dotnet pack --no-build`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
 6. **Security** (separate workflows so they can also run on a schedule): `codeql.yml` (C# and Actions, `security-and-quality` queries, also weekly) and `dependency-review.yml` (blocks new dependencies with moderate or worse known vulnerabilities). Dependabot (`.github/dependabot.yml`) proposes weekly NuGet, .NET SDK and Actions updates.
 
@@ -50,10 +51,10 @@ CI is split so a typical PR gets feedback in about two minutes, while native and
 | Tier | When | Runs |
 |------|------|------|
 | **Docs** | PRs that change only documentation nothing builds, tests or packs | Only the tier selection. Format, build, test, pack and smoke are skipped. CodeQL and dependency review still run (they are required checks) |
-| **Fast** | PRs whose changed paths can't affect native interop, NativeAOT or GPU tests | Format, build and test on all 3 OSes, pack, and the Linux Vulkan + NativeAOT smoke |
-| **Full** | PRs touching native-relevant paths or `samples/`, pushes to `main` the merge check can't skip, nightly (15:00 UTC), manual runs | The fast tier plus the Windows and macOS Vulkan + NativeAOT smoke, including HelloWindow |
+| **Fast** | PRs whose changed paths can't affect native interop, NativeAOT or GPU tests | Format, build and test on Windows and Linux, pack, and the Linux Vulkan + NativeAOT smoke |
+| **Full** | PRs touching native-relevant paths or `samples/`, pushes to `main` the merge check can't skip, nightly (15:00 UTC), manual runs | The fast tier plus the Windows Vulkan + NativeAOT smoke, including HelloWindow |
 | **Verified** | A push to `main` whose tree is identical to the merged PR's head, which passed the full tier | Only the tier selection. `CI passed` succeeds and links the PR's passing run |
-| **Smoke-delta** | A push to `main` whose tree is identical to the merged PR's head, which passed the fast tier | Only the Windows and macOS Vulkan + NativeAOT smoke: what the full tier adds to the fast tier |
+| **Smoke-delta** | A push to `main` whose tree is identical to the merged PR's head, which passed the fast tier | Only the Windows Vulkan + NativeAOT smoke: what the full tier adds to the fast tier |
 
 - The `Select CI tier` job classifies a PR's changed paths, including the old name of renamed files, with `.github/scripts/ci-tier.sh`. The paths that force the full tier are listed in that script: backend modules (Platform, Graphics, Audio, Runtime), the smoke harness, everything under `samples/` (README files included, because the smoke job runs the samples on every OS), `natives/`, `.github/actions` and `.github/scripts`, `ci.yml`, `global.json`, NuGet config, and any `Directory.Build`/`Directory.Packages` file.
 - The docs tier applies only when every path is under `docs/`, is one of `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` or `SECURITY.md`, or is a GitHub issue template, the PR template or `CODEOWNERS`. `README.md` and `NOTICE.txt` are not docs-tier paths, because every package includes them.
@@ -67,13 +68,13 @@ A squash merge's commit usually has exactly the tree of the PR's head: it does w
 
 1. It finds the PR merged into `main` as the pushed commit (`GET /repos/{repo}/commits/{sha}/pulls`, keeping only PRs whose merge commit is this one), and requires exactly one.
 2. It compares the pushed commit's tree with the PR head's tree (`GET /repos/{repo}/commits/{sha}`, `.commit.tree.sha`).
-3. It reads the GitHub Actions check runs on the PR head (`GET /repos/{repo}/commits/{head}/check-runs?filter=all`, which lists every attempt of every workflow run, not just the latest attempt). Every check run of a job name must have succeeded, so a job that failed and then passed on a re-run, or a cancelled duplicate run, means the full tier. `CI passed` must have succeeded. The PR ran the full tier if the Linux, Windows and macOS Vulkan smoke jobs succeeded, and the fast tier if the Linux one did.
+3. It reads the GitHub Actions check runs on the PR head (`GET /repos/{repo}/commits/{head}/check-runs?filter=all`, which lists every attempt of every workflow run, not just the latest attempt). Every check run of a job name must have succeeded, so a job that failed and then passed on a re-run, or a cancelled duplicate run, means the full tier. `CI passed` must have succeeded. The PR ran the full tier if the Linux and Windows Vulkan smoke jobs succeeded, and the fast tier if the Linux one did.
 
 Same tree and full tier: **verified**. Same tree and fast tier: **smoke-delta**. Anything else (the tree differs, no single merged PR, the PR's CI didn't pass, a docs-tier PR, an API error, malformed JSON) runs the **full** tier, as does a failure of the check itself. It fails safe: doubt only costs time.
 
 - Pull requests, the nightly schedule and manual runs never use the merge check. The nightly full run on `main` stays unconditional, and catches runner-image drift and the change-then-revert gap above, which a skipped merge can't. CodeQL and dependency review run on every push regardless.
 - The tier job runs `ci-merge-check-test.sh` first. It checks every decision against API answers recorded in the shape of real ones, with no network. Add a case there when the rules change. The job names the check looks for (`CI passed` and `Vulkan smoke, JIT + NativeAOT (<os>)`) are constants in the script; a rename that misses the script makes every push run the full tier.
-- A verified or smoke-delta push saves no NuGet caches and uploads no `packages` artifact, and the `hello-window-<rid>` artifacts come only from the smoke jobs that ran (none when verified, Windows and macOS for smoke-delta). The nightly run refreshes `main`'s caches. For artifacts built from a specific `main` commit, run CI manually on `main` (always the full tier).
+- A verified or smoke-delta push saves no NuGet caches and uploads no `packages` artifact, and the `hello-window-<rid>` artifacts come only from the smoke jobs that ran (none when verified, Windows for smoke-delta). The nightly run refreshes `main`'s caches. For artifacts built from a specific `main` commit, run CI manually on `main` (always the full tier).
 - **Time budget:** a fast-tier PR should finish in under 3 minutes, and no single step should take over 2 minutes on a warm cache. A step that grows past that gets cached, prebuilt or moved to the nightly run.
 
 #### Caching
@@ -82,8 +83,7 @@ The repository's Actions cache is limited to 10 GB, and GitHub evicts the least 
 
 | Cache | Size | Saved by | Notes |
 |-------|------|----------|-------|
-| NuGet packages (`.github/actions/dotnet-restore`), Windows and macOS | About 650-720 MB per OS | The build job on `main` only | Keyed on every `packages.lock.json`. PRs read `main`'s copy. A PR that changes a lock file restores from nuget.org. Linux uses no cache, because downloading and extracting it took longer than restoring from nuget.org |
-| macOS loader and validation-layer build (`setup-macos-vulkan`) | About 7 MB | Any run that misses | Saves a 6-13 min build. Keyed on the pins, the build script and the runner OS |
+| NuGet packages (`.github/actions/dotnet-restore`), Windows | About 650-720 MB | The build job on `main` only | Keyed on every `packages.lock.json`. PRs read `main`'s copy. A PR that changes a lock file restores from nuget.org. Linux uses no cache, because downloading and extracting it took longer than restoring from nuget.org |
 | Windows lavapipe, loader and validation layers (`setup-software-vulkan`) | Tens of MB | Any run that misses | Keyed on the Mesa and LunarG SDK pins. Replaces downloading the Mesa archive and the LunarG SDK installer on every run |
 
 Caches unused for 7 days expire. The nightly full-tier run on `main` restores all of them, so they stay warm.
@@ -93,7 +93,7 @@ Caches unused for 7 days expire. The nightly full-tier run on `main` restores al
 ### `nightly.yml`: scheduled, plus manual dispatch
 
 - Everything in CI with all samples AOT-published.
-- Self-hosted real-GPU conformance and golden suites on all three OSes.
+- Self-hosted real-GPU conformance and golden suites on Windows and Linux.
 - Benchmarks (results stored in a `benchmarks` data branch and compared against a baseline. A regression above 10% opens an issue).
 - Fuzzing (time-boxed per target, with the corpus cached).
 - Soak tests on self-hosted machines.
@@ -102,7 +102,7 @@ Caches unused for 7 days expire. The nightly full-tier run on `main` restores al
 
 Builds the natives BRUTAL doesn't ship (macOS Vulkan loader and MoltenVK) from pinned upstream tags. Records checksums, signs the macOS binaries (once a Developer ID is available), and produces the `BrutalEngine.Natives.MoltenVK` package. Builds are reproducible from the recorded tags.
 
-It will also build the CI-only **Khronos validation layers for macOS** once, and publish them as a pinned, SHA-256-checked release asset that `setup-macos-vulkan` downloads, so CI never compiles them. Until then, `setup-macos-vulkan` builds them from the pinned commit (about 10.5 min) and caches the result, keyed on the pins, the build script and the runner OS. A warm restore takes about 5 s. A cold build happens only when one of those changes, or the first time a new cache scope (a PR, or `main`) runs the full tier. Homebrew was rejected for this: it can't be pinned, and it installs its own Vulkan loader where BRUTAL's resolver looks, so the job would no longer prove that the bundled loader is the one used.
+The CI-only **Khronos validation layers for macOS** are unused while macOS is out of CI ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)). In M0, `setup-macos-vulkan` built them from the pinned commit (about 10.5 min) and cached the result, keyed on the pins, the build script and the runner OS; a warm restore took about 5 s. If macOS CI is restored, this workflow should build them once and publish them as a pinned, SHA-256-checked release asset that `setup-macos-vulkan` downloads, so CI never compiles them. Homebrew was rejected for this: it can't be pinned, and it installs its own Vulkan loader where BRUTAL's resolver looks, so the job would no longer prove that the bundled loader is the one used.
 
 ### `release.yml`: on a `v*` tag
 
@@ -140,7 +140,7 @@ and gets:
 | Linux | Folder or `.tar.gz` with an executable and `$ORIGIN` rpath for natives. Optional AppImage. Documented runtime dependencies (`libvulkan1`, glibc minimum) |
 | macOS | A proper `.app` bundle: `Contents/MacOS`, `Contents/Frameworks` (dylibs, MoltenVK, loader), `Contents/Resources` (packs, ICD JSON, `NOTICE.txt`), `Info.plist`, entitlements. Optional codesign, notarisation (`notarytool`) and stapling |
 
-The asset cooker runs as part of publish (incremental). Each platform's output is smoke-tested in CI on that platform for the samples.
+The asset cooker runs as part of publish (incremental). The Windows and Linux output is smoke-tested in CI on that platform for the samples. The macOS output is best-effort and unverified until macOS CI returns ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
 
 ## Code signing
 

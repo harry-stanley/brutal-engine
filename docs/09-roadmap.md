@@ -1,6 +1,6 @@
 # 9. Roadmap
 
-v1.0 is delivered through seven milestones. Each one ends with a tagged `0.N` release and a **sample game shipped on all three OSes**. Order matters: every milestone builds only on what earlier milestones have finished.
+v1.0 is delivered through seven milestones. Each one ends with a tagged `0.N` release and a **sample game shipped on Windows and Linux**, the tested targets. macOS is best-effort and unverified from M1 on ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)). Order matters: every milestone builds only on what earlier milestones have finished.
 
 No dates are committed yet. After M0 we'll have real throughput data and can estimate the rest. M0's spikes exist precisely to retire the riskiest unknowns before any large investment.
 
@@ -73,7 +73,7 @@ M0 sets no benchmark budgets, so that item doesn't apply.
 - `Assets` + `brutal-cook`: GUIDs and `.meta`, importers (images, Aseprite, fonts, audio, shaders, tilemaps), incremental deterministic cooking, packs, async runtime loading, dev-mode hot reload.
 - `Text`: FreeType bitmap + SDF, dynamic atlases, layout, rich text.
 - `Tilemaps`: chunked rendering, Tiled/LDtk import, auto-tiling.
-- Publishing targets for all 3 platforms (`.app` bundle on macOS) and `dotnet new brutalgame` template.
+- Publishing targets for Windows and Linux (the macOS `.app` bundle is best-effort and unverified, [ADR-0015](adr/0015-tested-platforms-windows-linux.md)) and `dotnet new brutalgame` template.
 
 **Sample game 1:** a small complete top-down or platformer game with tilemaps, audio, text, menus via simple sprites, and gamepad support.
 
@@ -105,7 +105,7 @@ M0 sets no benchmark budgets, so that item doesn't apply.
 - Spike S7 (transport choice) → ADR.
 - Transport, replication with interest management and delta compression, snapshot interpolation, client prediction and reconciliation, network simulator, headless dedicated-server build, fuzzed parsers.
 
-**Sample game 3:** a small 2 to 8 player networked game, playable across all three OSes against a dedicated server.
+**Sample game 3:** a small 2 to 8 player networked game, playable across Windows and Linux against a dedicated server.
 
 ---
 
@@ -136,5 +136,5 @@ ImGui-based editor on the same runtime (scene view, inspector, asset browser, pl
 | Q3 | Skeletal animation authoring tool support (own format only, Spine import after licence review, DragonBones, or other) | M3 |
 | Q4 | Networking transport (spike S7) | M5 |
 | Q5 | Ahwoo's view on the "BrutalEngine" name and NuGet IDs (R9). The maintainer accepts the name for now | Revisit before 1.0 |
-| Q6 | macOS hardware: no Mac available. S3 showed GitHub's macos-15 runner can run MoltenVK (paravirtual Metal) for **correctness tests on every PR**. A real Mac (Mac mini or rented cloud Mac) is still needed for real GPU families, performance, windowed presentation, and `.app` signing/notarisation | Before the first release that claims macOS support (end of M2) |
+| Q6 | macOS hardware: no Mac available. S3 showed GitHub's macos-15 runner can run MoltenVK (paravirtual Metal) for correctness tests, and CI did in M0. [ADR-0015](adr/0015-tested-platforms-windows-linux.md) took macOS out of CI, because nobody can debug a macOS-only failure without a Mac. A real Mac (Mac mini or rented cloud Mac) is still needed for real GPU families, performance, windowed presentation, and `.app` signing/notarisation | Before the first release that claims macOS support (end of M2) |
 | Q7 | Min-spec hardware for performance budgets (e.g. an integrated-GPU laptop). Until then, budgets are measured on the reference machine only | Before M6 |

@@ -1,6 +1,6 @@
 # BrutalEngine documentation
 
-BrutalEngine is an open-source, production-grade 2D game engine for Windows, Linux and macOS, built on the [BRUTAL framework](https://github.com/ahwootech/BRUTAL) and .NET 10.
+BrutalEngine is an open-source, production-grade 2D game engine for Windows and Linux (macOS is best-effort and unverified, [ADR-0015](adr/0015-tested-platforms-windows-linux.md)), built on the [BRUTAL framework](https://github.com/ahwootech/BRUTAL) and .NET 10.
 
 These documents are the engineering plan. They are the reference for every pull request. If code and plan disagree, either the code is wrong or the plan must be updated in the same PR, with an ADR if a decision changes.
 

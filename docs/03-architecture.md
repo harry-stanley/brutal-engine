@@ -140,7 +140,7 @@ The render interface is low-level and explicit, at about the level of WebGPU. It
 - **Shaders:** cooked SPIR-V plus reflection data produced by the cooker (bindings, push constants, vertex inputs). The runtime never parses shader source.
 - **Capabilities:** the device reports features and limits. Optional features (e.g. MSAA levels, BC/ASTC formats) are negotiated, never assumed.
 - **Debug:** object names and command labels via `VK_EXT_debug_utils`. Validation layers are on in debug builds and tests. GPU timestamps for each pass are shown on the overlay.
-- **macOS:** the instance opts into `VK_KHR_portability_enumeration` and the device enables `VK_KHR_portability_subset` when present, the same way BRUTAL's `samples/Hello/HelloVulkan.cs` does. The backend respects the portability subset's restrictions (checked by tests running on MoltenVK).
+- **macOS:** the instance opts into `VK_KHR_portability_enumeration` and the device enables `VK_KHR_portability_subset` when present, the same way BRUTAL's `samples/Hello/HelloVulkan.cs` does. The backend respects the portability subset's restrictions. This is unverified: no tests run on MoltenVK while macOS is out of CI ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
 - **Device selection:** prefer a discrete GPU, allow override via config or CLI, and log every candidate with the reason it was rejected.
 
 Adding a backend means implementing `BrutalEngine.Graphics` and passing the same conformance test suite (section 5).
@@ -198,7 +198,7 @@ Chunked tile layers (renders only visible chunks, rebuilds only dirty chunks), t
 - Runs in `FixedUpdate`. Body transforms sync to and from ECS transforms (kinematic and dynamic rules). Contact, sensor and trigger events are delivered as ECS events after the step.
 - Collision layers and masks, raycasts, shape casts and overlap queries.
 - Box2D v3 multithreading is wired to the engine job system through Box2D's task callbacks, instead of spawning its own threads.
-- A determinism test (same inputs → same state hash across runs and across all three OSes) runs in CI. If cross-platform determinism fails, that's a documented limitation, not a silent one.
+- A determinism test (same inputs → same state hash across runs and across Windows and Linux, the tested OSes, [ADR-0015](adr/0015-tested-platforms-windows-linux.md)) runs in CI. If cross-platform determinism fails, that's a documented limitation, not a silent one.
 
 ## 3.16 Animation (`BrutalEngine.Animation`)
 

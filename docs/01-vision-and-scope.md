@@ -7,7 +7,7 @@ BrutalEngine is a public, open-source 2D game engine for C# developers. It is di
 ## Goals
 
 1. **Production grade.** Stable, fully tested and deployable in shipped commercial games. No hacks, shortcuts or placeholder features presented as finished.
-2. **Cross-platform from day one.** Windows, Linux and macOS are equal targets. A feature is not done until it passes CI on all three.
+2. **Cross-platform from day one.** Windows and Linux are the tested targets: a feature is not done until it passes CI on both. macOS is best-effort: its code paths are kept, but nothing builds or tests them in CI until a Mac is available ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
 3. **Stable public API.** Semantic versioning, tracked public surface, documented deprecation paths. Breaking changes only in major versions after 1.0.
 4. **Performance by design.** Zero managed allocations per frame in steady state. Data-oriented internals. Measurable budgets enforced by tests.
 5. **Code-first.** Everything the future editor does goes through the same public runtime API. The editor is a client of the engine, not a fork.
@@ -39,13 +39,13 @@ These apply to every PR, not just releases:
 |----|--------------|----------|---------------|-------|
 | Windows 10 22H2+ / Windows 11 | x64 | `win-x64` | Vulkan 1.3 (driver-provided loader) | |
 | Linux (glibc), X11 and Wayland | x64 | `linux-x64` | Vulkan 1.3 (system `libvulkan.so.1`) | Minimum glibc to be confirmed in spike S1 |
-| macOS on Apple silicon | arm64 | `osx-arm64` | Vulkan 1.3 via bundled MoltenVK and Vulkan loader | Minimum macOS version to be confirmed in spike S1 |
+| macOS on Apple silicon | arm64 | `osx-arm64` | Vulkan 1.3 via bundled MoltenVK and Vulkan loader | Best-effort and unverified: not built or tested in CI ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)). Minimum macOS version to be confirmed in spike S1 |
 
 These are the only three RIDs that BRUTAL ships native libraries for. Adding Intel macOS, ARM Linux or ARM Windows would mean building and maintaining every native dependency ourselves. That is out of scope for v1 and needs its own ADR.
 
-BRUTAL itself lists only Windows and Linux as supported. macOS support is BrutalEngine's own responsibility: we bundle and test MoltenVK and the loader ourselves (see [Risks R1](10-risks.md)).
+BRUTAL itself lists only Windows and Linux as supported. macOS support is BrutalEngine's own responsibility: we bundle MoltenVK and the loader ourselves (see [Risks R1](10-risks.md)). They ran on GitHub's macOS runner in M0, but from M1 on macOS isn't tested in CI and stays unverified until a Mac is available ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
 
-**Minimum GPU:** any Vulkan 1.3 device, with `dynamicRendering` and `synchronization2`. That covers roughly NVIDIA GTX 900 and later, AMD GCN 4 and later, Intel Gen9 and later on current drivers, and all Apple silicon via MoltenVK 1.3 or later.
+**Minimum GPU:** any Vulkan 1.3 device, with `dynamicRendering` and `synchronization2`. That covers roughly NVIDIA GTX 900 and later, AMD GCN 4 and later, Intel Gen9 and later on current drivers, and, unverified, all Apple silicon via MoltenVK 1.3 or later.
 
 ## Game styles the defaults favour
 
