@@ -26,19 +26,22 @@ internal sealed class SplashTimeline
     /// <see cref="HeadlessFramesPerSecond"/>).</summary>
     public const int HeadlessFrames = 120;
 
-    // Windowed: the clock ticks the splash lasts at least. Headless: 0, and the frame count decides.
+    // Headless timelines count frames; windowed ones time the splash with _minimumTicks.
+    private readonly bool _headless;
     private readonly long _minimumTicks;
     private bool _started;
     private long _startTimestamp;
     private long _lastTimestamp;
     private int _lastFrame;
 
-    private SplashTimeline(long minimumTicks) => _minimumTicks = minimumTicks;
+    private SplashTimeline(bool headless, long minimumTicks)
+    {
+        _headless = headless;
+        _minimumTicks = minimumTicks;
+    }
 
     /// <summary>Gets a value indicating whether the splash is over and the scene has started.</summary>
     public bool IsComplete { get; private set; }
-
-    private bool IsHeadless => _minimumTicks == 0;
 
     /// <summary>Creates the timeline of a windowed run, timed by a monotonic clock.</summary>
     /// <param name="ticksPerSecond">The clock's frequency, e.g. <see cref="System.Diagnostics.Stopwatch.Frequency"/>.</param>
@@ -49,12 +52,12 @@ internal sealed class SplashTimeline
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(ticksPerSecond);
 
         // Rounded up, so the splash is never shorter than the minimum (exact for whole-number frequencies).
-        return new SplashTimeline((long)Math.Ceiling(MinimumSeconds * ticksPerSecond));
+        return new SplashTimeline(headless: false, (long)Math.Ceiling(MinimumSeconds * ticksPerSecond));
     }
 
     /// <summary>Creates the timeline of a headless run, counted in frames.</summary>
     /// <returns>A timeline whose splash lasts the first <see cref="HeadlessFrames"/> frames.</returns>
-    public static SplashTimeline Headless() => new(0);
+    public static SplashTimeline Headless() => new(headless: true, minimumTicks: 0);
 
     /// <summary>Decides what a frame shows. Call it once per frame, before recording it; asking again about the same
     /// frame (one that wasn't presented) is allowed.</summary>
@@ -82,7 +85,7 @@ internal sealed class SplashTimeline
         _lastTimestamp = timestamp;
         if (!IsComplete)
         {
-            IsComplete = IsHeadless ? frame >= HeadlessFrames : timestamp - _startTimestamp >= _minimumTicks;
+            IsComplete = _headless ? frame >= HeadlessFrames : timestamp - _startTimestamp >= _minimumTicks;
         }
 
         return !IsComplete;
