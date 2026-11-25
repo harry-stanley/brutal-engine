@@ -53,7 +53,7 @@ The compiler turns each call into: build the handler (which asks `render.IsEnabl
 
 - Every `Logger` member is thread-safe. Dispatch, category creation, `SetLevel`, `Flush` and `Dispose` are serialised with a `System.Threading.Lock`. Level checks are lock-free reads of a volatile field.
 - Enabled messages are formatted on the calling thread, outside the lock, into a buffer of `MaxMessageBytes` rented from `ArrayPool<byte>.Shared` and returned after dispatch. `LogEntry.Message` points into that buffer, so it is valid only during `Write`: a sink that keeps the message must copy it.
-- Logging `int`, `long`, `float`, `double`, `bool`, `string` and spans allocates no managed memory after warm-up, enabled or disabled. The generic `AppendFormatted<T>` is compiled fully optimised (`AggressiveOptimization`), so the JIT removes the interface-check box for value types even before tiering. A long message whose value doesn't fit the remaining space rents a second, temporary buffer.
+- Logging `int`, `long`, `float`, `double`, `bool`, `string` and spans allocates no managed memory after warm-up, enabled or disabled. The generic `AppendFormatted<T>` sends the built-in numeric types, `char`, `Guid`, `DateTime`, `DateTimeOffset` and `TimeSpan` through `typeof(T)` checks to a constrained call, so they never box, even in unoptimised or coverage-instrumented code. Other `IUtf8SpanFormattable` value types go through an interface check, whose box the JIT removes in optimised code; the method is `AggressiveOptimization`, so that happens from the first call. A long message whose value doesn't fit the remaining space rents a second, temporary buffer.
 - Creating a category allocates (once per name). `SetLevel`, `IsEnabled` and `SinkFailureCount` don't.
 
 ## Failure modes

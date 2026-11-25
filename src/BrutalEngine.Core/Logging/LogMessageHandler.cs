@@ -111,33 +111,27 @@ public ref struct LogMessageHandler<TLevel>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
     /// <param name="format">Optional format string, e.g. <c>F2</c> or <c>X8</c>.</param>
     /// <remarks>
-    /// <see cref="IUtf8SpanFormattable"/> values format straight into the buffer and, for value types, don't
-    /// allocate. Other types fall back to <see cref="ISpanFormattable"/>, then
+    /// <see cref="IUtf8SpanFormattable"/> values format straight into the buffer. The built-in numeric types,
+    /// <see cref="char"/>, <see cref="Guid"/>, <see cref="DateTime"/>, <see cref="DateTimeOffset"/> and
+    /// <see cref="TimeSpan"/> never allocate. Other value types that implement <see cref="IUtf8SpanFormattable"/>
+    /// don't allocate in optimised code. Other types fall back to <see cref="ISpanFormattable"/>, then
     /// <see cref="IFormattable.ToString(string?, IFormatProvider?)"/>, then <see cref="object.ToString"/>; that
     /// fallback may allocate (as do enums, which box to format).
     /// </remarks>
-    // Compiled fully optimised from the first call, so the JIT removes the box of the interface checks for value
-    // types even before tiering up. Otherwise the first ~30 calls of each instantiation would allocate.
+    // Compiled fully optimised from the first call, so the JIT removes the box of the interface check below for
+    // value types even before tiering up. Unoptimised or instrumented code (e.g. code coverage) still boxes there,
+    // which is why the common types are dispatched first without one.
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void AppendFormatted<T>(T value, string? format = null)
     {
-        if (_buffer is null || _truncated)
+        if (_buffer is null || _truncated || TryAppendCommon(ref value, format))
         {
             return;
         }
 
         if (value is IUtf8SpanFormattable utf8Formattable)
         {
-            Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
-            if (utf8Formattable.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
-            {
-                CommitFormatted(written);
-            }
-            else
-            {
-                AppendOverflowing(value, format);
-            }
-
+            AppendUtf8Formattable(utf8Formattable, format);
             return;
         }
 
@@ -263,14 +257,119 @@ public ref struct LogMessageHandler<TLevel>
         ArrayPool<byte>.Shared.Return(copy);
     }
 
-    // The value didn't fit the space left: format it into a larger temporary buffer, then append what fits.
-    private void AppendOverflowing<T>(T value, string? format)
+    // The built-in types that log most, sent to the constrained path without boxing. typeof(T) checks are
+    // constants per instantiation once optimised, and allocate nothing even in unoptimised or instrumented code.
+    // Unsafe.As is sound: each branch reinterprets T only as the exact type it was just compared with.
+    private bool TryAppendCommon<T>(ref T value, string? format)
     {
-        if (value is not IUtf8SpanFormattable formattable)
+        if (!typeof(T).IsValueType)
         {
-            return;
+            return false;
         }
 
+        if (typeof(T) == typeof(int))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, int>(ref value), format);
+        }
+        else if (typeof(T) == typeof(long))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, long>(ref value), format);
+        }
+        else if (typeof(T) == typeof(float))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, float>(ref value), format);
+        }
+        else if (typeof(T) == typeof(double))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, double>(ref value), format);
+        }
+        else if (typeof(T) == typeof(uint))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, uint>(ref value), format);
+        }
+        else if (typeof(T) == typeof(ulong))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, ulong>(ref value), format);
+        }
+        else if (typeof(T) == typeof(short))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, short>(ref value), format);
+        }
+        else if (typeof(T) == typeof(ushort))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, ushort>(ref value), format);
+        }
+        else if (typeof(T) == typeof(byte))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, byte>(ref value), format);
+        }
+        else if (typeof(T) == typeof(sbyte))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, sbyte>(ref value), format);
+        }
+        else if (typeof(T) == typeof(nint))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, nint>(ref value), format);
+        }
+        else if (typeof(T) == typeof(nuint))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, nuint>(ref value), format);
+        }
+        else if (typeof(T) == typeof(Half))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, Half>(ref value), format);
+        }
+        else if (typeof(T) == typeof(decimal))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, decimal>(ref value), format);
+        }
+        else if (typeof(T) == typeof(char))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, char>(ref value), format);
+        }
+        else if (typeof(T) == typeof(Guid))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, Guid>(ref value), format);
+        }
+        else if (typeof(T) == typeof(DateTime))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, DateTime>(ref value), format);
+        }
+        else if (typeof(T) == typeof(DateTimeOffset))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, DateTimeOffset>(ref value), format);
+        }
+        else if (typeof(T) == typeof(TimeSpan))
+        {
+            AppendUtf8Formattable(Unsafe.As<T, TimeSpan>(ref value), format);
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    // Constrained calls: a value-type TFormattable is never boxed.
+    private void AppendUtf8Formattable<TFormattable>(TFormattable value, string? format)
+        where TFormattable : IUtf8SpanFormattable
+    {
+        Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
+        if (value.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
+        {
+            CommitFormatted(written);
+        }
+        else
+        {
+            AppendOverflowing(value, format);
+        }
+    }
+
+    // The value didn't fit the space left: format it into a larger temporary buffer, then append what fits.
+    private void AppendOverflowing<TFormattable>(TFormattable formattable, string? format)
+        where TFormattable : IUtf8SpanFormattable
+    {
         for (int size = Math.Max(_limit, CharScratchLength) * 2; size <= MaxOverflowScratchBytes; size *= 2)
         {
             byte[] scratch = ArrayPool<byte>.Shared.Rent(size);
