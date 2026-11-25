@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Every engine library under src/ (except Roslyn components) must be referenced here, so the architecture
+    rules load and check it. ModuleCoverageTests fails when one is missing.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
+  </ItemGroup>
+</Project>
