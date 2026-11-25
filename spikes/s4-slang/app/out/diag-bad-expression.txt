@@ -1,0 +1,6 @@
+error[E20002]: syntax error
+  --> C:/game/shaders/sprite.slang:53:31
+   |
+53 | float mask = maskTexture +.Sample(maskSampler, input.uv).r;
+   |                           ^ syntax error.
+---'

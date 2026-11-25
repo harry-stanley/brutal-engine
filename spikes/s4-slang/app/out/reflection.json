@@ -1,0 +1,426 @@
+{
+    "parameters": [
+        {
+            "name": "pc",
+            "binding": {"kind": "pushConstantBuffer", "index": 0},
+            "type": {
+                "kind": "constantBuffer",
+                "elementType": {
+                    "kind": "struct",
+                    "name": "PushData",
+                    "fields": [
+                        {
+                            "name": "viewProj",
+                            "type": {
+                                "kind": "matrix",
+                                "rowCount": 4,
+                                "columnCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                }
+                            },
+                            "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                        },
+                        {
+                            "name": "tint",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                }
+                            },
+                            "binding": {"kind": "uniform", "offset": 64, "size": 16, "elementStride": 4}
+                        }
+                    ]
+                },
+                "containerVarLayout": {
+                    "binding": {"kind": "pushConstantBuffer", "index": 0}
+                },
+                "elementVarLayout": {
+                    "type": {
+                        "kind": "struct",
+                        "name": "PushData",
+                        "fields": [
+                            {
+                                "name": "viewProj",
+                                "type": {
+                                    "kind": "matrix",
+                                    "rowCount": 4,
+                                    "columnCount": 4,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "binding": {"kind": "uniform", "offset": 0, "size": 64, "elementStride": 0}
+                            },
+                            {
+                                "name": "tint",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 4,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "binding": {"kind": "uniform", "offset": 64, "size": 16, "elementStride": 4}
+                            }
+                        ]
+                    },
+                    "binding": {"kind": "uniform", "offset": 0, "size": 80, "elementStride": 0}
+                }
+            }
+        },
+        {
+            "name": "frame",
+            "binding": {"kind": "descriptorTableSlot", "index": 0},
+            "type": {
+                "kind": "constantBuffer",
+                "elementType": {
+                    "kind": "struct",
+                    "name": "FrameData",
+                    "fields": [
+                        {
+                            "name": "time",
+                            "type": {
+                                "kind": "scalar",
+                                "scalarType": "float32"
+                            },
+                            "binding": {"kind": "uniform", "offset": 0, "size": 4, "elementStride": 0}
+                        },
+                        {
+                            "name": "pixelSnap",
+                            "type": {
+                                "kind": "scalar",
+                                "scalarType": "float32"
+                            },
+                            "binding": {"kind": "uniform", "offset": 4, "size": 4, "elementStride": 0}
+                        },
+                        {
+                            "name": "viewportSize",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 2,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                }
+                            },
+                            "binding": {"kind": "uniform", "offset": 8, "size": 8, "elementStride": 4}
+                        }
+                    ]
+                },
+                "containerVarLayout": {
+                    "binding": {"kind": "descriptorTableSlot", "index": 0}
+                },
+                "elementVarLayout": {
+                    "type": {
+                        "kind": "struct",
+                        "name": "FrameData",
+                        "fields": [
+                            {
+                                "name": "time",
+                                "type": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                },
+                                "binding": {"kind": "uniform", "offset": 0, "size": 4, "elementStride": 0}
+                            },
+                            {
+                                "name": "pixelSnap",
+                                "type": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                },
+                                "binding": {"kind": "uniform", "offset": 4, "size": 4, "elementStride": 0}
+                            },
+                            {
+                                "name": "viewportSize",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 2,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "binding": {"kind": "uniform", "offset": 8, "size": 8, "elementStride": 4}
+                            }
+                        ]
+                    },
+                    "binding": {"kind": "uniform", "offset": 0, "size": 16, "elementStride": 0}
+                }
+            }
+        },
+        {
+            "name": "spriteTexture",
+            "binding": {"kind": "descriptorTableSlot", "index": 1},
+            "type": {
+                "kind": "resource",
+                "baseShape": "texture2D",
+                "combined": true,
+                "resultType": {
+                    "kind": "vector",
+                    "elementCount": 4,
+                    "elementType": {
+                        "kind": "scalar",
+                        "scalarType": "float32"
+                    }
+                }
+            }
+        },
+        {
+            "name": "maskTexture",
+            "binding": {"kind": "descriptorTableSlot", "space": 1, "index": 0},
+            "type": {
+                "kind": "resource",
+                "baseShape": "texture2D",
+                "resultType": {
+                    "kind": "vector",
+                    "elementCount": 4,
+                    "elementType": {
+                        "kind": "scalar",
+                        "scalarType": "float32"
+                    }
+                }
+            }
+        },
+        {
+            "name": "maskSampler",
+            "binding": {"kind": "descriptorTableSlot", "space": 1, "index": 1},
+            "type": {
+                "kind": "samplerState"
+            }
+        }
+    ],
+    "entryPoints": [
+        {
+            "name": "vertexMain",
+            "stage": "vertex",
+            "parameters": [
+                {
+                    "name": "input",
+                    "stage": "vertex",
+                    "binding": {"kind": "varyingInput", "index": 0, "count": 3},
+                    "type": {
+                        "kind": "struct",
+                        "name": "VSInput",
+                        "fields": [
+                            {
+                                "name": "position",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 2,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "stage": "vertex",
+                                "binding": {"kind": "varyingInput", "index": 0},
+                                "semanticName": "POSITION"
+                            },
+                            {
+                                "name": "uv",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 2,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "stage": "vertex",
+                                "binding": {"kind": "varyingInput", "index": 1},
+                                "semanticName": "TEXCOORD"
+                            },
+                            {
+                                "name": "color",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 4,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "stage": "vertex",
+                                "binding": {"kind": "varyingInput", "index": 2},
+                                "semanticName": "COLOR"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "result": {
+                "stage": "vertex",
+                "binding": {"kind": "varyingOutput", "index": 0, "count": 2},
+                "type": {
+                    "kind": "struct",
+                    "name": "VSOutput",
+                    "fields": [
+                        {
+                            "name": "position",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                }
+                            },
+                            "semanticName": "SV_POSITION"
+                        },
+                        {
+                            "name": "uv",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 2,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                }
+                            },
+                            "stage": "vertex",
+                            "binding": {"kind": "varyingOutput", "index": 0},
+                            "semanticName": "TEXCOORD"
+                        },
+                        {
+                            "name": "color",
+                            "type": {
+                                "kind": "vector",
+                                "elementCount": 4,
+                                "elementType": {
+                                    "kind": "scalar",
+                                    "scalarType": "float32"
+                                }
+                            },
+                            "stage": "vertex",
+                            "binding": {"kind": "varyingOutput", "index": 1},
+                            "semanticName": "COLOR"
+                        }
+                    ]
+                }
+            },
+            "bindings": [
+                {
+                    "name": "pc",
+                    "binding": {"kind": "pushConstantBuffer", "index": 0}
+                },
+                {
+                    "name": "frame",
+                    "binding": {"kind": "descriptorTableSlot", "index": 0, "used": 1}
+                },
+                {
+                    "name": "spriteTexture",
+                    "binding": {"kind": "descriptorTableSlot", "index": 1, "used": 0}
+                },
+                {
+                    "name": "maskTexture",
+                    "binding": {"kind": "descriptorTableSlot", "space": 1, "index": 0, "used": 0}
+                },
+                {
+                    "name": "maskSampler",
+                    "binding": {"kind": "descriptorTableSlot", "space": 1, "index": 1, "used": 0}
+                }
+            ]
+        },
+        {
+            "name": "fragmentMain",
+            "stage": "fragment",
+            "parameters": [
+                {
+                    "name": "input",
+                    "stage": "fragment",
+                    "binding": {"kind": "varyingInput", "index": 0, "count": 2},
+                    "type": {
+                        "kind": "struct",
+                        "name": "VSOutput",
+                        "fields": [
+                            {
+                                "name": "position",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 4,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "semanticName": "SV_POSITION"
+                            },
+                            {
+                                "name": "uv",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 2,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "stage": "fragment",
+                                "binding": {"kind": "varyingInput", "index": 0},
+                                "semanticName": "TEXCOORD"
+                            },
+                            {
+                                "name": "color",
+                                "type": {
+                                    "kind": "vector",
+                                    "elementCount": 4,
+                                    "elementType": {
+                                        "kind": "scalar",
+                                        "scalarType": "float32"
+                                    }
+                                },
+                                "stage": "fragment",
+                                "binding": {"kind": "varyingInput", "index": 1},
+                                "semanticName": "COLOR"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "result": {
+                "stage": "fragment",
+                "binding": {"kind": "varyingOutput", "index": 0},
+                "semanticName": "SV_TARGET",
+                "type": {
+                    "kind": "vector",
+                    "elementCount": 4,
+                    "elementType": {
+                        "kind": "scalar",
+                        "scalarType": "float32"
+                    }
+                }
+            },
+            "bindings": [
+                {
+                    "name": "pc",
+                    "binding": {"kind": "pushConstantBuffer", "index": 0}
+                },
+                {
+                    "name": "frame",
+                    "binding": {"kind": "descriptorTableSlot", "index": 0, "used": 0}
+                },
+                {
+                    "name": "spriteTexture",
+                    "binding": {"kind": "descriptorTableSlot", "index": 1, "used": 1}
+                },
+                {
+                    "name": "maskTexture",
+                    "binding": {"kind": "descriptorTableSlot", "space": 1, "index": 0, "used": 1}
+                },
+                {
+                    "name": "maskSampler",
+                    "binding": {"kind": "descriptorTableSlot", "space": 1, "index": 1, "used": 1}
+                }
+            ]
+        }
+    ],
+    "bindlessSpaceIndex": 2
+}

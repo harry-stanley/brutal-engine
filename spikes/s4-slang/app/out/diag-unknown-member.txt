@@ -1,0 +1,6 @@
+error[E30027]: member not found
+  --> C:/game/shaders/sprite.slang:44:18
+   |
+44 | o.uv = input.uvv;
+   |              ^^^ 'uvv' is not a member of 'VSInput'.
+---'

@@ -1,0 +1,32 @@
+Slang build tag: 2026.7
+SPIR-V: vert 1812 B, frag 1076 B; diagnostics: ''
+== Global parameters (5)
+  pc: kind=ConstantBuffer category=PushConstantBuffer bindingType=PushConstant pushConstantSize=80 offset=0
+      +0 viewProj : matrix size=64
+      +64 tint : vector size=16
+  frame: kind=ConstantBuffer category=DescriptorTableSlot bindingType=ConstantBuffer set=0 binding=0 uboSize=16
+      +0 time : float size=4
+      +4 pixelSnap : float size=4
+      +8 viewportSize : vector size=8
+  spriteTexture: kind=Resource category=DescriptorTableSlot bindingType=CombinedTextureSampler set=0 binding=1
+  maskTexture: kind=Resource category=DescriptorTableSlot bindingType=Texture set=1 binding=0
+  maskSampler: kind=SamplerState category=DescriptorTableSlot bindingType=Sampler set=1 binding=1
+== Entry points (2)
+  vertexMain stage=Vertex
+    param input kind=Struct
+      location=0 position : POSITION0 type=vector scalar=Float32 cols=2 -> R32G32_SFLOAT
+      location=1 uv : TEXCOORD0 type=vector scalar=Float32 cols=2 -> R32G32_SFLOAT
+      location=2 color : COLOR0 type=vector scalar=Float32 cols=4 -> R32G32B32A32_SFLOAT
+  fragmentMain stage=Pixel
+    param input kind=Struct
+== spReflection_ToJson: 17791 chars written to out/reflection.json
+
+Determinism ep0: sameSession=True freshGlobalSession=True sha256=FBAFEAF04D48F4A6
+Determinism ep1: sameSession=True freshGlobalSession=True sha256=B5C937DA6A0F4E12
+MSL: vert 2973 B, frag 1504 B; diagnostics: ''
+Hlsl: vert 1289 B, frag 900 B
+Wgsl: vert 1831 B, frag 764 B
+DIAG unknown-member: SlangException.Result=0x80004005
+DIAG bad-expression: SlangException.Result=0x80004005
+DIAG missing-semicolon: SlangException.Result=0x80004005
+done

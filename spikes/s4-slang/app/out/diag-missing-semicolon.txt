@@ -1,0 +1,6 @@
+error[E20001]: unexpected token
+  --> C:/game/shaders/sprite.slang:46:5
+   |
+46 | return o;
+   | ^^^^^^ unexpected identifier, expected ';'
+---'

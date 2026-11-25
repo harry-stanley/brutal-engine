@@ -1,0 +1,50 @@
+== C:/Users/Harry/AppData/Local/hermes/profiles/gamedev/cache/scratch/s4-slang/nupkg-slang/slang.native.nupkg
+  other: Ahwoo.BRUTAL.Slang.Native.nuspec 756
+  other: brutal-icon-32px.png 2233
+  other: LICENSE.txt 3023
+  other: NOTICE.txt 212
+  other: CONTRIBUTORS.md 448
+  other: README.md 601
+  other: LICENSES/BRUTAL-SLANG-THIRD-PARTY-NOTICES.txt 114638
+  other: build/natives/lib/win-x64/slang-compiler.lib 157938
+  other: build/natives/lib/win-x64/slang.lib 153864
+  other: .signature.p7s 12979
+ RID linux-x64 files: 5 total MB: 105.8
+     runtimes/linux-x64/native/libslang-compiler.so 31566672
+     runtimes/linux-x64/native/libslang-compiler.so.0.2026.7 31566672
+     runtimes/linux-x64/native/libslang-glsl-module-2026.7.so 1294056
+     runtimes/linux-x64/native/libslang-glslang-2026.7.so 9829064
+     runtimes/linux-x64/native/libslang.so 31566672
+ RID osx-arm64 files: 5 total MB: 92.6
+     runtimes/osx-arm64/native/libslang-compiler.0.2026.7.dylib 27540480
+     runtimes/osx-arm64/native/libslang-compiler.dylib 27540480
+     runtimes/osx-arm64/native/libslang-glsl-module-2026.7.dylib 1321584
+     runtimes/osx-arm64/native/libslang-glslang-2026.7.dylib 8668560
+     runtimes/osx-arm64/native/libslang.dylib 27540480
+ RID win-x64 files: 4 total MB: 41.7
+     runtimes/win-x64/native/slang-compiler.dll 30521344
+     runtimes/win-x64/native/slang-glsl-module.dll 1282560
+     runtimes/win-x64/native/slang-glslang.dll 9848320
+     runtimes/win-x64/native/slang.dll 60928
+== C:/Users/Harry/AppData/Local/hermes/profiles/gamedev/cache/scratch/s4-slang/nupkg-shaderc/shaderc.native.nupkg
+  other: Ahwoo.BRUTAL.ShaderC.Native.nuspec 807
+  other: brutal-icon-32px.png 2233
+  other: LICENSE.txt 3023
+  other: NOTICE.txt 212
+  other: CONTRIBUTORS.md 448
+  other: README.md 621
+  other: LICENSES/BRUTAL-SHADERC-THIRD-PARTY-NOTICES.txt 86759
+  other: build/natives/lib/win-x64/shaderc_shared.lib 16774
+  other: build/natives/lib/win-x64/SPIRV-Tools-shared.lib 45224
+  other: .signature.p7s 12979
+ RID linux-x64 files: 3 total MB: 23.6
+     runtimes/linux-x64/native/libshaderc_shared.so 10732152
+     runtimes/linux-x64/native/libshaderc_shared.so.1 10732152
+     runtimes/linux-x64/native/libSPIRV-Tools-shared.so 2151728
+ RID osx-arm64 files: 3 total MB: 19.5
+     runtimes/osx-arm64/native/libshaderc_shared.1.dylib 8586376
+     runtimes/osx-arm64/native/libshaderc_shared.dylib 8586376
+     runtimes/osx-arm64/native/libSPIRV-Tools-shared.dylib 2362296
+ RID win-x64 files: 2 total MB: 6.6
+     runtimes/win-x64/native/shaderc_shared.dll 4943872
+     runtimes/win-x64/native/SPIRV-Tools-shared.dll 1630208

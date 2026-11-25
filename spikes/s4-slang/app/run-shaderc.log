@@ -1,0 +1,9 @@
+ShaderC SPIR-V: vert 2160 B, frag 1232 B
+ShaderC determinism vert: True
+ShaderC DIAG (ShaderCompilationException):
+C:/game/shaders/sprite.vert:14: error: 'inUvv' : undeclared identifier
+C:/game/shaders/sprite.vert:14: error: 'assign' :  cannot convert from ' temp float' to 'layout( location=0) smooth out highp 2-component vector of float'
+
+ShaderC DIAG (ShaderCompilationException):
+C:/game/shaders/sprite.vert:16: error: '' :  syntax error, unexpected RIGHT_BRACE, expecting COMMA or SEMICOLON
+
