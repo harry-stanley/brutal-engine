@@ -1,6 +1,6 @@
 # ADR-0009: GitHub as source of truth, GitHub Actions CI
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0015](0015-tested-platforms-windows-linux.md) (CI runs on Windows and Linux only)
 - **Date:** 2026-11-25
 - **Deciders:** Harry Stanley (maintainer)
 

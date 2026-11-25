@@ -27,7 +27,7 @@ Closes #<!-- issue number -->
 
 ## Platforms verified
 
-<!-- Tick only platforms you actually built and tested on. Say which GPU/driver for graphics changes. Unverified platforms rely on CI. -->
+<!-- Tick only platforms you actually built and tested on. Say which GPU/driver for graphics changes. CI covers Windows and Linux; macOS is best-effort, with no CI (ADR-0015). -->
 
 - [ ] Windows
 - [ ] Linux
@@ -42,7 +42,7 @@ Closes #<!-- issue number -->
 - [ ] Behaviour matches the design doc or ADR (or the doc is updated in this PR)
 - [ ] Unit/integration/GPU tests cover the change at the right layer, including failure paths
 - [ ] Zero build warnings, analyzers clean, formatting clean
-- [ ] CI green on Windows, Linux and macOS
+- [ ] CI green on Windows and Linux
 - [ ] No managed allocations added to steady-state frames (allocation tests pass)
 - [ ] No leaks (tracking allocators and GPU tracker clean)
 - [ ] Every native status code checked

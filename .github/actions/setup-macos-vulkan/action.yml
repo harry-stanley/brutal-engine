@@ -1,3 +1,5 @@
+# Unused since ADR-0015 (docs/adr/0015-tested-platforms-windows-linux.md): CI no longer runs macOS. Kept, unverified,
+# so macOS CI can be restored (the ADR lists the steps).
 name: Set up bundled Vulkan (macOS)
 description: >-
   Lays out the macOS Vulkan natives a BrutalEngine game bundles (the Khronos loader and MoltenVK) plus the Khronos

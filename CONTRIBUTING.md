@@ -16,7 +16,7 @@ The engine is in its planning stage: the engineering plan in [docs/](docs/README
 - **.NET 10 SDK** (any `10.0.x` feature band). The repository pins it with `global.json` from M0 on.
 - **Vulkan SDK**, for the validation layers used in development and GPU tests.
 - **Git LFS**, only if you work on golden-image tests or samples. Library-only contributors can build and run the unit tests without LFS content.
-- Windows (x64), Linux (x64) or macOS (arm64), the three supported platforms.
+- Windows (x64) or Linux (x64), the tested platforms. macOS (arm64) is best-effort and unverified: CI doesn't build or test it ([ADR-0015](docs/adr/0015-tested-platforms-windows-linux.md)).
 
 See [Tech stack](docs/02-tech-stack.md) for versions and the full dependency list.
 
@@ -40,7 +40,7 @@ The build must finish with **zero warnings** (warnings are errors), and every te
 4. **Implement with tests in the same PR.** Bug fixes start with a failing test.
 5. **Verify locally** with the commands above before pushing.
 6. **Open a pull request** using the template: what changed, why, how it's tested, public API changes, performance impact, platforms verified and follow-ups. Link the issue. Aim for under about 800 changed lines, excluding generated files and test data, and split larger features into stacked PRs.
-7. **CI must be green on Windows, Linux and macOS** before merge.
+7. **CI must be green on Windows and Linux** before merge. macOS isn't in CI.
 8. **Review and merge.** Address review comments with follow-up commits on the same branch. The maintainer merges every PR with **squash and merge**, so the PR title becomes the commit on `main`.
 
 A PR is ready to merge when it meets the [definition of done](docs/08-workflow.md#definition-of-done). The PR template includes the checklist.

@@ -1,6 +1,6 @@
 # 9. Roadmap
 
-v1.0 is delivered through seven milestones. Each one ends with a tagged `0.N` release and a **sample game shipped on all three OSes**. Order matters: every milestone builds only on what earlier milestones have finished.
+v1.0 is delivered through seven milestones. Each one ends with a tagged `0.N` release and a **sample game shipped on Windows and Linux**, the tested targets. macOS is best-effort and unverified from M1 on ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)). Order matters: every milestone builds only on what earlier milestones have finished.
 
 No dates are committed yet. After M0 we'll have real throughput data and can estimate the rest. M0's spikes exist precisely to retire the riskiest unknowns before any large investment.
 
@@ -29,8 +29,8 @@ Spikes (throwaway code in a `spikes/` branch, each ending in a written result ad
 
 Results for S1 to S5 are in [docs/spikes](spikes/README.md). Status at the close of M0 (2026-11-26):
 
-- **S2 is done on all 3 OSes.** The `vulkan-smoke` CI job publishes HelloWindow and the smoke harness with NativeAOT and runs them next to their JIT builds on Linux, Windows and macOS (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)).
-- **S1 is done on Windows and macOS:** windowed on Windows on the reference machine, and offscreen on GitHub's macOS runner. In CI, HelloWindow presents headless on Linux (lavapipe) and macOS (bundled MoltenVK), and windowed on Windows (lavapipe), because no Windows driver offers headless surfaces ([HelloWindow in CI](spikes/README.md#hellowindow-in-ci)).
+- **S2 is done on all 3 OSes.** The `vulkan-smoke` CI job published HelloWindow and the smoke harness with NativeAOT and ran them next to their JIT builds on Linux, Windows and macOS (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)).
+- **S1 is done on Windows and macOS:** windowed on Windows on the reference machine, and offscreen on GitHub's macOS runner. In CI, HelloWindow presented headless on Linux (lavapipe) and macOS (bundled MoltenVK), and windowed on Windows (lavapipe), because no Windows driver offers headless surfaces ([HelloWindow in CI](spikes/README.md#hellowindow-in-ci)).
 - **S1 windowed on Arch Linux on real hardware is deferred** to the backlog ([#27](https://github.com/harry-stanley/brutal-engine/issues/27), left open). Decision (maintainer, 2026-11-26): M0 closes without it. Consequence: the minimum glibc and macOS versions that S1's pass criteria ask for aren't recorded, so 0.1 states no minimum OS versions.
 
 **Exit criteria**, each with its close-out note:
@@ -42,7 +42,7 @@ Results for S1 to S5 are in [docs/spikes](spikes/README.md). Status at the close
 
 **Deviations approved for 0.1.** Decision (maintainer, 2026-11-26): M0 closes with a `v0.1.0-alpha` tag (published as a pre-release) and a GitHub Release that carries the CI `hello-window-<rid>` builds, with no NuGet packages. These items of the [milestone definition of done](08-workflow.md#definition-of-done-for-a-milestone) don't exist yet and are accepted as missing for 0.1:
 
-- **`release.yml`:** not written. 0.1.0 is tagged and released by hand. No package is published, because the first package release needs Ahwoo's OK on the name and package IDs ([Licensing obligations](01-vision-and-scope.md#licensing-obligations)). No milestone schedules the workflow yet.
+- **`release.yml`:** not written. M0 was tagged `v0.1.0-alpha` and published by hand as a GitHub pre-release. No package is published, because the first package release needs Ahwoo's OK on the name and package IDs ([Licensing obligations](01-vision-and-scope.md#licensing-obligations)). No milestone schedules the workflow yet.
 - **Scripted playthrough on self-hosted real GPUs:** no self-hosted runners exist, and HelloWindow's only scripted run is its CI run on software or paravirtual GPUs. M1 adds a nightly workflow on software Vulkan and records real-GPU runs on the reference machine in each graphics PR. A self-hosted runner is revisited at the end of M1.
 - **Manual QA checklist on real hardware:** not written, and no milestone schedules it yet. M0's only real-hardware runs are the Windows ones on the reference machine.
 - **Docs site:** there's no docfx site or `docs.yml`. The manual and API reference are [M6](#m6-10-hardening-100) work. Until then, `docs/` is the documentation.
@@ -55,7 +55,7 @@ M0 sets no benchmark budgets, so that item doesn't apply.
 
 - `BrutalEngine.Platform` + `Platform.Sdl3`: window, events, DPI, headless mode, VFS, paths.
 - `BrutalEngine.Graphics` + `Graphics.Vulkan`: device selection, swapchain (resize, minimise, out-of-date), frames in flight, VMA, staging uploads, textures, buffers, samplers, pipelines, bind groups, dynamic rendering, a minimal frame graph, timestamp queries, debug names. Device-lost handling with fault-injection tests.
-- Graphics conformance suite (software Vulkan in CI, real GPUs nightly).
+- Graphics conformance suite: software Vulkan in CI; real GPUs locally on the reference machine for each graphics PR, recorded in the PR. Decision (maintainer, 2026-11-26): no self-hosted nightly runner in M1, revisited at its close.
 - `BrutalEngine.World`: ECS core, schedules, command buffers, hierarchy and transforms, generated queries.
 - `BrutalEngine.Runtime`: host lifecycle, fixed-step loop, module registry, splash, crash reports.
 - `BrutalEngine.DebugOverlay`: ImGui with our SDL3 platform backend and a renderer on our render interface. Frame-timing and log panels.
@@ -73,7 +73,7 @@ M0 sets no benchmark budgets, so that item doesn't apply.
 - `Assets` + `brutal-cook`: GUIDs and `.meta`, importers (images, Aseprite, fonts, audio, shaders, tilemaps), incremental deterministic cooking, packs, async runtime loading, dev-mode hot reload.
 - `Text`: FreeType bitmap + SDF, dynamic atlases, layout, rich text.
 - `Tilemaps`: chunked rendering, Tiled/LDtk import, auto-tiling.
-- Publishing targets for all 3 platforms (`.app` bundle on macOS) and `dotnet new brutalgame` template.
+- Publishing targets for Windows and Linux (the macOS `.app` bundle is best-effort and unverified, [ADR-0015](adr/0015-tested-platforms-windows-linux.md)) and `dotnet new brutalgame` template.
 
 **Sample game 1:** a small complete top-down or platformer game with tilemaps, audio, text, menus via simple sprites, and gamepad support.
 
@@ -105,7 +105,7 @@ M0 sets no benchmark budgets, so that item doesn't apply.
 - Spike S7 (transport choice) → ADR.
 - Transport, replication with interest management and delta compression, snapshot interpolation, client prediction and reconciliation, network simulator, headless dedicated-server build, fuzzed parsers.
 
-**Sample game 3:** a small 2 to 8 player networked game, playable across all three OSes against a dedicated server.
+**Sample game 3:** a small 2 to 8 player networked game, playable across Windows and Linux against a dedicated server.
 
 ---
 
@@ -136,5 +136,5 @@ ImGui-based editor on the same runtime (scene view, inspector, asset browser, pl
 | Q3 | Skeletal animation authoring tool support (own format only, Spine import after licence review, DragonBones, or other) | M3 |
 | Q4 | Networking transport (spike S7) | M5 |
 | Q5 | Ahwoo's view on the "BrutalEngine" name and NuGet IDs (R9). The maintainer accepts the name for now | Revisit before 1.0 |
-| Q6 | macOS hardware: no Mac available. S3 showed GitHub's macos-15 runner can run MoltenVK (paravirtual Metal) for **correctness tests on every PR**. A real Mac (Mac mini or rented cloud Mac) is still needed for real GPU families, performance, windowed presentation, and `.app` signing/notarisation | Before the first release that claims macOS support (end of M2) |
+| Q6 | macOS hardware: no Mac available. S3 showed GitHub's macos-15 runner can run MoltenVK (paravirtual Metal) for correctness tests, and CI did in M0. [ADR-0015](adr/0015-tested-platforms-windows-linux.md) took macOS out of CI, because nobody can debug a macOS-only failure without a Mac. A real Mac (Mac mini or rented cloud Mac) is still needed for real GPU families, performance, windowed presentation, and `.app` signing/notarisation | Before the first release that claims macOS support (end of M2) |
 | Q7 | Min-spec hardware for performance budgets (e.g. an integrated-GPU laptop). Until then, budgets are measured on the reference machine only | Before M6 |
