@@ -12,7 +12,7 @@ namespace BrutalEngine.Core;
 /// Handles are small, copyable, non-owning references to engine objects. A handle becomes stale
 /// when its object is released: the slot's generation moves on, so the stale handle no longer
 /// matches and is detected instead of silently referring to whatever reuses the slot.
-/// Validity is always decided by the allocator that issued the handle.
+/// Validity is always decided by the <see cref="HandleAllocator"/> that issued the handle.
 /// </para>
 /// <para>
 /// Generation <c>0</c> is reserved: the only handle with generation <c>0</c> is <see cref="Null"/>
