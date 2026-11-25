@@ -10,6 +10,7 @@ This note is the API sketch for M1's World issues. Signatures are the contract; 
 - Decision (maintainer, 2026-11-26): schedules have declared access and conflict detection and run single-threaded in M1; parallel execution comes in M2 behind the same API.
 - Decision (maintainer, 2026-11-26): the source generator is packed inside the World package; it generates component registration and query loops in M1, and serialisers in M2.
 - Decision (maintainer, 2026-11-26): the world type is `EcsWorld` and the system attribute `[EcsSystem]` (reason below).
+- Decision (maintainer, 2026-11-26): public maths types come from the BCL's `System.Numerics` (`Vector2`, `Matrix3x2`), not BRUTAL's Numerics, and World takes no dependency on `Ahwoo.Brutal.Numerics`.
 - Decision (maintainer, 2026-11-26): events and messages between systems are deferred past M1, and designed with their first consumer (input or physics).
 
 Evidence: spike S5 ([results](../spikes/README.md#s5-archetype-ecs-prototype-adr-0006)) and its design notes and code on the `spike/m0-local-spikes` branch (`spikes/s5-ecs/`), cited below as `DESIGN-NOTES.md:<line>` and `Ecs.cs:<line>`. Every S5 recommendation is adopted or rejected in the S5 table at the end. BRUTAL citations are paths in the BRUTAL repository at the pinned 2026.10.x packages.
@@ -18,7 +19,7 @@ Evidence: spike S5 ([results](../spikes/README.md#s5-archetype-ecs-prototype-adr
 
 - Package and root namespace `BrutalEngine.World`. Hierarchy types live in `BrutalEngine.World.Hierarchy` and transforms in `BrutalEngine.World.Transforms`.
 - Decision (maintainer, 2026-11-26): **the world type is `EcsWorld`, not `World`, and the system attribute is `[EcsSystem]`, not `[System]`.** Inside any `BrutalEngine.*` namespace (Runtime, Rendering2D, Physics2D...), the simple name `World` binds to the namespace `BrutalEngine.World` before any `using` is considered, so `World w = new World();` fails with CS0118 ("'World' is a namespace but is used like a type"). Observed with a scratch compile on .NET SDK 10.0.404; the same code in a game's own namespace compiles. `[System]` has the same problem with the `System` namespace.
-- Dependencies: `BrutalEngine.Core` (allocators, `Handle`, `StaleHandleException`, `ThreadAffinity`, `WrongThreadException`). From the transforms issue on, `Ahwoo.Brutal.Numerics` 2026.10.2 for `float2`/`float3x2`, the vector types [Tech stack](../02-tech-stack.md#brutal-packages-used) names (`docs/02-tech-stack.md:25`). Its nuspec depends on `Ahwoo.BRUTAL.Core`, `CommunityToolkit.HighPerformance` and Microsoft.Extensions.Logging, not on `Ahwoo.Brutal.Strings`, so World stays free of the preview ObjectPool package (`docs/10-risks.md:22`). `Brutal.Numerics` is not a binding namespace, so the binding-surface rule allows it in public signatures (`tests/BrutalEngine.Architecture.Tests/BindingSurfaceRule.cs:32-46`). `Ahwoo.Brutal.Concurrency` arrives with parallel schedules in M2.
+- Dependencies: `BrutalEngine.Core` (allocators, `Handle`, `StaleHandleException`, `ThreadAffinity`, `WrongThreadException`) and the BCL. Public maths types come from `System.Numerics` (`Vector2`, `Matrix3x2`). BRUTAL Numerics is not used in World's public API: decision (maintainer, 2026-11-26). World takes no BRUTAL package dependency in M1; `Ahwoo.Brutal.Concurrency` arrives with parallel schedules in M2.
 
 ## 1. World creation, ownership and disposal
 
@@ -411,22 +412,22 @@ namespace BrutalEngine.World.Transforms;
 
 public struct LocalTransform2D : IComponent                      // mutable data
 {
-    public float2 Position;
-    public float Rotation;                                       // radians, as float3x2.CreateRotation
-    public float2 Scale;
+    public Vector2 Position;                                     // System.Numerics
+    public float Rotation;                                       // radians, as Matrix3x2.CreateRotation
+    public Vector2 Scale;
     public static LocalTransform2D Identity { get; }
-    public readonly float3x2 ToMatrix();                         // scale, then rotation, then translation
+    public readonly Matrix3x2 ToMatrix();                        // scale, then rotation, then translation
 }
 
 public struct WorldTransform2D : IComponent                      // written by the transform system
 {
-    public float3x2 Matrix;
+    public Matrix3x2 Matrix;
 }
 
 public sealed class TransformSystem : ISystem { /* Configure and Run, below */ }
 ```
 
-`float2` and `float3x2` are `Brutal.Numerics` types (`Brutal.Numerics/Matrix/float3x2/float3x2.gen.cs:10-30`, three `float2` rows). They follow System.Numerics' row-vector convention, so `a * b` applies `a` first (`Brutal.Numerics/Matrix/float3x2/float3x2.operators.gen.cs:35-56`); the factories are `CreateScale`, `CreateRotation` and `CreateTranslation` (`Brutal.Numerics/Matrix/float3x2/float3x2.numerics.gen.cs:22`, `:129`, `:239`).
+`Vector2` (8 bytes) and `Matrix3x2` (24 bytes) are the BCL's `System.Numerics` types, so the transform components add no package dependency and are unmanaged. `Matrix3x2` uses the row-vector convention: `Vector2.Transform(v, a * b)` applies `a` first (observed with a scratch run: scale by 2 then translate by 10 maps (1, 0) to (12, 0), the reverse order to (22, 0)). `ToMatrix()` is `Matrix3x2.CreateScale(Scale) * Matrix3x2.CreateRotation(Rotation) * Matrix3x2.CreateTranslation(Position)`.
 
 **Propagation.** The world installs one `TransformSystem` as the last system of `PostUpdate` (name `"TransformSystem"`); games may add more instances, for example in `FixedUpdate` when physics needs world transforms within a tick. Each run:
 
@@ -444,12 +445,12 @@ S5 proposed depth-ordered propagation with chunk skipping at every level (`DESIG
 The attributes are public World types: `ComponentAttribute` (`SchemaVersion`, default 1), `EcsSystemAttribute`, and the generic method attributes `WithAttribute<T>`, `WithoutAttribute<T>`, `ChangedAttribute<T>` and `AddedAttribute<T>`.
 
 ```csharp
-using Brutal.Numerics;
+using System.Numerics;
 using BrutalEngine.World;
 using BrutalEngine.World.Transforms;
 
 [Component]
-public partial struct Velocity { public float2 Value; }
+public partial struct Velocity { public Vector2 Value; }
 
 [Component]
 public partial struct Frozen { }                                 // a tag
@@ -575,7 +576,7 @@ Each World issue edits the same project and `PublicAPI.Unshipped.txt`, so they r
 | W5 feat(world): defer structural changes through command buffers | `CommandBuffer`, reservation, batched spawn, sorted despawn, dead-target policy, property test through buffers | W3 | ~700 |
 | W6 feat(world): run systems in named schedules | `ISystem`, `SystemBuilder`, `SystemContext`, `Schedule`, `ScheduleCollection`, ordering, conflicts and report, access enforcement, sync points, timings, determinism test | W4, W5 | ~700 |
 | W7 feat(world): add parent and children relationships | `Parent`, `Children`, the children slab, `SetParent`/`ClearParent`/`GetChildren`, recursive despawn, the command-buffer hierarchy ops | W5 | ~600 |
-| W8 feat(world): propagate 2D transforms through the hierarchy | `Ahwoo.Brutal.Numerics` reference, `LocalTransform2D`, `WorldTransform2D`, `TransformSystem` installed in `PostUpdate`, reference test | W6, W7 | ~600 |
+| W8 feat(world): propagate 2D transforms through the hierarchy | `LocalTransform2D`, `WorldTransform2D` on `System.Numerics` (no new package), `TransformSystem` installed in `PostUpdate`, reference test | W6, W7 | ~600 |
 | W9 feat(generators): generate component registration | Creates `src/BrutalEngine.Generators` + tests, the attributes in World, component emission, BE2001-BE2005, packing into the World package | W1 | ~650 |
 | W10 feat(generators): generate system query loops | `[EcsSystem]` emission, BE2006-BE2007, the AOT smoke world scenario | W9, W6 | ~650 |
 | W11 perf(world): benchmark the world against ADR-0006's targets | `tests/BrutalEngine.Benchmarks` and the BenchmarkDotNet central version, the suites in section 12, reference-machine numbers in the PR | W8, W10 | ~400 |
@@ -625,7 +626,7 @@ Every recommendation in S5's `DESIGN-NOTES.md`, with this note's decision.
 | Don't ship the per-entity `ref` pair enumerator (`DESIGN-NOTES.md:68-69`) | Adopted | It failed the 1 ms target at 1.31 ms (section 5) |
 | Two-level form `chunk.Columns<Pos, Vel>()` (`DESIGN-NOTES.md:70`) | Rejected | `Read<T>`/`Write<T>` already give the two-level loop in two lines, with the access mode explicit per column; a tuple of spans isn't possible and a deconstructing ref struct adds API without speed |
 | Generator rewrites a `[System]` method into a chunk loop (`DESIGN-NOTES.md:71`) | Adopted | `[EcsSystem]` with `Execute` (section 9) |
-| SIMD-friendly BRUTAL maths types; cast columns to `float` spans (`DESIGN-NOTES.md:72`) | Adopted | Transforms use `float2`/`float3x2`; columns are spans of unmanaged structs, so `MemoryMarshal.Cast` works (section 8) |
+| SIMD-friendly BRUTAL maths types; cast columns to `float` spans (`DESIGN-NOTES.md:72`) | Adopted, changed | SIMD-friendly maths types, but the BCL's `System.Numerics` `Vector2`/`Matrix3x2` instead of BRUTAL's, by maintainer decision: no package dependency for World. Columns are spans of unmanaged structs, so `MemoryMarshal.Cast` to `float` spans still works (section 8) |
 | Query created once with an incremental archetype cache (`DESIGN-NOTES.md:75`) | Adopted | Archetypes are append-only, so a refresh scans only new ones and never allocates (section 5) |
 | Cache column indices per matched archetype (`DESIGN-NOTES.md:76`) | Adopted | Avoids a per-chunk lookup through a per-archetype table, which S5 found wasteful in memory (section 5) |
 | `Changed<T>`/`Added<T>` chunk filters and `Optional<T>` (`DESIGN-NOTES.md:78`) | Adopted | Physics sync, render extract and networking need them, and a chunk filter costs one tick compare per chunk (section 5) |
