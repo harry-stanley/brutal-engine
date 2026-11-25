@@ -37,7 +37,7 @@
     BRUTAL's licence duties for a product built on it, met next to the executable (nothing is vendored into the repo):
     - LICENSE 1.0: BRUTAL's copyright and permission notice ship with every copy, as LICENSE.txt.
     - LICENSE 2.1: BRUTAL's copyright notice appears in the credits. CREDITS.txt is generated at build time from that
-      LICENSE.txt's copyright line and the repo LICENSE's (BrutalEngine), so neither is retyped.
+      LICENSE.txt's copyright line and the repo LICENSE's copyright lines (BrutalEngine), so none is retyped.
     - LICENSE 2.3: NOTICE.txt ships alongside the product.
     - LICENSE 4.0: each package's LICENSES/ directory lists the third-party components it redistributes, with their
       licences.
@@ -68,8 +68,9 @@
     <ItemGroup>
       <_HelloWindowBrutalSharedFileVariant Include="@(_HelloWindowBrutalSharedFileHash->'%(OutputName)/%(FileHash)'->Distinct())" OutputName="%(OutputName)" />
     </ItemGroup>
-    <Error Condition="'%(_HelloWindowBrutalSharedFileVariant.OutputName)' != '' and @(_HelloWindowBrutalSharedFileVariant->Count()) != 1"
-           Text="The BRUTAL packages' %(_HelloWindowBrutalSharedFileVariant.OutputName) files differ." />
+    <!-- Batched by OutputName, so each check sees, and lists, only that file's copies with their hashes. -->
+    <Error Condition="'%(OutputName)' != '' and @(_HelloWindowBrutalSharedFileVariant->Count()) != 1"
+           Text="The BRUTAL packages' %(OutputName) files differ: @(_HelloWindowBrutalSharedFileHash->'%(Identity) (SHA-256 %(FileHash))', '; ')" />
 
     <ItemGroup>
       <_HelloWindowBrutalNotice Include="@(_HelloWindowBrutalSharedFile->WithMetadataValue('OutputName', 'NOTICE.txt'))" />
@@ -98,15 +99,16 @@
       <_HelloWindowEngineLicenseName Include="@(_HelloWindowEngineLicenseLine)" Condition="$([System.String]::Copy('%(Identity)').EndsWith(' License'))" />
     </ItemGroup>
     <Error Condition="@(_HelloWindowBrutalCopyright->Count()) != 1" Text="Expected one copyright line in $(_HelloWindowBrutalLicenseFile), found @(_HelloWindowBrutalCopyright->Count())." />
-    <Error Condition="@(_HelloWindowEngineCopyright->Count()) != 1 or @(_HelloWindowEngineLicenseName->Count()) != 1"
-           Text="Expected one licence name and one copyright line in $(_HelloWindowEngineLicenseFile)." />
+    <!-- BrutalEngine's LICENSE may name several copyright holders: credit every one. -->
+    <Error Condition="@(_HelloWindowEngineCopyright->Count()) == 0 or @(_HelloWindowEngineLicenseName->Count()) != 1"
+           Text="Expected one licence name and at least one copyright line in $(_HelloWindowEngineLicenseFile)." />
     <!-- One property, so blank lines survive (the text has no ';' to split it into items), with the platform's newlines. -->
     <PropertyGroup>
       <_HelloWindowNewLine>$([System.Environment]::NewLine)</_HelloWindowNewLine>
       <_HelloWindowCreditsText>HelloWindow, a BrutalEngine sample.$(_HelloWindowNewLine)$(_HelloWindowNewLine)</_HelloWindowCreditsText>
       <_HelloWindowCreditsText>$(_HelloWindowCreditsText)Built with BRUTAL:$(_HelloWindowNewLine)@(_HelloWindowBrutalCopyright)$(_HelloWindowNewLine)</_HelloWindowCreditsText>
       <_HelloWindowCreditsText>$(_HelloWindowCreditsText)BRUTAL's licence is in LICENSE.txt, its notice in NOTICE.txt, and the licences of the third-party components it redistributes in LICENSES/.$(_HelloWindowNewLine)$(_HelloWindowNewLine)</_HelloWindowCreditsText>
-      <_HelloWindowCreditsText>$(_HelloWindowCreditsText)BrutalEngine (@(_HelloWindowEngineLicenseName)):$(_HelloWindowNewLine)@(_HelloWindowEngineCopyright)</_HelloWindowCreditsText>
+      <_HelloWindowCreditsText>$(_HelloWindowCreditsText)BrutalEngine (@(_HelloWindowEngineLicenseName)):$(_HelloWindowNewLine)@(_HelloWindowEngineCopyright, '$(_HelloWindowNewLine)')</_HelloWindowCreditsText>
     </PropertyGroup>
     <WriteLinesToFile File="$(_HelloWindowCreditsFile)" Lines="$(_HelloWindowCreditsText)" Overwrite="true" WriteOnlyWhenDifferent="true" />
 
