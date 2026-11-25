@@ -16,7 +16,6 @@ internal static class Program
             return (int)ExitCode.Usage;
         }
 
-        SampleConsole.Info(options.ToString());
-        return (int)ExitCode.Pass;
+        return (int)HelloWindowApp.Run(options);
     }
 }
