@@ -57,7 +57,8 @@ dotnet_diagnostic.IDE0051.severity = warning   # unused private member
 dotnet_diagnostic.IDE0052.severity = warning   # unread private member
 dotnet_diagnostic.IDE0060.severity = warning   # unused parameter
 
-# Naming
+# Naming (IDE1006 is raised to a warning so the build enforces it, not just `dotnet format`)
+dotnet_diagnostic.IDE1006.severity = warning
 dotnet_naming_rule.private_fields_underscore.symbols = private_fields
 dotnet_naming_rule.private_fields_underscore.style = underscore_camel
 dotnet_naming_rule.private_fields_underscore.severity = warning
