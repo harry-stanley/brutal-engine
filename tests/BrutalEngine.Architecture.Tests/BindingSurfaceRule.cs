@@ -60,7 +60,7 @@ internal static class BindingSurfaceRule
 
     private static void CheckType(Type type, List<string> violations)
     {
-        string owner = Format(type);
+        string owner = TypeNames.Display(type);
 
         Inspect(type.BaseType, owner, "base type", violations);
         foreach (Type implemented in type.GetInterfaces())
@@ -157,7 +157,7 @@ internal static class BindingSurfaceRule
         foreach (Type binding in leaked)
         {
             violations.Add(
-                $"{member} ({role}) exposes {Format(binding)} from binding namespace {binding.Namespace}. Only L2 backends may expose binding types: wrap it in an engine type or make the member internal (docs/03-architecture.md 3.1).");
+                $"{member} ({role}) exposes {TypeNames.Display(binding)} from binding namespace {binding.Namespace}. Only L2 backends may expose binding types: wrap it in an engine type or make the member internal (docs/03-architecture.md 3.1).");
         }
     }
 
@@ -207,6 +207,4 @@ internal static class BindingSurfaceRule
 
     /// <summary>Public members are exposed. Protected ones are too, unless no other assembly can derive from the type.</summary>
     private static bool IsExposed(bool isPublic, bool isProtected, Type declaringType) => isPublic || (isProtected && !declaringType.IsSealed);
-
-    private static string Format(Type type) => (type.FullName ?? type.Name).Replace('+', '.');
 }

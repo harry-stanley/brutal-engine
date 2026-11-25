@@ -59,7 +59,7 @@ public sealed class BindingSurfaceTests
     [InlineData(typeof(LeaksOperator), "LeaksOperator.op_Implicit (return type)", "FakeDevice")]
     [InlineData(typeof(LeaksBaseType), "LeaksBaseType (base type)", "FakeBase")]
     [InlineData(typeof(LeaksInterface), "LeaksInterface (interface)", "IFakeCallbacks")]
-    [InlineData(typeof(LeaksTypeConstraint<>), "LeaksTypeConstraint`1 (constraint on 'T')", "IFakeCallbacks")]
+    [InlineData(typeof(LeaksTypeConstraint<>), "LeaksTypeConstraint<T> (constraint on 'T')", "IFakeCallbacks")]
     [InlineData(typeof(LeaksMethodConstraint), "LeaksMethodConstraint.Use (constraint on 'T')", "IFakeCallbacks")]
     [InlineData(typeof(LeaksProtectedMember), "LeaksProtectedMember.Create (return type)", "FakeDevice")]
     [InlineData(typeof(LeaksOuter.Nested), "LeaksOuter.Nested.Device (field type)", "FakeDevice")]
