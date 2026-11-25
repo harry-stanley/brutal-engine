@@ -42,7 +42,7 @@ Results for S1 to S5 are in [docs/spikes](spikes/README.md). Status at the close
 
 **Deviations approved for 0.1.** Decision (maintainer, 2026-11-26): M0 closes with a `v0.1.0-alpha` tag (published as a pre-release) and a GitHub Release that carries the CI `hello-window-<rid>` builds, with no NuGet packages. These items of the [milestone definition of done](08-workflow.md#definition-of-done-for-a-milestone) don't exist yet and are accepted as missing for 0.1:
 
-- **`release.yml`:** not written. 0.1.0 is tagged and released by hand. No package is published, because the first package release needs Ahwoo's OK on the name and package IDs ([Licensing obligations](01-vision-and-scope.md#licensing-obligations)). No milestone schedules the workflow yet.
+- **`release.yml`:** not written. M0 was tagged `v0.1.0-alpha` and published by hand as a GitHub pre-release. No package is published, because the first package release needs Ahwoo's OK on the name and package IDs ([Licensing obligations](01-vision-and-scope.md#licensing-obligations)). No milestone schedules the workflow yet.
 - **Scripted playthrough on self-hosted real GPUs:** no self-hosted runners exist, and HelloWindow's only scripted run is its CI run on software or paravirtual GPUs. M1 adds a nightly workflow on software Vulkan and records real-GPU runs on the reference machine in each graphics PR. A self-hosted runner is revisited at the end of M1.
 - **Manual QA checklist on real hardware:** not written, and no milestone schedules it yet. M0's only real-hardware runs are the Windows ones on the reference machine.
 - **Docs site:** there's no docfx site or `docs.yml`. The manual and API reference are [M6](#m6-10-hardening-100) work. Until then, `docs/` is the documentation.
@@ -55,7 +55,7 @@ M0 sets no benchmark budgets, so that item doesn't apply.
 
 - `BrutalEngine.Platform` + `Platform.Sdl3`: window, events, DPI, headless mode, VFS, paths.
 - `BrutalEngine.Graphics` + `Graphics.Vulkan`: device selection, swapchain (resize, minimise, out-of-date), frames in flight, VMA, staging uploads, textures, buffers, samplers, pipelines, bind groups, dynamic rendering, a minimal frame graph, timestamp queries, debug names. Device-lost handling with fault-injection tests.
-- Graphics conformance suite (software Vulkan in CI, real GPUs nightly).
+- Graphics conformance suite: software Vulkan in CI; real GPUs locally on the reference machine for each graphics PR, recorded in the PR. Decision (maintainer, 2026-11-26): no self-hosted nightly runner in M1, revisited at its close.
 - `BrutalEngine.World`: ECS core, schedules, command buffers, hierarchy and transforms, generated queries.
 - `BrutalEngine.Runtime`: host lifecycle, fixed-step loop, module registry, splash, crash reports.
 - `BrutalEngine.DebugOverlay`: ImGui with our SDL3 platform backend and a renderer on our render interface. Frame-timing and log panels.

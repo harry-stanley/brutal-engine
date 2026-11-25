@@ -13,7 +13,9 @@ macOS isn't in CI ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)): Wind
 
 ### Self-hosted runners
 
-The maintainer's hardware is registered as self-hosted runners with labels `self-hosted, gpu, <os>, <gpu-vendor>`:
+**Not set up.** Decision (maintainer, 2026-11-26): M1 has no self-hosted runner. Graphics conformance runs on software Vulkan in CI, and real-GPU conformance runs locally on the reference machine (RTX 2070 SUPER) for each graphics PR, with the results recorded in the PR. This is revisited at the close of M1. The plan below is the later target.
+
+The maintainer's hardware will be registered as self-hosted runners with labels `self-hosted, gpu, <os>, <gpu-vendor>`:
 
 | Runner | OS | GPU |
 |--------|----|-----|
@@ -36,7 +38,7 @@ Arch is a rolling release, so its runner also catches driver and Mesa regression
 1. **Lint:** `dotnet format --verify-no-changes`, markdown link check on docs, licence-header check.
 2. **Build matrix** (Windows and Linux): restore in locked mode, then `dotnet build -c Release` (warnings are errors). Linux also runs `dotnet build -c Debug`: Debug differs from Release only in `DEBUG`-conditional code, which isn't OS-specific.
 3. **Test matrix** (Windows and Linux): unit, property, native-boundary, integration, allocation, leak, determinism, plus GPU conformance and golden tests on software Vulkan. Test results go to the job summary. Failed golden images upload their diff artifacts.
-4. **AOT smoke** (the `vulkan-smoke` job): publish `tests/BrutalEngine.Aot.Smoke` and `samples/HelloWindow` with NativeAOT for the runner's RID and run them, with their JIT builds and negative tests (an injected validation error must exit 2; for HelloWindow, a bad option must also exit 64). HelloWindow presents 120 frames with validation: headless on Linux, and windowed on Windows, because no Windows driver offers `VK_EXT_headless_surface` (lavapipe included), with two window resizes on top. The published HelloWindow is uploaded as the `hello-window-<rid>` artifact (kept 14 days). Linux runs in every tier. Windows runs in the full tier (see *CI tiers*).
+4. **AOT smoke** (the `vulkan-smoke` job): publish `tests/BrutalEngine.Aot.Smoke` and `samples/HelloWindow` with NativeAOT for the runner's RID and run them, with their JIT builds and negative tests (an injected validation error must exit 2; for HelloWindow, a bad option must also exit 64). HelloWindow runs with validation: headless on Linux for 240 frames (`--headless --frames 240`), the first 120 of them the BRUTAL splash; and windowed on Windows, because no Windows driver offers `VK_EXT_headless_surface` (lavapipe included), for 3000 frames with two window resizes on top (`--frames 3000 --exercise-resize`), the splash showing for at least 2.0 s. The run fails unless the scene presented frames after the splash. The published HelloWindow is uploaded as the `hello-window-<rid>` artifact (kept 14 days). Linux runs in every tier. Windows runs in the full tier (see *CI tiers*).
 5. **Pack** (in the Linux build job, from the Release build the tests use): `dotnet pack --no-build`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
 6. **Security** (separate workflows so they can also run on a schedule): `codeql.yml` (C# and Actions, `security-and-quality` queries, also weekly) and `dependency-review.yml` (blocks new dependencies with moderate or worse known vulnerabilities). Dependabot (`.github/dependabot.yml`) proposes weekly NuGet, .NET SDK and Actions updates.
 
@@ -93,7 +95,7 @@ Caches unused for 7 days expire. The nightly full-tier run on `main` restores al
 ### `nightly.yml`: scheduled, plus manual dispatch
 
 - Everything in CI with all samples AOT-published.
-- Self-hosted real-GPU conformance and golden suites on Windows and Linux.
+- Self-hosted real-GPU conformance and golden suites on Windows and Linux, once the [self-hosted runners](#self-hosted-runners) exist (not in M1).
 - Benchmarks (results stored in a `benchmarks` data branch and compared against a baseline. A regression above 10% opens an issue).
 - Fuzzing (time-boxed per target, with the corpus cached).
 - Soak tests on self-hosted machines.
