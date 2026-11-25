@@ -98,11 +98,36 @@ public sealed class TargetFrameworkTests
         Violations.AssertNone("the target framework is set only in the root Directory.Build.props", problems);
     }
 
+    [Theory]
+    [InlineData("bin")]
+    [InlineData("obj")]
+    public void IsBuildOutput_CheckoutInsideFolderWithThatName_IsFalse(string folder)
+    {
+        string root = Path.Combine(FakeDriveRoot(), "work", folder, "brutal-engine");
+        string path = Path.Combine(root, "samples", "Directory.Build.props");
+
+        Assert.False(IsBuildOutput(root, path));
+    }
+
+    [Theory]
+    [InlineData("bin")]
+    [InlineData("obj")]
+    public void IsBuildOutput_PathInsideThatFolderBelowRoot_IsTrue(string folder)
+    {
+        string root = Path.Combine(FakeDriveRoot(), "work", "brutal-engine");
+        string path = Path.Combine(root, "samples", "HelloWindow", folder, "Release", "Directory.Build.props");
+
+        Assert.True(IsBuildOutput(root, path));
+    }
+
     [Fact]
     public void TestHost_RuntimeVersion_IsDotNet11()
     {
         Assert.Equal(ExpectedRuntimeMajorVersion, Environment.Version.Major);
     }
+
+    /// <summary>The root of the current drive or file system, so the fake paths are absolute on every OS.</summary>
+    private static string FakeDriveRoot() => Path.GetPathRoot(Repository.Root())!;
 
     /// <summary>Every project in BrutalEngine.slnx, as full paths.</summary>
     private static IReadOnlyList<string> SolutionProjectPaths()
@@ -126,7 +151,7 @@ public sealed class TargetFrameworkTests
         IEnumerable<string> nested = Directory.EnumerateDirectories(root)
             .Where(directory => !skipped.Contains(Path.GetFileName(directory), StringComparer.OrdinalIgnoreCase))
             .SelectMany(directory => Directory.EnumerateFiles(directory, "Directory.Build.*", SearchOption.AllDirectories))
-            .Where(path => !path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is "bin" or "obj"));
+            .Where(path => !IsBuildOutput(root, path));
         return
         [
             .. Directory.EnumerateFiles(root, "Directory.Build.*")
@@ -136,6 +161,14 @@ public sealed class TargetFrameworkTests
                 .OrderBy(path => path, StringComparer.Ordinal),
         ];
     }
+
+    /// <summary>
+    /// True if <paramref name="path"/> is inside a <c>bin</c> or <c>obj</c> folder below <paramref name="root"/>. Only
+    /// the part of the path below the root counts, so a checkout inside a folder named <c>bin</c> or <c>obj</c> doesn't
+    /// drop every file in it.
+    /// </summary>
+    internal static bool IsBuildOutput(string root, string path) =>
+        Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is "bin" or "obj");
 
     /// <summary>The values of every TargetFramework or TargetFrameworks property set in an MSBuild file.</summary>
     private static string[] FrameworkValues(string path) =>
