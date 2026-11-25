@@ -38,6 +38,40 @@ BrutalEngine.Core.HandleAllocator.MaxSlots.get -> int
 BrutalEngine.Core.HandleAllocator.RetiredCount.get -> int
 BrutalEngine.Core.HandleAllocator.TryAllocate(out BrutalEngine.Core.Handle handle) -> bool
 BrutalEngine.Core.HandleAllocator.TryFree(BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.Memory.HeapAllocator
+BrutalEngine.Core.Memory.HeapAllocator.Allocate(nuint byteCount, nuint alignment, string! callerFile = "", int callerLine = 0) -> void*
+BrutalEngine.Core.Memory.HeapAllocator.Free(void* memory) -> void
+BrutalEngine.Core.Memory.HeapAllocator.HeapAllocator() -> void
+BrutalEngine.Core.Memory.INativeAllocator
+BrutalEngine.Core.Memory.INativeAllocator.Allocate(nuint byteCount, nuint alignment, string! callerFile = "", int callerLine = 0) -> void*
+BrutalEngine.Core.Memory.INativeAllocator.Free(void* memory) -> void
+BrutalEngine.Core.Memory.NativeAllocationInfo
+BrutalEngine.Core.Memory.NativeAllocationInfo.Address.get -> nint
+BrutalEngine.Core.Memory.NativeAllocationInfo.Alignment.get -> nuint
+BrutalEngine.Core.Memory.NativeAllocationInfo.ByteCount.get -> nuint
+BrutalEngine.Core.Memory.NativeAllocationInfo.CallerFile.get -> string!
+BrutalEngine.Core.Memory.NativeAllocationInfo.CallerLine.get -> int
+BrutalEngine.Core.Memory.NativeAllocationInfo.NativeAllocationInfo() -> void
+BrutalEngine.Core.Memory.NativeAllocationInfo.Sequence.get -> long
+BrutalEngine.Core.Memory.NativeMemoryLeakException
+BrutalEngine.Core.Memory.NativeMemoryLeakException.LeakedAllocations.get -> long
+BrutalEngine.Core.Memory.NativeMemoryLeakException.LeakedBytes.get -> long
+BrutalEngine.Core.Memory.NativeMemoryLeakException.NativeMemoryLeakException() -> void
+BrutalEngine.Core.Memory.NativeMemoryLeakException.NativeMemoryLeakException(string! message) -> void
+BrutalEngine.Core.Memory.NativeMemoryLeakException.NativeMemoryLeakException(string! message, System.Exception! innerException) -> void
+BrutalEngine.Core.Memory.NativeMemoryLeakException.NativeMemoryLeakException(string! report, long leakedAllocations, long leakedBytes) -> void
+BrutalEngine.Core.Memory.TrackingAllocator
+BrutalEngine.Core.Memory.TrackingAllocator.Allocate(nuint byteCount, nuint alignment, string! callerFile = "", int callerLine = 0) -> void*
+BrutalEngine.Core.Memory.TrackingAllocator.CreateLeakReport() -> string!
+BrutalEngine.Core.Memory.TrackingAllocator.Free(void* memory) -> void
+BrutalEngine.Core.Memory.TrackingAllocator.GetLiveAllocations() -> BrutalEngine.Core.Memory.NativeAllocationInfo[]!
+BrutalEngine.Core.Memory.TrackingAllocator.LiveAllocationCount.get -> int
+BrutalEngine.Core.Memory.TrackingAllocator.LiveBytes.get -> long
+BrutalEngine.Core.Memory.TrackingAllocator.Name.get -> string!
+BrutalEngine.Core.Memory.TrackingAllocator.PeakLiveBytes.get -> long
+BrutalEngine.Core.Memory.TrackingAllocator.ThrowIfLeaks() -> void
+BrutalEngine.Core.Memory.TrackingAllocator.TotalAllocationCount.get -> long
+BrutalEngine.Core.Memory.TrackingAllocator.TrackingAllocator(BrutalEngine.Core.Memory.INativeAllocator! inner, string! name, int initialCapacity = 0) -> void
 BrutalEngine.Core.Result
 BrutalEngine.Core.Result.Error.get -> BrutalEngine.Core.EngineError
 BrutalEngine.Core.Result.IsFailure.get -> bool
