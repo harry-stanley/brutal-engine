@@ -18,6 +18,7 @@
 
 #:property AllowUnsafeBlocks=true
 #:property PublishAot=false
+#:property TargetFramework=net10.0
 #:package Ahwoo.Brutal.Vulkan@2026.10.3
 #:package Ahwoo.Brutal.Vulkan.Abstractions@2026.10.3
 #:package Ahwoo.Brutal.Core@2026.10.4
