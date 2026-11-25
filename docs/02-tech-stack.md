@@ -24,7 +24,7 @@ All BRUTAL packages are published as `Ahwoo.Brutal.*` with CalVer versions (2026
 | `Ahwoo.Brutal.Core`, `.Interop`, `.Memory`, `.Collections`, `.Strings` | Foundations: pointers, native handles, allocators, non-allocating collections and strings | managed only |
 | `Ahwoo.Brutal.Numerics`, `.Maths` | Vector and matrix types, SIMD maths | managed only |
 | `Ahwoo.Brutal.Concurrency` | Job scheduler for parallel systems | managed only |
-| `Ahwoo.Brutal.Logging` | Log sink and categories under our logging facade | managed only |
+| `Ahwoo.Brutal.Logging` | Bridged into the engine logger by the backends (M1) | managed only |
 | `Ahwoo.Brutal.Localization` | String tables, `LString` formatting | managed only |
 | `Ahwoo.Brutal.Sdl` (+ `.Native`) | Windows, events, input, gamepads, audio device, Vulkan surface (`SDL_Vulkan_CreateSurface`) | SDL 3.4 (`libSDL3.so.0.4.12`), 3 RIDs |
 | `Ahwoo.Brutal.Vulkan` (+ `.Native`) | Vulkan 1.3 bindings and function tables | 3 RIDs (helper library, not the loader) |

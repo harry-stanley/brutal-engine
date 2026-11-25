@@ -230,7 +230,7 @@ Delivered last (M5) because it touches everything. Layers:
 
 ## 3.20 Diagnostics
 
-- **Logging facade** over `Brutal.Logging`: structured, category-filtered, zero-allocation formatting for common types, with sinks for console, file (rotated) and the overlay.
+- **Logging facade** in Core (no BRUTAL dependency); BRUTAL's own log categories are bridged in from the backend layer. Structured, category-filtered, zero-allocation formatting for common types, with sinks for console, file (rotated) and the overlay. Design: [logging](design/logging.md).
 - **Debug overlay (ImGui):** frame timings (CPU per schedule and system, GPU per pass), memory (managed, unmanaged by allocator, GPU by heap), entity and asset browsers, log console, input state, audio voices. Compiled out of release builds by default.
 - **Profiling markers:** `using (Profile.Scope("name"u8))` with zero allocation, captured in a ring buffer, exportable to Chrome trace format.
 - **RenderDoc:** capture hotkey in development builds via `Ahwoo.Brutal.RenderDoc`.
