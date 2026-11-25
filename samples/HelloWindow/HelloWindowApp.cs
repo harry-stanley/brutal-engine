@@ -38,7 +38,7 @@ internal sealed unsafe class HelloWindowApp
             SampleConsole.Error($"{(_setupComplete ? "Runtime failure" : "Setup failure")}: {exception.Message}");
 
             // Typed failures name the failing call or requirement in their message; only unexpected ones need the trace.
-            if (exception is not (SampleFailureException or VkResultError or SdlException))
+            if (FailureReport.NeedsStackTrace(exception))
             {
                 SampleConsole.Error(exception.ToString());
             }
