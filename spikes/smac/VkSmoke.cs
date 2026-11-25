@@ -12,6 +12,8 @@
  *   --set-driver-env      setenv(VK_DRIVER_FILES=<app dir>/MoltenVK_icd.json) natively (libc) before the
  *                         loader is touched, i.e. what an engine would do instead of a launcher script.
  *                         (.NET's Environment.SetEnvironmentVariable does not call setenv on Unix.)
+ *   --preload <path>      NativeLibrary.Load(<path>) before BRUTAL's Vulkan static ctor runs, to test whether
+ *                         its bare-name dlopen("libvulkan.1.dylib") then binds to the already-loaded image.
  */
 
 #:property AllowUnsafeBlocks=true
@@ -31,6 +33,12 @@ using Brutal.VulkanApi.Abstractions;
 
 var requireValidation = args.Contains("--require-validation");
 var setDriverEnv = args.Contains("--set-driver-env");
+var preloadIdx = Array.IndexOf(args, "--preload");
+if (preloadIdx >= 0)
+{
+    var h = NativeLibrary.Load(args[preloadIdx + 1]);
+    Console.WriteLine($"Preloaded {args[preloadIdx + 1]} -> handle 0x{h:X}");
+}
 var sw = Stopwatch.StartNew();
 
 try

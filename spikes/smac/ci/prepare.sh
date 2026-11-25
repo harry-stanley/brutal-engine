@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spike S1: fetch pinned MoltenVK, build the pinned Vulkan loader and lay out an app bundle dir:
 #   $APP/VkSmoke.dll + libvulkan.1.dylib + libMoltenVK.dylib + MoltenVK_icd.json
-# Env: WORK (scratch dir), APP (output dir), RESULTS (markdown file to append to)
+# Env: WORK (scratch dir), APP + APP_PORTABLE (output dirs), RESULTS (markdown file to append to)
 set -euo pipefail
 
 MVK_TAG=v1.4.2
@@ -11,7 +11,7 @@ LOADER_TAG=vulkan-sdk-1.4.363.0
 LOADER_COMMIT=fa218055ff4948b159f31d43f800c808a13d51df
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-mkdir -p "$WORK" "$APP"
+mkdir -p "$WORK" "$APP" "$APP_PORTABLE"
 log() { echo "$*" | tee -a "$RESULTS"; }
 
 # --- MoltenVK (official release artifact) ---
@@ -42,9 +42,16 @@ LOADER_DYLIB=$(find "$WORK/loader/build" -name 'libvulkan.1.dylib' | head -1)
 log "- Vulkan-Loader $LOADER_TAG ($head) clone+configure+build: $((SECONDS - t)) s (UPDATE_DEPS fetches Vulkan-Headers at the tag's known_good.json pin)"
 
 # --- Test app ---
+# $APP: RID-specific framework-dependent publish -> NuGet natives are flattened into the app dir and the
+# host puts the app dir in NATIVE_DLL_SEARCH_DIRECTORIES. $APP_PORTABLE: portable build (no RID) where the
+# host only lists runtimes/<rid>/native/ dirs (found in the first run: bundling beside the app fails there).
 t=$SECONDS
-dotnet build "$REPO_ROOT/spikes/smac/VkSmoke.cs" -c Release -o "$APP" -nologo -v q
-log "- dotnet build VkSmoke.cs (incl. NuGet restore): $((SECONDS - t)) s"
+dotnet publish "$REPO_ROOT/spikes/smac/VkSmoke.cs" -c Release -r osx-arm64 --self-contained false -o "$APP" -nologo -v q
+log "- dotnet publish -r osx-arm64 VkSmoke.cs (incl. NuGet restore): $((SECONDS - t)) s"
+t=$SECONDS
+dotnet build "$REPO_ROOT/spikes/smac/VkSmoke.cs" -c Release -o "$APP_PORTABLE" -nologo -v q
+log "- dotnet build (portable) VkSmoke.cs: $((SECONDS - t)) s"
+ls -la "$APP"
 
 # Bundle natives beside the app. cp -L resolves the libvulkan.1.dylib -> libvulkan.1.x.y.dylib symlink.
 cp -L "$LOADER_DYLIB" "$APP/libvulkan.1.dylib"
@@ -57,10 +64,11 @@ j["ICD"]["library_path"] = "./libMoltenVK.dylib"
 json.dump(j, open(sys.argv[2], "w"), indent=2)
 EOF
 cat "$APP/MoltenVK_icd.json"
+cp "$APP/libvulkan.1.dylib" "$APP/libMoltenVK.dylib" "$APP/MoltenVK_icd.json" "$APP_PORTABLE/"
 
-for f in libvulkan.1.dylib libMoltenVK.dylib runtimes/osx-arm64/native/libVulkanEx.dylib; do
+for f in libvulkan.1.dylib libMoltenVK.dylib libVulkanEx.dylib; do
   echo "== $f"; file "$APP/$f"; otool -L "$APP/$f" | head -20; otool -D "$APP/$f"
   codesign -dv "$APP/$f" 2>&1 | head -5 || true
   log "- bundled \`$f\`: $(du -h "$APP/$f" | cut -f1), sha256 \`$(shasum -a 256 "$APP/$f" | cut -d' ' -f1)\`"
 done
-echo "== libVulkanEx exports (vk*)"; nm -gU "$APP/runtimes/osx-arm64/native/libVulkanEx.dylib" | grep -i ' _vk' | head -20 || echo "(none)"
+echo "== libVulkanEx exports (vk*)"; nm -gU "$APP/libVulkanEx.dylib" | grep -i ' _vk' | head -20 || echo "(none)"
