@@ -1,11 +1,12 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
 
 namespace HelloWindow;
 
-/// <summary>Runs the sample: SDL and Vulkan setup, and teardown in reverse order.</summary>
+/// <summary>Runs the sample: SDL and Vulkan setup, the event and frame loop, and teardown in reverse order.</summary>
 internal sealed unsafe class HelloWindowApp
 {
     private readonly HelloWindowOptions _options;
@@ -74,11 +75,138 @@ internal sealed unsafe class HelloWindowApp
                 _options.Height,
                 SdlWindowFlags.Vulkan | SdlWindowFlags.Resizable | SdlWindowFlags.HighPixelDensity);
             using var vulkan = VulkanContext.Create(window, _options);
-            _setupComplete = true;
+            using var renderer = new FrameRenderer(vulkan);
+            RunFrames(window, vulkan, renderer);
         }
         finally
         {
             Sdl.Init.Quit();
+        }
+    }
+
+    private void RunFrames(SdlWindow window, VulkanContext vulkan, FrameRenderer renderer)
+    {
+        Swapchain? swapchain = null;
+        int presented = 0, recreations = 0, outOfDate = 0, suboptimal = 0;
+        long frameBytes = 0;
+        bool checkExtent = true, recreate = false;
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            while (_options.Frames is not { } frames || presented < frames)
+            {
+                if (!PumpEvents(ref checkExtent))
+                {
+                    SampleConsole.Info($"Quit requested after {presented} frames.");
+                    break;
+                }
+
+                if (checkExtent || recreate || swapchain is null)
+                {
+                    VkSurfaceCapabilitiesKHR capabilities = vulkan.PhysicalDevice.GetSurfaceCapabilitiesKHR(vulkan.Surface);
+                    NativeCheck.Sdl(Sdl.Video.GetWindowSizeInPixels(window, out int width, out int height), "SDL_GetWindowSizeInPixels");
+                    SwapchainExtent extent = SwapchainPlanner.ChooseExtent(capabilities, width, height);
+                    if (extent.IsMinimised || (Sdl.Video.GetWindowFlags(window) & SdlWindowFlags.Minimized) != 0)
+                    {
+                        // Nothing to render to: sleep in SDL until the next event (restore, resize or quit).
+                        if (!WaitForEvent())
+                        {
+                            break;
+                        }
+
+                        checkExtent = true;
+                        continue;
+                    }
+
+                    // SDL reports a resize right after creating the window, so recreate only if the size really changed.
+                    if (recreate || swapchain is null || extent != swapchain.Extent)
+                    {
+                        NativeCheck.Vk(vulkan.WaitIdle(), "vkDeviceWaitIdle");
+                        Swapchain? old = swapchain;
+                        swapchain = null;
+                        try
+                        {
+                            swapchain = Swapchain.Create(vulkan, extent, capabilities, old);
+                        }
+                        finally
+                        {
+                            // Retired by the create call even if it failed, so it is always destroyed.
+                            old?.Destroy();
+                        }
+
+                        recreations += old is null ? 0 : 1;
+                        _setupComplete = true;
+                        SampleConsole.Info($"Swapchain {extent} {swapchain.Format.Format}/{swapchain.Format.ColorSpace}, {swapchain.Images.Length} images, {SwapchainPlanner.PresentMode} (at frame {presented})");
+                    }
+
+                    checkExtent = recreate = false;
+                }
+
+                // Frames must not allocate managed memory (docs/07-coding-standards.md); the first one may, while it warms up.
+                long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+                FrameAction action = renderer.RenderFrame(swapchain, _options.InjectValidationError && presented == 0);
+                frameBytes += presented == 0 ? 0 : GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+                presented += action == FrameAction.Recreate ? 0 : 1;
+                outOfDate += action == FrameAction.Recreate ? 1 : 0;
+                suboptimal += action == FrameAction.RenderThenRecreate ? 1 : 0;
+                recreate = action != FrameAction.Render;
+            }
+
+            NativeCheck.Vk(vulkan.WaitIdle(), "vkDeviceWaitIdle");
+        }
+        finally
+        {
+            // Destroying is valid even after a device loss, so teardown continues whatever the wait returns.
+            VkResult idle = vulkan.WaitIdle();
+            if (idle != VkResult.Success)
+            {
+                SampleConsole.Error($"vkDeviceWaitIdle returned {idle} during teardown.");
+            }
+
+            swapchain?.Destroy();
+        }
+
+        double seconds = clock.Elapsed.TotalSeconds;
+        SampleConsole.Info($"Presented {presented} frames in {seconds:F2} s ({presented / seconds:F1} fps); "
+            + $"swapchain recreations {recreations}, out-of-date {outOfDate}, suboptimal {suboptimal}; "
+            + $"{frameBytes} managed bytes allocated by frames after the first.");
+    }
+
+    private static bool PumpEvents(ref bool checkExtent)
+    {
+        while (Sdl.Events.PollEvent(out SdlEvent sdlEvent))
+        {
+            if (!Handle(sdlEvent, ref checkExtent))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool WaitForEvent()
+    {
+        SdlEvent sdlEvent = default;
+        NativeCheck.Sdl(Sdl.Events.WaitEvent(&sdlEvent), "SDL_WaitEvent");
+        bool unused = true;
+        return Handle(sdlEvent, ref unused) && PumpEvents(ref unused);
+    }
+
+    // Returns false when the user asked to quit.
+    private static bool Handle(in SdlEvent sdlEvent, ref bool checkExtent)
+    {
+        switch (sdlEvent.type)
+        {
+            case SdlEventType.Quit or SdlEventType.WindowCloseRequested:
+                return false;
+            case SdlEventType.KeyDown when sdlEvent.key.key == SdlKeycode.Escape:
+                return false;
+            case SdlEventType.WindowPixelSizeChanged or SdlEventType.WindowResized or SdlEventType.WindowMinimized or SdlEventType.WindowRestored:
+                checkExtent = true;
+                return true;
+            default:
+                return true;
         }
     }
 
