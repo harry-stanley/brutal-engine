@@ -45,19 +45,35 @@ Required approvals are 0 for now. PRs are opened under the maintainer's own acco
 
 #### CI tiers
 
-CI is split so a typical PR gets feedback in about two minutes, while native and GPU coverage still runs before and after every merge:
+CI is split so a typical PR gets feedback in about two minutes, while native and GPU coverage still runs before and after every merge, and a merge doesn't repeat what its PR already proved:
 
 | Tier | When | Runs |
 |------|------|------|
 | **Docs** | PRs that change only documentation nothing builds, tests or packs | Only the tier selection. Format, build, test, pack and smoke are skipped. CodeQL and dependency review still run (they are required checks) |
 | **Fast** | PRs whose changed paths can't affect native interop, NativeAOT or GPU tests | Format, build and test on all 3 OSes, pack, and the Linux Vulkan + NativeAOT smoke |
-| **Full** | PRs touching native-relevant paths or `samples/`, every push to `main`, nightly (15:00 UTC), manual runs | The fast tier plus the Windows and macOS Vulkan + NativeAOT smoke, including HelloWindow |
+| **Full** | PRs touching native-relevant paths or `samples/`, pushes to `main` the merge check can't skip, nightly (15:00 UTC), manual runs | The fast tier plus the Windows and macOS Vulkan + NativeAOT smoke, including HelloWindow |
+| **Verified** | A push to `main` whose tree is identical to the merged PR's head, which passed the full tier | Only the tier selection. `CI passed` succeeds and links the PR's passing run |
+| **Smoke-delta** | A push to `main` whose tree is identical to the merged PR's head, which passed the fast tier | Only the Windows and macOS Vulkan + NativeAOT smoke: what the full tier adds to the fast tier |
 
 - The `Select CI tier` job classifies a PR's changed paths, including the old name of renamed files, with `.github/scripts/ci-tier.sh`. The paths that force the full tier are listed in that script: backend modules (Platform, Graphics, Audio, Runtime), the smoke harness, everything under `samples/` (README files included, because the smoke job runs the samples on every OS), `natives/`, `.github/actions` and `.github/scripts`, `ci.yml`, `global.json`, NuGet config, and any `Directory.Build`/`Directory.Packages` file.
 - The docs tier applies only when every path is under `docs/`, is one of `CHANGELOG.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` or `SECURITY.md`, or is a GitHub issue template, the PR template or `CODEOWNERS`. `README.md` and `NOTICE.txt` are not docs-tier paths, because every package includes them.
 - The job runs `ci-tier-test.sh` first, so a broken rule fails CI instead of silently skipping coverage. Add a case there when the list changes.
-- `CI passed` accepts a skipped job only in the docs tier. In the fast and full tiers, every job it needs must succeed, and it fails if the tier can't be selected.
-- Anything the fast tier misses is caught by the full run on the merge to `main`.
+- `CI passed` accepts a skipped job only where the tier skips it on purpose: every job in the docs and verified tiers, and format and build-and-test in the smoke-delta tier. In the fast and full tiers, every job it needs must succeed. It fails if the tier can't be selected.
+- Anything the fast tier misses is caught on the merge to `main`: by the smoke-delta tier when the trees match, and by the full tier otherwise.
+
+##### The merge check (pushes to `main`)
+
+A squash merge's commit usually has exactly the tree of the PR's head: it does whenever the head contained `main` at merge time. The PR's run tested the head merged with `main` as it was when the run started, with the same inputs, because `global.json` and the lock files pin the toolchain and packages. So the run built and tested that exact tree, with one gap: if `main` gained a change after the run started and reverted it before the merge, the trees still match, but the run tested the head plus that change. The nightly full run is the backstop for that gap. On a push to `main`, `.github/scripts/ci-merge-check.sh` decides how much of the full tier is still needed, using the default `GITHUB_TOKEN` (`contents`, `pull-requests` and `checks`, all read-only):
+
+1. It finds the PR merged into `main` as the pushed commit (`GET /repos/{repo}/commits/{sha}/pulls`, keeping only PRs whose merge commit is this one), and requires exactly one.
+2. It compares the pushed commit's tree with the PR head's tree (`GET /repos/{repo}/commits/{sha}`, `.commit.tree.sha`).
+3. It reads the GitHub Actions check runs on the PR head (`GET /repos/{repo}/commits/{head}/check-runs?filter=all`, which lists every attempt of every workflow run, not just the latest attempt). Every check run of a job name must have succeeded, so a job that failed and then passed on a re-run, or a cancelled duplicate run, means the full tier. `CI passed` must have succeeded. The PR ran the full tier if the Linux, Windows and macOS Vulkan smoke jobs succeeded, and the fast tier if the Linux one did.
+
+Same tree and full tier: **verified**. Same tree and fast tier: **smoke-delta**. Anything else (the tree differs, no single merged PR, the PR's CI didn't pass, a docs-tier PR, an API error, malformed JSON) runs the **full** tier, as does a failure of the check itself. It fails safe: doubt only costs time.
+
+- Pull requests, the nightly schedule and manual runs never use the merge check. The nightly full run on `main` stays unconditional, and catches runner-image drift and the change-then-revert gap above, which a skipped merge can't. CodeQL and dependency review run on every push regardless.
+- The tier job runs `ci-merge-check-test.sh` first. It checks every decision against API answers recorded in the shape of real ones, with no network. Add a case there when the rules change. The job names the check looks for (`CI passed` and `Vulkan smoke, JIT + NativeAOT (<os>)`) are constants in the script; a rename that misses the script makes every push run the full tier.
+- A verified or smoke-delta push saves no NuGet caches and uploads no `packages` artifact, and the `hello-window-<rid>` artifacts come only from the smoke jobs that ran (none when verified, Windows and macOS for smoke-delta). The nightly run refreshes `main`'s caches. For artifacts built from a specific `main` commit, run CI manually on `main` (always the full tier).
 - **Time budget:** a fast-tier PR should finish in under 3 minutes, and no single step should take over 2 minutes on a warm cache. A step that grows past that gets cached, prebuilt or moved to the nightly run.
 
 #### Caching

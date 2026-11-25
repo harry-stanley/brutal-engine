@@ -1,8 +1,9 @@
 name: CI
 
-# Three tiers (docs/06-ci-cd-and-release.md, "CI tiers"). Pull requests get the fast tier unless they touch paths
-# that can affect native interop, NativeAOT or GPU tests (full tier), or only documentation (docs tier, which skips
-# the build). Pushes to main, the nightly schedule and manual runs always get the full tier.
+# Tiers (docs/06-ci-cd-and-release.md, "CI tiers"). Pull requests get the fast tier unless they touch paths that can
+# affect native interop, NativeAOT or GPU tests (full tier), or only documentation (docs tier, which skips the build).
+# A push to main whose tree the merged PR already tested runs only what that PR didn't (verified or smoke-delta tier);
+# any other push, the nightly schedule and manual runs always get the full tier.
 on:
   pull_request:
   push:
@@ -31,9 +32,14 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      checks: read # the merge check reads the merged PR's check runs
     outputs:
       tier: ${{ steps.select.outputs.tier }}
+      build: ${{ steps.select.outputs.build }}
+      smoke: ${{ steps.select.outputs.smoke }}
       smoke_matrix: ${{ steps.select.outputs.smoke_matrix }}
+      pr_url: ${{ steps.select.outputs.pr_url }}
+      proof_url: ${{ steps.select.outputs.proof_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,19 +47,53 @@ jobs:
           persist-credentials: false
       - name: Self-test the tier rules
         run: bash .github/scripts/ci-tier-test.sh
+      - name: Self-test the merge check
+        run: bash .github/scripts/ci-merge-check-test.sh
       - name: Select tier
         id: select
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
+          # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran);
+          # macOS uses MoltenVK on the runner's paravirtual Metal GPU. Its bundled loader path is added by the
+          # smoke steps from BUNDLED_VULKAN_LOADER (set by setup-macos-vulkan), because BRUTAL can't find the
+          # loader by itself (docs/spikes/README.md, S1).
+          linux='{"os":"ubuntu-24.04","rid":"linux-x64","smoke_args":"--require-cpu"}'
+          windows='{"os":"windows-2025","rid":"win-x64","smoke_args":"--require-cpu"}'
+          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk"}'
+
+          pr_url=""
+          proof_url=""
           if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "Event '$EVENT_NAME' always runs the full tier."
-            tier=full
+            # A push to main skips what the merged PR already proved on the same tree. The check fails safe: any
+            # error or doubt (and every other event) runs the full tier.
+            if ! check=$(SMOKE_FAST_OS=$(jq -r .os <<< "$linux") \
+              SMOKE_FULL_OS="$(jq -r .os <<< "$windows") $(jq -r .os <<< "$macos")" \
+              bash .github/scripts/ci-merge-check.sh); then
+              echo "::warning::The merge check failed, so the full tier runs."
+              check=decision=full
+            fi
+            field() { printf '%s\n' "$check" | sed -n "s/^$1=//p"; }
+            decision=$(field decision)
+            echo "Merge check: ${decision:-none} ($(field reason))."
+            case "$decision" in
+              verified | smoke-delta)
+                tier=$decision
+                pr_url=$(field pr_url)
+                proof_url=$(field proof_url)
+                ;;
+              *)
+                echo "Event '$EVENT_NAME' runs the full tier."
+                tier=full
+                ;;
+            esac
           elif [ "$PR_CHANGED_FILES" -ge 3000 ]; then
             # The PR files API lists at most 3000 files, so a bigger PR can't be classified.
             echo "The PR changes $PR_CHANGED_FILES files, more than the files API lists. Running the full tier."
@@ -66,34 +106,47 @@ jobs:
             tier=$(printf '%s' "$paths" | bash .github/scripts/ci-tier.sh)
           fi
 
-          # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran);
-          # macOS uses MoltenVK on the runner's paravirtual Metal GPU. Its bundled loader path is added by the
-          # smoke steps from BUNDLED_VULKAN_LOADER (set by setup-macos-vulkan), because BRUTAL can't find the
-          # loader by itself (docs/spikes/README.md, S1).
-          linux='{"os":"ubuntu-24.04","rid":"linux-x64","smoke_args":"--require-cpu"}'
-          windows='{"os":"windows-2025","rid":"win-x64","smoke_args":"--require-cpu"}'
-          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk"}'
-          if [ "$tier" = "full" ]; then
-            matrix="[$linux,$windows,$macos]"
-          else
-            # The docs tier skips the smoke job, but a matrix must still be valid JSON with at least one entry.
-            matrix="[$linux]"
-          fi
+          # build: format, build, test and pack. smoke: the Vulkan smoke job, over smoke_matrix.
+          case "$tier" in
+            full) build=true smoke=true matrix="[$linux,$windows,$macos]" ;;
+            fast) build=true smoke=true matrix="[$linux]" ;;
+            smoke-delta) build=false smoke=true matrix="[$windows,$macos]" ;;
+            # docs and verified skip the smoke job, but a matrix must still be valid JSON with at least one entry.
+            docs | verified) build=false smoke=false matrix="[$linux]" ;;
+            *)
+              echo "::error::Unknown tier '$tier'."
+              exit 1
+              ;;
+          esac
 
           echo "Tier: $tier"
           echo "Vulkan smoke matrix: $matrix"
-          echo "tier=$tier" >> "$GITHUB_OUTPUT"
-          echo "smoke_matrix=$matrix" >> "$GITHUB_OUTPUT"
-          if [ "$tier" = "docs" ]; then
-            echo "CI tier: **docs** (documentation only: format, build, test, pack and Vulkan smoke skipped)" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "CI tier: **$tier** (Vulkan smoke on: $(printf '%s' "$matrix" | grep -o '"os":"[^"]*"' | cut -d'"' -f4 | paste -sd, -))" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            echo "tier=$tier"
+            echo "build=$build"
+            echo "smoke=$smoke"
+            echo "smoke_matrix=$matrix"
+            echo "pr_url=$pr_url"
+            echo "proof_url=$proof_url"
+          } >> "$GITHUB_OUTPUT"
+          smoke_os=$(printf '%s' "$matrix" | grep -o '"os":"[^"]*"' | cut -d'"' -f4 | paste -sd, -)
+          case "$tier" in
+            docs)
+              echo "CI tier: **docs** (documentation only: format, build, test, pack and Vulkan smoke skipped)" ;;
+            verified)
+              echo "CI tier: **verified** (same tree as $pr_url, whose [CI passed]($proof_url) in the full tier:" \
+                "format, build, test, pack and Vulkan smoke skipped)" ;;
+            smoke-delta)
+              echo "CI tier: **smoke-delta** (same tree as $pr_url, whose [CI passed]($proof_url) in the fast tier:" \
+                "only the Vulkan smoke on $smoke_os runs)" ;;
+            *)
+              echo "CI tier: **$tier** (Vulkan smoke on: $smoke_os)" ;;
+          esac >> "$GITHUB_STEP_SUMMARY"
 
   format:
     name: Format
     needs: tier
-    if: needs.tier.outputs.tier != 'docs'
+    if: needs.tier.outputs.build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -109,7 +162,7 @@ jobs:
   build-test:
     name: Build and test (${{ matrix.os }})
     needs: tier
-    if: needs.tier.outputs.tier != 'docs'
+    if: needs.tier.outputs.build == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -158,11 +211,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Linux runs in the fast and full tiers. Windows and macOS run in the full tier only.
+  # Linux runs in the fast and full tiers, Windows and macOS in the full and smoke-delta tiers. The name must match
+  # SMOKE_JOB_PREFIX in .github/scripts/ci-merge-check.sh, which reads it from the merged PR's check runs.
   vulkan-smoke:
     name: Vulkan smoke, JIT + NativeAOT (${{ matrix.os }})
     needs: tier
-    if: needs.tier.outputs.tier != 'docs'
+    if: needs.tier.outputs.smoke == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -345,8 +399,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Single required status check for branch protection. Passes only if the tier was selected and every other job
-  # passed. A skipped job counts as passed only in the docs tier, where the tier job skips them on purpose.
+  # Single required status check for branch protection (its name is also CI_PASSED_JOB in ci-merge-check.sh). Passes
+  # only if the tier was selected and every other job passed. A job may be skipped only where its tier skips it on
+  # purpose: everything in the docs and verified tiers, and format and build-test in the smoke-delta tier.
   ci-ok:
     name: CI passed
     if: always()
@@ -358,25 +413,51 @@ jobs:
         env:
           TIER: ${{ needs.tier.outputs.tier }}
           TIER_RESULT: ${{ needs.tier.result }}
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          NEEDS: ${{ toJSON(needs) }}
+          PR_URL: ${{ needs.tier.outputs.pr_url }}
+          PROOF_URL: ${{ needs.tier.outputs.proof_url }}
         run: |
-          echo "Tier: ${TIER:-none} (${TIER_RESULT}). Job results: $RESULTS"
+          set -euo pipefail
+          echo "Tier: ${TIER:-none} (${TIER_RESULT})."
           if [ "$TIER_RESULT" != "success" ]; then
             echo "::error::The CI tier could not be selected ($TIER_RESULT)."
             exit 1
           fi
-          for result in $RESULTS; do
+          case "$TIER" in
+            fast | full) may_skip="" ;;
+            smoke-delta) may_skip="format build-test" ;;
+            docs | verified) may_skip="format build-test vulkan-smoke" ;;
+            *)
+              echo "::error::Unknown CI tier '$TIER'."
+              exit 1
+              ;;
+          esac
+          results=$(jq -r 'to_entries[] | select(.key != "tier") | "\(.key) \(.value.result)"' <<< "$NEEDS")
+          if [ -z "$results" ]; then
+            echo "::error::No job results to check."
+            exit 1
+          fi
+          failed=0
+          while read -r job result; do
+            echo "  $job: $result"
             case "$result" in
               success) ;;
               skipped)
-                if [ "$TIER" != "docs" ]; then
-                  echo "::error::A required CI job was skipped outside the docs tier."
-                  exit 1
+                if [[ " $may_skip " != *" $job "* ]]; then
+                  echo "::error::$job was skipped, which the $TIER tier doesn't allow."
+                  failed=1
                 fi
                 ;;
               *)
-                echo "::error::A required CI job did not succeed ($result)."
-                exit 1
+                echo "::error::$job did not succeed ($result)."
+                failed=1
                 ;;
             esac
-          done
+          done <<< "$results"
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+          if [ "$TIER" = verified ] || [ "$TIER" = smoke-delta ]; then
+            echo "Same tree as $PR_URL, whose CI passed: $PROOF_URL"
+            echo "CI passed: same tree as $PR_URL, whose [CI passed]($PROOF_URL) ($TIER tier)." >> "$GITHUB_STEP_SUMMARY"
+          fi
