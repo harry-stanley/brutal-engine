@@ -122,6 +122,29 @@ public sealed class LoggingAllocationTests
         }
     }
 
+    [Fact]
+    public void SetLevel_AfterGarbageCollection_DoesNotAllocate()
+    {
+        using Logger logger = new(new LoggerOptions { Sinks = [new CountingSink()] });
+        LogCategory category = logger.CreateCategory("Allocation");
+        for (int i = 0; i < WarmUpIterations; i++)
+        {
+            logger.SetLevel(category, (LogLevel)(i % 7));
+        }
+
+        // A collection, from this thread or any other, can drop runtime caches that are only weakly held. A query
+        // that needs such a cache rebuilds it on the next call, so a collection inside a measured window shows up
+        // as allocation. Collect deterministically here instead of waiting for a parallel test to do it.
+        GC.Collect();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        logger.SetLevel(category, LogLevel.Warning);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.True(category.IsEnabled(LogLevel.Warning));
+        Assert.False(category.IsEnabled(LogLevel.Information));
+    }
+
     private static void LogCustom(LogCategory category, int i)
     {
         Vector2Value position = new(i, i * 0.5f);

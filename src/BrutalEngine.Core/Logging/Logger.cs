@@ -155,7 +155,11 @@ public sealed class Logger : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         LogCategoryState state = OwnState(category, nameof(category));
-        if (!Enum.IsDefined(level))
+
+        // A range check, not Enum.IsDefined: IsDefined reads a cache that the runtime holds only weakly, so after
+        // any garbage collection its next call rebuilds the cache and allocates. LogLevel is a byte enum with
+        // contiguous members from 0 to None (LogLevelValidationTests guards that).
+        if (level > LogLevel.None)
         {
             throw new ArgumentOutOfRangeException(nameof(level), level, "Not a defined LogLevel.");
         }
