@@ -64,6 +64,19 @@ public sealed class LogoCompositorTests
     }
 
     [Fact]
+    public void Composite_FractionAboveHalf_RoundsUp()
+    {
+        // 200 at alpha 192 over black: 200 * 192 / 255 = 150.59, so round-to-nearest gives 151 where truncation gives 150.
+        // Green 100 over 30: (100 * 192 + 30 * 63) / 255 = 82.71 -> 83.
+        byte[] rgba = [200, 100, 200, 192];
+        byte[] destination = new byte[4];
+
+        LogoCompositor.Composite(rgba, destination, new Rgb8(0, 30, 0), LogoPixelOrder.Rgba);
+
+        Assert.Equal([151, 83, 151, 255], destination);
+    }
+
+    [Fact]
     public void Composite_PartialAlpha_OutputIsOpaque()
     {
         byte[] rgba = Pixels(alpha: 77);
