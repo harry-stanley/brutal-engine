@@ -67,11 +67,12 @@ jobs:
           fi
 
           # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran);
-          # macOS uses MoltenVK on the runner's paravirtual Metal GPU through the bundled loader, which
-          # BRUTAL can't find by itself (docs/spikes/README.md, S1).
+          # macOS uses MoltenVK on the runner's paravirtual Metal GPU. Its bundled loader path is added by the
+          # smoke steps from BUNDLED_VULKAN_LOADER (set by setup-macos-vulkan), because BRUTAL can't find the
+          # loader by itself (docs/spikes/README.md, S1).
           linux='{"os":"ubuntu-24.04","rid":"linux-x64","smoke_args":"--require-cpu"}'
           windows='{"os":"windows-2025","rid":"win-x64","smoke_args":"--require-cpu"}'
-          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk --vulkan-loader \"$BUNDLED_VULKAN_LOADER\""}'
+          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk"}'
           if [ "$tier" = "full" ]; then
             matrix="[$linux,$windows,$macos]"
           else
@@ -171,6 +172,8 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      SMOKE_ARGS: ${{ matrix.smoke_args }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
@@ -187,27 +190,47 @@ jobs:
         uses: ./.github/actions/setup-macos-vulkan
       - name: Build smoke harness
         run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release --no-restore
+      # SMOKE_ARGS is split into words on purpose. BUNDLED_VULKAN_LOADER is set on macOS only.
       - name: Run (JIT)
-        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }}
+        run: >-
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS
+          ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
       - name: Negative test (JIT, injected validation error must exit 2)
         run: |
           set +e
-          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }} --inject-validation-error
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS \
+            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
           test "$code" -eq 2
-      - name: Install NativeAOT prerequisites (Linux)
+      # The runner image has versioned clang (clang-18 and so on) and zlib1g-dev, but no plain `clang`, which is
+      # what NativeAOT invokes by default. Point NativeAOT at the newest one rather than apt-installing the
+      # `clang` metapackage. Fall back to apt only if the image stops shipping them.
+      - name: Find NativeAOT toolchain (Linux)
         if: runner.os == 'Linux'
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
+        run: |
+          set -euo pipefail
+          cc=$(compgen -c clang | grep -xE 'clang(-[0-9]+)?' | sort -uV | tail -n1 || true)
+          if [ -z "$cc" ] || ! dpkg -s zlib1g-dev > /dev/null 2>&1; then
+            echo "::warning::The runner image has no clang or zlib1g-dev; installing them."
+            sudo apt-get update -q
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
+            cc=clang
+          fi
+          echo "NativeAOT compiler and linker: $cc ($(command -v "$cc"))"
+          echo "AOT_CC=$cc" >> "$GITHUB_ENV"
       - name: Publish (NativeAOT, ${{ matrix.rid }})
-        run: dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
+        run: >-
+          dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
+          ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
       - name: Run (NativeAOT)
-        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen ${{ matrix.smoke_args }}
+        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
       - name: Negative test (NativeAOT, injected validation error must exit 2)
         run: |
           set +e
-          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen ${{ matrix.smoke_args }} --inject-validation-error
+          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS \
+            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
