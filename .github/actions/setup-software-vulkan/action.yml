@@ -2,7 +2,7 @@ name: Set up software Vulkan
 description: >-
   Installs the Vulkan loader, Mesa lavapipe (a CPU Vulkan 1.3+ driver) and the Khronos validation layers on a
   GitHub-hosted runner, so GPU tests can run without a GPU. Linux and Windows only. The setup and pinned versions
-  come from spike S3 (docs/spikes/README.md). macOS needs bundled MoltenVK and is handled separately.
+  come from spike S3 (docs/spikes/README.md). macOS uses bundled MoltenVK instead (setup-macos-vulkan).
 
 runs:
   using: composite
@@ -103,5 +103,5 @@ runs:
       if: runner.os != 'Linux' && runner.os != 'Windows'
       shell: bash
       run: |
-        echo "::error::setup-software-vulkan supports Linux and Windows only (macOS uses bundled MoltenVK)."
+        echo "::error::setup-software-vulkan supports Linux and Windows only (macOS uses setup-macos-vulkan)."
         exit 1

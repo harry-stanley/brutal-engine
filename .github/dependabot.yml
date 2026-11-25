@@ -31,7 +31,8 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: github-actions
-    directory: "/"
+    # The composite actions under .github/actions pin actions too; "/" alone only covers the workflows.
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: weekly
       day: monday
