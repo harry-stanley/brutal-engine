@@ -78,6 +78,28 @@ public sealed class LogMessageHandlerTests
     }
 
     [Fact]
+    public void Format_ObjectUtf8OnlyFormattable_UsesUtf8TryFormat()
+    {
+        // Passed as object, so it reaches the non-generic fallback. Its ToString gives other text, so the output
+        // shows which path formatted it.
+        object value = new Utf8Only();
+
+        string message = FormatString(c => c.Information($"{value} {value:F1}"));
+
+        Assert.Equal("utf8: utf8:F1", message);
+    }
+
+    [Fact]
+    public void Format_ObjectUtf8AndSpanFormattable_PrefersUtf8TryFormat()
+    {
+        object value = new Utf8AndSpan();
+
+        string message = FormatString(c => c.Information($"{value}"));
+
+        Assert.Equal("utf8", message);
+    }
+
+    [Fact]
     public void Format_NullFormattableReference_AppendsNothing()
     {
         Version? missingVersion = null;
@@ -198,6 +220,32 @@ public sealed class LogMessageHandlerTests
     private sealed class PlainObject
     {
         public override string ToString() => "plain";
+    }
+
+    /// <summary>
+    /// Formats as <c>utf8:</c> and the format string, through <see cref="IUtf8SpanFormattable"/> only: no
+    /// <see cref="ISpanFormattable"/> or <see cref="IFormattable"/>, and <see cref="ToString"/> gives other text.
+    /// </summary>
+    private sealed class Utf8Only : IUtf8SpanFormattable
+    {
+        public override string ToString() => "object.ToString";
+
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider) =>
+            Utf8.TryWrite(utf8Destination, CultureInfo.InvariantCulture, $"utf8:{format}", out bytesWritten);
+    }
+
+    /// <summary>Formats as <c>utf8</c> through <see cref="IUtf8SpanFormattable"/>, and as <c>utf16</c> through every other path.</summary>
+    private sealed class Utf8AndSpan : IUtf8SpanFormattable, ISpanFormattable
+    {
+        public override string ToString() => "utf16";
+
+        public string ToString(string? format, IFormatProvider? formatProvider) => "utf16";
+
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider) =>
+            Utf8.TryWrite(utf8Destination, CultureInfo.InvariantCulture, $"utf8", out bytesWritten);
+
+        public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider) =>
+            destination.TryWrite(CultureInfo.InvariantCulture, $"utf16", out charsWritten);
     }
 
     /// <summary>Writes invalid UTF-8 (a lone 0xC0) followed by "ok".</summary>

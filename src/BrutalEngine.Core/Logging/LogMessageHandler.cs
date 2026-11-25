@@ -28,8 +28,13 @@ namespace BrutalEngine.Core.Logging;
 /// No allocation for <see cref="IUtf8SpanFormattable"/> values (all numeric types, <see cref="char"/>,
 /// <see cref="Guid"/>, dates and times, and custom value types that implement it), <see cref="bool"/>, strings and
 /// spans. Other values, including enums and nullable values such as <c>int?</c>, go through
-/// <see cref="AppendFormatted(object?, string?)"/>, which boxes them. If formatting a value throws, the exception
-/// reaches the caller, nothing is logged, and the rented buffer is left to the garbage collector.
+/// <see cref="AppendFormatted(object?, string?)"/>, which boxes them. So do a struct that implements only
+/// <see cref="ISpanFormattable"/>, and a value of a generic type parameter that isn't constrained to
+/// <see cref="IUtf8SpanFormattable"/>, even when the type argument is <see cref="int"/>: the compiler picks the
+/// overload from the declared type. To keep such values allocation-free, implement <see cref="IUtf8SpanFormattable"/>
+/// on the struct, and constrain the generic parameter (<c>where T : IUtf8SpanFormattable</c>). If formatting a value
+/// throws, the exception reaches the caller, nothing is logged, and the rented buffer is left to the garbage
+/// collector.
 /// </para>
 /// <para>
 /// Confined to the calling thread, like any <see langword="ref"/> struct. <b>Don't copy a handler:</b> each copy
@@ -113,7 +118,10 @@ public ref struct LogMessageHandler<TLevel>
     /// <summary>Appends a value that formats itself to UTF-8, with the invariant culture.</summary>
     /// <typeparam name="T">The value's type: any <see cref="IUtf8SpanFormattable"/>, including nullable references.</typeparam>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
-    /// <remarks>Never boxes a value type; see <see cref="AppendFormatted{T}(T, string?)"/>.</remarks>
+    /// <remarks>
+    /// Never boxes a value type; see <see cref="AppendFormatted{T}(T, string?)"/>, including which values miss this
+    /// overload.
+    /// </remarks>
     public void AppendFormatted<T>(T value)
         where T : IUtf8SpanFormattable? => AppendFormatted(value, null);
 
@@ -126,8 +134,17 @@ public ref struct LogMessageHandler<TLevel>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
     /// <param name="format">Format string, e.g. <c>F2</c> or <c>X8</c>, or <see langword="null"/>.</param>
     /// <remarks>
+    /// <para>
     /// Formats straight into the buffer through a constrained call, so a value type is never boxed: no
     /// allocation, whatever the JIT optimises (unoptimised and coverage-instrumented code included).
+    /// </para>
+    /// <para>
+    /// The compiler picks this overload from the value's declared type. A value of a generic type parameter that
+    /// isn't constrained to <see cref="IUtf8SpanFormattable"/> misses it, whatever the type argument, and so does a
+    /// struct that implements only <see cref="ISpanFormattable"/>: both take the allocating
+    /// <see cref="AppendFormatted(object?, string?)"/>. Constrain your generic parameter
+    /// (<c>where T : IUtf8SpanFormattable</c>) or implement <see cref="IUtf8SpanFormattable"/> to stay here.
+    /// </para>
     /// </remarks>
     public void AppendFormatted<T>(T value, string? format)
         where T : IUtf8SpanFormattable?
@@ -159,11 +176,19 @@ public ref struct LogMessageHandler<TLevel>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
     /// <param name="format">Format string, passed on if the value is formattable, or <see langword="null"/>.</param>
     /// <remarks>
-    /// The fallback for values that aren't <see cref="IUtf8SpanFormattable"/>. It tries
+    /// <para>
+    /// The fallback for values whose declared type isn't <see cref="IUtf8SpanFormattable"/>. It tries
     /// <see cref="IUtf8SpanFormattable"/> on the boxed value, then <see cref="ISpanFormattable"/>, then
     /// <see cref="IFormattable.ToString(string?, IFormatProvider?)"/>, then <see cref="object.ToString"/>.
-    /// <b>Allocates:</b> value types are boxed to get here. That includes enums and nullable values such as
-    /// <c>int?</c> (24 bytes per value), and <c>ToString</c> allocates a string.
+    /// </para>
+    /// <para>
+    /// <b>Allocates:</b> value types are boxed to get here, and <c>ToString</c> allocates a string. That includes
+    /// enums, nullable values such as <c>int?</c> (24 bytes per value), structs that implement only
+    /// <see cref="ISpanFormattable"/>, and values of a generic type parameter that isn't constrained to
+    /// <see cref="IUtf8SpanFormattable"/>, even when the type argument is a number. To avoid it, implement
+    /// <see cref="IUtf8SpanFormattable"/>, or constrain the generic parameter (<c>where T : IUtf8SpanFormattable</c>),
+    /// so <see cref="AppendFormatted{T}(T, string?)"/> is chosen.
+    /// </para>
     /// </remarks>
     public void AppendFormatted(object? value, string? format)
     {
