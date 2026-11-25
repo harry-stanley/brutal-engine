@@ -514,3 +514,260 @@ public enum BindGroupLifetime { Persistent, Frame }
 - **Persistent groups** live until destroyed: material textures, samplers, long-lived buffers. Creating one allocates (a copy of its entries for usage tracking) and belongs to load time.
 - **Frame groups** are valid only in the frame they were created in and are released with it. They are created in the frame loop with no managed allocation (the description is a `ref struct` over a span), and are the way to bind transient allocations. The backend serves them from per-frame pools reset with the frame slot (#55). Creating one outside an open frame throws `InvalidOperationException`; using one in a later frame throws `StaleHandleException`.
 - **Validation** against the layout: every binding filled exactly once with a resource of the declared type and the needed usage (`Uniform`, `Storage`, `Sampled`, ...), uniform offsets aligned to `MinUniformBufferOffsetAlignment`. Violations throw `ArgumentException`. Layouts reject duplicate binding numbers and `Count < 1`.
+
+## 9. Command lists and passes
+
+A `CommandList` (docs/03 3.8's object) is the recorder of the open frame. It encodes commands into the frame slot's command stream, which is unmanaged memory from `GraphicsDeviceOptions.Allocator`, grown only on overflow and kept across frames. **Recording is single-threaded in M1:** one `CommandList` per frame, used on the device's thread. Parallel recording (several lists per frame, recorded in jobs) is a later, additive change.
+
+```csharp
+public readonly struct CommandList
+{
+    public RenderPassEncoder BeginRenderPass(in RenderPassDescription description);
+    public ComputePassEncoder BeginComputePass(DebugLabel label = default);
+    public TextureHandle CreateTransientTexture(in TextureDescription description); // section 10
+    public void PushDebugGroup(DebugLabel label);
+    public void PopDebugGroup();
+    // AcquireSwapchainImage (section 3), AllocateTransient and copies (section 6)
+}
+
+public readonly ref struct RenderPassDescription
+{
+    public required ReadOnlySpan<ColorAttachment> ColorAttachments { get; init; }  // <= MaxColorTargets
+    public DepthAttachment? Depth { get; init; }
+    public DebugLabel Label { get; init; }                                         // also names the timestamp
+}
+
+public readonly record struct ColorAttachment(TextureViewHandle View, LoadOp Load, StoreOp Store, ColorValue Clear = default);
+public readonly record struct DepthAttachment(TextureViewHandle View, LoadOp Load, StoreOp Store, float Clear = 1);
+public enum LoadOp { Load, Clear, DontCare }
+public enum StoreOp { Store, DontCare }
+public readonly record struct ColorValue(float R, float G, float B, float A);   // linear; sRGB targets encode it
+
+public readonly struct RenderPassEncoder
+{
+    public void SetPipeline(GraphicsPipelineHandle pipeline);
+    public void SetBindGroup(int index, BindGroupHandle group);
+    public void SetVertexBuffer(int slot, BufferHandle buffer, long offset = 0);
+    public void SetIndexBuffer(BufferHandle buffer, IndexFormat format, long offset = 0);    // Uint16, Uint32
+    public void SetViewport(in Viewport viewport);             // defaults to the full attachment at BeginRenderPass
+    public void SetScissor(in ScissorRect scissor);            // defaults to the full attachment
+    public void PushConstants<T>(in T data, int offset = 0) where T : unmanaged;
+    public void Draw(in DrawArguments arguments);
+    public void DrawIndexed(in DrawIndexedArguments arguments);
+    public void PushDebugGroup(DebugLabel label);
+    public void PopDebugGroup();
+    public void End();
+}
+
+public readonly struct ComputePassEncoder
+{
+    public void SetPipeline(ComputePipelineHandle pipeline);
+    public void SetBindGroup(int index, BindGroupHandle group);
+    public void PushConstants<T>(in T data, int offset = 0) where T : unmanaged;
+    public void Dispatch(int groupsX, int groupsY = 1, int groupsZ = 1);
+    public void End();
+}
+
+public readonly record struct DrawArguments(int VertexCount, int InstanceCount = 1, int FirstVertex = 0, int FirstInstance = 0);
+public readonly record struct DrawIndexedArguments(int IndexCount, int InstanceCount = 1, int FirstIndex = 0, int BaseVertex = 0, int FirstInstance = 0);
+```
+
+- **Passes map to dynamic rendering.** A render pass is described per frame by its attachments and load/store operations, and the Vulkan backend records it as `vkCmdBeginRendering`/`vkCmdEndRendering` (docs/03 3.8; BRUTAL binds it, `Brutal.Vulkan/Generated/Handles/VkDevice.gen.cs:208`; M0 uses it, `FrameRenderer.cs:211-218`). There are no render pass or framebuffer objects in the API.
+- Draw arguments are structs so that the 4- and 5-value draws follow the options rule of docs/07, and because their layout matches the GPU's indirect-draw records, which indirect draws will reuse.
+- **Encoding rules** (each violation throws `InvalidOperationException`, checked when the command is encoded): one pass open at a time, and `End` before the next pass, a copy or `SubmitFrame`; draws need a pipeline, every bind group its layout declares, and the vertex buffers it declares; bind groups must match the pipeline layout's group at that index; push constants must lie inside the layout's range; a texture can't be both an attachment and sampled in the same pass; debug groups must balance within a pass and within the frame.
+- `PushConstants<T>` copies `T`'s bytes as they are in memory. Matrix layout is the shader's business: S4 found Slang decorates push-constant matrices RowMajor even when ColumnMajor is requested (`docs/spikes/README.md:88`), so the conformance suite pins it with a GPU round trip (section 15).
+- Every encoder method is allocation-free and only appends to the command stream; nothing reaches the GPU until `SubmitFrame`.
+
+## 10. The minimal frame graph
+
+docs/03 3.8 asks for a small frame graph that orders passes, inserts `synchronization2` barriers and handles transient render targets, with no explicit barriers in the public API. In M1 the graph is **implicit in the recorded frame**: there is no separate declaration step. At `SubmitFrame`, the front end's planner reads the command stream and derives every pass's resource usage from what it recorded:
+
+| Recorded | Usage derived |
+|----------|---------------|
+| Color / depth attachment with `Load` or `Clear` | color-target write (and read for `Load`) / depth read-write |
+| Bind group entry, by binding type | uniform read, storage read or write, sampled read, at the stages in `Visibility` |
+| Vertex, index buffer; indirect args | vertex input read, index read, indirect read |
+| Copy source / destination; ring uploads | transfer read / transfer write |
+| Acquired swapchain image | present after its last use in the frame |
+
+- **Ordering is declaration order.** Passes run in the order they were recorded, which is a valid topological order of their dependencies by construction (a pass can only read what was written before it, in this frame or an earlier one). The planner doesn't reorder or cull passes in M1.
+- **Barrier insertion is hidden.** The planner tracks each resource's last access (and, for textures, its layout) across passes and across frames. Before each pass, it emits backend-neutral transitions (`ResourceTransition { Resource, Before, After }`, internal), and the backend turns them into `vkCmdPipelineBarrier2` (BRUTAL `VkDevice.gen.cs:193`). The M0 sample shows the two transitions every presented frame needs: undefined to color attachment at the acquire semaphore's stage, and color attachment to present (`FrameRenderer.cs:179-196`, `:220-235`). Ring uploads become one copy batch at the frame's start, ordered after all earlier work (section 6). A compute pass is one sync scope: to read what a dispatch wrote, start another pass.
+- **Transient render targets.** `CommandList.CreateTransientTexture` returns a texture valid for this frame only (for lighting and post-processing targets, docs/03 3.8). The device keeps a pool keyed by description and reuses targets across frames. A transient texture's content is undefined at its first use in a frame, so that use must be `Clear` or `DontCare`; a `Load` throws `InvalidOperationException`.
+- **Out of scope for M1:** reordering, pass culling, memory aliasing between transient targets, async compute and multiple queues (the transfer-queue path in docs/03 3.8 is the backend's concern, #55), split barriers, explicit resource declarations, and graph persistence across frames. All can be added behind the same recording API.
+- The planner is pure (command stream in, transitions out) and unit-tested without a GPU; its GPU behaviour is proven by the conformance suite's barrier cases under synchronization validation.
+
+## 11. Timestamp queries
+
+GPU time per pass is shown on the debug overlay (docs/03 3.8 "GPU timestamps for each pass").
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public DebugLabel CreateDebugLabel(string name);              // interned once; allocates the first time only
+    public string GetDebugLabelName(DebugLabel label);            // the interned string, no allocation
+    public bool TryGetPassTimings(long frameNumber, Span<PassTiming> destination, out int written);
+}
+
+public readonly record struct PassTiming(int PassIndex, DebugLabel Label, double Milliseconds);
+```
+
+- With `GraphicsFeatures.TimestampQueries` enabled, the backend writes a timestamp at the start and end of every labelled pass into the frame slot's query pool (BRUTAL binds `vkCmdResetQueryPool`, `vkCmdWriteTimestamp2` and `vkGetQueryPoolResults`, `VkDevice.gen.cs:92`, `:194`, `:67`).
+- **No stalls:** results for frame N are read without waiting once `CompletedFrameNumber >= N`, which with 2 frames in flight is about two frames later. `TryGetPassTimings` returns `false` until then, and for frames older than `FramesInFlight` slots (their queries were reused). It never waits on the GPU.
+- **Capability gating:** the feature is available when the graphics queue's `timestampValidBits` is non-zero (`VkQueueFamilyProperties.gen.cs:39`), converted with `TimestampPeriodNanoseconds`. Without it, `TryGetPassTimings` always returns `false` and the overlay shows "GPU timing unavailable". The RTX 2070 SUPER reports `timestampComputeAndGraphics = true` (`VkPhysicalDeviceLimits.gen.cs:675`); lavapipe and MoltenVK are unverified (G11).
+- Labels are interned `DebugLabel` handles, so the frame loop never builds strings. `default(DebugLabel)` means unlabelled: no timestamp and no debug group name.
+
+## 12. Device lost
+
+Decision (maintainer, 2026-11-26): detection everywhere, a typed event, and recreation through owner-registered callbacks. The Vulkan mechanics (one result wrapper that sees every `VK_ERROR_DEVICE_LOST`, `Brutal.Vulkan/Generated/Enums/VkResult.gen.cs:185`) are in #55.
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public bool IsLost { get; }
+    public event EventHandler<DeviceLostEventArgs>? DeviceLost;           // raised once per loss
+    public GpuOwnerRegistration RegisterOwner(IGpuResourceOwner owner);  // a disposable token: dispose to unregister
+    public Result Recover();
+}
+
+public sealed class DeviceLostEventArgs : EventArgs
+{
+    public string Operation { get; }    // where it was detected: "BeginFrame", "SubmitFrame", "AcquireSwapchainImage", ...
+    public int NativeCode { get; }      // the backend's status code
+    public bool TimedOut { get; }       // GpuTimeout expired (a hung GPU), rather than a reported loss
+}
+
+public interface IGpuResourceOwner
+{
+    void OnDeviceLost(GraphicsDevice device);        // drop every handle; don't call the device
+    Result OnDeviceRecreated(GraphicsDevice device); // recreate and re-upload
+}
+```
+
+- **Detection:** any backend call that reports loss (or a `GpuTimeout` expiry) marks the device lost. `BeginFrame`, `SubmitFrame` and `AcquireSwapchainImage` return `DeviceLost`; `Create*` and `Write*` return `ErrorKind.Unavailable`; encoder calls in a lost frame become no-ops, so recording code needs no checks. The event is raised once, synchronously, from the call that detected the loss.
+- **Recovery is the owner's call:** the host (Runtime) calls `Recover()` outside a frame. It calls every owner's `OnDeviceLost` in reverse registration order, destroys all native objects, invalidates **every** resource handle (each handle allocator is cleared, so all old handles are stale), creates a new backend device on the same adapter selection, recreates every swapchain for its window, then calls `OnDeviceRecreated` in registration order. If the adapter is gone, or an owner's recreation fails, `Recover` returns the failure and the host treats it as fatal (docs/03 3.2: graphics failures are fatal).
+- **What survives:** the `GraphicsDevice` object, its options, logger and statistics, registered owners, `SwapchainHandle`s (recreated in place, so their next acquire reports `Recreated`) and `DebugLabel`s. Everything else is gone: buffers, textures, views, samplers, shader modules, layouts, bind groups, pipelines and their contents.
+- **Owners in M1** are the engine's own: the overlay's font atlas and pipelines, the sprite renderer, the splash. M2's asset database registers as one owner and reloads what it loaded, which is how docs/03 3.5's "recreates GPU resources from the asset database" is reached through the same contract.
+- **Fault injection** is internal: the front end wraps every backend status in one place, so a test can make the N-th call of a chosen operation report loss (and make the backend really tear down its device). It isn't public API. The conformance project needs it, but docs/07 allows `InternalsVisibleTo` only for the matching test project. Recommended: also grant it to `BrutalEngine.Graphics.Conformance`, the Graphics test suite by role, with a comment saying why. The alternative is a public, test-only backend wrapper, which adds public API for tests. **Open question for the maintainer.**
+
+## 13. Errors and diagnostics
+
+- **Typed errors:** expected failures are Core `EngineError`s ([errors](errors.md)) with the `ErrorKind`s of section 5's table. The message names the operation and the object's debug name ("CreateTexture 'SpriteAtlas': format Rgba16Float can't be a storage target on this device"), and `NativeCode` carries the backend status. Misuse exceptions name the call and the handle's debug name.
+- **Debug names and labels:** every description's `DebugName` names the native object (`vkSetDebugUtilsObjectNameEXT`, `VkDevice.gen.cs:418`) and appears in validation messages, errors and the leak report. Debug groups and labelled passes become command labels (`vkCmdBeginDebugUtilsLabelEXT`, `VkDevice.gen.cs:423`) for RenderDoc and validation output. Both cost nothing when `VK_EXT_debug_utils` is absent.
+- **Validation messages** go to the `Graphics.Validation` log category of the device's logger: errors at `Error`, warnings at `Warning`, with the object names the layer reports. The device also counts them (`GraphicsStatistics.ValidationErrors`, `ValidationWarnings`), instance-owned, with no static state (the M0 sample's static counters don't carry over). Validation is on whenever `GraphicsDeviceOptions.Validation` is true; the device then fails `Create` if the layer is missing rather than running unvalidated.
+- **Resource tracking and the leak report:** the device tracks every live object (docs/03 3.3 "registered with the device's resource tracker"). `Dispose` logs one `Error` line per leaked object with its kind and debug name. Tests call `ThrowIfLeaks()` before disposing, which throws `GpuResourceLeakException` listing them, just as `TrackingAllocator.ThrowIfLeaks` does for unmanaged memory ([memory](memory.md)).
+
+```csharp
+public sealed class GraphicsDevice
+{
+    public GraphicsStatistics Statistics { get; }   // a readonly struct snapshot: no allocation
+    public void ThrowIfLeaks();                      // throws GpuResourceLeakException
+}
+
+public readonly record struct GraphicsStatistics(
+    long FramesSubmitted, long UploadBytesLastFrame, long UploadOverflowBytes,
+    int LiveObjects, long ValidationErrors, long ValidationWarnings);
+```
+
+## 14. Threading and allocation
+
+- **One owner thread.** The thread that calls `GraphicsDevice.Create` owns the device: the main thread in the Runtime host (docs/03 3.2). Every `GraphicsDevice`, `CommandList` and encoder member checks it and throws `WrongThreadException` with the API name (docs/03 3.2). The check is always on, not just in debug builds: it is one integer compare. `WrongThreadException` doesn't exist yet; it belongs in Core, added by whichever of P1 and G1 lands first.
+- **Any thread:** descriptions (immutable values), `Capabilities` and `Adapter` (immutable after `Create`). Everything else, including `GetDebugLabelName` and `Statistics`, is owner-thread only. Handles are plain values and can be passed between threads, but only used on the owner thread.
+- **Job workers** (render prepare, docs/03 3.2) don't call the device in M1. They write into memory the main thread got from `AllocateTransient` before scheduling them, and the main thread submits after the jobs complete.
+- **Zero managed allocation in steady-state frames.** These calls allocate nothing (a test measures each across 1,000 frames): `BeginFrame`, `SubmitFrame`, `AcquireSwapchainImage`, every encoder method, `AllocateTransient`, frame bind groups, `WriteBuffer`, `WriteTexture`, `TryReadBuffer`, copies, `CreateTransientTexture` once the pool is warm, `Destroy`, `TryGetPassTimings`, `Statistics`. Creating persistent objects (buffers, textures, pipelines, persistent bind groups, labels the first time) may allocate and belongs to load time; doing it in a frame is allowed but makes that frame non-steady. Swapchain recreation and device recovery allocate.
+- **Unmanaged memory** (command streams, deletion queues, usage tracking, ring bookkeeping) comes from `GraphicsDeviceOptions.Allocator`, an `INativeAllocator`; tests pass a `TrackingAllocator` and call `ThrowIfLeaks` ([memory](memory.md)). GPU memory goes through VMA in the Vulkan backend (docs/03 3.3), reported by `ThrowIfLeaks` above.
+
+## 15. The conformance contract
+
+Every backend must pass `tests/BrutalEngine.Graphics.Conformance` (ADR-0002; docs/04's layout), on every OS CI covers with software Vulkan, and locally on the RTX 2070 SUPER per graphics PR (decision, maintainer, 2026-11-26: real-GPU runs are local until a self-hosted runner exists). The suite's rules:
+
+- **Validation-clean:** every test runs with `Validation = true` and fails on any validation error or warning, except an explicit allow-list where each entry has a comment saying why ([Testing strategy](../05-testing-strategy.md#gpu-testing-without-gpus)). Synchronization validation is enabled.
+- **Negative canary:** one test deliberately records a violation through an internal seam (as the M0 harness's `--inject-validation-error` does) and must see it reported, which proves the layer is loaded.
+- **Leak-free:** every test ends with `device.ThrowIfLeaks()` and its `TrackingAllocator.ThrowIfLeaks()`.
+- **Readback with tolerance:** rendered results are copied to `Readback` buffers and compared with expected pixels or golden images by a per-channel threshold plus a maximum differing-pixel ratio (docs/05 "Golden image"). References are produced on lavapipe; real GPUs may use a slightly wider tolerance, and any test that needs more than the default says why.
+- **No skipping on capabilities:** a test whose feature is missing asserts the documented unsupported behaviour (`Result` is `Unsupported`, `TryGetPassTimings` is `false`) instead of skipping.
+
+Test categories (C1 starts them; each later graphics issue adds its cases):
+
+| Category | Covers |
+|----------|--------|
+| Device | create/dispose, adapter selection and rejection reasons, overrides, capabilities, required/optional features, `Create` failures |
+| Handles and lifetime | stale, null and foreign handles per kind; destroy-in-frame; deferred destruction after `FramesInFlight` frames; dependent views and bind groups |
+| Resources and formats | every format: create, clear or upload, read back, round trip; unsupported combinations return `Unsupported`; description validation |
+| Uploads and readback | buffer and texture writes, write-then-use ordering across frames, ring overflow, transient allocations, `TryReadBuffer` never blocking |
+| Passes and pipelines | clears with each load/store op, a triangle golden image, vertex formats, blending presets, depth, viewport and scissor, push constants (with the S4 RowMajor round trip), compute writes |
+| Frame graph | write-then-sample, copy-then-sample, storage write then read, transient targets reused across frames, swapchain images presented, under synchronization validation |
+| Bind groups | persistent and frame lifetimes, layout mismatch, stale-resource binding, offset alignment |
+| Swapchain | headless (Linux lavapipe, macOS MoltenVK) and windowed (Windows lavapipe); resize, minimise, out-of-date, suboptimal, surface lost (the last three forced through the fault seam: this is docs/05's "mock surface layer") |
+| Timestamps | results arrive without waiting, or the unsupported path |
+| Device lost | loss forced at fence wait, submit, acquire, present and resource creation; event raised once; `Recover` recreates swapchains and calls owners; every old handle stale |
+| Misuse | every exception documented in this note |
+| Allocation | 1,000 steady-state frames of a representative scene allocate 0 managed bytes |
+
+## 16. The issue split
+
+The planned issues G1, G2, G10 and C1 hold, with the front end split out of G2 because it is larger than one PR:
+
+| Issue | Scope from this note | Est. |
+|-------|----------------------|------|
+| G1 feat(graphics): add the render interface's resource descriptions | Creates `src/BrutalEngine.Graphics`: typed handles, formats, usages, `FormatSupport`, buffer/texture/view/sampler descriptions and their validation rules (section 5), `AdapterSelection` and its parser, `GraphicsDeviceOptions`, capabilities, limits and features (section 2); `WrongThreadException` in Core if P1 hasn't added it | ~650 |
+| G2 feat(graphics): add pipeline, bind group and pass descriptions | Shader module, layout, pipeline and bind group descriptions with validation (sections 7-8), pass descriptions, `CommandList`/encoder command stream encoding and its rules (section 9) | ~650 |
+| G2b feat(graphics): add the device front end, the backend interface and a fake backend | `GraphicsDevice`, `IGraphicsBackend` and the backend device interface, handle tables, frame state machine, deletion queues, upload ring bookkeeping, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1, 4, 6, 11-14); an in-memory fake backend for unit tests | ~700 |
+| G10 feat(graphics): order passes and insert barriers with a minimal frame graph | The planner (section 10): usage derivation, cross-frame state tracking, transitions, transient texture pool; pure unit and property tests, GPU cases in the conformance suite | ~650 |
+| C1 test(graphics): add the conformance suite and run it in CI | Section 15's rules and harness (validation fixture, canary, leak checks, image diff) and the first device, resource and upload cases | ~700 |
+
+G3-G12 (#55's backend issues) implement the backend interface piece by piece; G5 (swapchain) also needs P3's surface source. The backend interface itself is sketched here only as far as the front end needs it, and G2b fixes it:
+
+```csharp
+namespace BrutalEngine.Graphics.Backend;
+
+public interface IGraphicsBackend
+{
+    string Name { get; }                                                     // "Vulkan"
+    Result<IReadOnlyList<GraphicsAdapterInfo>> EnumerateAdapters(in BackendDeviceRequest request);
+    Result<IBackendDevice> CreateDevice(in BackendDeviceRequest request, int adapterIndex);
+}
+
+public interface IBackendDevice : IDisposable
+{
+    // Called only with validated descriptions, on the owner thread. Native objects are opaque ulong ids that the
+    // front end maps to typed handles; statuses come back as Result so the front end sees every device loss.
+    Result<ulong> CreateBuffer(in BufferDescription description);
+    // ... one Create/Destroy pair per object kind, surfaces and swapchains, WaitForFrame(slot), Execute(plan), Present.
+}
+```
+
+## docs/03 3.8 objects
+
+| Object | Where |
+|--------|-------|
+| `GraphicsDevice` | Sections 1, 2, 4: a sealed front end, owned by its creator |
+| `Swapchain` | Section 3: `SwapchainHandle`, created from an `IWindow` |
+| `Buffer` | Sections 5, 6: `BufferHandle` |
+| `Texture` | Sections 5, 6, 10: `TextureHandle`, including transient targets |
+| `TextureView` | Section 5: `TextureViewHandle`, plus a default view per texture |
+| `Sampler` | Section 5: `SamplerHandle` |
+| `ShaderModule` | Section 7: `ShaderModuleHandle`, from embedded SPIR-V |
+| `PipelineLayout` | Section 7: `PipelineLayoutHandle`, declared in C# in M1 |
+| `GraphicsPipeline` | Section 7: `GraphicsPipelineHandle` |
+| `ComputePipeline` | Section 7: `ComputePipelineHandle` |
+| `BindGroup` | Section 8: `BindGroupHandle`, persistent or per frame |
+| `BindGroupLayout` | Section 8: `BindGroupLayoutHandle` |
+| `CommandList` | Section 9: the open frame's recorder, a value type, not a handle |
+| `Fence` | Deferred as a public object: frames in flight and `CompletedFrameNumber` cover every M1 wait (frame slots, readback, timestamps), and WebGPU exposes no fence either. Reconsider with multi-queue or parallel submission |
+| `QueryPool` | Deferred as a public object: M1 needs only per-pass timestamps, which the device manages per frame slot (section 11). Occlusion and pipeline-statistics queries have no 2D consumer yet |
+
+## Deviations from docs/03 3.8 and ADR-0002
+
+The note is consistent with ADR-0002 (a WebGPU-level interface, Vulkan 1.3 first, Slang compiled offline to SPIR-V, one conformance suite). Where it narrows or departs from docs/03 3.8:
+
+1. **No reflection data in M1** (section 7): pipeline layouts are declared in C#, by the shader-bytecode decision (ADR-0012). Reflection returns with M2's cooker.
+2. **`Fence` and `QueryPool` aren't public objects** (table above), and **`CommandList` is a per-frame value**, not a handle: the open frame owns its commands.
+3. **The frame graph doesn't reorder passes in M1** (section 10): declaration order is the execution order.
+4. **Device-lost recreation goes through owner callbacks** (section 12), by the device-loss decision; the asset database becomes an owner in M2.
+5. **Swapchain behaviour is tested through the fault-injection seam and real headless or windowed surfaces** (section 15), which is how this note realises docs/05's "mock surface layer".
+
+## Not verified
+
+- The note is design only. Nothing in it has run. M0's proven behaviour (frames in flight, acquire, present, resize, minimise, headless and windowed surfaces) is cited where it is reused.
+- Timestamp support on lavapipe and MoltenVK, and the `Depth32Float` and `Rgba16Float` storage support on MoltenVK, are unknown until G11 and C1 run there.
+- How `IWindow` exposes its `IVulkanSurfaceSource` and pixel size is defined by the platform note (#53), written in parallel.
