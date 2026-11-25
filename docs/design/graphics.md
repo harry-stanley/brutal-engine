@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`BrutalEngine.Graphics` is the backend-neutral render interface from [Architecture 3.8](../03-architecture.md#38-graphics-render-interface-brutalenginegraphics-and-vulkan-backend) and [ADR-0002](../adr/0002-render-interface-vulkan-first.md): low-level and explicit, at about the level of WebGPU, with no 2D concepts. Vulkan 1.3 (`Graphics.Vulkan`) is the only v1 backend. Its mechanics (instance, VMA, sync2 barriers, descriptor pools, the BRUTAL workarounds) belong to the Vulkan backend note, `docs/design/graphics-vulkan.md` (#55). This note fixes the public API that every backend implements and the conformance suite tests. Merging it approves that API; G1, G2, G10 and C1 are drafted from it (see section 16).
+`BrutalEngine.Graphics` is the backend-neutral render interface from [Architecture 3.8](../03-architecture.md#38-graphics-render-interface-brutalenginegraphics-and-vulkan-backend) and [ADR-0002](../adr/0002-render-interface-vulkan-first.md): low-level and explicit, at about the level of WebGPU, with no 2D concepts. Vulkan 1.3 (`Graphics.Vulkan`) is the only v1 backend. Its mechanics (instance, VMA, sync2 barriers, descriptor pools, the BRUTAL workarounds) belong to the Vulkan backend note, `docs/design/graphics-vulkan.md` (#55). This note fixes the public API that every backend implements and the conformance suite tests. Merging it approves that API, including the backend interface; G1, G2, G2b, G10 and C1 are drafted from it (see section 16).
 
 Goals that shape every decision below:
 
@@ -34,7 +34,7 @@ Decisions this note depends on (maintainer, 2026-11-26):
  └────────────────────────┘   └──────────────────────────────┘
 ```
 
-`GraphicsDevice` is one sealed class in `BrutalEngine.Graphics`. It owns everything that doesn't depend on the GPU API: handle validation, description validation, the frame state machine, deletion queues, the command stream and the frame planner. A backend implements the small backend interface (section 16 sketches it) and receives only validated descriptions and planned frames. So:
+`GraphicsDevice` is one sealed class in `BrutalEngine.Graphics`. It owns everything that doesn't depend on the GPU API: handle validation, description validation, the frame state machine, deletion queues, the command stream and the frame planner. A backend implements the backend interface (section "The backend interface") and receives only validated descriptions and planned frames. So:
 
 - every backend gets identical misuse behaviour, and the conformance suite tests one set of rules;
 - the front end is unit-tested on every OS without a GPU, against an in-memory fake backend (G2b);
@@ -678,7 +678,7 @@ docs/03 3.8 asks for a small frame graph that orders passes, inserts `synchroniz
 | Acquired swapchain image | present after its last use in the frame |
 
 - **Ordering is declaration order.** Passes run in the order they were recorded, which is a valid topological order of their dependencies by construction (a pass can only read what was written before it, in this frame or an earlier one). The planner doesn't reorder or cull passes in M1.
-- **Barrier insertion is hidden.** The planner tracks each resource's last access (and, for textures, its layout) across passes and across frames. Before each pass, it emits backend-neutral transitions (`ResourceTransition { Resource, Before, After }`, internal), and the backend turns them into `vkCmdPipelineBarrier2` (BRUTAL `VkDevice.gen.cs:193`). The M0 sample shows the two transitions every presented frame needs: undefined to color attachment at the acquire semaphore's stage, and color attachment to present (`FrameRenderer.cs:179-196`, `:220-235`). Ring uploads become one copy batch at the frame's start, ordered after all earlier work (section 6). A compute pass is one sync scope: to read what a dispatch wrote, start another pass.
+- **Barrier insertion is hidden.** The planner tracks each resource's last access (and, for textures, its layout) across passes and across frames. Before each pass, it emits backend-neutral `ResourceTransition`s in `Barrier` records (public, section "The backend interface"), and the backend turns them into `vkCmdPipelineBarrier2` (BRUTAL `VkDevice.gen.cs:193`). The M0 sample shows the two transitions every presented frame needs: undefined to color attachment at the acquire semaphore's stage, and color attachment to present (`FrameRenderer.cs:179-196`, `:220-235`). Ring uploads become one copy batch at the frame's start, ordered after all earlier work (section 6). A compute pass is one sync scope: to read what a dispatch wrote, start another pass.
 - **Transient render targets.** `CommandList.CreateTransientTexture` returns a texture valid for this frame only (for lighting and post-processing targets, docs/03 3.8). The device keeps a pool keyed by description and reuses targets across frames. Creating one can fail like `CreateTexture` (`Unsupported`, `OutOfMemory`) the first time a description is seen; a warm pool can't fail. A transient texture's content is undefined at its first use in a frame, so that use must be `Clear` or `DontCare`; a `Load` throws `InvalidOperationException`.
 - **Out of scope for M1:** reordering, pass culling, memory aliasing between transient targets, async compute and multiple queues (the transfer-queue path in docs/03 3.8 is the backend's concern, #55), split barriers, explicit resource declarations, and graph persistence across frames. All can be added behind the same recording API.
 - The planner is pure (command stream in, transitions out) and unit-tested without a GPU; its GPU behaviour is proven by the conformance suite's barrier cases under synchronization validation.
@@ -739,7 +739,7 @@ public interface IGpuResourceOwner
 - **Recovery is the owner's call:** the host (Runtime) calls `Recover()` outside a frame. It calls every owner's `OnDeviceLost` in reverse registration order, destroys all native objects, invalidates **every** resource handle (each handle allocator is cleared, so all old handles are stale), creates a new backend device on the same adapter selection, recreates every swapchain for its window, then calls `OnDeviceRecreated` in registration order. If the adapter is gone, or an owner's recreation fails, `Recover` returns the failure and the host treats it as fatal (docs/03 3.2: graphics failures are fatal).
 - **What survives:** the `GraphicsDevice` object, its options, logger and statistics, registered owners, `SwapchainHandle`s (recreated in place, so their next acquire reports `Recreated`) and `DebugLabel`s. Everything else is gone: buffers, textures, views, samplers, shader modules, layouts, bind groups, pipelines and their contents.
 - **Owners in M1** are the engine's own: the overlay's font atlas and pipelines, the sprite renderer, the splash. M2's asset database registers as one owner and reloads what it loaded, which is how docs/03 3.5's "recreates GPU resources from the asset database" is reached through the same contract.
-- **Fault injection** is internal: the front end wraps every backend status in one place, so a test can make the N-th call of a chosen operation report loss (and make the backend really tear down its device). It isn't public API.
+- **Fault injection** is internal: the front end wraps every backend status in one place, so a test can make the N-th call of a chosen operation report loss. `Recover()` then disposes that backend device and creates a new one, so teardown and recreation are real on every backend. It isn't public API.
 - **Who may use the seam.** Decision (maintainer, 2026-11-26): `BrutalEngine.Graphics` grants `InternalsVisibleTo` to `BrutalEngine.Graphics.Tests` and also to `BrutalEngine.Graphics.Conformance`. This is one named exception to docs/07's "matching test project only" rule. The conformance suite has to force device loss on every backend, and the seam belongs in the backend-neutral front end. The attribute carries a comment giving that reason, and no other assembly gets the exception.
 
 ## 13. Errors and diagnostics
@@ -779,7 +779,7 @@ public readonly record struct GraphicsStatistics(
 Every backend must pass `tests/BrutalEngine.Graphics.Conformance` (ADR-0002; docs/04's layout), on every OS CI covers with software Vulkan, and locally on the RTX 2070 SUPER per graphics PR (decision, maintainer, 2026-11-26: real-GPU runs are local until a self-hosted runner exists). The suite's rules:
 
 - **Validation-clean:** every test runs with `Validation = true` and fails on any validation error or warning, except an explicit allow-list where each entry has a comment saying why ([Testing strategy](../05-testing-strategy.md#gpu-testing-without-gpus)). Synchronization validation is enabled.
-- **Negative canary:** one test deliberately records a violation through an internal seam (as the M0 harness's `--inject-validation-error` does) and must see it reported, which proves the layer is loaded.
+- **Negative canary:** one test calls the backend's `InjectValidationError()` through the front end's internal seam (as the M0 harness's `--inject-validation-error` does) and must see `ValidationErrors` grow, which proves the layer is loaded.
 - **Leak-free:** every test ends with `device.ThrowIfLeaks()` and its `TrackingAllocator.ThrowIfLeaks()`.
 - **Readback with tolerance:** rendered results are copied to `Readback` buffers and compared with expected pixels or golden images by a per-channel threshold plus a maximum differing-pixel ratio (docs/05 "Golden image"). References are produced on lavapipe; real GPUs may use a slightly wider tolerance, and any test that needs more than the default says why.
 - **No skipping on capabilities:** a test whose feature is missing asserts the documented unsupported behaviour (`Result` is `Unsupported`, `TryGetPassTimings` is `false`) instead of skipping.
@@ -801,39 +801,199 @@ Test categories (C1 starts them; each later graphics issue adds its cases):
 | Misuse | every exception documented in this note |
 | Allocation | 1,000 steady-state frames of a representative scene allocate 0 managed bytes |
 
-## 16. The issue split
+## The backend interface
 
-The planned issues G1, G2, G10 and C1 hold, with the front end split out of G2 because it is larger than one PR:
-
-| Issue | Scope from this note | Est. |
-|-------|----------------------|------|
-| G1 feat(graphics): add the render interface's resource descriptions | Creates `src/BrutalEngine.Graphics`: typed handles, formats, usages, `FormatSupport`, buffer/texture/view/sampler descriptions and their validation rules (section 5), `AdapterSelection` and its parser, `GraphicsDeviceOptions`, capabilities, limits and features (section 2) | ~650 |
-| G2 feat(graphics): add pipeline, bind group and pass descriptions | Shader module, layout, pipeline and bind group descriptions with validation (sections 7-8), pass descriptions, `CommandList`/encoder command stream encoding and its rules (section 9) | ~650 |
-| G2b feat(graphics): add the device front end, the backend interface and a fake backend | `GraphicsDevice`, `IGraphicsBackend` and the backend device interface, handle tables, frame state machine, deletion queues, upload ring bookkeeping, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1, 4, 6, 11-14), `WindowSurfaceSource` (section 3); an in-memory fake backend for unit tests. Blocked by P1 (`IWindow`, `IVulkanSurfaceSource`, `ThreadAffinity`) | ~700 |
-| G10 feat(graphics): order passes and insert barriers with a minimal frame graph | The planner (section 10): usage derivation, cross-frame state tracking, transitions, transient texture pool; pure unit and property tests, GPU cases in the conformance suite | ~650 |
-| C1 test(graphics): add the conformance suite and run it in CI | Section 15's rules and harness (validation fixture, canary, leak checks, image diff) and the first device, resource and upload cases | ~700 |
-
-G3-G12 (#55's backend issues) implement the backend interface piece by piece; G5 (swapchain) also needs P3's surface source. The backend interface itself is sketched here only as far as the front end needs it, and G2b fixes it:
+A backend implements these public types in `BrutalEngine.Graphics.Backend`. They are part of this note's contract, because the Vulkan backend note (#55) implements them and doesn't change this note. Only the front end calls them; games never do. Nothing here names a Platform type: the window reaches a backend only as a `WindowSurfaceSource` (section 3).
 
 ```csharp
 namespace BrutalEngine.Graphics.Backend;
 
-public interface IGraphicsBackend
+public interface IGraphicsBackend                       // stateless; created and owned by the host
 {
-    string Name { get; }                                                     // "Vulkan"
-    Result<IReadOnlyList<GraphicsAdapterInfo>> EnumerateAdapters(in BackendDeviceRequest request);
-    Result<IBackendDevice> CreateDevice(in BackendDeviceRequest request, int adapterIndex);
+    string Name { get; }                                // "Vulkan"
+    Result<IReadOnlyList<GraphicsAdapterInfo>> EnumerateAdapters(BackendDeviceRequest request);
+    Result<IBackendDevice> CreateDevice(BackendDeviceRequest request, int adapterIndex, BackendObjectTable objects);
 }
 
-public interface IBackendDevice : IDisposable
+public sealed record BackendDeviceRequest              // built by the front end from GraphicsDeviceOptions
 {
-    // Called only with validated descriptions, on the owner thread. Native objects are opaque ulong ids that the
-    // front end maps to typed handles; statuses come back as Result so the front end sees every device loss.
-    Result<ulong> CreateBuffer(in BufferDescription description);
-    // ... one Create/Destroy pair per object kind, swapchains (from a WindowSurfaceSource), WaitForFrame(slot),
-    // Execute(plan), Present. BackendDeviceRequest carries the compatible window's WindowSurfaceSource, or null.
+    public required Logger Logger { get; init; }
+    public required INativeAllocator Allocator { get; init; }
+    public WindowSurfaceSource? CompatibleSurface { get; init; }   // the only window link; never an IWindow
+    public bool Validation { get; init; }
+    public int FramesInFlight { get; init; }
+    public GraphicsFeatures RequiredFeatures { get; init; }
+    public GraphicsFeatures OptionalFeatures { get; init; }
+    public TimeSpan GpuTimeout { get; init; }
+    public string ApplicationName { get; init; } = "";
+}
+
+public interface IBackendDevice : IDisposable           // owned and disposed by GraphicsDevice
+{
+    GraphicsAdapterInfo Adapter { get; }
+    GraphicsCapabilities Capabilities { get; }
+    FormatSupport GetFormatSupport(TextureFormat format);
+
+    // Objects. Ids are non-zero, backend-chosen and opaque; handles inside descriptions resolve through the
+    // BackendObjectTable. Destroy is called only once the object's last frame has completed.
+    Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory);
+    Result<ulong> CreateTexture(in TextureDescription description);
+    Result<ulong> CreateTextureView(in TextureViewDescription description);
+    Result<ulong> CreateSampler(in SamplerDescription description);
+    Result<ulong> CreateShaderModule(in ShaderModuleDescription description);
+    Result<ulong> CreateBindGroupLayout(in BindGroupLayoutDescription description);
+    Result<ulong> CreatePipelineLayout(in PipelineLayoutDescription description);
+    Result<ulong> CreateBindGroup(in BindGroupDescription description);  // Frame lifetime: from the open slot's pool
+    Result<ulong> CreateGraphicsPipeline(GraphicsPipelineDescription description);
+    Result<ulong> CreateComputePipeline(ComputePipelineDescription description);
+    void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name);
+    void Destroy(BackendObjectKind kind, ulong id);
+
+    // Swapchains. Destroying one also destroys its surface.
+    Result<BackendSwapchain> CreateSwapchain(WindowSurfaceSource surface, SwapchainOptions options, ulong oldSwapchain);
+    BackendAcquire AcquireImage(ulong swapchain, int frameSlot);
+    SwapchainStatus Present(ulong swapchain, int imageIndex);
+    void GetSwapchainImage(ulong swapchain, int imageIndex, out ulong texture, out ulong view); // after each create
+
+    // Frames.
+    Result WaitForFrame(int frameSlot);                 // blocks up to GpuTimeout; then the slot's resources are free
+    Result<bool> IsFrameComplete(int frameSlot);        // never blocks
+    Result BeginFrame(int frameSlot);                   // resets the slot's command, descriptor and query pools
+    Result Execute(in FramePlan plan);                  // records and submits; presents come after, through Present
+    bool TryReadTimestamps(int frameSlot, Span<ulong> ticks); // false until the slot's frame completed
+    Result WaitIdle();
+
+    // Diagnostics.
+    long ValidationErrors { get; }
+    long ValidationWarnings { get; }
+    void InjectValidationError();                       // the negative canary: the next Execute records one violation
+}
+
+public enum BackendMemory { DeviceLocal, DeviceLocalHostVisiblePreferred, HostUpload, HostReadback }
+public readonly record struct BackendBuffer(ulong Id, nint MappedPointer);   // MappedPointer: HostUpload, HostReadback
+public enum BackendObjectKind { Buffer, Texture, TextureView, Sampler, ShaderModule, BindGroupLayout, PipelineLayout, BindGroup, GraphicsPipeline, ComputePipeline }
+public readonly record struct BackendSwapchain(ulong Id, SwapchainInfo Info);
+public readonly record struct BackendAcquire(SwapchainStatus Status, int ImageIndex, int NativeCode);
+public enum SwapchainStatus { Success, Suboptimal, OutOfDate, SurfaceLost, DeviceLost }
+
+public sealed class BackendObjectTable                  // owned by the front end; read-only for the backend
+{
+    public ulong GetId(BufferHandle handle);            // one overload per handle kind; validated handles only
+    public ulong GetId(TextureViewHandle handle);       // ... TextureHandle, SamplerHandle, ShaderModuleHandle, layouts, pipelines
+    public ReadOnlySpan<byte> GetLabel(DebugLabel label); // UTF-8 name of an interned label
 }
 ```
+
+**The frame plan.** `SubmitFrame` hands the backend one `FramePlan`: the slot's command stream after planning, with every handle already resolved to a backend id and every barrier inserted (section 10).
+
+```csharp
+public readonly ref struct FramePlan
+{
+    public int FrameSlot { get; }
+    public long FrameNumber { get; }
+    public ReadOnlySpan<byte> Commands { get; }          // read with CommandReader; valid during Execute only
+    public ReadOnlySpan<SwapchainImageUse> Acquired { get; } // images Execute must wait for and leave presentable
+}
+
+public readonly record struct SwapchainImageUse(ulong Swapchain, int ImageIndex);
+
+public ref struct CommandReader
+{
+    public CommandReader(ReadOnlySpan<byte> commands);
+    public bool MoveNext();                              // false at the end of the stream
+    public readonly CommandKind Kind { get; }
+    public readonly ref readonly T Payload<T>() where T : unmanaged;      // throws if T isn't Kind's payload type
+    public readonly ReadOnlySpan<T> Trailing<T>() where T : unmanaged;    // the variable-length part, if any
+}
+
+public readonly struct ResourceTransition               // barrier element; unmanaged
+{
+    public ulong Resource { get; init; }                 // buffer or texture id
+    public bool IsTexture { get; init; }
+    public ResourceState Before { get; init; }
+    public ResourceState After { get; init; }
+    public ShaderStages BeforeStages { get; init; }      // for shader states
+    public ShaderStages AfterStages { get; init; }
+    public int BaseMipLevel { get; init; }
+    public int MipLevelCount { get; init; }
+    public int BaseArrayLayer { get; init; }
+    public int ArrayLayerCount { get; init; }
+}
+
+public enum CommandKind : ushort
+{
+    Barrier, CopyBufferToBuffer, CopyBufferToTexture, CopyTextureToBuffer, CopyTextureToTexture,
+    BeginRenderPass, EndRenderPass, BeginComputePass, EndComputePass, SetPipeline, SetBindGroup,
+    SetVertexBuffer, SetIndexBuffer, SetViewport, SetScissor, PushConstants, Draw, DrawIndexed, Dispatch,
+    PushDebugGroup, PopDebugGroup, ClearSwapchainImage,
+}
+
+public enum ResourceState { Undefined, CopySource, CopyDestination, VertexBuffer, IndexBuffer, IndirectBuffer, UniformRead, StorageRead, StorageReadWrite, SampledRead, ColorTarget, DepthRead, DepthReadWrite, Present }
+```
+
+Each record in the stream is a `CommandKind` with an unmanaged payload struct of the same name plus `Command` (all public, in this namespace):
+
+| `CommandKind` | Payload fields | Trailing |
+|---------------|----------------|----------|
+| `Barrier` | `Count` | `ResourceTransition[Count]` |
+| `CopyBufferToBuffer` | source id, source offset, destination id, destination offset, size | none |
+| `CopyBufferToTexture`, `CopyTextureToBuffer` | buffer id, offset, bytes per row, texture id, mip, layer, aspect, region | none |
+| `CopyTextureToTexture` | source and destination id, mip, layer, region, destination x, y | none |
+| `BeginRenderPass` | color count, has depth, label, timestamp query index (-1 = none) | `AttachmentCommand[color count + depth]`: view id, load, store, clear value |
+| `BeginComputePass` | label, timestamp query index | none |
+| `EndRenderPass`, `EndComputePass` | timestamp query index | none |
+| `SetPipeline` | pipeline id, is compute | none |
+| `SetBindGroup` | index, bind group id | none |
+| `SetVertexBuffer`, `SetIndexBuffer` | slot or index format, buffer id, offset | none |
+| `SetViewport`, `SetScissor` | `Viewport`, `ScissorRect` | none |
+| `PushConstants` | stages, offset, size | `byte[size]` |
+| `Draw`, `DrawIndexed`, `Dispatch` | `DrawArguments`, `DrawIndexedArguments`, group counts | none |
+| `PushDebugGroup`, `PopDebugGroup` | label | none |
+| `ClearSwapchainImage` | swapchain image index (an acquired image no pass wrote) | none |
+
+Contract rules:
+
+| Topic | Rule |
+|-------|------|
+| Ownership | The host creates and keeps the `IGraphicsBackend`; it holds no native state, so it needs no disposal. Each `IBackendDevice` owns its instance, device and every object it created, and `Dispose` destroys whatever is left. The front end disposes it after `WaitIdle` and the leak report. Mapped pointers stay valid until the buffer is destroyed. |
+| Threading | Every member is called on the device's owner thread, never re-entrantly. `GetRequiredInstanceExtension` on `WindowSurfaceSource` is the only member a backend may call from elsewhere. |
+| Allocation | `WaitForFrame`, `IsFrameComplete`, `BeginFrame`, `AcquireImage`, `Execute`, `Present`, `TryReadTimestamps`, frame-lifetime `CreateBindGroup` and `Destroy` allocate no managed memory. |
+| Errors | Every native status comes back as a `Result` or a status, never as an exception. Device loss is `ErrorKind.Unavailable` with the native code, or `SwapchainStatus.DeviceLost`. Misuse can't reach a backend: the front end validates first. |
+| Memory | `HostUpload` and `HostReadback` buffers are mapped persistently. The backend makes CPU writes visible to `Execute`'s GPU work, and GPU writes visible to the CPU once `IsFrameComplete` or `WaitForFrame` reports the frame done (coherent memory, or a flush and invalidate). |
+| Frame slots | `BeginFrame(slot)` follows a successful `WaitForFrame(slot)`. `Execute` signals the slot's completion and makes the acquired images presentable, then the front end calls `Present` for each. Frame-lifetime bind groups are released by the slot's pool reset, never by `Destroy`. |
+| Timestamps | The front end assigns two query indices per labelled pass when `TimestampQueries` is enabled. `TryReadTimestamps` returns raw ticks; the front end converts them with `TimestampPeriodNanoseconds`. |
+
+The front end maps swapchain statuses to the public results:
+
+| `AcquireImage` / `Present` status | Public result |
+|-----------------------------------|---------------|
+| `Success` | `Acquired` |
+| `Suboptimal` | `Acquired` (or the frame presented), and the swapchain is recreated at the next acquire |
+| `OutOfDate` at acquire | recreate (`CreateSwapchain` with the old id) and retry once: `Recreated`, or `Skipped` if still out of date |
+| `OutOfDate` at present | recreated at the next acquire |
+| `SurfaceLost` | `SurfaceLost` |
+| `DeviceLost` | `AcquireStatus.DeviceLost` / `FrameStatus.DeviceLost`, and the device is lost (section 12) |
+
+**Test hooks.** Neither needs an internal backend seam:
+
+- **Device loss.** The front end's fault seam (section 12) replaces a backend status with a loss. `Recover()` then really disposes that `IBackendDevice` and creates a new one, so recreation runs for real on every backend. A backend's own loss detection is unit-tested in its own test project (#55).
+- **Negative canary.** `InjectValidationError()` is public on the backend interface, documented as test-only, and harmless: it makes the next `Execute` record one known violation, for example the M0 harness's wrong old layout (`FrameRenderer.cs:188-189`). The conformance suite calls it through the front end's internal seam and expects `ValidationErrors` to grow.
+
+## 16. The issue split
+
+The planned issues G1, G2, G10 and C1 hold, plus G2b, the device front end, which is larger than one PR on its own:
+
+| Issue | Scope from this note | Blocked by | Est. |
+|-------|----------------------|------------|------|
+| G1 feat(graphics): add the render interface's resource descriptions | Creates `src/BrutalEngine.Graphics`: typed handles, formats, usages, `FormatSupport`, `SampleCounts`, buffer/texture/view/sampler descriptions and their validation rules (section 5), copy types and their rules (section 6), `AdapterSelection` and its parser, capabilities, limits and features (section 2). No Platform reference: `GraphicsDeviceOptions` moves to G2b | this note | ~650 |
+| G2b feat(graphics): add the device front end and a fake backend | `GraphicsDeviceOptions`, `GraphicsDevice` and the backend interface types except the command stream (section "The backend interface"), implemented as specified there: handle tables, `BackendObjectTable`, frame state machine, deletion queues, upload ring and pending blocks, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1-4, 6, 11-14), `WindowSurfaceSource` (section 3); an in-memory fake backend for unit tests | G1, P1 (`IWindow`, `IVulkanSurfaceSource`, `ThreadAffinity`, the `Graphics -> Platform` edge) | ~700 |
+| G2 feat(graphics): add pipelines, bind groups and command recording | Shader module, layout, pipeline and bind group descriptions with validation (sections 7-8), pass descriptions, `CommandList`/encoder recording into the command stream with its rules (section 9), `CommandKind`, the payload structs and `CommandReader` | G2b (handle tables, open-frame state) | ~650 |
+| G10 feat(graphics): order passes and insert barriers with a minimal frame graph | The planner (section 10): usage derivation, cross-frame state tracking, `ResourceTransition`s, the transient texture pool; pure unit and property tests | G2 | ~650 |
+| C1 test(graphics): add the conformance suite and run it in CI | Section 15's rules and harness (validation fixture, canary, leak checks, image diff) and the first device, resource, upload and readback cases, against the Vulkan backend | G10, and #55's split up to uploads and textures (G7) | ~700 |
+
+Order: G1, then G2b, then G2, then G10; the Vulkan backend issues follow #55's split once G2b has landed the interface, and C1 starts when both meet.
+
+G3-G12 (#55's backend issues) implement the backend interface above piece by piece; G5 (swapchain) also needs P3's surface source.
 
 ## docs/03 3.8 objects
 
