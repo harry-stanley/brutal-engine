@@ -1,0 +1,69 @@
+name: Feature request
+description: Propose a new feature or a change to existing behaviour.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [roadmap](https://github.com/harry-stanley/brutal-engine/blob/main/docs/09-roadmap.md) and existing issues first.
+        Don't start on code until the maintainer has agreed the approach here.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: The module this mainly affects (see docs/04-repo-layout.md).
+      options:
+        - BrutalEngine.Core
+        - BrutalEngine.Platform
+        - BrutalEngine.Platform.Sdl3
+        - BrutalEngine.Graphics
+        - BrutalEngine.Graphics.Vulkan
+        - BrutalEngine.Audio
+        - BrutalEngine.Audio.Sdl3
+        - BrutalEngine.Input
+        - BrutalEngine.Assets
+        - BrutalEngine.World
+        - BrutalEngine.Rendering2D
+        - BrutalEngine.Text
+        - BrutalEngine.Tilemaps
+        - BrutalEngine.Physics2D
+        - BrutalEngine.Animation
+        - BrutalEngine.UI
+        - BrutalEngine.Particles
+        - BrutalEngine.Networking
+        - BrutalEngine.DebugOverlay
+        - BrutalEngine.Runtime
+        - BrutalEngine.Generators
+        - BrutalEngine.Analyzers
+        - BrutalEngine.Natives.MoltenVK
+        - BrutalEngine.Cook
+        - BrutalEngine.Importers
+        - BrutalEngine.Editor
+        - Samples
+        - Templates
+        - Documentation
+        - Build, CI or packaging
+        - Other or not sure
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The change you'd like, including any public API sketch.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds, and why they fall short.
+    validations:
+      required: false
