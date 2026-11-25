@@ -174,6 +174,9 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         ArgumentException thrown = Assert.ThrowsAny<ArgumentException>(() => new RotatingFileLogSink(options));
 
         Assert.Equal(expected, thrown.GetType());
+
+        // The sink's own check, not a file API's: Directory.CreateDirectory also rejects a NUL, naming "path".
+        Assert.Equal("options", thrown.ParamName);
         Assert.False(Directory.Exists(directory), "Misuse must be rejected before the sink touches the disk.");
     }
 
@@ -662,7 +665,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     }
 
     [Fact]
-    public void Write_RotationFailsTwice_KeepsOlderArchivesAndDropsBoth()
+    public void Write_RotationAfterInterruptedShift_FaultsAndKeepsOlderArchives()
     {
         // Two 40,000-byte lines never share a 64 KiB file, so each write after the first rotates.
         const int LineBytes = 40_000;
@@ -689,6 +692,32 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
         Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
         Assert.Equal(Line(Message(3, LineBytes)), Read("engine.log"));
+    }
+
+    [Fact]
+    public void Construct_AfterInterruptedShift_MovesNoArchiveAndKeepsAll()
+    {
+        const int LineBytes = 40_000;
+        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 4 }))
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                Write(sink, LogLevel.Information, Message(i, LineBytes));
+            }
+        }
+
+        // The state a rotation leaves when it shifted the archives but couldn't rename engine.log: archive 1 is free.
+        // Here engine.log and archives 2 and 3 hold lines 3, 1 and 0.
+        File.Delete(PathOf("engine.1.log"));
+
+        // The next run's startup finds archive 1 free, so it moves only engine.log: no archive ages a second time.
+        new RotatingFileLogSink(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 4 }).Dispose();
+
+        Assert.Equal(["engine.1.log", "engine.2.log", "engine.3.log", "engine.log"], Files(_root));
+        Assert.Equal(Line(Message(3, LineBytes)), Read("engine.1.log"));
+        Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
+        Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
+        Assert.Equal(string.Empty, Read("engine.log"));
     }
 
     /// <summary>
