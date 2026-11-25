@@ -282,7 +282,7 @@ public enum FrameStatus { Ready, DeviceLost }
 
 - **Frames in flight:** `FramesInFlight` (default 2, docs/03 3.8) slots, each with its own GPU completion fence, command recording memory, upload ring slice and deletion queue. `BeginFrame` waits for slot `FrameNumber % FramesInFlight`'s previous use, then retires that slot's deletion queue and resets its ring. This is the proven M0 baseline: 2 frames in flight, per-frame fence, semaphore and command buffer, and render-finished semaphores per swapchain image (`FrameRenderer.cs:13-16`, `:27`; `Swapchain.cs:5-9`). The per-image semaphores are backend detail; the interface only promises that a frame never overwrites an image the presentation engine still reads.
 - **A frame is begun, recorded and submitted, always in that order.** `BeginFrame` with a frame already open, or `SubmitFrame` with a stale or foreign `CommandList`, throws `InvalidOperationException`. A `CommandList` copy used after its frame was submitted throws `InvalidOperationException` (each call checks its frame number against the open frame). There is no abandon: a host that wants to skip rendering submits an empty frame, which still retires deletion queues.
-- **A frame always completes.** A failed acquire (`Minimised`, `Skipped`) doesn't stop the frame: the host may still render offscreen work, or submit it empty. The M0 sample resets its fence only once a submit is certain (`FrameRenderer.cs:13-15`); the front end does the same, so no failure path leaves a slot waiting forever.
+- **A frame always completes.** A failed acquire (`Minimised`, `Skipped`) doesn't stop the frame: the host may still render offscreen work, or submit it empty. No failure path leaves a slot waiting forever: the backend contract's frame-call rule (section "The backend interface") requires it.
 - `CompletedFrameNumber` advances when `BeginFrame` observes completed fences (and on `WaitIdle`). It drives readback (section 6) and timestamp results (section 11).
 
 ## 5. Resource descriptions
@@ -462,12 +462,12 @@ public readonly ref struct TransientAllocation
 | The source has `CopySource` usage and the destination `CopyDestination` | every copy and write |
 | Buffer ranges lie inside the buffer; `BufferCopy` offsets and `Size` are multiples of 4; a buffer can't copy onto an overlapping range of itself | `BufferCopy`, `WriteBuffer` |
 | `MipLevel < MipLevels`, `ArrayLayer < ArrayLayers`; the region lies inside the mip level's extent, `max(1, size >> mip)`; one layer per copy | every texture location |
-| `Aspect` is `Color` for color formats and `Depth` for `Depth16Unorm`/`Depth32Float`; `WriteTexture` takes color formats only | every texture location |
+| `Aspect` is `Color` for color formats and `Depth` for `Depth16Unorm`/`Depth32Float`. Depth can be copied to buffers but not from them, as in WebGPU, because Vulkan leaves buffer values outside [0, 1] undefined in a depth aspect; `WriteTexture` takes color formats only | every texture location |
 | `BytesPerRow` is at least `Width * texelSize`; for buffer-texture copies it is a multiple of 256 and `BufferOffset` a multiple of the texel size and of 4. The buffer holds `BufferOffset + BytesPerRow * (Height - 1) + Width * texelSize` bytes | `TextureBufferCopy` |
 | `data` holds `BytesPerRow * (Height - 1) + Width * texelSize` bytes, any row pitch; the front end repacks it into the ring | `WriteTexture` |
 | Same format, sample count 1, the destination region `(DestinationX, DestinationY, Width, Height)` inside its mip level, no overlap when the source and destination are the same subresource | `TextureCopy` |
 
-The 256-byte row pitch is WebGPU's rule, adopted so a D3D12 backend (whose copies need 256-byte pitches) needs no repacking; Vulkan accepts it. It costs nothing for `WriteTexture`, which repacks. Rows per image are always `Height`, because a copy covers one layer.
+The 256-byte row pitch is WebGPU's rule, adopted so a D3D12 backend (whose copies need 256-byte pitches) needs no row repacking; D3D12's 512-byte footprint offset alignment stays that backend's concern, handled in its own staging. Vulkan accepts the pitch exactly (`bufferRowLength = BytesPerRow / texelSize`). It costs nothing for `WriteTexture`, which repacks. Rows per image are always `Height`, because a copy covers one layer.
 
 ## 7. Shaders and pipelines
 
@@ -584,11 +584,20 @@ public readonly ref struct BindGroupDescription
 
 public readonly record struct BindGroupEntry          // created through the factories, one per binding (and array element)
 {
-    public static BindGroupEntry Buffer(int binding, in BufferBinding buffer);
-    public static BindGroupEntry Transient(int binding, in TransientAllocation allocation, long size);
-    public static BindGroupEntry Texture(int binding, TextureViewHandle view, int arrayElement = 0);
-    public static BindGroupEntry Sampler(int binding, SamplerHandle sampler, int arrayElement = 0);
+    public static BindGroupEntry FromBuffer(int binding, in BufferBinding buffer);
+    public static BindGroupEntry FromTransient(int binding, in TransientAllocation allocation, long size);
+    public static BindGroupEntry FromTexture(int binding, TextureViewHandle view, int arrayElement = 0);
+    public static BindGroupEntry FromSampler(int binding, SamplerHandle sampler, int arrayElement = 0);
+
+    public BindGroupEntryKind Kind { get; }            // the read side, for the front end's validation and backends
+    public int Binding { get; }
+    public int ArrayElement { get; }
+    public BufferBinding Buffer { get; }               // Kind Buffer; a transient entry reads as its ring alias and offset
+    public TextureViewHandle View { get; }             // Kind Texture
+    public SamplerHandle Sampler { get; }              // Kind Sampler
 }
+
+public enum BindGroupEntryKind { Buffer, Texture, Sampler }
 
 public readonly record struct BufferBinding(BufferHandle Buffer, long Offset = 0, long Size = 0);   // Size 0 = to the end
 public enum BindGroupLifetime { Persistent, Frame }
@@ -849,11 +858,14 @@ public interface IBackendDevice : IDisposable           // owned and disposed by
     void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name);
     void Destroy(BackendObjectKind kind, ulong id);
 
-    // Swapchains. Destroying one also destroys its surface.
-    Result<BackendSwapchain> CreateSwapchain(WindowSurfaceSource surface, SwapchainOptions options, ulong oldSwapchain);
-    BackendAcquire AcquireImage(ulong swapchain, int frameSlot);
-    SwapchainStatus Present(ulong swapchain, int imageIndex);
+    // Surfaces and swapchains (rules below the code).
+    Result<ulong> CreateSurface(WindowSurfaceSource source);
+    void DestroySurface(ulong surface);
+    Result<BackendSwapchain> CreateSwapchain(in BackendSwapchainRequest request);
+    void DestroySwapchain(ulong swapchain);             // the swapchain and its image views, never the surface
     void GetSwapchainImage(ulong swapchain, int imageIndex, out ulong texture, out ulong view); // after each create
+    BackendAcquire AcquireImage(ulong swapchain, int frameSlot);
+    BackendPresent Present(ulong swapchain, int imageIndex);
 
     // Frames.
     Result WaitForFrame(int frameSlot);                 // blocks up to GpuTimeout; then the slot's resources are free
@@ -866,14 +878,16 @@ public interface IBackendDevice : IDisposable           // owned and disposed by
     // Diagnostics.
     long ValidationErrors { get; }
     long ValidationWarnings { get; }
-    void InjectValidationError();                       // the negative canary: the next Execute records one violation
+    void InjectValidationError();                       // the negative canary; throws without Validation (below)
 }
 
 public enum BackendMemory { DeviceLocal, DeviceLocalHostVisiblePreferred, HostUpload, HostReadback }
 public readonly record struct BackendBuffer(ulong Id, nint MappedPointer);   // MappedPointer: HostUpload, HostReadback
 public enum BackendObjectKind { Buffer, Texture, TextureView, Sampler, ShaderModule, BindGroupLayout, PipelineLayout, BindGroup, GraphicsPipeline, ComputePipeline }
+public readonly record struct BackendSwapchainRequest(ulong Surface, WindowSurfaceSource Source, SwapchainOptions Options, ulong OldSwapchain);
 public readonly record struct BackendSwapchain(ulong Id, SwapchainInfo Info);
 public readonly record struct BackendAcquire(SwapchainStatus Status, int ImageIndex, int NativeCode);
+public readonly record struct BackendPresent(SwapchainStatus Status, int NativeCode);
 public enum SwapchainStatus { Success, Suboptimal, OutOfDate, SurfaceLost, DeviceLost }
 
 public sealed class BackendObjectTable                  // owned by the front end; read-only for the backend
@@ -883,6 +897,12 @@ public sealed class BackendObjectTable                  // owned by the front en
     public ReadOnlySpan<byte> GetLabel(DebugLabel label); // UTF-8 name of an interned label
 }
 ```
+
+**Surfaces and swapchains:**
+
+- **Surfaces.** `CreateSurface` makes the window's one live surface (platform note section 4). The front end passes the same `WindowSurfaceSource` instance for the `CompatibleWindow` as `BackendDeviceRequest.CompatibleSurface`, so for that instance the backend returns the surface it created for adapter selection instead of a second one. `IBackendDevice.Dispose` destroys any surface still alive, including an unused selection surface.
+- **Recreation.** `CreateSwapchain` with a non-zero `OldSwapchain` reuses that swapchain's surface (`Surface` is the same id) and retires the old swapchain. The front end then calls `DestroySwapchain` on the old id whether the create succeeded or failed, as M0 does (`HelloWindowApp.cs:165-168`), after waiting for the device to go idle.
+- **Destruction.** `GraphicsDevice.Destroy(SwapchainHandle)` lands on `DestroySwapchain`, then `DestroySurface`, once the swapchain's frames have completed. Swapchain image texture and view ids from `GetSwapchainImage` are owned by their swapchain: they never go to `Destroy`, and are invalid after `DestroySwapchain`.
 
 **The frame plan.** `SubmitFrame` hands the backend one `FramePlan`: the slot's command stream after planning, with every handle already resolved to a backend id and every barrier inserted (section 10).
 
@@ -949,7 +969,7 @@ Each record in the stream is a `CommandKind` with an unmanaged payload struct of
 | `PushConstants` | stages, offset, size | `byte[size]` |
 | `Draw`, `DrawIndexed`, `Dispatch` | `DrawArguments`, `DrawIndexedArguments`, group counts | none |
 | `PushDebugGroup`, `PopDebugGroup` | label | none |
-| `ClearSwapchainImage` | swapchain image index (an acquired image no pass wrote) | none |
+| `ClearSwapchainImage` | index into `FramePlan.Acquired` (an acquired image no pass wrote) | none |
 
 Contract rules:
 
@@ -960,6 +980,7 @@ Contract rules:
 | Allocation | `WaitForFrame`, `IsFrameComplete`, `BeginFrame`, `AcquireImage`, `Execute`, `Present`, `TryReadTimestamps`, frame-lifetime `CreateBindGroup` and `Destroy` allocate no managed memory. |
 | Errors | Every native status comes back as a `Result` or a status, never as an exception. Device loss is `ErrorKind.Unavailable` with the native code, or `SwapchainStatus.DeviceLost`. Misuse can't reach a backend: the front end validates first. |
 | Memory | `HostUpload` and `HostReadback` buffers are mapped persistently. The backend makes CPU writes visible to `Execute`'s GPU work, and GPU writes visible to the CPU once `IsFrameComplete` or `WaitForFrame` reports the frame done (coherent memory, or a flush and invalidate). |
+| Frame-call failures | `WaitForFrame` that runs out of `GpuTimeout` returns `ErrorKind.Timeout`, which the front end reports as a loss with `DeviceLostEventArgs.TimedOut`. Any other failure of `WaitForFrame`, `IsFrameComplete`, `BeginFrame` or `Execute` (for example out of memory at submit, or a failed pool reset) is also treated as device loss, carrying its native code: a frame call has no partial recovery. An `Execute` that fails before submitting leaves the slot's completion signalled, so the slot's next `WaitForFrame` returns at once instead of waiting forever. This moves M0's rule, reset the fence only once a submit is certain (`FrameRenderer.cs:13-15`), into the backend. |
 | Frame slots | `BeginFrame(slot)` follows a successful `WaitForFrame(slot)`. `Execute` signals the slot's completion and makes the acquired images presentable, then the front end calls `Present` for each. Frame-lifetime bind groups are released by the slot's pool reset, never by `Destroy`. |
 | Timestamps | The front end assigns two query indices per labelled pass when `TimestampQueries` is enabled. `TryReadTimestamps` returns raw ticks; the front end converts them with `TimestampPeriodNanoseconds`. |
 
@@ -971,13 +992,13 @@ The front end maps swapchain statuses to the public results:
 | `Suboptimal` | `Acquired` (or the frame presented), and the swapchain is recreated at the next acquire |
 | `OutOfDate` at acquire | recreate (`CreateSwapchain` with the old id) and retry once: `Recreated`, or `Skipped` if still out of date |
 | `OutOfDate` at present | recreated at the next acquire |
-| `SurfaceLost` | `SurfaceLost` |
-| `DeviceLost` | `AcquireStatus.DeviceLost` / `FrameStatus.DeviceLost`, and the device is lost (section 12) |
+| `SurfaceLost` | `SurfaceLost`; at present, the next acquire reports it |
+| `DeviceLost` | `AcquireStatus.DeviceLost` / `FrameStatus.DeviceLost`, and the device is lost (section 12); `NativeCode` fills `DeviceLostEventArgs.NativeCode` |
 
 **Test hooks.** Neither needs an internal backend seam:
 
-- **Device loss.** The front end's fault seam (section 12) replaces a backend status with a loss. `Recover()` then really disposes that `IBackendDevice` and creates a new one, so recreation runs for real on every backend. A backend's own loss detection is unit-tested in its own test project (#55).
-- **Negative canary.** `InjectValidationError()` is public on the backend interface, documented as test-only, and harmless: it makes the next `Execute` record one known violation, for example the M0 harness's wrong old layout (`FrameRenderer.cs:286-287`). The conformance suite calls it through the front end's internal seam and expects `ValidationErrors` to grow.
+- **Device loss.** The front end's fault seam (section 12) replaces a backend status with a loss. `Recover()` then really disposes that `IBackendDevice` and creates a new one, so recreation runs for real on every backend. The front end discards, without calling `Destroy`, every id it held for the old device (deletion queues, ring and pending upload blocks, the transient pool, frame bind groups, surfaces, swapchain image ids), then recreates its rings on the new device. A backend's own loss detection is unit-tested in its own test project (#55).
+- **Negative canary.** `InjectValidationError()` is public on the backend interface and documented as test-only: it makes the next `Execute` record one known violation. On a device created without `Validation` it throws `InvalidOperationException`: with no layer to catch it, the violation would be undefined behaviour on real hardware, and the test would pass without proving anything. A suitable violation is the M0 harness's wrong old layout (`FrameRenderer.cs:286-287`). The conformance suite calls it through the front end's internal seam and expects `ValidationErrors` to grow.
 
 ## 16. The issue split
 
@@ -986,7 +1007,7 @@ The planned issues G1, G2, G10 and C1 hold, plus G2b, the device front end, whic
 | Issue | Scope from this note | Blocked by | Est. |
 |-------|----------------------|------------|------|
 | G1 feat(graphics): add the render interface's resource descriptions | Creates `src/BrutalEngine.Graphics`: typed handles, formats, usages, `FormatSupport`, `SampleCounts`, buffer/texture/view/sampler descriptions and their validation rules (section 5), copy types and their rules (section 6), `AdapterSelection` and its parser, capabilities, limits and features (section 2). No Platform reference: `GraphicsDeviceOptions` moves to G2b | this note | ~650 |
-| G2b feat(graphics): add the device front end and a fake backend | `GraphicsDeviceOptions`, `GraphicsDevice` and the backend interface types except the command stream (section "The backend interface"), implemented as specified there: handle tables, `BackendObjectTable`, frame state machine, deletion queues, upload ring and pending blocks, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1-4, 6, 11-14), `WindowSurfaceSource` (section 3); an in-memory fake backend for unit tests | G1, P1 (`IWindow`, `IVulkanSurfaceSource`, `ThreadAffinity`, the `Graphics -> Platform` edge) | ~700 |
+| G2b feat(graphics): add the device front end and a fake backend | `GraphicsDeviceOptions`, `GraphicsDevice` and the backend interface types except the command stream records, including `FramePlan`, `SwapchainImageUse`, `ResourceTransition` and `ResourceState` (section "The backend interface"), implemented as specified there: handle tables, `BackendObjectTable`, frame state machine, deletion queues, upload ring and pending blocks, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1-4, 6, 11-14), `WindowSurfaceSource` (section 3); an in-memory fake backend for unit tests | G1, P1 (`IWindow`, `IVulkanSurfaceSource`, `ThreadAffinity`, the `Graphics -> Platform` edge) | ~700 |
 | G2 feat(graphics): add pipelines, bind groups and command recording | Shader module, layout, pipeline and bind group descriptions with validation (sections 7-8), pass descriptions, `CommandList`/encoder recording into the command stream with its rules (section 9), `CommandKind`, the payload structs and `CommandReader` | G2b (handle tables, open-frame state) | ~650 |
 | G10 feat(graphics): order passes and insert barriers with a minimal frame graph | The planner (section 10): usage derivation, cross-frame state tracking, `ResourceTransition`s, the transient texture pool; pure unit and property tests | G2 | ~650 |
 | C1 test(graphics): add the conformance suite and run it in CI | Section 15's rules and harness (validation fixture, canary, leak checks, image diff) and the first device, resource, upload and readback cases, against the Vulkan backend | G10, and #55's split up to uploads and textures (G7) | ~700 |
