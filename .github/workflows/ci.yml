@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 15 * * *" # nightly full tier, 15:00 UTC
+    - cron: "0 15 * * *" # nightly full tier, 15:00 UTC. Also keeps main's caches from expiring.
   workflow_dispatch:
 
 permissions:
@@ -93,8 +93,7 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-      - name: Restore
-        run: dotnet restore BrutalEngine.slnx
+      - uses: ./.github/actions/dotnet-restore
       - name: Check formatting
         run: dotnet format BrutalEngine.slnx --verify-no-changes --no-restore
 
@@ -113,10 +112,9 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-      - name: Restore (locked)
-        run: dotnet restore BrutalEngine.slnx
+      - uses: ./.github/actions/dotnet-restore
+        with:
+          save-cache: "true"
       - name: Build (Debug)
         run: dotnet build BrutalEngine.slnx -c Debug --no-restore
       - name: Build (Release)
@@ -147,10 +145,7 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-      - name: Restore (locked)
-        run: dotnet restore BrutalEngine.slnx
+      - uses: ./.github/actions/dotnet-restore
       - name: Pack (with package validation)
         run: dotnet pack BrutalEngine.slnx -c Release --no-restore -o artifacts/packages
       - name: Upload packages
@@ -179,8 +174,9 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
+      - uses: ./.github/actions/dotnet-restore
+        with:
+          project: tests/BrutalEngine.Aot.Smoke
       - name: Set up software Vulkan (lavapipe + validation layers)
         if: runner.os != 'macOS'
         uses: ./.github/actions/setup-software-vulkan
@@ -188,7 +184,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: ./.github/actions/setup-macos-vulkan
       - name: Build smoke harness
-        run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release
+        run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release --no-restore
       - name: Run (JIT)
         run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }}
       - name: Negative test (JIT, injected validation error must exit 2)

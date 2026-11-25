@@ -58,6 +58,17 @@ CI is split so a typical PR gets feedback in about two minutes, while native and
 - Anything the fast tier misses is caught by the full run on the merge to `main`.
 - **Time budget:** a fast-tier PR should finish in under 3 minutes, and no single step should take over 2 minutes on a warm cache. A step that grows past that gets cached, prebuilt or moved to the nightly run.
 
+#### Caching
+
+The repository's Actions cache is limited to 10 GB, and GitHub evicts the least recently used entries beyond that. A cache saved by a PR can be read only by that PR, while `main`'s caches can be read by every PR. So large caches are saved only from `main`:
+
+| Cache | Size | Saved by | Notes |
+|-------|------|----------|-------|
+| NuGet packages (`.github/actions/dotnet-restore`), Windows and macOS | About 650-720 MB per OS | The build job on `main` only | Keyed on every `packages.lock.json`. PRs read `main`'s copy. A PR that changes a lock file restores from nuget.org. Linux uses no cache, because downloading and extracting it took longer than restoring from nuget.org |
+| macOS loader and validation-layer build (`setup-macos-vulkan`) | About 7 MB | Any run that misses | Saves a 6-13 min build. Keyed on the pins, the build script and the runner OS |
+
+Caches unused for 7 days expire. The nightly full-tier run on `main` restores all of them, so they stay warm.
+
 **Every merge into `main` is a squash merge**, so `main` has one commit per PR and its history stays clean. The repository allows only squash merging (merge commits and rebase merging are disabled), uses the PR title as the squash commit title, and deletes head branches after merge.
 
 ### `nightly.yml`: scheduled, plus manual dispatch
