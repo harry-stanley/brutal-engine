@@ -178,6 +178,13 @@ internal sealed unsafe class HelloWindowApp
                         {
                             splash = PrepareSplash(window, vulkan, swapchain, logo, ref splashImage, ref splashMinimumSize);
                         }
+                        else if (splashImage is not null)
+                        {
+                            // The splash is over and the device is idle: the logo image is no longer needed.
+                            splashImage.Dispose();
+                            splashImage = null;
+                            splash = default;
+                        }
 
                         _setupComplete = true;
                     }
