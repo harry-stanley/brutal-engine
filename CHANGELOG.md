@@ -10,6 +10,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ### Changed
 
+- Package versions: builds after the `v0.1.0-alpha` tag are versioned `0.2.0-alpha.0.N` (N = commits since the tag) until `v0.2.0` is tagged, instead of `0.1.0-alpha.N`.
 - `samples/HelloWindow` logs through `BrutalEngine.Core`'s `Logger` and `ConsoleLogSink` (categories `HelloWindow` and `HelloWindow.Vulkan`) instead of plain console writes, so each line now reads `2026-11-26T01:02:03.456Z INFO [HelloWindow] message`. Messages may be up to 64 KiB, so a failure's full exception report stays whole. The validation messenger keeps its counts per instance and reaches them through the callback's user data, with no static state. CI's splash check matches the new line format.
 
 ### Fixed
