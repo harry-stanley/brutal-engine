@@ -54,6 +54,7 @@ jobs:
       - name: Build test
         working-directory: spikes/s3
         run: |
+          echo "SDK selected via spikes/s3/global.json: $(dotnet --version)"
           start=$(date +%s)
           dotnet build VulkanHeadless.cs -c Release
           echo "build took $(( $(date +%s) - start )) s"
@@ -94,8 +95,12 @@ jobs:
           [System.Environment]::OSVersion.VersionString
           "elevated: " + ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
           "vulkan-1.dll in System32 before setup: " + (Test-Path C:\Windows\System32\vulkan-1.dll)
-          Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse -ErrorAction SilentlyContinue | Out-String
-          Get-ChildItem C:\VulkanSDK -ErrorAction SilentlyContinue
+          if (Test-Path C:\Windows\System32\vulkan-1.dll) { (Get-Item C:\Windows\System32\vulkan-1.dll).VersionInfo | Format-List FileVersion, ProductVersion, CompanyName }
+          foreach ($k in "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers", "HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers", "HKLM:\SOFTWARE\Khronos\Vulkan\ImplicitLayers") {
+            # Never use Get-ChildItem -Recurse on a missing registry key: pwsh walks all of HKLM and overflows its stack.
+            if (Test-Path $k) { "[$k]"; (Get-Item $k).Property | ForEach-Object { "  $_" } } else { "[$k] (missing)" }
+          }
+          "C:\VulkanSDK exists: " + (Test-Path C:\VulkanSDK)
 
       - name: Install Mesa lavapipe (pal1000/mesa-dist-win, pinned + SHA-256)
         run: |
@@ -142,7 +147,10 @@ jobs:
             New-Item -Path $layers -Force | Out-Null
             New-ItemProperty -Path $layers -Name $layerJson -PropertyType DWord -Value 0 -Force | Out-Null
           }
-          Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse | Out-String
+          foreach ($k in "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers", "HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers", "HKLM:\SOFTWARE\Khronos\Vulkan\ImplicitLayers") {
+            # Never use Get-ChildItem -Recurse on a missing registry key: pwsh walks all of HKLM and overflows its stack.
+            if (Test-Path $k) { "[$k]"; (Get-Item $k).Property | ForEach-Object { "  $_" } } else { "[$k] (missing)" }
+          }
           "VULKAN_SDK=$root" >> $env:GITHUB_ENV
           "$root\Bin" >> $env:GITHUB_PATH
           "SDK step took $([int]$sw.Elapsed.TotalSeconds) s"
@@ -156,6 +164,7 @@ jobs:
       - name: Build test
         working-directory: spikes/s3
         run: |
+          "SDK selected via spikes/s3/global.json: $(dotnet --version)"
           $sw = [Diagnostics.Stopwatch]::StartNew()
           dotnet build VulkanHeadless.cs -c Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
