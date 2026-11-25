@@ -1,10 +1,21 @@
 <Project>
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- Shipped engine libraries: one project = one NuGet package (docs/04-repo-layout.md). -->
+  <!--
+    Roslyn components (analyzers, source generators) live under src/ but are build-time tools: they target
+    netstandard2.0, aren't AOT-compiled, have no tracked public API, and aren't packed yet.
+  -->
   <PropertyGroup>
+    <IsRoslynComponentProject Condition="$(MSBuildProjectName.EndsWith('.Analyzers')) or $(MSBuildProjectName.EndsWith('.Generators'))">true</IsRoslynComponentProject>
+  </PropertyGroup>
+
+  <!-- Shipped engine libraries: one project = one NuGet package (docs/04-repo-layout.md). -->
+  <PropertyGroup Condition="'$(IsRoslynComponentProject)' != 'true'">
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <PackageId>$(MSBuildProjectName)</PackageId>
@@ -24,6 +35,9 @@
 
   <ItemGroup>
     <PackageReference Include="MinVer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsRoslynComponentProject)' != 'true'">
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
   </ItemGroup>
 

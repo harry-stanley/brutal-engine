@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Analyzers/BrutalEngine.Analyzers.csproj" />
+    <!-- The real Result types, so the analyzer is tested against the exact metadata names it looks for. -->
+    <ProjectReference Include="../../src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
+  </ItemGroup>
+</Project>
