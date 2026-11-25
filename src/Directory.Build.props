@@ -9,6 +9,17 @@
     <IsRoslynComponentProject Condition="$(MSBuildProjectName.EndsWith('.Analyzers')) or $(MSBuildProjectName.EndsWith('.Generators'))">true</IsRoslynComponentProject>
   </PropertyGroup>
 
+  <!--
+    Every supported RID in each lock file. An app that references a src module and is published for a RID (HelloWindow,
+    as NativeAOT) restores that module for the RID too, and CI's locked restore fails (NU1004) unless the module's lock
+    file already covers it. Roslyn components included: Core restores BrutalEngine.Analyzers as part of its graph.
+    Only RuntimeIdentifiers (plural) is set, which adds RID sections to the lock file and changes nothing else: builds
+    and packages stay RID-agnostic.
+  -->
+  <PropertyGroup>
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
   <!-- Shipped engine libraries: one project = one NuGet package (docs/04-repo-layout.md). -->
   <PropertyGroup Condition="'$(IsRoslynComponentProject)' != 'true'">
     <IsPackable>true</IsPackable>
