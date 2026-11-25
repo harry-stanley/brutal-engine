@@ -34,7 +34,7 @@ All BRUTAL packages are published as `Ahwoo.Brutal.*` with CalVer versions (2026
 | `Ahwoo.Brutal.Stb` (+ `.Native`) | Image decoding (PNG, TGA and others) at cook time | 3 RIDs |
 | `Ahwoo.Brutal.Ktx` (+ `.Native`) | KTX2 GPU texture containers (compressed textures for HD assets) | 3 RIDs |
 | `Ahwoo.Brutal.Box2D` (+ `.Native`) | 2D physics (M3) | Box2D 3.1.1, 3 RIDs |
-| `Ahwoo.Brutal.ImGui`, `.ImGui.Backends` (+ `.Native`) | Debug overlay now, editor later. We implement BRUTAL's `IPlatformBackend` for SDL3 and an `IRendererBackend` on our own render interface | 3 RIDs |
+| `Ahwoo.Brutal.ImGui` (+ `.Native`) | Debug overlay now, editor later, with our own SDL3 platform backend and a renderer on our render interface. Not `.ImGui.Backends`: it pulls in GLFW and OpenGL ([ADR-0013](adr/0013-imgui-without-brutal-backends.md)) | 3 RIDs |
 | `Ahwoo.Brutal.RenderDoc` | Optional in-engine RenderDoc capture trigger (dev builds) | |
 | `Ahwoo.Brutal.Sdl.Ttf` | Candidate for complex-script text shaping (HarfBuzz) in localisation. Decided in spike S8 | 3 RIDs |
 | `Ahwoo.Brutal.RakNet` | Candidate networking transport. Decided in spike S7 | 3 RIDs |

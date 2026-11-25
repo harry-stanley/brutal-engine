@@ -1,6 +1,6 @@
 # ADR-0003: SDL3 for platform, input and audio device
 
-- **Status:** Accepted
+- **Status:** Accepted; the ImGui backend sentence is superseded by [ADR-0013](0013-imgui-without-brutal-backends.md)
 - **Date:** 2026-11-25
 - **Deciders:** Harry Stanley (maintainer)
 
