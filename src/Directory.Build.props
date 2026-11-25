@@ -39,6 +39,11 @@
 
   <ItemGroup Condition="'$(IsRoslynComponentProject)' != 'true'">
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <!-- Our own analyzers (BE1xxx) run on every engine library. Build-time only: nothing is referenced at runtime. -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)BrutalEngine.Analyzers/BrutalEngine.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Every package carries the README, and BRUTAL's NOTICE.txt (required by the BRUTAL License v1.0). -->
