@@ -1,0 +1,10 @@
+#nullable enable
+BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.BufferHandle.BufferHandle() -> void
+BrutalEngine.Graphics.BufferHandle.Equals(BrutalEngine.Graphics.BufferHandle other) -> bool
+BrutalEngine.Graphics.BufferHandle.IsNull.get -> bool
+override BrutalEngine.Graphics.BufferHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.BufferHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.BufferHandle.ToString() -> string!
+static BrutalEngine.Graphics.BufferHandle.operator !=(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
+static BrutalEngine.Graphics.BufferHandle.operator ==(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>BrutalEngine render interface: the backend-neutral GPU API (typed GPU object handles first) that every graphics backend implements.</Description>
+    <PackageTags>gamedev;game-engine;2d;brutal;graphics</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../BrutalEngine.Core/BrutalEngine.Core.csproj" />
+  </ItemGroup>
+</Project>
