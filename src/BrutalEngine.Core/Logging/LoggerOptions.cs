@@ -24,6 +24,11 @@ public sealed record LoggerOptions
     public required IReadOnlyList<ILogSink> Sinks { get; init; }
 
     /// <summary>Source of entry timestamps. Default <see cref="TimeProvider.System"/>.</summary>
+    /// <remarks>
+    /// Called once per logged entry, under the logger's dispatch lock. If it throws, the exception reaches the
+    /// logging call and the entry isn't logged: unlike a sink, it isn't isolated, because a broken clock is a
+    /// configuration bug, like a value that fails to format.
+    /// </remarks>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
     /// <summary>

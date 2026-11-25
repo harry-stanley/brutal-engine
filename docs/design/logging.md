@@ -65,6 +65,7 @@ The compiler turns each call into: build the handler (which asks `render.IsEnabl
 | Sink throws | Isolated, counted in `SinkFailureCount`. `OutOfMemoryException` propagates. |
 | Message too long | Truncated with `…`. |
 | Formatting a value throws (a user `ToString`) | The exception reaches the caller and nothing is logged. The rented buffer is left to the GC. |
+| The `TimeProvider` throws | The exception reaches the caller and the entry isn't logged; later entries are unaffected. Like formatting code (and unlike a sink), it's caller-supplied configuration, so it isn't isolated. |
 | Use after `Dispose` | `ObjectDisposedException`, except logging, which is a no-op. |
 
 ## Testing

@@ -363,6 +363,21 @@ public sealed class LoggerTests
     }
 
     [Fact]
+    public void Log_TimeProviderThrows_PropagatesAndLaterEntriesStillLog()
+    {
+        RecordingSink sink = new();
+        ThrowingOnceTimeProvider clock = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [sink], TimeProvider = clock });
+        LogCategory category = logger.CreateCategory("Core");
+
+        _ = Assert.Throws<InvalidOperationException>(() => category.Information($"lost"));
+        category.Information($"kept");
+
+        Assert.Equal(["kept"], sink.Messages);
+        Assert.Equal(0, logger.SinkFailureCount);
+    }
+
+    [Fact]
     public void LogAfterDispose_IsNoOp()
     {
         RecordingSink sink = new();
@@ -383,6 +398,23 @@ public sealed class LoggerTests
         new(new LoggerOptions { Sinks = sinks });
 
     private static int CurrentLine([CallerLineNumber] int line = 0) => line;
+
+    /// <summary>A clock that throws on its first call, then returns the epoch.</summary>
+    private sealed class ThrowingOnceTimeProvider : TimeProvider
+    {
+        private bool _thrown;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (!_thrown)
+            {
+                _thrown = true;
+                throw new InvalidOperationException("Clock failure (test).");
+            }
+
+            return DateTimeOffset.UnixEpoch;
+        }
+    }
 
     /// <summary>Records messages, and counts writes that started while another was still running.</summary>
     private sealed class SerialCheckingSink : ILogSink

@@ -48,8 +48,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Trace(
         [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<TraceLevel> message,
@@ -63,8 +64,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Debug(
         [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<DebugLevel> message,
@@ -78,8 +80,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Information(
         [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<InformationLevel> message,
@@ -93,8 +96,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Warning(
         [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<WarningLevel> message,
@@ -108,8 +112,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Error(
         [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<ErrorLevel> message,
@@ -123,8 +128,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Critical(
         [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<CriticalLevel> message,
@@ -142,8 +148,9 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// <param name="callerFile">Filled in by the compiler.</param>
     /// <param name="callerLine">Filled in by the compiler.</param>
     /// <remarks>
-    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
-    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// No-op when disabled. Never throws, except from code the caller supplied (a value's own formatting code,
+    /// or the logger's <see cref="System.TimeProvider"/>), or with a handler built by hand for another category or
+    /// level (<see cref="ArgumentException"/>).
     /// </remarks>
     public void Log(
         LogLevel level,
