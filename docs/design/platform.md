@@ -397,3 +397,157 @@ public enum MessageBoxKind { Information = 0, Warning, Error }
 - `IPlatform.ShowMessageBox(request)` shows a modal OS box with an OK button (`SDL_ShowSimpleMessageBox`, `Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:12235`; flags from `SdlMessageBoxFlags`) and blocks until it is dismissed. Main thread only. A refusal is a `Result` (`ErrorKind.Native`). On a headless platform it returns `ErrorKind.Unavailable` at once without calling SDL, so CI never blocks on a dialog.
 - **Crash reports** ([Architecture 3.5](../03-architecture.md#35-error-handling)) run after the host boundary has caught the exception, on the main thread. If the platform still exists, Runtime calls `ShowMessageBox` with `MessageBoxKind.Error`. If it doesn't (it failed to start, or was already disposed), Runtime calls `SdlPlatform.TryShowFatalError(string title, string message)`, a stateless static that needs no `SdlPlatform` instance, never throws, and returns false if no box could be shown. Runtime skips both when running headless or under CI. P5 verifies on the three OSes that `SDL_ShowSimpleMessageBox` works without `SDL_Init`, which `TryShowFatalError` relies on. Both must be shown only after the crash report is on disk.
 - Message boxes allocate (marshalling), which is fine on these paths.
+
+## 9. Threading
+
+| API | Threads |
+|-----|---------|
+| `IPlatform`: creation, `Dispose`, `CreateWindow`, `PumpEvents`, `Events`, `WaitForEvents`, displays, clipboard, cursors, message boxes, `GetUserDataDirectory` | main thread only |
+| `IPlatform.BackendName`, `VideoDriver`, `Headless`, `Clock`, `BaseDirectory` | any thread (immutable) |
+| Every `IWindow` member, `IVulkanSurfaceSource.CreateVulkanSurface` | main thread only |
+| `IVulkanSurfaceSource` extension getters | any thread |
+| `PlatformEventBatch` | the pumping thread, until the next pump |
+| `VfsPath`, `VirtualFileSystem`, `InMemoryFileSystem`, `DirectoryFileSystem` | thread-safe |
+
+- **The main thread is the thread that created the platform.** On macOS it must also be the process's main thread when the `cocoa` driver is used: SDL requires it ([Architecture 3.2](../03-architecture.md#threading-model)). `SdlPlatform.Create` checks this with `SDL_IsMainThread` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11978`) when the driver is `cocoa`, and fails with `ErrorKind.Unsupported` instead of letting Cocoa abort the process. P3 verifies on macos-15 that `SDL_IsMainThread` reports the process's main thread there.
+- **Misuse is detected on every call, in every build:** each main-thread member starts with a thread check that throws `WrongThreadException` naming the API. That is stricter than 3.2's "asserted in debug builds", because a wrong-thread SDL call in a release build is undefined behaviour rather than a clean failure, and the check is one integer comparison, which stays within the zero-allocation, no-measurable-cost budget.
+- **Shared types in Core.** Graphics and World need the same check, so it lands in `BrutalEngine.Core`, added by P1:
+
+```csharp
+namespace BrutalEngine.Core;
+
+public sealed class WrongThreadException : InvalidOperationException
+{
+    public WrongThreadException(string apiName, int expectedThreadId, int actualThreadId);
+    public string ApiName { get; }
+    public int ExpectedThreadId { get; }
+    public int ActualThreadId { get; }
+}
+
+public readonly struct ThreadAffinity    // captures one thread; default(ThreadAffinity) is invalid and its checks throw InvalidOperationException
+{
+    public static ThreadAffinity CurrentThread();
+    public int ThreadId { get; }
+    public bool IsCurrentThread { get; }
+    public void ThrowIfNotCurrentThread(string apiName);   // WrongThreadException; allocates only when throwing
+}
+```
+
+- **Tests and SDL threads.** xUnit runs tests on worker threads, not the process's main thread. The design assumes SDL's video functions work from the thread that initialised them on Windows and Linux. On macOS, `cocoa` needs the process's main thread, so native-boundary tests use the `dummy` driver (and `offscreen` where they need Vulkan), which don't use Cocoa. **Assumptions to verify in P3** on all three runners, before anything builds on them: SDL initialises and runs `dummy` (and `offscreen`, in `vulkan-smoke`) from a test worker thread. If it doesn't, the choice between a main-thread test harness and macOS-only exclusions comes back to the maintainer.
+- Because SDL is process-wide and the platform is one per process, Platform.Sdl3's native tests share one platform per test assembly through a collection fixture ([Testing strategy](../05-testing-strategy.md#test-conventions)).
+
+## 10. Native status checks and the BRUTAL log bridge
+
+**`SdlCheck`** (internal to Platform.Sdl3) is the single helper for SDL statuses ([Architecture 3.5](../03-architecture.md#35-error-handling)):
+
+```csharp
+internal static class SdlCheck
+{
+    public static Result Check(byte status, string call);              // SDL bool: 0 is failure
+    public static Result<nint> NotNull(nint pointer, string call);     // pointer-returning calls
+    public static EngineError Error(string call);                      // ErrorKind.Native, "<call> failed: <SDL_GetError text>"
+}
+```
+
+- BRUTAL's raw layer returns SDL's bool as a `byte` (`Brutal.Sdl/Manual/Libraries/Sdl.Init.cs:9-10`), and its convenience wrappers throw `SdlException` on failure (`Sdl.Init.Initialize`, `Sdl.Video.CreateWindow` at `Brutal.Sdl/Generated/Libraries/Sdl.Video.gen.cs:647-652`, `Sdl.Vulkan.CreateSurface`). Engine code calls the raw `Sdl.PInvoke` functions and checks every status through `SdlCheck`, so expected failures become `Result`s and the message carries `SDL_GetError` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:2134`). `BE1001` sees only `Result` and `VkResult`, so an unchecked `byte` status is a review item in P3-P6.
+- The error text is read only on failure, so successful calls allocate nothing. SDL keeps the error per thread, and all calls are on the main thread.
+- Teardown (`SDL_DestroyWindow` `:6834`, `SDL_Quit` `:11968`) returns nothing to check.
+
+**The log bridge (P6).** BRUTAL's modules log through its process-global `LogSystem` (`Brutal.Logging/LogSystem.cs:21-39`; SDL's category is created at `Brutal.Sdl/Sdl.cs:151`, Vulkan's at `Brutal.Vulkan/Manual/Partials/Vulkan.cs:5`) and those messages are dropped unless `LogSystem.Initialize` runs. Platform.Sdl3 is the first backend to start, so it installs the bridge: an `ILoggerProvider` that forwards every BRUTAL category into the engine `Logger` given in `PlatformOptions.Logger`, under categories `Brutal.Sdl`, `Brutal.Vulkan` and so on. Rules:
+
+- One per process, because `LogSystem` is global: the platform installs it at creation and disables it at `Dispose` (`LogSystem.IsEnabled = false`). Graphics.Vulkan doesn't install a second one.
+- BRUTAL's `Trace` level stays off: every SDL wrapper logs a trace per call (for example `Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:15`), and enabled BRUTAL messages are materialised as strings, so enabling it would allocate on every native call in the frame loop. BRUTAL checks `IsEnabled` before formatting (`Brutal.Logging/LogCategory.cs:94-95`), so a disabled level costs nothing.
+- Forwarded messages allocate (BRUTAL's own formatting). They are warnings and errors, not steady-state frame traffic.
+
+## 11. What Platform.Sdl3 exposes
+
+The backend may expose SDL types, but its public surface is a factory and options, nothing else. The backend-neutral options live in Platform:
+
+```csharp
+namespace BrutalEngine.Platform;
+
+public sealed record PlatformOptions
+{
+    public required string Organization { get; init; }     // [A-Za-z0-9 ._-]{1,64}
+    public required string Application { get; init; }      // same rule
+    public HeadlessMode Headless { get; init; }            // default None
+    public int EventCapacity { get; init; } = 1024;        // 64..65536
+    public int TextCapacityBytes { get; init; } = 8192;    // 2048..1048576 (at least twice TextReserveBytes)
+    public TimeProvider Clock { get; init; } = TimeProvider.System;
+    public string? UserDataDirectory { get; init; }        // absolute; replaces SDL_GetPrefPath
+    public Logger? Logger { get; init; }                   // category "Platform"; also receives BRUTAL's logs
+}
+```
+
+```csharp
+namespace BrutalEngine.Platform.Sdl3;
+
+public sealed class SdlPlatform : IPlatform
+{
+    public static Result<SdlPlatform> Create(PlatformOptions options, SdlPlatformOptions? sdlOptions = null);
+    public static bool TryShowFatalError(string title, string message);
+    // plus the IPlatform members
+}
+
+public sealed record SdlPlatformOptions
+{
+    public string? VulkanLibraryPath { get; init; }        // absolute; sets SDL_HINT_VULKAN_LIBRARY before SDL_Init
+}
+```
+
+- `Create` sets the hints, calls `SDL_Init(SDL_INIT_VIDEO)` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11928`) and reads the driver. Expected failures are `Result`s: no display or video driver, the requested headless mode unavailable, the main-thread rule broken on macOS (all `Unsupported` or `Native`). Misuse throws: invalid options, a second live instance.
+- `VulkanLibraryPath` points SDL at the Vulkan loader that BRUTAL already uses, so both load one library: the bundled macOS loader, or an explicit `--vulkan-loader`. The constant is `Sdl.Constants.HintVulkanLibrary` (`Brutal.Sdl/Generated/Sdl.Constants.gen.cs:350`), as in `samples/HelloWindow/BundledVulkan.cs:117-140`. Choosing and preloading the loader is Graphics.Vulkan's job; the host passes the path it chose. If the user forced the hint through the environment, the refused hint is logged, not an error (as for the video driver).
+- No other public type: the window, surface source, event translation, cursors and `SdlCheck` are internal. Nothing exposes an SDL type, so the backend's public surface needs no binding types at all.
+
+## Failure modes
+
+| Failure | Result |
+|---------|--------|
+| SDL can't start video, no display, required headless driver unavailable, macOS off the main thread | `SdlPlatform.Create` fails: `Unsupported` or `Native` with SDL's message |
+| Window creation refused by the OS or driver | `CreateWindow` fails: `Native` |
+| Vulkan surface requested on `NoSurface`, or on `Offscreen` without `VK_EXT_headless_surface` | `CreateWindow` fails: `Unsupported` ([section 3](#3-headless-mode)) |
+| `SDL_Vulkan_CreateSurface` fails | `CreateVulkanSurface` fails: `Native` |
+| A setter, clipboard, cursor or message box refused | that call's `Result` fails: `Native` (`Unavailable` for message boxes when headless) |
+| User data directory can't be created | `GetUserDataDirectory` fails: `Io` |
+| More events than the buffer holds | deferred to the next pump and counted; nothing lost ([section 2](#one-buffer-per-pump)) |
+| One text event longer than the free text space | cut at a code-point boundary, counted in `TruncatedTextCount` |
+| VFS errors | `Result`s with `NotFound`, `Unsupported`, `Unavailable`, `Io` ([section 5](#mounts-and-operations)) |
+| Wrong thread | `WrongThreadException` |
+| Use after `Dispose`, invalid arguments, second platform, reading the wrong event payload | `ObjectDisposedException`, `ArgumentException`, `InvalidOperationException` |
+
+## Consistency with Architecture 3.7
+
+The design follows 3.7 except for the points below. None of them touches an ADR.
+
+| 3.7 says | This note | Why |
+|----------|-----------|-----|
+| Events in "a value-type ring buffer" | A fixed per-pump buffer of value-type events, cleared each pump; overflow is deferred in SDL's queue | Every consumer reads the frame's events in the same frame on the main thread, so nothing needs a ring's history; deferring loses nothing, where a ring overwrites |
+| Text input with IME composition; gamepads; touch and pen; drag-and-drop files | Committed text only; the rest isn't translated in M1 | Out of M1's scope by this issue. Gamepads and drops need a variable-length payload buffer like text's; composition UI belongs with UI text fields (M3) |
+| Power and suspend events | Not in M1 | No M1 consumer; SDL's background events are mobile-only |
+| Vsync mode | In Graphics (the swapchain's present mode) | Presentation is the render interface's (`docs/design/graphics.md`, #54) |
+| Thread checks "asserted in debug builds" (3.2) | Checked in every build | [Section 9](#9-threading) |
+
+## 12. Testing
+
+- **Platform (pure, every OS, `tests/BrutalEngine.Platform.Tests`):** every rule above as unit tests: options validation, `PlatformEvent` payload views (including the wrong-view exception), `Keycode`, `PlatformEventBuffer` (capacity, `HasRoom` and the text reserve, deferral, truncation on code-point boundaries for 2-, 3- and 4-byte sequences, `Clear`), `VfsPath` grammar and every rejection, `VirtualFileSystem` routing and error kinds, `InMemoryFileSystem`, and `DirectoryFileSystem` on temporary directories (atomic replace, read-only mounts, `VerifyCase` on all three OSes, which covers both case-sensitive and case-insensitive file systems).
+- **Property tests (CsCheck):** `VfsPath` normalisation is idempotent; a parsed path never contains `..`, `\`, `//` or a trailing `/`, and round-trips through `ToString`; random strings either fail to parse or yield a path that a `DirectoryFileSystem` resolves strictly inside its root; random buffer fills against a reference model keep every event, in order, across deferral.
+- **Allocation tests:** filling and reading 1,000 batches of every event kind (pure, in Platform.Tests), and in Platform.Sdl3 1,000 `PumpEvents` calls over events pushed with `SDL_PushEvent` plus every `IWindow` getter, allocate 0 managed bytes. Also run under Windows dynamic coverage, as CI does.
+- **Native boundary (Platform.Sdl3, every OS, `build-test` job):** with the `dummy` driver and `WindowSurface.None`: create and dispose, the one-per-process rule, the driver derivation from `SDL_VIDEO_DRIVER`, window creation and sizes, setters' results, the startup size event, the `NoSurface`+Vulkan failure, clipboard round-trip, displays. Event translation is table-driven over synthetic `SdlEvent` values (pure), plus an `SDL_PushEvent` round trip. Thread checks are tested from a second thread.
+- **Vulkan surfaces** need a Vulkan driver, so they run in the `vulkan-smoke` job (or the conformance project that `docs/design/graphics.md`, #54, defines): `offscreen` surfaces on Linux and macOS, windowed on the Windows runner, and the `Offscreen`+Vulkan `Unsupported` failure on Windows. Locally they run on the RTX 2070 SUPER.
+- **Manual (reference machine, release QA checklist, [Testing strategy](../05-testing-strategy.md#test-layers)):** DPI change while running (moving a window between displays with different scales, changing Windows' scale setting), multi-monitor fullscreen modes, IME text commits, minimise and restore. These can't run on CI runners (one virtual display, fixed DPI) and are unverified until done by hand.
+
+## 13. Issue split
+
+Adjusted from the planned Platform issues P1-P6: events become their own issue, and the clock needs no SDL code.
+
+| Id | Scope | Blocked by |
+|----|-------|-----------|
+| P1 | Create `src/BrutalEngine.Platform` + tests: `IPlatform`, `IWindow`, `WindowOptions`, sizes, ids, states, modes, `DisplayInfo`/`DisplayMode`, `SystemCursor`, `MessageBoxRequest`, `HeadlessMode`, `PlatformOptions`, `IVulkanSurfaceSource`; in Core, `WrongThreadException` and `ThreadAffinity`; the `Graphics → Platform` edge in `EngineLayers` and [architecture tests](architecture-tests.md#the-layer-map); the Architecture.Tests reference | this note |
+| P1b | Events: `PlatformEvent` and payloads, `PlatformEventKind`, `Scancode`, `Keycode`, `KeyModifiers`, mouse types, `PlatformEventBuffer`, `PlatformEventBatch`; allocation and property tests | P1 |
+| P2 | The VFS: `VfsPath`, `VirtualFileSystem`, `IFileSystem`, `DirectoryFileSystem`, `InMemoryFileSystem`; property tests | P1b (same project) |
+| P3 | Create `src/BrutalEngine.Platform.Sdl3`: `SdlPlatform.Create`, `SdlCheck`, hints, the driver and headless rules, the macOS main-thread check, windows (create, sizes, setters, fullscreen), `IVulkanSurfaceSource`, `VulkanLibraryPath`; `dummy`-driver tests on 3 OSes; surface tests in `vulkan-smoke`; verify the macOS worker-thread assumption first | P1, ADR-0011 |
+| P4 | SDL event translation into `PlatformEventBuffer`, deferral, `WaitForEvents`, snapshot updates from events | P3, P1b |
+| P5 | Base and user paths, displays and fullscreen modes, clipboard, cursors, message boxes and `TryShowFatalError` | P4 (same project) |
+| P6 | The BRUTAL log bridge | P5 (same project) |
+
+P1, P1b and P2 share `PublicAPI.Unshipped.txt` and run in sequence; P3 can start once P1 merges, alongside P1b and P2, because it's a different project (P4 waits for P1b).
