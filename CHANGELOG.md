@@ -16,5 +16,6 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - Test hardware and self-hosted runner plan for real-GPU testing.
 - README, MIT licence and BRUTAL's `NOTICE.txt`.
 - Community health files: contributing guide, security policy, code of conduct (Contributor Covenant 2.1), this changelog, pull request and issue templates, and CODEOWNERS.
+- `samples/HelloWindow`: an SDL3 window presenting a Vulkan 1.3 clear-colour swapchain, with resize and minimise handling, validation counting and NativeAOT support.
 
 [Unreleased]: https://github.com/harry-stanley/brutal-engine/commits/main
