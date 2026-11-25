@@ -160,6 +160,8 @@ BrutalEngine.Core.Logging.Sinks.MemoryLogSink.MemoryLogSink(int capacityEntries,
 BrutalEngine.Core.Logging.Sinks.MemoryLogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
 BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink
 BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Dispose() -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.DroppedCount.get -> long
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Fault.get -> BrutalEngine.Core.EngineError?
 BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Flush() -> void
 BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.RotatingFileLogSink(BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions! options) -> void
 BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void

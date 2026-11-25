@@ -486,7 +486,158 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     }
 
     [Fact]
-    public void Write_IoFailureThroughLogger_IsIsolatedAndCounted()
+    public void Fault_WhenHealthy_IsNullAndNothingIsDropped()
+    {
+        using RotatingFileLogSink sink = new(Options());
+
+        Write(sink, LogLevel.Information, "kept");
+
+        Assert.Null(sink.Fault);
+        Assert.Equal(0, sink.DroppedCount);
+    }
+
+    [Fact]
+    public void Construct_DirectoryIsAFile_FaultsWithoutThrowing()
+    {
+        string file = PathOf("not-a-directory");
+        File.WriteAllText(file, "untouched");
+
+        using RotatingFileLogSink sink = new(Options() with { Directory = file });
+
+        EngineError fault = Assert.NotNull(sink.Fault);
+        Assert.Equal(ErrorKind.Io, fault.Kind);
+        Assert.Contains("not-a-directory", fault.Message, StringComparison.Ordinal);
+        Assert.Equal(0, sink.DroppedCount);
+        Assert.Equal("untouched", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void Write_WhenFaulted_CountsDropped()
+    {
+        string file = PathOf("not-a-directory");
+        File.WriteAllText(file, "untouched");
+        using RotatingFileLogSink sink = new(Options() with { Directory = file });
+        EngineError? fault = sink.Fault;
+
+        Write(sink, LogLevel.Information, "a");
+        Write(sink, LogLevel.Critical, "b");
+        sink.Flush();
+        Write(sink, LogLevel.Debug, "c");
+
+        Assert.Equal(3, sink.DroppedCount);
+        Assert.Equal(fault, sink.Fault);
+    }
+
+    [Theory]
+    [InlineData(LogLevel.None)]
+    [InlineData((LogLevel)7)]
+    public void Write_WhenFaultedWithLevelOutOfRange_StillThrows(LogLevel level)
+    {
+        string file = PathOf("not-a-directory");
+        File.WriteAllText(file, "untouched");
+        using RotatingFileLogSink sink = new(Options() with { Directory = file });
+
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => Write(sink, level, "m"));
+        Assert.Equal(0, sink.DroppedCount);
+    }
+
+    [Fact]
+    public void Write_RotationFails_FaultsAndDropsTheLine()
+    {
+        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 }))
+        {
+            BlockArchiveOne();
+            Write(sink, LogLevel.Information, Message(0, 40_000));
+
+            Write(sink, LogLevel.Information, Message(1, 40_000));
+
+            Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+            Assert.Equal(1, sink.DroppedCount);
+        }
+
+        // The file was closed before the failed rename, so the line before the failure is kept.
+        Assert.Equal(Line(Message(0, 40_000)), Read("engine.log"));
+    }
+
+    [Fact]
+    public void Write_AfterFault_StaysFaultedWhenTheCauseIsGone()
+    {
+        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 }))
+        {
+            BlockArchiveOne();
+            Write(sink, LogLevel.Information, Message(0, 40_000));
+            Write(sink, LogLevel.Information, Message(1, 40_000));
+            Directory.Delete(PathOf("engine.1.log"), recursive: true);
+
+            Write(sink, LogLevel.Information, "next");
+
+            Assert.Equal(2, sink.DroppedCount);
+        }
+
+        Assert.Equal(["engine.log"], Files(_root));
+        Assert.Equal(Line(Message(0, 40_000)), Read("engine.log"));
+    }
+
+    [Fact]
+    public void Write_StreamWriteFails_FaultsCountsTheLineAndClosesTheFile()
+    {
+        FailingFileStream? file = null;
+        using RotatingFileLogSink sink = new(Options(), path => file = new FailingFileStream(path));
+        file!.FailWrites = true;
+
+        Write(sink, LogLevel.Information, "lost");
+
+        Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+        Assert.Equal(1, sink.DroppedCount);
+        Assert.True(file.IsDisposed);
+    }
+
+    [Fact]
+    public void Write_FlushAtFlushLevelFails_FaultsAndCountsTheLine()
+    {
+        FailingFileStream? file = null;
+        using RotatingFileLogSink sink = new(Options(), path => file = new FailingFileStream(path));
+        file!.FailFlushes = true;
+
+        Write(sink, LogLevel.Information, "buffered");
+        Assert.Null(sink.Fault);
+
+        Write(sink, LogLevel.Warning, "flush fails");
+
+        Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+        Assert.Equal(1, sink.DroppedCount);
+        Assert.True(file.IsDisposed);
+    }
+
+    [Fact]
+    public void Flush_StreamFlushFails_FaultsWithoutThrowing()
+    {
+        FailingFileStream? file = null;
+        using RotatingFileLogSink sink = new(Options(), path => file = new FailingFileStream(path));
+        file!.FailFlushes = true;
+
+        sink.Flush();
+
+        Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+        Assert.Equal(0, sink.DroppedCount);
+        Assert.True(file.IsDisposed);
+    }
+
+    [Fact]
+    public void Dispose_FinalFlushFails_FaultsWithoutThrowingAndClosesTheFile()
+    {
+        FailingFileStream? file = null;
+        RotatingFileLogSink sink = new(Options(), path => file = new FailingFileStream(path));
+        file!.FailFlushes = true;
+
+        sink.Dispose();
+
+        Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+        Assert.True(file.IsDisposed);
+    }
+
+    [Fact]
+    public void Write_FaultedThroughLogger_ThrowsNothingAndCountsNoSinkFailure()
     {
         using RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 });
         BlockArchiveOne();
@@ -497,43 +648,17 @@ public sealed class RotatingFileLogSinkTests : IDisposable
 
         category.Information($"{large}");
         category.Information($"{large}");
+        category.Information($"{large}");
+        logger.Flush();
 
-        Assert.Equal(1, logger.SinkFailureCount);
-        Assert.Equal(2, other.CopyTo(new MemoryLogRecord[4], new byte[128 * 1024]));
+        Assert.Equal(0, logger.SinkFailureCount);
+        Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+        Assert.Equal(2, sink.DroppedCount);
+        Assert.Equal(3, other.CopyTo(new MemoryLogRecord[4], new byte[128 * 1024]));
     }
 
     [Fact]
-    public void Write_RotationFails_PropagatesTheIoException()
-    {
-        using RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 });
-        BlockArchiveOne();
-        Write(sink, LogLevel.Information, Message(0, 40_000));
-
-        Exception thrown = Assert.ThrowsAny<Exception>(() => Write(sink, LogLevel.Information, Message(1, 40_000)));
-
-        Assert.True(thrown is IOException or UnauthorizedAccessException, thrown.ToString());
-    }
-
-    [Fact]
-    public void Write_AfterFailedRotation_RetriesTheRotation()
-    {
-        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 2 }))
-        {
-            BlockArchiveOne();
-            Write(sink, LogLevel.Information, Message(0, 40_000));
-            _ = Assert.ThrowsAny<Exception>(() => Write(sink, LogLevel.Information, Message(1, 40_000)));
-            Directory.Delete(PathOf("engine.1.log"), recursive: true);
-
-            Write(sink, LogLevel.Information, "next");
-        }
-
-        Assert.Equal(["engine.1.log", "engine.log"], Files(_root));
-        Assert.Equal(Line(Message(0, 40_000)), Read("engine.1.log"));
-        Assert.Equal(Line("next"), Read("engine.log"));
-    }
-
-    [Fact]
-    public void Write_RotationFailsTwice_KeepsOlderArchivesAndCompletesOnceUnblocked()
+    public void Write_RotationFailsTwice_KeepsOlderArchivesAndDropsBoth()
     {
         // Two 40,000-byte lines never share a 64 KiB file, so each write after the first rotates.
         const int LineBytes = 40_000;
@@ -548,23 +673,18 @@ public sealed class RotatingFileLogSinkTests : IDisposable
             // directory: the state a rotation leaves when it shifted the archives but couldn't rename engine.log.
             File.Delete(PathOf("engine.1.log"));
             BlockArchiveOne();
-            _ = Assert.ThrowsAny<Exception>(() => Write(sink, LogLevel.Information, Message(4, LineBytes)));
-            _ = Assert.ThrowsAny<Exception>(() => Write(sink, LogLevel.Information, Message(5, LineBytes)));
+            Write(sink, LogLevel.Information, Message(4, LineBytes));
+            Write(sink, LogLevel.Information, Message(5, LineBytes));
 
-            // The retries shifted nothing: the older archives are all still there.
-            Assert.Equal(["engine.2.log", "engine.3.log", "engine.log"], Files(_root));
-            Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
-            Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
-
-            Directory.Delete(PathOf("engine.1.log"), recursive: true);
-            Write(sink, LogLevel.Information, "next");
+            // The first write faulted the sink and the second was dropped: neither touched the older archives.
+            Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+            Assert.Equal(2, sink.DroppedCount);
         }
 
-        Assert.Equal(["engine.1.log", "engine.2.log", "engine.3.log", "engine.log"], Files(_root));
-        Assert.Equal(Line(Message(3, LineBytes)), Read("engine.1.log"));
+        Assert.Equal(["engine.2.log", "engine.3.log", "engine.log"], Files(_root));
         Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
         Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
-        Assert.Equal(Line("next"), Read("engine.log"));
+        Assert.Equal(Line(Message(3, LineBytes)), Read("engine.log"));
     }
 
     /// <summary>
@@ -631,4 +751,83 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     /// every OS, whatever the user's permissions (root and Windows administrators included).
     /// </summary>
     private void BlockArchiveOne() => Directory.CreateDirectory(Path.Combine(_root, "engine.1.log", "occupied"));
+
+    /// <summary>
+    /// A real log file (opened as the sink opens it) whose writes or flushes fail on demand, as a full disk would.
+    /// Its final flush on dispose fails too when <see cref="FailFlushes"/> is set, after closing the file.
+    /// </summary>
+    private sealed class FailingFileStream(string path) : Stream
+    {
+        private readonly FileStream _inner = new(path, FileMode.Create, FileAccess.Write, FileShare.Read);
+
+        public bool FailWrites { get; set; }
+
+        public bool FailFlushes { get; set; }
+
+        public bool IsDisposed { get; private set; }
+
+        public override bool CanRead => false;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => !IsDisposed;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count) => Write(buffer.AsSpan(offset, count));
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            if (FailWrites)
+            {
+                throw new IOException("Disk full (test).");
+            }
+
+            _inner.Write(buffer);
+        }
+
+        public override void Flush()
+        {
+            ObjectDisposedException.ThrowIf(IsDisposed, this);
+            if (FailFlushes)
+            {
+                throw new IOException("Flush failed (test).");
+            }
+
+            _inner.Flush();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            try
+            {
+                if (disposing && !IsDisposed)
+                {
+                    IsDisposed = true;
+                    _inner.Dispose();
+                    if (FailFlushes)
+                    {
+                        throw new IOException("Final flush failed (test).");
+                    }
+                }
+            }
+            finally
+            {
+                base.Dispose(disposing);
+            }
+        }
+    }
 }
