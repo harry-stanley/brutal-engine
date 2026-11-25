@@ -97,7 +97,7 @@ jobs:
           retention-days: 14
 
   vulkan-smoke:
-    name: Vulkan smoke (${{ matrix.os }})
+    name: Vulkan smoke, JIT + NativeAOT (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -128,6 +128,21 @@ jobs:
         run: |
           set +e
           dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen --require-cpu --inject-validation-error
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test "$code" -eq 2
+      - name: Install NativeAOT prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
+      - name: Publish (NativeAOT, ${{ matrix.rid }})
+        run: dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
+      - name: Run (NativeAOT, CPU device required)
+        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen --require-cpu
+      - name: Negative test (NativeAOT, injected validation error must exit 2)
+        run: |
+          set +e
+          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen --require-cpu --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
