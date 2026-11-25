@@ -19,7 +19,8 @@ internal static class Program
         """
         Usage: BrutalEngine.Aot.Smoke vulkan-offscreen [options]
           --require-cpu              accept only a CPU (software) device, e.g. lavapipe
-          --require-driver <id>      accept only a device whose VkDriverId has this name, e.g. Moltenvk
+          --require-driver <name>    accept only a device whose VkDriverId has exactly this name, in any case,
+                                     e.g. NvidiaProprietary or MesaLlvmpipe
           --vulkan-loader <path>     load the Vulkan loader from this absolute path before BRUTAL looks for one
           --inject-validation-error  record an invalid barrier on purpose; validation must report it (exit 2)
         """;
@@ -75,10 +76,7 @@ internal static class Program
                     break;
                 case "--require-driver" when i + 1 < args.Length:
                     string name = args[++i];
-
-                    // Names only: Enum.TryParse also accepts numbers, so a typo could otherwise match a real ID.
-                    if (name.Length == 0 || !char.IsAsciiLetter(name[0])
-                        || !Enum.TryParse(name, ignoreCase: true, out VkDriverId driver) || !Enum.IsDefined(driver))
+                    if (!TryParseDriverName(name, out VkDriverId driver))
                     {
                         error = $"'{name}' is not a VkDriverId name.";
                         return false;
@@ -104,11 +102,31 @@ internal static class Program
         options = new SmokeOptions(requireCpu, requireDriver, vulkanLoader, injectValidationError);
         return true;
     }
+
+    // Exactly one enum member name (any case). Enum.TryParse alone also accepts numbers, surrounding whitespace and
+    // comma-separated lists whose values it ORs together (AmdProprietary,AmdOpenSource is MESARadv), any of which could
+    // silently select a different real driver. MaxEnum is VK_DRIVER_ID_MAX_ENUM, a sentinel that no driver reports, so
+    // it is not a driver name; any other name ending in MaxEnum would be a sentinel too.
+    private static bool TryParseDriverName(string name, out VkDriverId driver)
+    {
+        foreach (string candidate in Enum.GetNames<VkDriverId>())
+        {
+            if (string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase)
+                && !candidate.EndsWith(nameof(VkDriverId.MaxEnum), StringComparison.Ordinal))
+            {
+                driver = Enum.Parse<VkDriverId>(candidate);
+                return true;
+            }
+        }
+
+        driver = default;
+        return false;
+    }
 }
 
 /// <summary>Command-line options of the <c>vulkan-offscreen</c> scenario.</summary>
 /// <param name="RequireCpu">Accept only a CPU (software) device, to prove CI ran on lavapipe.</param>
-/// <param name="RequireDriver">Accept only a device with this driver ID (for example MoltenVK), or any driver if null.</param>
+/// <param name="RequireDriver">Accept only a device with this driver ID (for example lavapipe's), or any driver if null.</param>
 /// <param name="VulkanLoader">Absolute path of the Vulkan loader to preload, or null to let BRUTAL find one.</param>
 /// <param name="InjectValidationError">Record a wrong image layout on purpose, so validation must report it.</param>
 internal sealed record SmokeOptions(bool RequireCpu, VkDriverId? RequireDriver, string? VulkanLoader, bool InjectValidationError);
