@@ -254,9 +254,9 @@ public sealed class MemoryLogSinkTests
                 // Each writer's messages have their own length and fill byte, and the category names the writer.
                 string category = $"Writer{writer}";
                 byte[] message = new byte[8 + (writer * 9)];
-                start.SignalAndWait(TestContext.Current.CancellationToken);
                 Capture(failures, () =>
                 {
+                    start.SignalAndWait(TestContext.Current.CancellationToken);
                     for (int i = 0; i < EntriesPerWriter; i++)
                     {
                         message.AsSpan().Fill((byte)('a' + ((writer + i) % 26)));
@@ -272,9 +272,9 @@ public sealed class MemoryLogSinkTests
         {
             var records = new MemoryLogRecord[512];
             byte[] buffer = new byte[16 * 1024];
-            start.SignalAndWait(TestContext.Current.CancellationToken);
             Capture(failures, () =>
             {
+                start.SignalAndWait(TestContext.Current.CancellationToken);
                 for (int i = 0; i < 200; i++)
                 {
                     int count = sink.CopyTo(records, buffer);
