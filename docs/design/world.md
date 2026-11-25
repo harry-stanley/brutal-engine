@@ -109,7 +109,9 @@ public bool Remove<T>(Entity entity) where T : unmanaged, IComponent;         //
 
 References returned by `Get`/`Write` point into a chunk and are invalidated by any structural change, like a span over a list. `EntityRef` is the ergonomic layer ADR-0006 asks for ("typed `Entity` handle with `Get<T>`/`Set<T>`/`Add<T>`"): a `readonly struct { EcsWorld World; Entity Entity; }` forwarding `Has`, `Get`, `Write`, `TryGet`, `Add`, `Set`, `Remove`, `Despawn` and `IsAlive`. It isn't unmanaged, so it can't be stored in a component; components store `Entity`.
 
-**Misuse:** `Entity.Null` throws `ArgumentException`; a stale entity (dead, or from another world) throws Core's `StaleHandleException`; a pending entity throws `InvalidOperationException`; `Get`/`Write` of a component the entity lacks throws `InvalidOperationException` naming entity and component.
+**Misuse:** `Entity.Null` throws `ArgumentException`; a stale entity (dead or retired in this world) throws Core's `StaleHandleException`; a pending entity throws `InvalidOperationException`; `Get`/`Write` of a component the entity lacks throws `InvalidOperationException` naming entity and component.
+
+**Entities from another world are misuse that is mostly undetected.** An `Entity` carries no world reference, and every world issues the same `(index, generation)` sequence (generation 1 first, FIFO reuse from index 0), so an entity from world A is usually a live entity in world B and silently addresses a different entity there. It is detected only when its index is outside B's table or its slot in B isn't live with that generation (then `StaleHandleException`, as for any stale entity). `Entity` deliberately keeps its 8-byte `Handle` layout with no world tag: a tag would cost index or generation bits, or grow every stored reference. Code that uses several worlds (an editor and a play world) keeps their entities apart itself.
 
 ## 3. Components and the registry
 
@@ -139,7 +141,7 @@ public readonly record struct StableComponentId(ulong Value)
     public static StableComponentId FromFullName(ReadOnlySpan<char> fullName);   // FNV-1a 64 over the UTF-8 bytes
 }
 
-public readonly record struct ComponentId                       // dense index, valid only in the registry that issued it
+public readonly record struct ComponentId                       // dense index; meaningful only in the registry that issued it
 {
     public int Index { get; }
 }
@@ -153,12 +155,12 @@ public sealed class ComponentRegistry
     public ComponentId Register<T>() where T : unmanaged, IComponent;          // idempotent
     public bool TryGetId<T>(out ComponentId id) where T : unmanaged, IComponent;
     public bool TryGetId(StableComponentId stableId, out ComponentId id);
-    public ComponentType GetComponentType(ComponentId id);       // ArgumentOutOfRangeException if not issued here
+    public ComponentType GetComponentType(ComponentId id);       // ArgumentOutOfRangeException if Index >= Count
 }
 ```
 
 - **Stable ids** ([Architecture 3.21](../03-architecture.md#321-hot-reload-readiness): hashed full type names plus a schema version). `StableId` is 64-bit FNV-1a over the UTF-8 metadata name; `SchemaVersion` is a separate field, so a type keeps its identity when its layout changes and M2's serialisers can migrate data. FNV-1a because the generator (netstandard2.0) and the runtime must compute identical values with no dependency: `XxHash64` lives in the System.IO.Hashing package, outside the shared framework, and `string.GetHashCode` is randomised per process. A test pins known vectors in both. Registering a type whose `StableId` is already taken by a different `FullName` throws `InvalidOperationException` naming both (a collision; about n²/2⁶⁵ likely for n types). Re-registering the same name with another schema version or tag-ness throws too (migration is a post-v1 hot-reload feature).
-- **Registration** happens on the first use of `T` by any world member, or explicitly through `Register<T>()` at setup. The registry computes `Size` and `Alignment` from `T` itself, so generated code can't get them wrong. Dense ids follow registration order and are never persisted; serialisation uses `StableId` (M2). Registering more than `MaxComponentTypes` types throws `InvalidOperationException` naming the option.
+- **Registration** happens on the first use of `T` by any world member, or explicitly through `Register<T>()` at setup. The registry computes `Size` and `Alignment` from `T` itself, so generated code can't get them wrong. Dense ids follow registration order and are never persisted; serialisation uses `StableId` (M2). Registering more than `MaxComponentTypes` types throws `InvalidOperationException` naming the option. A `ComponentId` (or `ComponentType`) from another registry is misuse that is detected only when its index is at least this registry's `Count`; otherwise it silently names whichever type has that index here, because two worlds that register in different orders give the same type different ids. World members take `T`, not ids, so this can only happen through `ComponentRegistry` members.
 - **Fast `T -> ComponentId` without static mutable non-primitive state.** World keeps `internal static class ComponentOrdinal<T> { internal static int Value; }`: a process-wide ordinal, assigned once on first use (`Interlocked.CompareExchange` from a static `int` counter) and never changed. Each registry maps ordinal to dense id through an instance-owned `int[]` that grows only when a type is registered. A lookup is one static load, one bounds-checked array read and one branch.
   - It satisfies the architecture test: `StaticStateRule` flags a static field only if it is neither `const` nor `readonly` and its type is not a primitive, enum or pointer (`tests/BrutalEngine.Architecture.Tests/StaticStateRule.cs:33`, `:47-51`); both fields are `int`. It also meets the intent of 3.21: an `int` can't reference a game type, the generic instantiation over a collectible game type unloads with its `AssemblyLoadContext`, and the authoritative mapping lives in the instance-owned registry, which can be cleared and rebuilt.
   - S5's variant, a generated static slot holding the *per-world dense index* and re-stamped by the registry (`DESIGN-NOTES.md:57`), is rejected: with two worlds (an editor world and a play world, or xUnit test classes running in parallel) one slot can hold only one world's index, so the other world would silently read the wrong column. One process-wide registry is rejected too: 3.21 wants registries instance-owned.
@@ -535,7 +537,8 @@ The M1 World API has no expected runtime failures besides lookups, which use `bo
 |-----------|-----------|
 | Invalid `WorldOptions`, `SystemOptions` or span lengths | `ArgumentNullException` / `ArgumentOutOfRangeException` / `ArgumentException` naming the value |
 | `Entity.Null` passed to a member | `ArgumentException` |
-| Stale entity (dead, retired or from another world) in a direct call | `StaleHandleException` |
+| Stale entity (dead or retired in this world) in a direct call | `StaleHandleException` |
+| Entity, `ComponentId` or `ComponentType` from another world or registry | **Undefined aliasing**: it addresses whatever has that index here. Detected only when the index is out of range, or (entities) the slot isn't live with that generation, which throws as above |
 | Pending entity in a direct call | `InvalidOperationException` |
 | `Get`/`Write` of a missing component; data access to a tag | `InvalidOperationException` naming entity and component |
 | `Add` of a component the entity already has | `InvalidOperationException` (use `Set`) |
@@ -556,7 +559,7 @@ The M1 World API has no expected runtime failures besides lookups, which use `bo
 
 `tests/BrutalEngine.World.Tests` (xUnit v3, CsCheck), `tests/BrutalEngine.Generators.Tests`, and `tests/BrutalEngine.Benchmarks` ([Testing strategy](../05-testing-strategy.md#test-layers)):
 
-- **Unit tests** for every rule and every row of the failure table, each world created over a `TrackingAllocator` that is checked with `ThrowIfLeaks()` after `Dispose` (leak tests come free with every test).
+- **Unit tests** for every rule and every row of the failure table, each world created over a `TrackingAllocator` that is checked with `ThrowIfLeaks()` after `Dispose` (leak tests come free with every test). Cross-world misuse is tested only where the note promises detection: a foreign entity whose index is out of range, or whose slot isn't live with that generation, throws `StaleHandleException`, and a foreign `ComponentId` past `Count` throws `ArgumentOutOfRangeException`. Aliasing is undefined, so no test pins it.
 - **Reference-model property tests** (CsCheck), as S5 did with 5 seeds x 4,000 steps (`DESIGN-NOTES.md:162`): random sequences of spawn, despawn, add, set, remove, get and stale access against a dictionary model, checking every entity and component value after each step; the same through command buffers (batched spawns, sorted despawns, dead targets, `Clear`); random `SetParent`/`ClearParent`/despawn against a parent-map model; propagation against a naive recursive reference, compared bit for bit because both multiply in the same order.
 - **Change detection:** `Changed`/`Added` per chunk with explicit ticks; a system not seeing its own writes; a system seeing rows that a sync point placed after it ran (including an entity spawned through a buffer by an earlier `PostUpdate` system, which gets its `WorldTransform2D` written on the next `PostUpdate` run); standalone `CommandBuffer.Playback()` stamping a tick newer than every completed query; a standalone query seeing a write made after its loop and not its own loop's writes; an early-`break` enumeration seeing the same chunks again; a first run (system and query) matching every chunk, also when `ChangeTick` is past 2³¹; and tick clamping across 2³⁰ through the internal seam, checking chunk ticks, query ticks and system last-run ticks.
 - **Determinism:** a seeded scenario run twice produces the same hash over every entity and component byte in iteration order.
