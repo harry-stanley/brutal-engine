@@ -1,9 +1,14 @@
 name: CI
 
+# Two tiers (docs/06-ci-cd-and-release.md, "CI tiers"). Pull requests get the fast tier unless they touch
+# paths that can affect native interop, NativeAOT or GPU tests. Pushes to main, the nightly schedule and
+# manual runs always get the full tier.
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "0 15 * * *" # nightly full tier, 15:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -19,6 +24,62 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
 
 jobs:
+  tier:
+    name: Select CI tier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      tier: ${{ steps.select.outputs.tier }}
+      smoke_matrix: ${{ steps.select.outputs.smoke_matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Self-test the tier rules
+        run: bash .github/scripts/ci-tier-test.sh
+      - name: Select tier
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Event '$EVENT_NAME' always runs the full tier."
+            tier=full
+          elif [ "$PR_CHANGED_FILES" -ge 3000 ]; then
+            # The PR files API lists at most 3000 files, so a bigger PR can't be classified.
+            echo "The PR changes $PR_CHANGED_FILES files, more than the files API lists. Running the full tier."
+            tier=full
+          else
+            # Renames count under both the old and the new path.
+            paths=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+            echo "Changed paths:"
+            printf '%s\n' "$paths" | sed 's/^/  /'
+            tier=$(printf '%s' "$paths" | bash .github/scripts/ci-tier.sh)
+          fi
+
+          linux='{"os":"ubuntu-24.04","rid":"linux-x64"}'
+          windows='{"os":"windows-2025","rid":"win-x64"}'
+          if [ "$tier" = "full" ]; then
+            matrix="[$linux,$windows]"
+          else
+            matrix="[$linux]"
+          fi
+
+          echo "Tier: $tier"
+          echo "Vulkan smoke matrix: $matrix"
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "smoke_matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "CI tier: **$tier** (Vulkan smoke on: $(printf '%s' "$matrix" | grep -o '"os":"[^"]*"' | cut -d'"' -f4 | paste -sd, -))" >> "$GITHUB_STEP_SUMMARY"
+
   format:
     name: Format
     runs-on: ubuntu-24.04
@@ -96,18 +157,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Linux runs in every tier. Windows (and macOS, once added) run in the full tier only.
   vulkan-smoke:
     name: Vulkan smoke, JIT + NativeAOT (${{ matrix.os }})
+    needs: tier
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            rid: linux-x64
-          - os: windows-2025
-            rid: win-x64
+        include: ${{ fromJSON(needs.tier.outputs.smoke_matrix) }}
     defaults:
       run:
         shell: bash
@@ -152,7 +211,7 @@ jobs:
   ci-ok:
     name: CI passed
     if: always()
-    needs: [format, build-test, pack, vulkan-smoke]
+    needs: [tier, format, build-test, pack, vulkan-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
