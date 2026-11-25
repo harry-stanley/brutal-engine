@@ -104,6 +104,14 @@ public sealed class ConsoleLogSink : ILogSink, IDisposable
     /// <exception cref="ArgumentOutOfRangeException">The entry's level is outside Trace to Critical.</exception>
     /// <exception cref="ObjectDisposedException">The sink is disposed.</exception>
     /// <exception cref="IOException">The stream failed; exceptions from the stream propagate.</exception>
+    /// <exception cref="OverflowException">
+    /// The entry's category or caller file is so long (hundreds of millions of characters) that no line buffer can
+    /// hold the line.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// Growing the line buffer for an extremely long line failed. Unlike other sink exceptions, a logger doesn't
+    /// isolate this one: it reaches the code that logged.
+    /// </exception>
     public void Write(scoped in LogEntry entry)
     {
         LogLineFormatter.ThrowIfInvalidLevel(entry.Level, nameof(entry));

@@ -82,7 +82,7 @@ yyyy-MM-ddTHH:mm:ss.fffZ LEVEL [Category] message
 - **Flushing:** after every `Error` or `Critical` entry (to whichever stream it went to), on `Flush()`, and on `Dispose()`. Lower levels rely on the stream's own buffering.
 - **Ownership:** the sink disposes only the standard streams it opened itself, never streams it was given. After `Dispose`, `Write` and `Flush` throw `ObjectDisposedException` and a second `Dispose` does nothing. Stream exceptions propagate to the logger, which isolates and counts them.
 - **Memory:** the line buffer starts at 8 KiB and grows (at least doubling) only when a line is longer than any before. Steady-state writes allocate no managed memory, as long as the streams' own writes don't. Tests use injected streams, never `System.Console`.
-- **Not done (by scope):** colours, and console encoding setup: the bytes are UTF-8 whatever the console's code page is.
+- **Not done (by scope):** colours, and console encoding setup: the bytes are UTF-8 whatever the console's code page is. On Windows, when `Console.OutputEncoding` is UTF-16 (code page 1200) and the output isn't redirected, the standard stream writes through `WriteConsoleW`, so these UTF-8 bytes display wrongly. Hosts should use UTF-8 console output (the default code page or `Console.OutputEncoding = Encoding.UTF8`).
 
 ## Memory and threading
 
