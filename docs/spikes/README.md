@@ -61,13 +61,13 @@ Local runs used the reference machine (Windows 11, Ryzen 9 5950X, RTX 2070 SUPER
 
 ## HelloWindow in CI
 
-After the spikes, the `vulkan-smoke` CI job ([CI/CD](../06-ci-cd-and-release.md#ciyml-every-pr-and-every-push-to-main-plus-nightly), step 4) took over S1 and S2 for `samples/HelloWindow` (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)). On each OS it runs the JIT build and the NativeAOT publish, each presenting 120 frames with validation, plus negative tests (an injected validation error must exit 2, a bad option must exit 64):
+After the spikes, the `vulkan-smoke` CI job ([CI/CD](../06-ci-cd-and-release.md#ciyml-every-pr-and-every-push-to-main-plus-nightly), step 4) took over S1 and S2 for `samples/HelloWindow` (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)). On each OS it runs the JIT build and the NativeAOT publish with validation, plus negative tests (an injected validation error must exit 2, a bad option must exit 64). In that run, each presented 120 frames; the job presents more since the splash landed (#50):
 
 | | ubuntu-24.04 | windows-2025 | macos-15 |
 |---|---|---|---|
-| Driver | lavapipe | lavapipe (Mesa for Windows) | MoltenVK, bundled next to the executable |
+| Driver | lavapipe | lavapipe (Mesa for Windows) | MoltenVK from the CI bundle; the NativeAOT publish has it next to the executable |
 | Presentation | headless (`VK_EXT_headless_surface`) | windowed in the runner's desktop session, two resizes | headless (`VK_EXT_headless_surface`) |
-| Result | pass, 0 validation messages, 0 trim/AOT warnings | same | same, with no Vulkan SDK, Homebrew or `VK_DRIVER_FILES` |
+| Result | pass, 0 validation messages, 0 trim/AOT warnings | same | same, with no Vulkan SDK or Homebrew Vulkan. The NativeAOT publish also runs with no `--vulkan-loader` and no `VK_DRIVER_FILES`; the JIT build gets the bundled loader passed explicitly |
 
 **Finding (Windows):** no Windows driver offers `VK_EXT_headless_surface`. Neither the NVIDIA driver on the reference machine nor Mesa lavapipe 26.3.1 for Windows lists it (checked with `vulkaninfo` for #24). SDL's offscreen video driver needs it to create a Vulkan surface, so on Windows `--headless` fails with a clear message, and CI runs HelloWindow windowed instead. Linux and macOS headless runs were the first time `--headless` presented anywhere.
 
