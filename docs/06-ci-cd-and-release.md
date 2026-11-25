@@ -12,7 +12,17 @@ The source of truth is `github.com/harry-stanley/brutal-engine`. CI runs on GitH
 
 ### Self-hosted runners
 
-The maintainer's own Windows, Linux and Mac machines are registered as self-hosted runners with labels `self-hosted, gpu, <os>`. Because the repository is **public**, self-hosted runners **never run untrusted pull-request code**:
+The maintainer's hardware is registered as self-hosted runners with labels `self-hosted, gpu, <os>, <gpu-vendor>`:
+
+| Runner | OS | GPU |
+|--------|----|-----|
+| `win-nvidia` | Windows 11 | NVIDIA GeForce RTX 2070 SUPER |
+| `linux-nvidia` | Arch Linux (bare metal) | NVIDIA GeForce RTX 2070 SUPER |
+| *(none)* | macOS | No Mac available (Q6) |
+
+If Windows and Arch are dual-boot on the same machine, only one of them is online at a time. Nightly jobs therefore use a timeout with a "runner offline" notice, never a silent pass.
+
+Arch is a rolling release, so its runner also catches driver and Mesa regressions early. The release-support baseline for Linux stays the glibc minimum recorded in spike S1, tested on `ubuntu-24.04`. Because the repository is **public**, self-hosted runners **never run untrusted pull-request code**:
 
 - Self-hosted jobs run only on `schedule` (nightly), on `workflow_dispatch`, and on pushes to `main`. They never run on `pull_request` events.
 - Runners use ephemeral mode with a dedicated, unprivileged OS user, and workspaces are cleaned per job.
@@ -29,7 +39,9 @@ The maintainer's own Windows, Linux and Mac machines are registered as self-host
 5. **Pack:** `dotnet pack`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
 6. **Security:** CodeQL (C#) and the dependency-review action (blocks new vulnerable or disallowed-licence dependencies).
 
-All jobs are required status checks on `main`. Branch protection: PRs required, 1 approving review (the maintainer), linear history (squash merge), no force pushes, required checks up to date before merge.
+All jobs are required status checks on `main`. Branch protection: PRs required, 1 approving review (the maintainer), linear history, no force pushes, required checks up to date before merge.
+
+**Every merge into `main` is a squash merge**, so `main` has one commit per PR and its history stays clean. The repository allows only squash merging (merge commits and rebase merging are disabled), uses the PR title as the squash commit title, and deletes head branches after merge.
 
 ### `nightly.yml`: scheduled, plus manual dispatch
 

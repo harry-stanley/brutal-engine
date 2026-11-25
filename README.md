@@ -8,7 +8,7 @@ An open-source, production-grade 2D game engine for C#, running on Windows, Linu
 
 - Code-first engine shipped as NuGet packages. Games are ordinary .NET 10 applications.
 - Vulkan 1.3 behind an abstract render interface (MoltenVK on macOS), SDL3 for platform, input and audio.
-- Data-oriented world model (proposed: archetype ECS with hierarchy, see [ADR-0006](docs/adr/0006-world-model.md)).
+- Data-oriented world model: an in-house archetype ECS with hierarchy ([ADR-0006](docs/adr/0006-world-model.md)).
 - Offline asset cooking into versioned packs, with hot reload during development.
 - NativeAOT release builds for win-x64, linux-x64 and osx-arm64.
 - Planned v1 scope: sprites, cameras, input, audio, text, tilemaps, Box2D physics, sprite and skeletal animation, in-game UI, localisation, 2D lighting and post-processing, particles, networking. See the [roadmap](docs/09-roadmap.md).

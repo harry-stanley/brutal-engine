@@ -14,7 +14,7 @@
 5. **Local verification before pushing:** `dotnet build` (zero warnings), `dotnet test` (all green), `dotnet format --verify-no-changes`. GPU tests too when the change touches graphics.
 6. **Open a PR** using the template: what changed, why, how it's tested, public API changes (diff of `PublicAPI.Unshipped.txt`), performance impact, platforms verified, follow-ups. Link the issue.
 7. **CI green on all three OSes.** No "fix CI later" merges.
-8. **Review and merge.** The maintainer reviews, and changes are requested and addressed in follow-up commits on the same branch. Then a squash merge with a conventional-commit title. The branch is deleted after merge.
+8. **Review and merge.** The maintainer reviews, and changes are requested and addressed in follow-up commits on the same branch. Then the PR is merged with **squash and merge, always**: one commit on `main` per PR, titled with the PR's conventional-commit title. Merge commits and rebase merges are disabled in the repository settings. The branch is deleted after merge, and local branches are reset to the new `origin/main` (never merged locally).
 
 PR size: aim for under ~800 changed lines excluding generated files and test data. Larger features are split into stacked PRs (infrastructure → API → implementation → sample).
 

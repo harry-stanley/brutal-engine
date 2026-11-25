@@ -107,9 +107,9 @@ Engine objects exposed to games (entities, textures, sounds, bodies, fonts and s
 | Recoverable GPU events | `VK_ERROR_OUT_OF_DATE_KHR` and `VK_SUBOPTIMAL_KHR` rebuild the swapchain. Minimised windows skip rendering. `VK_ERROR_DEVICE_LOST` raises a structured device-lost event: the engine tears down and recreates GPU resources from the asset database (tested by fault injection) |
 | Unhandled exception | Caught at the host boundary. The engine writes a crash report (exception, log tail, system info, engine version, recent frame timings) to the user data directory and shows an OS message box, then exits non-zero |
 
-## 3.6 World model (summary, decision pending)
+## 3.6 World model
 
-The recommendation, with full trade-offs, is in [ADR-0006](adr/0006-world-model.md): **an archetype ECS core with first-class hierarchy and scene/prefab support**, written in-house on BRUTAL memory primitives, with:
+Decided in [ADR-0006](adr/0006-world-model.md), which also records the trade-offs: **an archetype ECS core with first-class hierarchy and scene/prefab support**, written in-house on BRUTAL memory primitives, with:
 
 - components as unmanaged structs (no managed references, so handles are used for assets),
 - systems registered into named schedules (`FixedUpdate`, `Update`, `PostUpdate` and so on) with explicit ordering and read/write declarations, which lets the scheduler run non-conflicting systems in parallel on the job system,
@@ -119,8 +119,6 @@ The recommendation, with full trade-offs, is in [ADR-0006](adr/0006-world-model.
 - queries and serialisers emitted by the source generator: no reflection, AOT-safe.
 
 The in-game UI keeps its own retained tree (section 3.15), because UI is naturally hierarchical and benefits from a node model. UI elements can reference entities and vice versa.
-
-Until ADR-0006 is accepted, M1 work below the world layer (platform, graphics, assets) can proceed. World-dependent work cannot.
 
 ## 3.7 Platform layer (`BrutalEngine.Platform`, backend `Platform.Sdl3`)
 

@@ -1,6 +1,6 @@
 # ADR-0006: World model: archetype ECS with hierarchy
 
-- **Status:** Proposed. Needs the maintainer's decision before M1 world work starts.
+- **Status:** Accepted (2026-11-25: Option A, built in-house)
 - **Date:** 2026-11-25
 - **Deciders:** Harry Stanley (maintainer)
 
@@ -41,7 +41,7 @@ Objects with lists of component class instances.
 - **Build in-house** on `Brutal.Memory` / `Brutal.Collections`: full control over memory layout, allocation behaviour, determinism, source-generated queries and serialisation, and the hot-reload design. More work, but the world model is core engine value.
 - **Adopt a C# ECS library** (e.g. Arch, Friflo.Engine.ECS): faster start. A core dependency on another project's design choices, allocation behaviour and release cadence, and it won't use BRUTAL's memory primitives.
 
-## Proposed decision
+## Decision
 
 **Option A, built in-house:** an archetype ECS core with:
 
@@ -64,7 +64,7 @@ To keep the learning curve manageable: an ergonomic API layer (typed `Entity` ha
 - Spawning and despawning 100,000 entities per frame through command buffers: under 5 ms.
 - Zero managed allocations for all of the above.
 
-## Consequences if accepted
+## Consequences
 
 - `BrutalEngine.World` becomes the largest M1 work item. S5 must pass before the API is frozen for 0.2.
 - Gameplay code is written as systems over components. Samples and docs must teach this well.

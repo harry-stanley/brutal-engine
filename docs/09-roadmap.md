@@ -21,7 +21,7 @@ Spikes (throwaway code in a `spikes/` branch, each ending in a written result ad
 
 | ID | Question | Pass criteria |
 |----|----------|---------------|
-| S1 | SDL3 window + Vulkan 1.3 surface + clear-colour swapchain on all 3 OSes, with **bundled** MoltenVK and loader on macOS | Runs on all 3 real machines with no SDK installed on the Mac. Minimum glibc and macOS versions recorded |
+| S1 | SDL3 window + Vulkan 1.3 surface + clear-colour swapchain on all 3 OSes, with **bundled** MoltenVK and loader on macOS | Runs on Windows and Arch Linux on real hardware, and on a GitHub macOS runner with no Vulkan SDK installed (real-Mac testing depends on Q6). Minimum glibc and macOS versions recorded |
 | S2 | NativeAOT publish of S1 for all 3 RIDs | Zero trim/AOT warnings from BRUTAL packages, runs identically to JIT |
 | S3 | Software Vulkan on GitHub runners: lavapipe (Linux), lavapipe or SwiftShader (Windows), Metal availability for MoltenVK (macOS) | Offscreen render + readback + validation layers working in CI per OS, or a documented fallback |
 | S4 | Slang: compile a Slang shader to SPIR-V with `Ahwoo.Brutal.Slang` on all 3 OSes, extract reflection | Cooker-usable API confirmed. Otherwise switch to ShaderC (update ADR-0002) |
@@ -110,8 +110,10 @@ ImGui-based editor on the same runtime (scene view, inspector, asset browser, pl
 
 | ID | Question | Needed by |
 |----|----------|-----------|
-| Q1 | World model: accept ADR-0006 as proposed or choose an alternative | Before M1 |
-| Q2 | Exact GPU models and Mac model of the self-hosted test machines (to set min-spec budgets) | M0 |
+| Q1 | ~~World model~~ **Resolved:** ADR-0006 accepted (in-house archetype ECS) | - |
+| Q2 | ~~Test hardware~~ **Resolved:** RTX 2070 SUPER on Windows 11 and bare-metal Arch Linux, which becomes the *reference machine* for performance budgets. No min-spec machine is available, so min-spec budgets stay unverified claims until one is (see Q7) | - |
 | Q3 | Skeletal animation authoring tool support (own format only, Spine import after licence review, DragonBones, or other) | M3 |
 | Q4 | Networking transport (spike S7) | M5 |
-| Q5 | Ahwoo's view on the "BrutalEngine" name and NuGet IDs (R9) | Before first nuget.org publish (end of M0) |
+| Q5 | Ahwoo's view on the "BrutalEngine" name and NuGet IDs (R9). The maintainer accepts the name for now | Revisit before 1.0 |
+| Q6 | macOS hardware: no Mac available. Options are a used M1/M2 Mac mini as a self-hosted runner, a rented cloud Mac, or macOS support limited to what GitHub's runners can verify | Before M1 GPU work (after spike S3) |
+| Q7 | Min-spec hardware for performance budgets (e.g. an integrated-GPU laptop). Until then, budgets are measured on the reference machine only | Before M6 |
