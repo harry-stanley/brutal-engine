@@ -1,6 +1,6 @@
 # ADR-0002: Abstract render interface, Vulkan 1.3 first, Slang shaders
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0015](0015-tested-platforms-windows-linux.md) (macOS natives are kept, but not tested in CI)
 - **Date:** 2026-11-25
 - **Deciders:** Harry Stanley (maintainer)
 

@@ -1,6 +1,6 @@
 # ADR-0011: Accept BRUTAL's .NET 11 `Microsoft.Extensions.ObjectPool` dependency, pinned to GA
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0015](0015-tested-platforms-windows-linux.md) (the pin is proven in CI on win-x64 and linux-x64 only)
 - **Date:** 2026-11-26
 - **Deciders:** the maintainer
 
