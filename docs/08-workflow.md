@@ -10,13 +10,13 @@
 1. **Issue first.** Every piece of work has a GitHub issue. Milestone issues are created from the [Roadmap](09-roadmap.md) at the start of each milestone, using the milestone and area labels (`area:graphics`, `area:audio` and so on).
 2. **Design before code for new subsystems or public API.** The PR's first commit adds or updates `docs/design/<subsystem>.md`, or an ADR when a decision is being made or changed. For larger subsystems the design doc can go in its own PR, merged before implementation starts.
 3. **Branch** from up-to-date `main`: `<type>/<area>-<short-description>`, e.g. `feat/graphics-swapchain`, `fix/audio-device-switch`, `docs/initial-plan`. One feature per branch.
-4. **Implement with tests in the same PR.** Bug fixes start with the failing test.
+4. **Implement with tests in the same PR**, as a series of small, focused commits (see [Coding standards: Commits](07-coding-standards.md#commits)). Each commit builds and passes the tests on its own. Bug fixes start with the failing test.
 5. **Local verification before pushing:** `dotnet build` (zero warnings), `dotnet test` (all green), `dotnet format --verify-no-changes`. GPU tests too when the change touches graphics.
 6. **Open a PR** using the template: what changed, why, how it's tested, public API changes (diff of `PublicAPI.Unshipped.txt`), performance impact, platforms verified, follow-ups. Link the issue.
 7. **CI green on all three OSes.** No "fix CI later" merges.
 8. **Review and merge.** The maintainer reviews, and changes are requested and addressed in follow-up commits on the same branch. Then the PR is merged with **squash and merge, always**: one commit on `main` per PR, titled with the PR's conventional-commit title. Merge commits and rebase merges are disabled in the repository settings. The branch is deleted after merge, and local branches are reset to the new `origin/main` (never merged locally).
 
-PR size: aim for under ~800 changed lines excluding generated files and test data. Larger features are split into stacked PRs (infrastructure → API → implementation → sample).
+PR size: aim for under ~800 changed lines excluding generated files and test data. Because PRs are squash-merged, one PR becomes one commit on `main`, so a small PR is what makes a change easy to revert on `main`. Small commits within the PR make it easy to review. Larger features are split into stacked PRs (infrastructure → API → implementation → sample).
 
 ## Definition of done
 
