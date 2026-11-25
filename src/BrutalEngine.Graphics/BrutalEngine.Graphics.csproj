@@ -7,4 +7,12 @@
   <ItemGroup>
     <ProjectReference Include="../BrutalEngine.Core/BrutalEngine.Core.csproj" />
   </ItemGroup>
+
+  <!--
+    Properties/AssemblyInfo.cs declares both InternalsVisibleTo attributes (the test project and the conformance suite),
+    each with its reason, so the inherited item from src/Directory.Build.props is removed to avoid a duplicate.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Remove="BrutalEngine.Graphics.Tests" />
+  </ItemGroup>
 </Project>
