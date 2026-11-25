@@ -29,7 +29,7 @@ All BRUTAL packages are published as `Ahwoo.Brutal.*` with CalVer versions (2026
 | `Ahwoo.Brutal.Sdl` (+ `.Native`) | Windows, events, input, gamepads, audio device, Vulkan surface (`SDL_Vulkan_CreateSurface`) | SDL 3.4 (`libSDL3.so.0.4.12`), 3 RIDs |
 | `Ahwoo.Brutal.Vulkan` (+ `.Native`) | Vulkan 1.3 bindings and function tables | 3 RIDs (helper library, not the loader) |
 | `Ahwoo.Brutal.Vulkan.Vma` (+ `.Native`) | GPU memory allocation | 3 RIDs |
-| `Ahwoo.Brutal.Slang` (+ `.Native`) | Offline shader compilation in the cooker (tools only, never shipped in games) | Native package is ~99 MB. RIDs to be confirmed in spike S4 |
+| `Ahwoo.Brutal.Slang` (+ `.Native`) | Offline shader compilation in the cooker (tools only, never shipped in games). In M1, `tools/BrutalEngine.Cook` has only a Slang shader command; built-in shaders' SPIR-V is committed, and a Linux CI job re-cooks it and fails on any byte difference ([ADR-0012](adr/0012-m1-shader-cooking.md)) | Native package is ~99 MB. 3 RIDs (spike S4) |
 | `Ahwoo.Brutal.FreeType` | Font rasterisation (cook time and runtime dynamic glyphs) | 3 RIDs |
 | `Ahwoo.Brutal.Stb` (+ `.Native`) | Image decoding (PNG, TGA and others) at cook time | 3 RIDs |
 | `Ahwoo.Brutal.Ktx` (+ `.Native`) | KTX2 GPU texture containers (compressed textures for HD assets) | 3 RIDs |

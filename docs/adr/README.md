@@ -15,3 +15,4 @@ One file per decision that is expensive to reverse. See the [ADR process](../08-
 | [0009](0009-github-actions-ci.md) | GitHub as source of truth, GitHub Actions CI | Accepted |
 | [0010](0010-monorepo-lockstep-packages.md) | Monorepo with lockstep-versioned NuGet packages | Accepted |
 | [0011](0011-brutal-objectpool-dependency.md) | Accept BRUTAL's .NET 11 `Microsoft.Extensions.ObjectPool` dependency, pinned to GA | Accepted |
+| [0012](0012-m1-shader-cooking.md) | M1 shaders: a Slang-only cook command and committed SPIR-V | Accepted |

@@ -13,7 +13,7 @@ Risk R16 ([Risks](../10-risks.md), docs/10-risks.md:22) found that `Ahwoo.Brutal
   - `Ahwoo.Brutal.Sdl` 2026.10.3 -> `Ahwoo.Brutal.Logging` 2026.10.3 -> `Strings` 2026.10.2, so `Platform.Sdl3` (and later `Audio.Sdl3`) gets it, not only `Graphics.Vulkan`;
   - `Ahwoo.Brutal.Vulkan` 2026.10.3 and `Ahwoo.Brutal.Vulkan.Abstractions` 2026.10.3 -> `Strings` directly, and through `Logging`;
   - `Ahwoo.Brutal.ImGui` 2026.10.3 -> `Strings` directly (DebugOverlay, ADR-0013);
-  - `Ahwoo.Brutal.Slang` 2026.10.3 -> `Strings` directly (the cook tool, ADR-0012).
+  - `Ahwoo.Brutal.Slang` 2026.10.3 -> `Strings` directly (the cook tool, [ADR-0012](0012-m1-shader-cooking.md)).
 - The M0 `HelloWindow` sample and the AOT smoke harness already ship it: their lock files resolve `Microsoft.Extensions.ObjectPool` to `11.0.0-preview.5.26302.115` (`samples/HelloWindow/packages.lock.json:230-233`, `tests/BrutalEngine.Aot.Smoke/packages.lock.json:205-208`).
 - The only BRUTAL code that uses it is `Brutal.Strings/StringBuilder/StringBuilderPool.cs:12`, a `DefaultObjectPool<StringBuilder<TChar>>`. `Brutal.Logging` rents from it whenever a log line is built (`Brutal.Logging/LogString.cs:76`).
 - **It can't be pinned down.** NuGet won't resolve a version below a dependency's minimum. The upstream issue draft (#2) reproduced this on .NET 10.0.15: pinning to the .NET 10 GA line (`10.0.x`) fails restore with NU1109 under `CentralPackageTransitivePinningEnabled` (which we use, `Directory.Packages.props:5`), and with NU1605 as a direct reference. `Brutal.Strings.dll` is compiled against ObjectPool assembly version 11.0.0.0, so forcing a 10.0.x assembly fails the build or the first pooled string at run time.
