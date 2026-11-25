@@ -47,9 +47,12 @@ The mixer is a pure function of (commands, time) → sample buffers, so it is te
 `BrutalEngine.Architecture.Tests` loads all engine assemblies and asserts:
 
 - the layering in [Architecture 3.1](03-architecture.md#31-layering), so no assembly references a higher layer,
-- no public type above L2 exposes a type from a `Brutal.*Api` binding namespace,
-- no static mutable fields of non-primitive types in engine assemblies (hot-reload readiness),
-- every public type and member is in `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` and has XML docs.
+- no public type outside the L2 backends exposes a type from a `Brutal.*Api` binding namespace,
+- no static mutable fields of non-primitive types in engine assemblies (hot-reload readiness).
+
+It also fails when an engine library under `src/` isn't in its layer map or isn't referenced by the test project, so a new module can't escape the rules. The map, the exact rules and the judgement calls are in [the design note](design/architecture-tests.md).
+
+Every public type and member must also be in `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` and have XML docs. The build already enforces that (RS0016/RS0017 and CS1591 are errors), so the architecture tests don't repeat it.
 
 ## Coverage
 
