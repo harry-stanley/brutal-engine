@@ -13,7 +13,7 @@ No dates are committed yet. After M0 we'll have real throughput data and can est
 Infrastructure:
 - Repo scaffold (layout from [Repository layout](04-repo-layout.md)): `global.json`, `Directory.*.props`, `.editorconfig`, central packages, lock files, LICENSE, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, PR and issue templates, CODEOWNERS, Dependabot.
 - `ci.yml` with the 3-OS matrix, branch protection configured.
-- Test harness: xUnit v3 setup, TestUtilities (headless host stub, in-memory VFS, image diff), coverage reporting.
+- Test harness: xUnit v3 setup and coverage reporting. TestUtilities (headless host stub, in-memory VFS, image diff) moved to M1, where each part lands with the module that needs it.
 - `BrutalEngine.Analyzers` skeleton with BE1001 (discarded native result) and its tests.
 - `BrutalEngine.Core`: diagnostics, `Result`, generational handles, logging facade, tracking allocators (with tests).
 
@@ -27,9 +27,27 @@ Spikes (throwaway code in a `spikes/` branch, each ending in a written result ad
 | S4 | Slang: compile a Slang shader to SPIR-V with `Ahwoo.Brutal.Slang` on all 3 OSes, extract reflection | Cooker-usable API confirmed. Otherwise switch to ShaderC (update ADR-0002) |
 | S5 | World model prototype benchmark (once ADR-0006 is decided) | Iteration, spawn/despawn and structural-change costs measured against the targets in ADR-0006 |
 
-Results for S1 to S5 are in [docs/spikes](spikes/README.md). Still open in M0: S1 windowed on Linux (Arch) and S2 on Linux and macOS, both covered by the HelloWindow AOT smoke job.
+Results for S1 to S5 are in [docs/spikes](spikes/README.md). Status at the close of M0 (2026-11-26):
 
-**Exit criteria:** CI green on 3 OSes. Spikes S1 to S4 resolved. ADR-0006 accepted. `HelloWindow` sample (window, clear colour, BRUTAL splash) published with NativeAOT for all 3 RIDs.
+- **S2 is done on all 3 OSes.** The `vulkan-smoke` CI job publishes HelloWindow and the smoke harness with NativeAOT and runs them next to their JIT builds on Linux, Windows and macOS (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)).
+- **S1 is done on Windows and macOS:** windowed on Windows on the reference machine, and offscreen on GitHub's macOS runner. In CI, HelloWindow presents headless on Linux (lavapipe) and macOS (bundled MoltenVK), and windowed on Windows (lavapipe), because no Windows driver offers headless surfaces ([HelloWindow in CI](spikes/README.md#hellowindow-in-ci)).
+- **S1 windowed on Arch Linux on real hardware is deferred** to the backlog ([#27](https://github.com/harry-stanley/brutal-engine/issues/27), left open). Decision (maintainer, 2026-11-26): M0 closes without it. Consequence: the minimum glibc and macOS versions that S1's pass criteria ask for aren't recorded, so 0.1 states no minimum OS versions.
+
+**Exit criteria**, each with its close-out note:
+
+- CI green on 3 OSes. **Closed 2026-11-26:** one main run had failed on Linux only, in an allocation test that picked up bytes from a background GC ([run 45622765798](https://github.com/harry-stanley/brutal-engine/actions/runs/45622765798)). #66 made the allocation tests deterministic, and every main run since has passed. The last one before this close-out, at #49's merge ([run 45641448107](https://github.com/harry-stanley/brutal-engine/actions/runs/45641448107)), ran the Windows and macOS smoke in the smoke-delta tier ([CI tiers](06-ci-cd-and-release.md#ci-tiers)), because #49's own run had built and tested the same tree on all 3 OSes ([run 45640964521](https://github.com/harry-stanley/brutal-engine/actions/runs/45640964521)). The last main run that ran every job itself passed on all 3 OSes too ([run 45635378428](https://github.com/harry-stanley/brutal-engine/actions/runs/45635378428)).
+- Spikes S1 to S4 resolved. **Closed 2026-11-26:** S2, S3 and S4 pass. S1 passes everywhere except the deferred Arch run above.
+- ADR-0006 accepted. **Closed 2026-11-25** (#2).
+- `HelloWindow` sample (window, clear colour, BRUTAL splash) published with NativeAOT for all 3 RIDs. **Closed 2026-11-26:** the splash shows before the clear-colour scene since #26, and the push-to-main run at its merge ([run 45626276683](https://github.com/harry-stanley/brutal-engine/actions/runs/45626276683)) ran it JIT and NativeAOT on all 3 OSes and uploaded `hello-window-win-x64`, `hello-window-linux-x64` and `hello-window-osx-arm64`. On a real GPU it ran only on Windows (RTX 2070 SUPER).
+
+**Deviations approved for 0.1.** Decision (maintainer, 2026-11-26): M0 closes with a `v0.1.0` tag and a GitHub Release that carries the CI `hello-window-<rid>` builds, with no NuGet packages. These items of the [milestone definition of done](08-workflow.md#definition-of-done-for-a-milestone) don't exist yet and are accepted as missing for 0.1:
+
+- **`release.yml`:** not written. 0.1.0 is tagged and released by hand. No package is published, because the first package release needs Ahwoo's OK on the name and package IDs ([Licensing obligations](01-vision-and-scope.md#licensing-obligations)). No milestone schedules the workflow yet.
+- **Scripted playthrough on self-hosted real GPUs:** no self-hosted runners exist, and HelloWindow's only scripted run is its CI run on software or paravirtual GPUs. M1 adds a nightly workflow on software Vulkan and records real-GPU runs on the reference machine in each graphics PR. A self-hosted runner is revisited at the end of M1.
+- **Manual QA checklist on real hardware:** not written, and no milestone schedules it yet. M0's only real-hardware runs are the Windows ones on the reference machine.
+- **Docs site:** there's no docfx site or `docs.yml`. The manual and API reference are [M6](#m6-10-hardening-100) work. Until then, `docs/` is the documentation.
+
+M0 sets no benchmark budgets, so that item doesn't apply.
 
 ---
 
@@ -41,6 +59,7 @@ Results for S1 to S5 are in [docs/spikes](spikes/README.md). Still open in M0: S
 - `BrutalEngine.World`: ECS core, schedules, command buffers, hierarchy and transforms, generated queries.
 - `BrutalEngine.Runtime`: host lifecycle, fixed-step loop, module registry, splash, crash reports.
 - `BrutalEngine.DebugOverlay`: ImGui with our SDL3 platform backend and a renderer on our render interface. Frame-timing and log panels.
+- TestUtilities (moved from M0): the in-memory VFS lands with Platform, image diff with the graphics conformance suite, and the headless host stub with Runtime.
 
 **Sample:** `SpriteStress`, a benchmark scene. **Budget:** 100k moving sprites at 60 FPS on min-spec (the renderer here is a simple instanced path, finalised in M2).
 

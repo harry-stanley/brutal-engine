@@ -12,7 +12,7 @@ Local runs used the reference machine (Windows 11, Ryzen 9 5950X, RTX 2070 SUPER
 |-------|--------|-----------------|
 | S1 Windows: SDL3 + Vulkan 1.3 swapchain | **Pass** | Platform.Sdl3 / Graphics.Vulkan approach confirmed. Binding gaps listed below |
 | S1/S3 macOS: bundled loader + MoltenVK on GitHub runner | **Pass** (offscreen) | MoltenVK bundling works. macOS GPU tests can run on every PR. A real Mac is still needed before release (Q6 updated) |
-| S2 NativeAOT (Windows) | **Pass**, 0 trim/AOT warnings | ADR-0007 confirmed for the code paths exercised |
+| S2 NativeAOT | **Pass** on all 3 OSes, 0 trim/AOT warnings: Windows locally, then Windows, Linux and macOS in CI ([CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930), [HelloWindow in CI](#hellowindow-in-ci)) | ADR-0007 confirmed for the code paths exercised |
 | S3 Linux + Windows software Vulkan on GitHub runners | **Pass** | Software-Vulkan GPU test jobs can go into `ci.yml` |
 | S4 Slang offline compilation | **Pass** | ADR-0002 (Slang) confirmed. ShaderC stays as the fallback |
 | S5 ECS prototype | **Partial**: 1 target missed under stress | ADR-0006 stands. Design changes recorded for M1 |
@@ -40,7 +40,7 @@ Local runs used the reference machine (Windows 11, Ryzen 9 5950X, RTX 2070 SUPER
 - `uint64` timeouts and timeline values are bound as signed `nint`. The SDL Vulkan binding covers only 3 functions (no presentation-support query).
 - `Ahwoo.Brutal.Strings` depends on **`Microsoft.Extensions.ObjectPool` 11.0.0-preview.5** (verified in the nuspec), and the BRUTAL logging and DI stack pulls in about 24 assemblies. That's a pre-release dependency in a .NET 10 LTS product, so it's tracked as risk R16.
 
-**Not verified:** manual drag-resize, minimise and close; SUBOPTIMAL; visual output; long runs; any other GPU or OS for windowed presentation.
+**Not verified:** manual drag-resize, minimise and close; SUBOPTIMAL; visual output, apart from one screenshot of HelloWindow's splash on the RTX 2070 SUPER (#50); long runs; windowed presentation on Linux or macOS; windowed presentation on any real GPU other than the RTX 2070 SUPER. S1's last criterion, windowed on Arch Linux on real hardware with the minimum glibc and macOS versions recorded, is deferred to the backlog ([#27](https://github.com/harry-stanley/brutal-engine/issues/27)). Since the spike, CI covers windowed presentation on Windows lavapipe with two resizes, and headless presentation on Linux and macOS ([HelloWindow in CI](#hellowindow-in-ci)).
 
 ## S1 / S3: macOS on GitHub's `macos-15` runner
 
@@ -58,6 +58,20 @@ Local runs used the reference machine (Windows 11, Ryzen 9 5950X, RTX 2070 SUPER
 **Costs:** the smoke job takes about 1 min. A validation-layer source build takes 6.5 to 13 min, so it must be cached.
 
 **Limits:** the paravirtual GPU gives correctness, not real GPU families or performance. Not tested: windowed presentation, pipelines and shaders, `.app` bundles and signing.
+
+## HelloWindow in CI
+
+After the spikes, the `vulkan-smoke` CI job ([CI/CD](../06-ci-cd-and-release.md#ciyml-every-pr-and-every-push-to-main-plus-nightly), step 4) took over S1 and S2 for `samples/HelloWindow` (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)). On each OS it runs the JIT build and the NativeAOT publish, each presenting 120 frames with validation, plus negative tests (an injected validation error must exit 2, a bad option must exit 64):
+
+| | ubuntu-24.04 | windows-2025 | macos-15 |
+|---|---|---|---|
+| Driver | lavapipe | lavapipe (Mesa for Windows) | MoltenVK, bundled next to the executable |
+| Presentation | headless (`VK_EXT_headless_surface`) | windowed in the runner's desktop session, two resizes | headless (`VK_EXT_headless_surface`) |
+| Result | pass, 0 validation messages, 0 trim/AOT warnings | same | same, with no Vulkan SDK, Homebrew or `VK_DRIVER_FILES` |
+
+**Finding (Windows):** no Windows driver offers `VK_EXT_headless_surface`. Neither the NVIDIA driver on the reference machine nor Mesa lavapipe 26.3.1 for Windows lists it (checked with `vulkaninfo` for #24). SDL's offscreen video driver needs it to create a Vulkan surface, so on Windows `--headless` fails with a clear message, and CI runs HelloWindow windowed instead. Linux and macOS headless runs were the first time `--headless` presented anywhere.
+
+This is software and paravirtual GPU coverage only. Real-GPU runs are the Windows ones on the reference machine.
 
 ## S3: software Vulkan on GitHub's Linux and Windows runners
 
