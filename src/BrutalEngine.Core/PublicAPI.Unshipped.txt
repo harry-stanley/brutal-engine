@@ -122,6 +122,25 @@ BrutalEngine.Core.Logging.LoggerOptions.Sinks.get -> System.Collections.Generic.
 BrutalEngine.Core.Logging.LoggerOptions.Sinks.init -> void
 BrutalEngine.Core.Logging.LoggerOptions.TimeProvider.get -> System.TimeProvider!
 BrutalEngine.Core.Logging.LoggerOptions.TimeProvider.init -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink.ConsoleLogSink(BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions! options) -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink.Dispose() -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink.ErrorThreshold.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink.Flush() -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink.IncludeCallerInfo.get -> bool
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.<Clone>$() -> BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions!
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ConsoleLogSinkOptions() -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Equals(BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? other) -> bool
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ErrorOutput.get -> System.IO.Stream?
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ErrorOutput.init -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ErrorThreshold.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ErrorThreshold.init -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.IncludeCallerInfo.get -> bool
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.IncludeCallerInfo.init -> void
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Output.get -> System.IO.Stream?
+BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Output.init -> void
 BrutalEngine.Core.Logging.TraceLevel
 BrutalEngine.Core.Logging.TraceLevel.TraceLevel() -> void
 BrutalEngine.Core.Logging.WarningLevel
@@ -203,6 +222,9 @@ override BrutalEngine.Core.Logging.LogCategory.GetHashCode() -> int
 override BrutalEngine.Core.Logging.LoggerOptions.Equals(object? obj) -> bool
 override BrutalEngine.Core.Logging.LoggerOptions.GetHashCode() -> int
 override BrutalEngine.Core.Logging.LoggerOptions.ToString() -> string!
+override BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Equals(object? obj) -> bool
+override BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.GetHashCode() -> int
+override BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ToString() -> string!
 override BrutalEngine.Core.Result.ToString() -> string!
 override BrutalEngine.Core.Result<T>.ToString() -> string!
 static BrutalEngine.Core.EngineError.Native(int nativeCode, string! message) -> BrutalEngine.Core.EngineError
@@ -221,6 +243,8 @@ static BrutalEngine.Core.Logging.LogCategory.operator !=(BrutalEngine.Core.Loggi
 static BrutalEngine.Core.Logging.LogCategory.operator ==(BrutalEngine.Core.Logging.LogCategory left, BrutalEngine.Core.Logging.LogCategory right) -> bool
 static BrutalEngine.Core.Logging.LoggerOptions.operator !=(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
 static BrutalEngine.Core.Logging.LoggerOptions.operator ==(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
+static BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.operator !=(BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? left, BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? right) -> bool
+static BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.operator ==(BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? left, BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? right) -> bool
 static BrutalEngine.Core.Logging.TraceLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Logging.WarningLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Result.Failure(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
