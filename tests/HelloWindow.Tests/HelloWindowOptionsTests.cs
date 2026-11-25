@@ -82,6 +82,8 @@ public sealed class HelloWindowOptionsTests
     [InlineData("Moltenvk, Moltenvk")]
     [InlineData("Moltenvk ")]
     [InlineData("")]
+    [InlineData("MaxEnum")]
+    [InlineData("maxenum")]
     public void TryParse_UnknownOrNumericDriverName_Fails(string name)
     {
         Assert.False(HelloWindowOptions.TryParse(["--require-driver", name], out HelloWindowOptions? options, out string error));
