@@ -78,6 +78,17 @@ public sealed class LogMessageHandlerTests
     }
 
     [Fact]
+    public void Format_NullFormattableReference_AppendsNothing()
+    {
+        Version? missingVersion = null;
+        IUtf8SpanFormattable? missingFormattable = null;
+
+        string message = FormatString(c => c.Information($"a{missingVersion}b{missingVersion:2}c{missingFormattable}d"));
+
+        Assert.Equal("abcd", message);
+    }
+
+    [Fact]
     public void Format_InvalidUtf16AndUtf8_AreReplaced()
     {
         byte[] invalidUtf8 = [(byte)'a', 0xFF, (byte)'b', 0xE2, 0x82];

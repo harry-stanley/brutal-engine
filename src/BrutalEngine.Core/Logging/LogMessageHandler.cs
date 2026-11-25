@@ -111,16 +111,17 @@ public ref struct LogMessageHandler<TLevel>
     public void AppendFormatted(bool value) => AppendFormatted(value ? "True"u8 : "False"u8);
 
     /// <summary>Appends a value that formats itself to UTF-8, with the invariant culture.</summary>
-    /// <typeparam name="T">The value's type: any <see cref="IUtf8SpanFormattable"/>.</typeparam>
+    /// <typeparam name="T">The value's type: any <see cref="IUtf8SpanFormattable"/>, including nullable references.</typeparam>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
     /// <remarks>Never boxes a value type; see <see cref="AppendFormatted{T}(T, string?)"/>.</remarks>
     public void AppendFormatted<T>(T value)
-        where T : IUtf8SpanFormattable => AppendFormatted(value, null);
+        where T : IUtf8SpanFormattable? => AppendFormatted(value, null);
 
     /// <summary>Appends a value that formats itself to UTF-8, with a format string and the invariant culture.</summary>
     /// <typeparam name="T">
     /// The value's type: any <see cref="IUtf8SpanFormattable"/>, such as the numeric types, <see cref="char"/>,
-    /// <see cref="Guid"/>, the date and time types, or the engine's own maths types.
+    /// <see cref="Guid"/>, the date and time types, or the engine's own maths types. Nullable references are
+    /// accepted.
     /// </typeparam>
     /// <param name="value">The value. <see langword="null"/> appends nothing.</param>
     /// <param name="format">Format string, e.g. <c>F2</c> or <c>X8</c>, or <see langword="null"/>.</param>
@@ -129,7 +130,7 @@ public ref struct LogMessageHandler<TLevel>
     /// allocation, whatever the JIT optimises (unoptimised and coverage-instrumented code included).
     /// </remarks>
     public void AppendFormatted<T>(T value, string? format)
-        where T : IUtf8SpanFormattable
+        where T : IUtf8SpanFormattable?
     {
         // The IsValueType test keeps the null check (a box) out of value-type instantiations in unoptimised code.
         if (_buffer is null || _truncated || (!typeof(T).IsValueType && value is null))
@@ -138,7 +139,8 @@ public ref struct LogMessageHandler<TLevel>
         }
 
         Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
-        if (value.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
+        // Not null: a null reference returned above, and a value type can't be null.
+        if (value!.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
         {
             CommitFormatted(written);
         }
@@ -295,15 +297,16 @@ public ref struct LogMessageHandler<TLevel>
     }
 
     // The value didn't fit the space left: format it into a larger temporary buffer, then append what fits.
+    // Callers have already returned on null.
     private void AppendOverflowing<TFormattable>(TFormattable formattable, string? format)
-        where TFormattable : IUtf8SpanFormattable
+        where TFormattable : IUtf8SpanFormattable?
     {
         for (int size = Math.Max(_limit, CharScratchLength) * 2; size <= MaxOverflowScratchBytes; size *= 2)
         {
             byte[] scratch = ArrayPool<byte>.Shared.Rent(size);
             try
             {
-                if (formattable.TryFormat(scratch, out int written, format, CultureInfo.InvariantCulture))
+                if (formattable!.TryFormat(scratch, out int written, format, CultureInfo.InvariantCulture))
                 {
                     AppendUtf8(scratch.AsSpan(0, written));
                     return;
