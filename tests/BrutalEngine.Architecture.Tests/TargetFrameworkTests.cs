@@ -79,12 +79,19 @@ public sealed class TargetFrameworkTests
             }
         }
 
-        foreach (string props in NestedBuildFiles())
+        string rootProps = Path.Combine(Repository.Root(), "Directory.Build.props");
+        IReadOnlyList<string> buildFiles = BuildFiles();
+
+        // Guards against the scan missing the root, where the one allowed TargetFramework lives.
+        Assert.Contains(rootProps, buildFiles);
+
+        foreach (string buildFile in buildFiles)
         {
-            string[] values = FrameworkValues(props);
-            if (values.Length != 0)
+            string[] values = FrameworkValues(buildFile);
+            bool allowed = buildFile == rootProps ? values.SequenceEqual([ExpectedTargetFramework]) : values.Length == 0;
+            if (!allowed)
             {
-                problems.Add($"{Path.GetRelativePath(Repository.Root(), props)}: sets [{string.Join(", ", values)}]. Only the root Directory.Build.props sets the target framework.");
+                problems.Add($"{Path.GetRelativePath(Repository.Root(), buildFile)}: sets [{string.Join(", ", values)}]. Only the root Directory.Build.props sets the target framework, once, to {ExpectedTargetFramework}.");
             }
         }
 
@@ -111,16 +118,23 @@ public sealed class TargetFrameworkTests
         ];
     }
 
-    /// <summary>The Directory.Build.props/.targets files below the repository root.</summary>
-    private static IEnumerable<string> NestedBuildFiles()
+    /// <summary>Every Directory.Build.props/.targets file in the repository, the root's included, as full paths.</summary>
+    private static IReadOnlyList<string> BuildFiles()
     {
         string root = Repository.Root();
         string[] skipped = ["bin", "obj", ".git"];
-        return Directory.EnumerateDirectories(root)
+        IEnumerable<string> nested = Directory.EnumerateDirectories(root)
             .Where(directory => !skipped.Contains(Path.GetFileName(directory), StringComparer.OrdinalIgnoreCase))
             .SelectMany(directory => Directory.EnumerateFiles(directory, "Directory.Build.*", SearchOption.AllDirectories))
-            .Where(path => !path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is "bin" or "obj"))
-            .OrderBy(path => path, StringComparer.Ordinal);
+            .Where(path => !path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is "bin" or "obj"));
+        return
+        [
+            .. Directory.EnumerateFiles(root, "Directory.Build.*")
+                .Concat(nested)
+                .Where(path => Path.GetExtension(path) is ".props" or ".targets")
+                .Select(Path.GetFullPath)
+                .OrderBy(path => path, StringComparer.Ordinal),
+        ];
     }
 
     /// <summary>The values of every TargetFramework or TargetFrameworks property set in an MSBuild file.</summary>
