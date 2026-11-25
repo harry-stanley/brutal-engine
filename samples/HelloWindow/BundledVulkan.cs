@@ -39,6 +39,11 @@ internal static partial class BundledVulkan
     public const string LegacyDriverFilesVariable = "VK_ICD_FILENAMES";
 
     /// <summary>What <see cref="TryConfigure"/> needs from the process. Tests substitute a fake.</summary>
+    /// <remarks>Every member runs on the main thread, before SDL or Vulkan start. <c>setenv</c> isn't thread-safe
+    /// against a concurrent <c>getenv</c>, and SDL, the Vulkan loader and its drivers read the environment from their
+    /// own threads once they're running, so <see cref="SetEnvironmentVariable"/> is only safe while the process is still
+    /// single-threaded as far as native code is concerned. Keep this rule wherever this code moves (the platform or
+    /// graphics layer).</remarks>
     internal interface IHost
     {
         /// <summary>Gets a value indicating whether the process runs on macOS.</summary>
@@ -142,6 +147,9 @@ internal static partial class BundledVulkan
     }
 
     /// <summary>The real process: the file system, the C runtime's environment and <see cref="PreloadLoader"/>.</summary>
+    /// <remarks>Call it only on the main thread, before SDL or Vulkan start: its <c>setenv</c> must not race the
+    /// <c>getenv</c> calls that SDL, the Vulkan loader and its drivers make from their own threads (see
+    /// <see cref="IHost"/>).</remarks>
     /// <param name="log">Where the environment it sets and the loader it preloads are logged.</param>
     internal readonly partial struct ProcessHost(LogCategory log) : IHost
     {

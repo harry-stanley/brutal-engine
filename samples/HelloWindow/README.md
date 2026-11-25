@@ -86,7 +86,7 @@ A product built on BRUTAL must meet the BRUTAL License's conditions. HelloWindow
   its `LICENSES/` folder. They ship as `LICENSES/<package>/`, one folder per package, because packages use the same
   file names for different contents.
 
-The build copies all of these from the restored BRUTAL packages, so none of them is kept in this repository. Every
+The build takes all of these from the restored BRUTAL packages, never from this repository. Every
 BRUTAL package carries the same `LICENSE.txt` and `NOTICE.txt`, and the build fails if a copy differs. CI checks the
 published output for `LICENSE.txt`, `NOTICE.txt`, `LICENSES/` and BRUTAL's copyright line in `CREDITS.txt`.
 
