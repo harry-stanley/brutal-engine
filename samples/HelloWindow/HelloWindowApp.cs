@@ -1,13 +1,19 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
+using HelloWindow.Splash;
 
 namespace HelloWindow;
 
-/// <summary>Runs the sample: SDL and Vulkan setup, the event and frame loop, and teardown in reverse order.</summary>
+/// <summary>Runs the sample: SDL and Vulkan setup, the event and frame loop (the BRUTAL splash, then the scene), and
+/// teardown in reverse order.</summary>
 internal sealed unsafe class HelloWindowApp
 {
+    // The least space between the splash logo and the window's edges, in pixels.
+    private const int SplashMargin = 32;
+
     private readonly HelloWindowOptions _options;
     private bool _setupComplete;
     private int _resizes;
@@ -80,6 +86,11 @@ internal sealed unsafe class HelloWindowApp
         try
         {
             SampleConsole.Info($"SDL video driver: {Sdl.Video.GetCurrentVideoDriver()}");
+
+            // BRUTAL LICENSE 2.2: the logo comes before the scene. A missing or unreadable logo fails setup.
+            string logoPath = Path.Join(AppContext.BaseDirectory, SplashLogo.AssetsFolder, SplashLogo.FileName);
+            var logo = SplashLogo.Load(logoPath);
+            SampleConsole.Info($"Splash logo: {logoPath} ({logo.Size})");
             using SdlWindow window = Sdl.Video.CreateWindow(
                 "BrutalEngine HelloWindow",
                 _options.Width,
@@ -87,7 +98,7 @@ internal sealed unsafe class HelloWindowApp
                 SdlWindowFlags.Vulkan | SdlWindowFlags.Resizable | SdlWindowFlags.HighPixelDensity);
             using var vulkan = VulkanContext.Create(window, _options);
             using var renderer = new FrameRenderer(vulkan);
-            RunFrames(window, vulkan, renderer);
+            RunFrames(window, vulkan, renderer, logo);
         }
         finally
         {
@@ -95,8 +106,14 @@ internal sealed unsafe class HelloWindowApp
         }
     }
 
-    private void RunFrames(SdlWindow window, VulkanContext vulkan, FrameRenderer renderer)
+    private void RunFrames(SdlWindow window, VulkanContext vulkan, FrameRenderer renderer, SplashLogo logo)
     {
+        // Headless runs count splash frames; windowed runs time the splash (SplashTimeline).
+        SplashTimeline timeline = _options.Headless ? SplashTimeline.Headless() : SplashTimeline.Windowed(Stopwatch.Frequency);
+        var splashStatistics = new SplashStatistics();
+        SplashImage? splashImage = null;
+        SplashDraw splash = default;
+        bool splashMinimumSize = false;
         Swapchain? swapchain = null;
         int presented = 0, recreations = 0, outOfDate = 0, suboptimal = 0, steadyFrames = 0;
         long steadyBytes = 0;
@@ -152,14 +169,46 @@ internal sealed unsafe class HelloWindowApp
                         }
 
                         recreations += old is null ? 0 : 1;
+                        SampleConsole.Info($"Swapchain {extent} {swapchain.Format.Format}/{swapchain.Format.ColorSpace}, {swapchain.Images.Length} images, {swapchain.Usage}, {SwapchainPlanner.PresentMode} (at frame {presented})");
+
+                        // For the first swapchain this runs before setup counts as complete, so a surface that can't show
+                        // the splash is a setup failure (exit 3). Later swapchains keep the format and its features, and
+                        // on the copy path the window can't shrink below the logo while the splash lasts.
+                        if (!timeline.IsComplete)
+                        {
+                            splash = PrepareSplash(window, vulkan, swapchain, logo, ref splashImage, ref splashMinimumSize);
+                        }
+                        else if (splashImage is not null)
+                        {
+                            // The splash is over and the device is idle: the logo image is no longer needed.
+                            splashImage.Dispose();
+                            splashImage = null;
+                            splash = default;
+                        }
+
                         _setupComplete = true;
-                        SampleConsole.Info($"Swapchain {extent} {swapchain.Format.Format}/{swapchain.Format.ColorSpace}, {swapchain.Images.Length} images, {SwapchainPlanner.PresentMode} (at frame {presented})");
                     }
 
                     checkExtent = recreate = false;
                 }
 
-                FrameAction action = renderer.RenderFrame(swapchain, _options.InjectValidationError && presented == 0);
+                long decided = Stopwatch.GetTimestamp();
+                bool showSplash = timeline.ShowsSplash(presented, decided);
+                if (!showSplash && splashMinimumSize)
+                {
+                    // The splash is over: the window may shrink freely again.
+                    steadyState = false;
+                    splashMinimumSize = false;
+                    NativeCheck.Sdl(Sdl.Video.SetWindowMinimumSize(window, 0, 0), "SDL_SetWindowMinimumSize");
+                    SampleConsole.Info($"Splash over: window minimum size cleared (at frame {presented})");
+                }
+
+                FrameAction action = renderer.RenderFrame(swapchain, showSplash ? splash : null, _options.InjectValidationError && presented == 0);
+                if (action != FrameAction.Recreate)
+                {
+                    splashStatistics.Presented(showSplash, decided);
+                }
+
                 presented += action == FrameAction.Recreate ? 0 : 1;
                 outOfDate += action == FrameAction.Recreate ? 1 : 0;
                 suboptimal += action == FrameAction.RenderThenRecreate ? 1 : 0;
@@ -183,16 +232,59 @@ internal sealed unsafe class HelloWindowApp
             }
 
             swapchain?.Destroy();
+            splashImage?.Dispose();
         }
 
         double seconds = clock.Elapsed.TotalSeconds;
         SampleConsole.Info($"Presented {presented} frames in {seconds:F2} s ({presented / seconds:F1} fps); "
             + $"swapchain recreations {recreations}, out-of-date {outOfDate}, suboptimal {suboptimal}; "
             + $"{steadyBytes} managed bytes allocated over {steadyFrames} steady-state loop iterations.");
+        SampleConsole.Info(splashStatistics.Format(Stopwatch.Frequency));
         if (_options.ExerciseResize && recreations == 0)
         {
             throw new SampleFailureException("--exercise-resize: the swapchain was never recreated.");
         }
+    }
+
+    // Chooses how this swapchain shows the splash, and uploads the logo in its format if that changed. Runs with the
+    // device idle (right after a swapchain was created), so replacing the image is safe. On the copy path, it also stops
+    // the window from shrinking below the logo for as long as the splash lasts (SplashWindowLimits).
+    private static SplashDraw PrepareSplash(
+        SdlWindow window, VulkanContext vulkan, Swapchain swapchain, SplashLogo logo, ref SplashImage? image, ref bool minimumSizeSet)
+    {
+        VkFormatProperties formatProperties = vulkan.PhysicalDevice.GetFormatProperties(swapchain.Format.Format);
+        PixelRect destination = SplashLayout.Fit(logo.Size, new PixelSize(swapchain.Extent.Width, swapchain.Extent.Height), SplashMargin);
+        SplashPlan plan = SplashCapabilities.Choose(
+            new SplashSurfaceSupport(swapchain.Format, swapchain.Usage, formatProperties.OptimalTilingFeatures), logo.Size, destination);
+        if (!plan.IsSupported)
+        {
+            // The splash is a licence duty: never skip it silently.
+            throw new SampleFailureException(plan.FailureMessage ?? "The splash can't be drawn on this surface.");
+        }
+
+        if (image is null || image.Format != plan.LogoFormat)
+        {
+            image?.Dispose();
+            image = null;
+            image = SplashImage.Upload(vulkan, logo, plan);
+        }
+
+        SampleConsole.Info($"Splash: {plan.Transfer} of the {logo.Size} logo to {destination} ({plan.LogoFormat})");
+        if (plan.Transfer == SplashTransfer.Copy && !minimumSizeSet)
+        {
+            float density = Sdl.Video.GetWindowPixelDensity(window);
+            if (density <= 0)
+            {
+                throw SdlException.FromError("SDL_GetWindowPixelDensity failed");
+            }
+
+            PixelSize minimum = SplashWindowLimits.MinimumWindowSize(plan.Transfer, logo.Size, SplashMargin, density);
+            NativeCheck.Sdl(Sdl.Video.SetWindowMinimumSize(window, minimum.Width, minimum.Height), "SDL_SetWindowMinimumSize");
+            minimumSizeSet = true;
+            SampleConsole.Info($"Splash: window minimum size {minimum} while the splash lasts (1:1 copy)");
+        }
+
+        return new SplashDraw(image.Image, image.Size, plan.Transfer, destination);
     }
 
     // Returns true if it resized the window in this iteration.

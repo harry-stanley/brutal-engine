@@ -36,6 +36,21 @@ internal static class SwapchainPlanner
             Math.Min(Math.Max(windowPixelHeight, min.Height), max.Height));
     }
 
+    /// <summary>Chooses the swapchain image usage: colour attachment for the scene, plus transfer destination when the
+    /// surface offers it, so the splash can be cleared and blitted or copied into the images.</summary>
+    /// <param name="supported">The surface's supported usage (<c>VkSurfaceCapabilitiesKHR.supportedUsageFlags</c>).</param>
+    /// <returns>The usage to request.</returns>
+    /// <exception cref="SampleFailureException">The surface doesn't support colour-attachment images.</exception>
+    public static VkImageUsageFlags ChooseImageUsage(VkImageUsageFlags supported)
+    {
+        if ((supported & VkImageUsageFlags.ColorAttachmentBit) == 0)
+        {
+            throw new SampleFailureException("The surface doesn't support colour-attachment images.");
+        }
+
+        return VkImageUsageFlags.ColorAttachmentBit | (supported & VkImageUsageFlags.TransferDstBit);
+    }
+
     /// <summary>Chooses the number of swapchain images: one more than the minimum, within the maximum.</summary>
     /// <param name="minImageCount">The surface's minimum image count (at least 1).</param>
     /// <param name="maxImageCount">The surface's maximum image count, or 0 for no maximum.</param>

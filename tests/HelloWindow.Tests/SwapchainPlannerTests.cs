@@ -103,4 +103,26 @@ public sealed class SwapchainPlannerTests
     {
         Assert.Throws<ArgumentException>(() => SwapchainPlanner.ChooseCompositeAlpha(VkCompositeAlphaFlagsKHR.None));
     }
+
+    [Fact]
+    public void ChooseImageUsage_TransferDstSupported_RequestsIt()
+    {
+        VkImageUsageFlags usage = SwapchainPlanner.ChooseImageUsage(
+            VkImageUsageFlags.ColorAttachmentBit | VkImageUsageFlags.TransferDstBit | VkImageUsageFlags.TransferSrcBit);
+
+        Assert.Equal(VkImageUsageFlags.ColorAttachmentBit | VkImageUsageFlags.TransferDstBit, usage);
+    }
+
+    [Fact]
+    public void ChooseImageUsage_TransferDstUnsupported_RequestsColourAttachmentOnly()
+    {
+        // The splash capability check then reports the missing TRANSFER_DST as a setup failure.
+        Assert.Equal(VkImageUsageFlags.ColorAttachmentBit, SwapchainPlanner.ChooseImageUsage(VkImageUsageFlags.ColorAttachmentBit));
+    }
+
+    [Fact]
+    public void ChooseImageUsage_NoColourAttachment_Throws()
+    {
+        Assert.Throws<SampleFailureException>(() => SwapchainPlanner.ChooseImageUsage(VkImageUsageFlags.TransferDstBit));
+    }
 }

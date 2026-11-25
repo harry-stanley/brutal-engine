@@ -8,8 +8,10 @@ namespace HelloWindow.Splash;
 /// so it is never silently skipped.</summary>
 internal static class SplashCapabilities
 {
-    // Blit: the logo is the source (TRANSFER_SRC, VUID-vkCmdBlitImage-srcImage-00219) and the swapchain image the
-    // destination, scaled with a linear filter, and the logo is uploaded with vkCmdCopyBufferToImage (TRANSFER_DST).
+    // Blit: the logo is the source and the swapchain image the destination, scaled with a linear filter, and the logo is
+    // uploaded with vkCmdCopyBufferToImage (TRANSFER_DST). The blit source needs TRANSFER_SRC usage
+    // (VUID-vkCmdBlitImage-srcImage-00219), and an optimal-tiling image can only be created with that usage if its
+    // format reports the TRANSFER_SRC feature.
     private const VkFormatFeatureFlags BlitFeatures = VkFormatFeatureFlags.BlitSrcBit | VkFormatFeatureFlags.BlitDstBit
         | VkFormatFeatureFlags.SampledImageFilterLinearBit | VkFormatFeatureFlags.TransferSrcBit | VkFormatFeatureFlags.TransferDstBit;
 

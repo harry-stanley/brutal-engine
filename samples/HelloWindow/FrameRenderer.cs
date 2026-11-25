@@ -2,10 +2,12 @@ using System;
 using Brutal.Numerics;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Abstractions;
+using HelloWindow.Splash;
 
 namespace HelloWindow;
 
-/// <summary>Records, submits and presents one clear-colour frame at a time, with 2 frames in flight.</summary>
+/// <summary>Records, submits and presents one frame at a time, with 2 frames in flight: the BRUTAL splash (cleared to
+/// black, then the logo blitted or copied in) or the clear-colour scene.</summary>
 /// <remarks>
 /// <para>
 /// Each frame in flight owns a command buffer, an image-acquired semaphore and a fence. A frame waits for its fence
@@ -70,11 +72,13 @@ internal sealed unsafe class FrameRenderer : IDisposable
 
     /// <summary>Renders and presents one frame.</summary>
     /// <param name="swapchain">The current swapchain.</param>
+    /// <param name="splash">The splash to draw, or null to draw the scene. The swapchain must have been created with
+    /// <c>TRANSFER_DST</c> usage for a splash.</param>
     /// <param name="injectValidationError">Record a wrong old layout in the first barrier, which validation must report.</param>
     /// <returns><see cref="FrameAction.Render"/> if presented, <see cref="FrameAction.RenderThenRecreate"/> if presented
     /// but the swapchain should be recreated, or <see cref="FrameAction.Recreate"/> if nothing was presented.</returns>
     /// <exception cref="VkResultError">A Vulkan call failed, for example with a lost device.</exception>
-    public FrameAction RenderFrame(Swapchain swapchain, bool injectValidationError)
+    public FrameAction RenderFrame(Swapchain swapchain, SplashDraw? splash, bool injectValidationError)
     {
         int slot = (int)(_frame % FramesInFlight);
         VkFence fence = _inFlight[slot];
@@ -98,7 +102,14 @@ internal sealed unsafe class FrameRenderer : IDisposable
         _device.ResetFences([fence]);
         CommandBuffer commands = _commands[slot];
         commands.Reset(VkCommandBufferResetFlags.None);
-        Record(commands, swapchain, imageIndex, injectValidationError);
+        if (splash is { } draw)
+        {
+            RecordSplash(commands, swapchain, imageIndex, draw, injectValidationError);
+        }
+        else
+        {
+            RecordScene(commands, swapchain, imageIndex, injectValidationError);
+        }
 
         VkSemaphore renderFinished = swapchain.RenderFinished[imageIndex];
         VkSemaphoreSubmitInfo wait = new() { Semaphore = _imageAcquired[slot], StageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit };
@@ -171,7 +182,94 @@ internal sealed unsafe class FrameRenderer : IDisposable
         }
     }
 
-    private void Record(CommandBuffer commands, Swapchain swapchain, int imageIndex, bool injectValidationError)
+    private static void RecordSplash(CommandBuffer commands, Swapchain swapchain, int imageIndex, in SplashDraw splash, bool injectValidationError)
+    {
+        commands.Begin(VkCommandBufferUsageFlags.OneTimeSubmitBit);
+        VkImage target = swapchain.Images[imageIndex];
+        VkImageSubresourceRange colorRange = new() { AspectMask = VkImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 };
+        VkImageSubresourceLayers colorLayers = new() { AspectMask = VkImageAspectFlags.ColorBit, LayerCount = 1 };
+        const VkPipelineStageFlags2 LogoStages = VkPipelineStageFlags2.BlitBit | VkPipelineStageFlags2.CopyBit;
+
+        // UNDEFINED -> TRANSFER_DST (the clear overwrites everything). As in the scene, the source stage is the one the
+        // acquire semaphore is waited on in, so the transition and the transfers run after the image is released.
+        VkImageMemoryBarrier2 toTransfer = new()
+        {
+            SrcStageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit,
+            SrcAccessMask = VkAccessFlags2.None,
+            DstStageMask = VkPipelineStageFlags2.ClearBit,
+            DstAccessMask = VkAccessFlags2.TransferWriteBit,
+
+            // Negative test: claim a layout the image is not in, which validation must report at submit.
+            OldLayout = injectValidationError ? VkImageLayout.ShaderReadOnlyOptimal : VkImageLayout.Undefined,
+            NewLayout = VkImageLayout.TransferDstOptimal,
+            SrcQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+            DstQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+            Image = target,
+            SubresourceRange = colorRange,
+        };
+        commands.PipelineBarrier2(new VkDependencyInfo { ImageMemoryBarrierCount = 1, ImageMemoryBarriers = &toTransfer });
+
+        // Black, the colour the logo was composited onto, so the logo's rectangle has no visible edge. Black is exact in
+        // UNORM and sRGB images alike. Sound: &black points at a local that outlives the call.
+        VkClearColorValue black = new() { Float32 = new float4(0.0f, 0.0f, 0.0f, 1.0f) };
+        commands.ClearColorImage(target, VkImageLayout.TransferDstOptimal, &black, [colorRange]);
+
+        // The logo overwrites part of what the clear wrote: order the two writes (write-after-write).
+        VkMemoryBarrier2 afterClear = new()
+        {
+            SrcStageMask = VkPipelineStageFlags2.ClearBit,
+            SrcAccessMask = VkAccessFlags2.TransferWriteBit,
+            DstStageMask = LogoStages,
+            DstAccessMask = VkAccessFlags2.TransferWriteBit,
+        };
+        commands.PipelineBarrier2(new VkDependencyInfo { MemoryBarrierCount = 1, MemoryBarriers = &afterClear });
+
+        PixelRect to = splash.Destination;
+        switch (splash.Transfer)
+        {
+            case SplashTransfer.Blit:
+                // Linear filtering only ever scales down (SplashLayout.Fit never upscales); at 1:1 it reproduces the
+                // logo exactly, sampling at texel centres.
+                VkImageBlit blit = new() { SrcSubresource = colorLayers, DstSubresource = colorLayers };
+                blit.SrcOffsets[1] = new VkOffset3D { X = splash.Size.Width, Y = splash.Size.Height, Z = 1 };
+                blit.DstOffsets[0] = new VkOffset3D { X = to.X, Y = to.Y, Z = 0 };
+                blit.DstOffsets[1] = new VkOffset3D { X = to.X + to.Width, Y = to.Y + to.Height, Z = 1 };
+                commands.BlitImage(splash.Image, VkImageLayout.TransferSrcOptimal, target, VkImageLayout.TransferDstOptimal, [blit], VkFilter.Linear);
+                break;
+            case SplashTransfer.Copy:
+                VkImageCopy copy = new()
+                {
+                    SrcSubresource = colorLayers,
+                    DstSubresource = colorLayers,
+                    DstOffset = new VkOffset3D { X = to.X, Y = to.Y, Z = 0 },
+                    Extent = new VkExtent3D { Width = splash.Size.Width, Height = splash.Size.Height, Depth = 1 },
+                };
+                commands.CopyImage(splash.Image, VkImageLayout.TransferSrcOptimal, target, VkImageLayout.TransferDstOptimal, [copy]);
+                break;
+            default:
+                throw new InvalidOperationException($"No way to draw the splash ({splash.Transfer}); the frame loop must check the plan.");
+        }
+
+        // TRANSFER_DST -> PRESENT_SRC. The destination stage is the render-finished semaphore's signal stage, so the
+        // signal waits for the transition, as in the scene.
+        VkImageMemoryBarrier2 toPresent = new()
+        {
+            SrcStageMask = LogoStages,
+            SrcAccessMask = VkAccessFlags2.TransferWriteBit,
+            DstStageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit,
+            DstAccessMask = VkAccessFlags2.None,
+            OldLayout = VkImageLayout.TransferDstOptimal,
+            NewLayout = VkImageLayout.PresentSrcKHR,
+            SrcQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+            DstQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+            Image = target,
+            SubresourceRange = colorRange,
+        };
+        commands.PipelineBarrier2(new VkDependencyInfo { ImageMemoryBarrierCount = 1, ImageMemoryBarriers = &toPresent });
+        commands.End();
+    }
+
+    private void RecordScene(CommandBuffer commands, Swapchain swapchain, int imageIndex, bool injectValidationError)
     {
         commands.Begin(VkCommandBufferUsageFlags.OneTimeSubmitBit);
         VkImageSubresourceRange colorRange = new() { AspectMask = VkImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 };
