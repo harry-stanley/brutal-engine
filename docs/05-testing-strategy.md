@@ -54,6 +54,16 @@ It also fails when an engine library under `src/` isn't in its layer map or isn'
 
 Every public type and member must also be in `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` and have XML docs. The build already enforces that (RS0016/RS0017 and CS1591 are errors), so the architecture tests don't repeat it.
 
+## Allocation tests
+
+A zero-allocation test warms the code up, reads `GC.GetAllocatedBytesForCurrentThread()`, runs the hot path many times, and asserts that the difference is exactly **0 bytes**. There is no tolerance and no retry. The rules that keep that measurement exact:
+
+- **Background GC is off in any test project that measures allocations** (`<ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>` in its `.csproj`, with the reason in a comment next to it). When a background gen2 collection ends its mark phase, the .NET 10 runtime voids every thread's allocation context without taking the unused tail off that thread's allocated-bytes count. A thread that allocated nothing then appears to have allocated up to a few KB. Tests running in parallel trigger these collections (large-object allocations start them, as property tests that build big strings do), so the failures are rare, appear on CI's smaller runners first, and hit whichever allocation test happens to be measuring. Blocking collections count correctly, and turning background GC off doesn't change what the code under test allocates.
+- Each such project keeps a guard test that makes a gen2 collection end inside a measured window and asserts 0 bytes (`AllocationMeasurementTests` in `BrutalEngine.Core.Tests`), so the setting can't be dropped silently.
+- Warm up every path the measured loop takes, including first-time BCL caches (number formatting, for example), so one-time work stays out of the window.
+- Don't rely on the JIT to remove boxes or allocations: unoptimised code and coverage instrumentation keep them. For example, `value is IUtf8SpanFormattable` on a generic value type boxes there, so `LogMessageHandler` constrains the generic instead (`where T : IUtf8SpanFormattable?`).
+- To check that a test can fail, add an allocation to the measured path and confirm the test reports it.
+
 ## Coverage
 
 - Line and branch coverage are collected on every PR and shown in the job summary.
