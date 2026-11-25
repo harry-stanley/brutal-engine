@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Xunit;
@@ -65,6 +66,19 @@ public sealed class AllocationMeasurementTests
         Assert.Empty(failures);
         Assert.True(collector.CollectionEndedInWindow, "No gen2 collection ended inside the measured window.");
         Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void TestHost_BackgroundGarbageCollection_IsDisabled()
+    {
+        // The test above passes vacuously in a run where no background collection happens to end inside its window,
+        // so check the setting itself too. Two checks: the configuration switch that the project's
+        // ConcurrentGarbageCollection property writes to the runtime config, so dropping the property fails here even
+        // if something else (DOTNET_gcConcurrent=0) happens to turn background collection off; and the collector's
+        // effective mode, which is Interactive when background collection is on and Batch when it's off, so
+        // anything that turns it back on (DOTNET_gcConcurrent=1, say) fails here too.
+        Assert.Equal("false", AppContext.GetData("System.GC.Concurrent") as string, ignoreCase: true);
+        Assert.Equal(GCLatencyMode.Batch, GCSettings.LatencyMode);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
