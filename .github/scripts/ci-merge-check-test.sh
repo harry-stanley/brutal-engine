@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+# Self-test for ci-merge-check.sh. CI runs it before the merge check is used, so a broken rule fails loudly instead of
+# silently skipping jobs on main. No network: a fake gh serves API answers shaped like the real ones (recorded from
+# PR #38, merged as f2a8d86) out of a temporary directory, and logs every call.
+set -euo pipefail
+
+if ! command -v jq > /dev/null; then
+  echo "FAIL  jq is required (it is preinstalled on GitHub's runners)"
+  exit 1
+fi
+
+script="$(cd "$(dirname "$0")" && pwd)/ci-merge-check.sh"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+failures=0
+
+readonly REPO_NAME=harry-stanley/brutal-engine
+readonly SQUASH=f2a8d861e6bf7c05d867ba141b86bd4fed85e20c
+readonly HEAD=8ef2b1e7f381143131275ba1d9ed0e9149a346e5
+readonly TREE=c5d0742a12a98cdaddfd232d173ec915dc62285b
+readonly OTHER_TREE=0123456789abcdef0123456789abcdef01234567
+readonly OTHER_SHA=89abcdef0123456789abcdef0123456789abcdef
+readonly RUN_URL=https://github.com/harry-stanley/brutal-engine/actions/runs/45596003295/job
+
+# The fake gh: `gh api [--paginate] <path>` prints the fixture file named after the path, or fails like a 404.
+cat > "$work/gh" << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = api ] || exit 2
+shift
+[ "$1" = --paginate ] && shift
+echo "$1" >> "$FAKE_GH_DIR/calls"
+file="$FAKE_GH_DIR/$(printf '%s' "$1" | tr '/?=&' '____')"
+if [ -f "$file" ]; then
+  cat "$file"
+else
+  echo "gh: Not Found (HTTP 404)" >&2
+  exit 1
+fi
+EOF
+chmod +x "$work/gh"
+
+# Starts a case with no fixtures, so each case gets only the API answers it sets up.
+fresh() {
+  fixtures="$work/case$((++case_number))"
+  mkdir -p "$fixtures"
+  : > "$fixtures/calls"
+}
+case_number=0
+
+fixture() {
+  local path=$1
+  cat > "$fixtures/$(printf '%s' "$path" | tr '/?=&' '____')"
+}
+
+pr_json() {
+  local number=$1 merge_sha=$2 head=$3 merged_at=${4-\"2026-11-25T10:35:02Z\"} base=${5-main}
+  printf '{"number":%s,"html_url":"https://github.com/%s/pull/%s","state":"closed","merged_at":%s,' \
+    "$number" "$REPO_NAME" "$number" "$merged_at"
+  printf '"merge_commit_sha":"%s","head":{"sha":"%s","ref":"feat/x"},"base":{"sha":"%s","ref":"%s"}}' \
+    "$merge_sha" "$head" "$OTHER_SHA" "$base"
+}
+
+pulls() {
+  local IFS=,
+  printf '[%s]' "$*" | fixture "repos/$REPO_NAME/commits/$SQUASH/pulls"
+}
+
+commit() {
+  local sha=$1 tree=$2
+  printf '{"sha":"%s","commit":{"message":"m","tree":{"sha":"%s"}},"files":[]}' "$sha" "$tree" \
+    | fixture "repos/$REPO_NAME/commits/$sha"
+}
+
+# check_runs "<name>=<conclusion>[@<app slug>]" ...; conclusion "null" means still running.
+check_runs() {
+  local entries=() run name conclusion app id=139142244000
+  for run in "$@"; do
+    name=${run%%=*}
+    conclusion=${run#*=}
+    app=github-actions
+    if [[ $conclusion == *@* ]]; then
+      app=${conclusion#*@}
+      conclusion=${conclusion%%@*}
+    fi
+    [ "$conclusion" = null ] || conclusion="\"$conclusion\""
+    id=$((id + 1))
+    entries+=("$(printf '{"id":%s,"name":"%s","head_sha":"%s","status":"completed","conclusion":%s,"html_url":"%s/%s","app":{"slug":"%s"}}' \
+      "$id" "$name" "$HEAD" "$conclusion" "$RUN_URL" "$id" "$app")")
+  done
+  local IFS=,
+  printf '{"total_count":%s,"check_runs":[%s]}' "${#entries[@]}" "${entries[*]}" \
+    | fixture "repos/$REPO_NAME/commits/$HEAD/check-runs?per_page=100"
+}
+
+readonly FAST_RUNS=("CI passed=success" "Select CI tier=success" "Format=success"
+  "Build and test (windows-2025)=success" "Build and test (ubuntu-24.04)=success" "Build and test (macos-15)=success"
+  "Vulkan smoke, JIT + NativeAOT (ubuntu-24.04)=success" "CodeQL=success@github-advanced-security")
+readonly FULL_RUNS=("${FAST_RUNS[@]}"
+  "Vulkan smoke, JIT + NativeAOT (windows-2025)=success" "Vulkan smoke, JIT + NativeAOT (macos-15)=success")
+
+# The PR #38 shape: merged as SQUASH, head HEAD, both with tree TREE.
+same_tree_pr() {
+  pulls "$(pr_json 38 "$SQUASH" "$HEAD")"
+  commit "$SQUASH" "$TREE"
+  commit "$HEAD" "$TREE"
+}
+
+run_check() {
+  local event=$1 ref=${2-refs/heads/main} sha=${3-$SQUASH}
+  EVENT_NAME=$event REF=$ref REPO=$REPO_NAME SHA=$sha SMOKE_FAST_OS="ubuntu-24.04" \
+    SMOKE_FULL_OS="windows-2025 macos-15" CI_MERGE_GH="$work/gh" FAKE_GH_DIR="$fixtures" bash "$script" 2> /dev/null
+}
+
+# check <expected decision> <description> [event] [ref] [sha]
+check() {
+  local expected=$1 description=$2 output status=0 actual
+  output=$(run_check "${3-push}" "${4-refs/heads/main}" "${5-$SQUASH}") || status=$?
+  actual=$(printf '%s\n' "$output" | sed -n 's/^decision=//p')
+  if [ "$status" -ne 0 ]; then
+    echo "FAIL  expected $expected, but the script exited $status: $description"
+    failures=$((failures + 1))
+  elif [ "$actual" != "$expected" ]; then
+    echo "FAIL  expected $expected, got ${actual:-nothing}: $description"
+    failures=$((failures + 1))
+  elif [ "$expected" = verified ] || [ "$expected" = smoke-delta ]; then
+    # Skipping work needs the evidence linked: the PR and its passing "CI passed" job.
+    if ! grep -qx "pr=38" <<< "$output" || ! grep -qx "pr_url=https://github.com/$REPO_NAME/pull/38" <<< "$output" \
+      || ! grep -qx "proof_url=$RUN_URL/139142244001" <<< "$output"; then
+      echo "FAIL  $expected without the PR and proof links: $description"
+      failures=$((failures + 1))
+    else
+      echo "ok    $expected  $description"
+    fi
+  elif [ "$expected" = none ] && [ -s "$fixtures/calls" ]; then
+    echo "FAIL  none, but the GitHub API was called: $description"
+    failures=$((failures + 1))
+  else
+    echo "ok    $expected  $description"
+  fi
+}
+
+# Verified: same tree, and the PR passed the full tier.
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check verified "same tree + full tier passed"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "CI passed=success" "Vulkan smoke, JIT + NativeAOT (macos-15)=success"
+check verified "same tree + full tier passed twice on the head (re-run)"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "CodeQL=failure@github-advanced-security"
+check verified "same tree + full tier; another app's failed check doesn't count"
+fresh
+pulls "$(pr_json 37 "$OTHER_SHA" "$OTHER_SHA" null)" "$(pr_json 38 "$SQUASH" "$HEAD")"
+commit "$SQUASH" "$TREE"; commit "$HEAD" "$TREE"; check_runs "${FULL_RUNS[@]}"
+check verified "same tree + full tier; an open PR that contains the commit is ignored"
+
+# Smoke delta: same tree, and the PR passed the fast tier.
+fresh; same_tree_pr; check_runs "${FAST_RUNS[@]}"
+check smoke-delta "same tree + fast tier passed"
+fresh; same_tree_pr; check_runs "${FAST_RUNS[@]}" "Vulkan smoke, JIT + NativeAOT (windows-2025)=success"
+check smoke-delta "same tree + fast tier with only one of the full tier's extra OSes"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "Vulkan smoke, JIT + NativeAOT (windows-2025)=failure"
+check smoke-delta "same tree + a full-tier smoke run failed on the head"
+
+# Full: the tree differs.
+fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")"; commit "$SQUASH" "$TREE"; commit "$HEAD" "$OTHER_TREE"
+check_runs "${FULL_RUNS[@]}"
+check full "tree differs from the PR head's tree"
+
+# Full: no single PR merged as this commit.
+fresh; pulls; commit "$SQUASH" "$TREE"
+check full "no PR for the commit"
+fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD" null)"; commit "$SQUASH" "$TREE"; commit "$HEAD" "$TREE"
+check_runs "${FULL_RUNS[@]}"
+check full "PR not merged"
+fresh; pulls "$(pr_json 38 "$OTHER_SHA" "$HEAD")"; commit "$SQUASH" "$TREE"; commit "$HEAD" "$TREE"
+check_runs "${FULL_RUNS[@]}"
+check full "PR merged as a different commit"
+fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD" '"2026-11-25T10:35:02Z"' release)"; commit "$SQUASH" "$TREE"
+commit "$HEAD" "$TREE"; check_runs "${FULL_RUNS[@]}"
+check full "PR merged into another branch"
+fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")" "$(pr_json 39 "$SQUASH" "$HEAD")"; commit "$SQUASH" "$TREE"
+commit "$HEAD" "$TREE"; check_runs "${FULL_RUNS[@]}"
+check full "two PRs claim the merge commit"
+fresh; pulls "$(pr_json 38 "$SQUASH" "$SQUASH")"; commit "$SQUASH" "$TREE"
+check full "PR head is the pushed commit itself"
+
+# Full: the PR's CI didn't prove the tree.
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/CI passed=failure}"
+check full "CI failed (CI passed concluded failure)"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "CI passed=failure"
+check full "CI failed in one of two runs on the head"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/CI passed=null}"
+check full "CI still running (no conclusion)"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/Select CI tier=success}"
+check full "no CI passed check run"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/CI passed=success@some-other-app}"
+check full "CI passed from an app other than GitHub Actions"
+fresh; same_tree_pr; check_runs "CI passed=success" "Select CI tier=success" "Vulkan smoke, JIT + NativeAOT (\${{ matrix.os }})=skipped"
+check full "docs-tier PR (nothing built or smoke-tested)"
+fresh; same_tree_pr
+check_runs "${FAST_RUNS[@]/Vulkan smoke, JIT + NativeAOT (ubuntu-24.04)=success/Vulkan smoke, JIT + NativeAOT (ubuntu-24.04)=skipped}" \
+  "Vulkan smoke, JIT + NativeAOT (windows-2025)=success" "Vulkan smoke, JIT + NativeAOT (macos-15)=success"
+check full "fast tier's smoke OS skipped"
+
+# Full: API errors (a missing fixture fails like an HTTP error).
+fresh
+check full "API error listing the PRs"
+fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")"; commit "$HEAD" "$TREE"; check_runs "${FULL_RUNS[@]}"
+check full "API error reading the pushed commit"
+fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")"; commit "$SQUASH" "$TREE"; check_runs "${FULL_RUNS[@]}"
+check full "API error reading the PR head commit"
+fresh; same_tree_pr
+check full "API error listing the check runs"
+
+# Full: malformed JSON.
+fresh; printf '[{"number":38,' | fixture "repos/$REPO_NAME/commits/$SQUASH/pulls"
+check full "malformed JSON: truncated PR list"
+fresh; printf '{"message":"Bad credentials"}' | fixture "repos/$REPO_NAME/commits/$SQUASH/pulls"
+check full "malformed JSON: an error object instead of the PR list"
+fresh; same_tree_pr; printf '{"sha":"%s","commit":{"tree":{}}}' "$HEAD" | fixture "repos/$REPO_NAME/commits/$HEAD"
+check_runs "${FULL_RUNS[@]}"
+check full "malformed JSON: commit without a tree SHA"
+fresh; same_tree_pr; printf '{"total_count":1,"check_runs":' | fixture "repos/$REPO_NAME/commits/$HEAD/check-runs?per_page=100"
+check full "malformed JSON: truncated check runs"
+fresh; same_tree_pr; printf '{"total_count":0}' | fixture "repos/$REPO_NAME/commits/$HEAD/check-runs?per_page=100"
+check full "malformed JSON: check runs without a list"
+
+# Full: bad inputs.
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check full "push to a branch other than main" push refs/heads/feat/x
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check full "pushed SHA is abbreviated" push refs/heads/main f2a8d86
+
+# Not applied: other events keep their own tiers and never call the API.
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check none "pull_request event" pull_request refs/pull/38/merge
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check none "schedule event (nightly)" schedule
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check none "workflow_dispatch event (manual run)" workflow_dispatch
+
+if [ "$failures" -ne 0 ]; then
+  echo "$failures merge check(s) failed."
+  exit 1
+fi
+echo "All merge checks passed."
