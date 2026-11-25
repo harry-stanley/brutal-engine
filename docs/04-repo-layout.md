@@ -5,7 +5,7 @@ The repository is a single monorepo for engine libraries, tools, tests, samples 
 ```
 brutal-engine/
 ├── BrutalEngine.slnx                 # solution (XML .slnx format)
-├── global.json                       # pins the .NET 10 SDK and selects the Microsoft.Testing.Platform test runner
+├── global.json                       # pins the .NET 11 SDK and selects the Microsoft.Testing.Platform test runner
 ├── Directory.Build.props             # shared MSBuild settings (see below)
 ├── Directory.Build.targets
 ├── Directory.Packages.props          # central package versions (all Ahwoo.Brutal.* pinned here)
@@ -87,14 +87,14 @@ Four layers of `Directory.Build.props`: the root file, plus one each for `src/`,
 
 | File | Applies to | Sets |
 |------|------------|------|
-| `Directory.Build.props` | everything | `net10.0`, latest C#, nullable, explicit usings, unsafe allowed, **warnings as errors**, `AnalysisLevel=latest-recommended`, code style enforced in build, deterministic/CI builds, locked restores (`packages.lock.json`, locked mode on CI), NuGet audit of all (incl. transitive) packages, authors/copyright/repository, `IsPackable=false` |
+| `Directory.Build.props` | everything | `net11.0`, latest C#, nullable, explicit usings, unsafe allowed, **warnings as errors**, `AnalysisLevel=latest-recommended`, code style enforced in build, deterministic/CI builds, locked restores (`packages.lock.json`, locked mode on CI), NuGet audit of all (incl. transitive) packages, authors/copyright/repository, `IsPackable=false` |
 | `src/Directory.Build.props` | shipped libraries | `IsPackable`, `IsAotCompatible`, XML docs, package ID = root namespace = project name, MIT licence expression, README + `NOTICE.txt` packed, SourceLink + `.snupkg` symbols, package validation, MinVer versioning (`v` tag prefix, 0.2 minimum), public API tracking (`PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`), `InternalsVisibleTo` for the matching test project only, and `RuntimeIdentifiers` for every supported RID, so an app published for a RID can restore the modules it references in locked mode |
 | `tests/Directory.Build.props` | test projects | xUnit v3 on Microsoft.Testing.Platform v2 (executable test apps), CsCheck, code coverage and TRX report extensions, not packable |
 | `samples/Directory.Build.props` | samples | `OutputType=Exe`, not packable, XML docs generated so IDE0005 runs in the build (every sample type is internal, so no public API is tracked) |
 
 `Directory.Packages.props` pins every package version centrally, with transitive pinning on. Runtime identifiers are set only by executables (samples, games, AOT smoke tests), not by libraries.
 
-**Roslyn components** (`src/*.Analyzers`, `src/*.Generators`) target `netstandard2.0` and reference `Microsoft.CodeAnalysis.CSharp` 5.0.0, the compiler version in every .NET 10 SDK. `src/Directory.Build.props` recognises them by name: they aren't AOT-compiled, aren't packed yet, and have no tracked public API. Every other `src/` project gets `BrutalEngine.Analyzers` as a build-time analyzer (no runtime or package dependency).
+**Roslyn components** (`src/*.Analyzers`, `src/*.Generators`) target `netstandard2.0` and reference `Microsoft.CodeAnalysis.CSharp` 5.0.0, so they load in any compiler from that version on (every .NET 10 SDK, and the pinned .NET 11 SDK's 5.12). `src/Directory.Build.props` recognises them by name: they aren't AOT-compiled, aren't packed yet, and have no tracked public API. Every other `src/` project gets `BrutalEngine.Analyzers` as a build-time analyzer (no runtime or package dependency).
 
 ## Large binary assets
 

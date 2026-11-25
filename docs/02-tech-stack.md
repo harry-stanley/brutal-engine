@@ -8,12 +8,12 @@ Versions marked *(verified)* were checked against the published NuGet packages o
 
 | Item | Choice | Why |
 |------|--------|-----|
-| Runtime | .NET 10 LTS (`net10.0`) | Same as BRUTAL. Supported until November 2028. [ADR-0001](adr/0001-dotnet-10-lts.md) |
-| SDK | .NET 10 SDK, pinned in `global.json` (`10.0.404`, `rollForward: latestPatch`). Dependabot proposes SDK bumps | Reproducible builds: CI and contributors use the same feature band, and only patch (servicing) updates roll forward automatically. A missing SDK gives a clear error instead of a silent drift |
-| Language | C# 14 (the .NET 10 default) | `unsafe`, function pointers, `ref struct`, generic math and `field` keyword all available |
+| Runtime | .NET 11 (`net11.0`) | Supported until 2028-11-14, the same day as .NET 10 LTS. BRUTAL's `net10.0` packages run on it. [ADR-0014](adr/0014-dotnet-11.md), superseding [ADR-0001](adr/0001-dotnet-10-lts.md) |
+| SDK | .NET 11 SDK, pinned in `global.json` (`11.0.100`, `rollForward: latestPatch`). Dependabot proposes SDK bumps | Reproducible builds: CI and contributors use the same feature band, and only patch (servicing) updates roll forward automatically. A missing SDK gives a clear error instead of a silent drift |
+| Language | C# 15 (the .NET 11 default) | `unsafe`, function pointers, `ref struct`, generic math and `field` keyword all available |
 | Release publishing | NativeAOT, trimmed | Fast startup, no JIT, single native executable. JIT for development. [ADR-0007](adr/0007-nativeaot-release.md) |
 
-Development machines need the .NET 10 SDK in the pinned `10.0.4xx` feature band (10.0.404 or a later patch) and the Vulkan SDK for validation layers (1.4.363 installed on the maintainer's machine).
+Development machines need the .NET 11 SDK in the pinned `11.0.1xx` feature band (11.0.100 or a later patch) and the Vulkan SDK for validation layers (1.4.363 installed on the maintainer's machine).
 
 ## BRUTAL packages used
 
@@ -22,7 +22,7 @@ All BRUTAL packages are published as `Ahwoo.Brutal.*` with CalVer versions (2026
 | Package | Used for | Natives *(verified)* |
 |---------|----------|----------------------|
 | `Ahwoo.Brutal.Core`, `.Interop`, `.Memory`, `.Collections`, `.Strings` | Foundations: pointers, native handles, allocators, non-allocating collections and strings | managed only |
-| `Ahwoo.Brutal.Numerics`, `.Maths` | Vector and matrix types, SIMD maths | managed only |
+| `Ahwoo.Brutal.Numerics`, `.Maths` | SIMD maths inside a module. Not in public signatures: public maths types (`Vector2`, `Matrix3x2` and so on) come from the BCL's `System.Numerics` ([ADR-0014](adr/0014-dotnet-11.md)) | managed only |
 | `Ahwoo.Brutal.Concurrency` | Job scheduler for parallel systems | managed only |
 | `Ahwoo.Brutal.Logging` | Bridged into the engine logger by the backends (M1) | managed only |
 | `Ahwoo.Brutal.Localization` | String tables, `LString` formatting | managed only |
@@ -92,7 +92,7 @@ The ECS / world model (pending [ADR-0006](adr/0006-world-model.md)), the render 
 
 | Option | Rejected because |
 |--------|------------------|
-| .NET 11 (STS) | Shorter support window, and BRUTAL targets .NET 10. Revisit when .NET 12 LTS ships |
+| Staying on .NET 10 (LTS) | The target until [ADR-0014](adr/0014-dotnet-11.md) ([ADR-0001](adr/0001-dotnet-10-lts.md)). Its support ends on the same day as .NET 11's (2028-11-14), so staying gains no support time. Revisit the target when .NET 12 LTS ships |
 | GLFW | Weaker gamepad, haptics and IME support, and no audio. SDL3 covers windowing, input and audio with one dependency |
 | OpenGL backend | Deprecated on macOS, and a second legacy backend would split testing effort |
 | SDL_GPU as the only backend | Simpler, but it hides control we need (explicit memory and synchronisation, timestamp queries). It is still a candidate *additional* backend behind our interface, since BRUTAL's SDL3 bindings expose it (`SDL_CreateGPUDevice`) and it reaches Metal and D3D12 natively |
