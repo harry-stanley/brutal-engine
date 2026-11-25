@@ -10,7 +10,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ### Added
 
-- `BrutalEngine.Graphics`, the render interface package, with its first typed GPU handles: `BufferHandle`, `TextureHandle`, `TextureViewHandle`, `SamplerHandle`, `ShaderModuleHandle` and `SwapchainHandle`. Each is a non-owning value over a generational Core `Handle`; `default` is the null handle, and a handle of one kind never converts to another ([render interface design](docs/design/graphics.md#1-object-model-handles-ownership-and-destruction)).
+- `BrutalEngine.Graphics`, the render interface package, with a typed GPU handle per object kind: `BufferHandle`, `TextureHandle`, `TextureViewHandle`, `SamplerHandle`, `ShaderModuleHandle`, `SwapchainHandle`, `BindGroupLayoutHandle`, `PipelineLayoutHandle`, `BindGroupHandle`, `GraphicsPipelineHandle`, `ComputePipelineHandle`, and `DebugLabel` for interned pass and debug group names. Each is a non-owning value over a generational Core `Handle`; `default` is the null handle, and a handle of one kind never converts to another ([render interface design](docs/design/graphics.md#1-object-model-handles-ownership-and-destruction)).
 
 ### Breaking
 

@@ -1,8 +1,32 @@
 #nullable enable
+BrutalEngine.Graphics.BindGroupHandle
+BrutalEngine.Graphics.BindGroupHandle.BindGroupHandle() -> void
+BrutalEngine.Graphics.BindGroupHandle.Equals(BrutalEngine.Graphics.BindGroupHandle other) -> bool
+BrutalEngine.Graphics.BindGroupHandle.IsNull.get -> bool
+BrutalEngine.Graphics.BindGroupLayoutHandle
+BrutalEngine.Graphics.BindGroupLayoutHandle.BindGroupLayoutHandle() -> void
+BrutalEngine.Graphics.BindGroupLayoutHandle.Equals(BrutalEngine.Graphics.BindGroupLayoutHandle other) -> bool
+BrutalEngine.Graphics.BindGroupLayoutHandle.IsNull.get -> bool
 BrutalEngine.Graphics.BufferHandle
 BrutalEngine.Graphics.BufferHandle.BufferHandle() -> void
 BrutalEngine.Graphics.BufferHandle.Equals(BrutalEngine.Graphics.BufferHandle other) -> bool
 BrutalEngine.Graphics.BufferHandle.IsNull.get -> bool
+BrutalEngine.Graphics.ComputePipelineHandle
+BrutalEngine.Graphics.ComputePipelineHandle.ComputePipelineHandle() -> void
+BrutalEngine.Graphics.ComputePipelineHandle.Equals(BrutalEngine.Graphics.ComputePipelineHandle other) -> bool
+BrutalEngine.Graphics.ComputePipelineHandle.IsNull.get -> bool
+BrutalEngine.Graphics.DebugLabel
+BrutalEngine.Graphics.DebugLabel.DebugLabel() -> void
+BrutalEngine.Graphics.DebugLabel.Equals(BrutalEngine.Graphics.DebugLabel other) -> bool
+BrutalEngine.Graphics.DebugLabel.IsNull.get -> bool
+BrutalEngine.Graphics.GraphicsPipelineHandle
+BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
+BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
+BrutalEngine.Graphics.GraphicsPipelineHandle.IsNull.get -> bool
+BrutalEngine.Graphics.PipelineLayoutHandle
+BrutalEngine.Graphics.PipelineLayoutHandle.Equals(BrutalEngine.Graphics.PipelineLayoutHandle other) -> bool
+BrutalEngine.Graphics.PipelineLayoutHandle.IsNull.get -> bool
+BrutalEngine.Graphics.PipelineLayoutHandle.PipelineLayoutHandle() -> void
 BrutalEngine.Graphics.SamplerHandle
 BrutalEngine.Graphics.SamplerHandle.Equals(BrutalEngine.Graphics.SamplerHandle other) -> bool
 BrutalEngine.Graphics.SamplerHandle.IsNull.get -> bool
@@ -23,9 +47,27 @@ BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.TextureViewHandle.Equals(BrutalEngine.Graphics.TextureViewHandle other) -> bool
 BrutalEngine.Graphics.TextureViewHandle.IsNull.get -> bool
 BrutalEngine.Graphics.TextureViewHandle.TextureViewHandle() -> void
+override BrutalEngine.Graphics.BindGroupHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.BindGroupHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.BindGroupHandle.ToString() -> string!
+override BrutalEngine.Graphics.BindGroupLayoutHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.BindGroupLayoutHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.BindGroupLayoutHandle.ToString() -> string!
 override BrutalEngine.Graphics.BufferHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BufferHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BufferHandle.ToString() -> string!
+override BrutalEngine.Graphics.ComputePipelineHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.ComputePipelineHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.ComputePipelineHandle.ToString() -> string!
+override BrutalEngine.Graphics.DebugLabel.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.DebugLabel.GetHashCode() -> int
+override BrutalEngine.Graphics.DebugLabel.ToString() -> string!
+override BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.GraphicsPipelineHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.GraphicsPipelineHandle.ToString() -> string!
+override BrutalEngine.Graphics.PipelineLayoutHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.PipelineLayoutHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.PipelineLayoutHandle.ToString() -> string!
 override BrutalEngine.Graphics.SamplerHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.SamplerHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.SamplerHandle.ToString() -> string!
@@ -41,8 +83,20 @@ override BrutalEngine.Graphics.TextureHandle.ToString() -> string!
 override BrutalEngine.Graphics.TextureViewHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.TextureViewHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureViewHandle.ToString() -> string!
+static BrutalEngine.Graphics.BindGroupHandle.operator !=(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
+static BrutalEngine.Graphics.BindGroupHandle.operator ==(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
+static BrutalEngine.Graphics.BindGroupLayoutHandle.operator !=(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
+static BrutalEngine.Graphics.BindGroupLayoutHandle.operator ==(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
 static BrutalEngine.Graphics.BufferHandle.operator !=(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
 static BrutalEngine.Graphics.BufferHandle.operator ==(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
+static BrutalEngine.Graphics.ComputePipelineHandle.operator !=(BrutalEngine.Graphics.ComputePipelineHandle left, BrutalEngine.Graphics.ComputePipelineHandle right) -> bool
+static BrutalEngine.Graphics.ComputePipelineHandle.operator ==(BrutalEngine.Graphics.ComputePipelineHandle left, BrutalEngine.Graphics.ComputePipelineHandle right) -> bool
+static BrutalEngine.Graphics.DebugLabel.operator !=(BrutalEngine.Graphics.DebugLabel left, BrutalEngine.Graphics.DebugLabel right) -> bool
+static BrutalEngine.Graphics.DebugLabel.operator ==(BrutalEngine.Graphics.DebugLabel left, BrutalEngine.Graphics.DebugLabel right) -> bool
+static BrutalEngine.Graphics.GraphicsPipelineHandle.operator !=(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
+static BrutalEngine.Graphics.GraphicsPipelineHandle.operator ==(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
+static BrutalEngine.Graphics.PipelineLayoutHandle.operator !=(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
+static BrutalEngine.Graphics.PipelineLayoutHandle.operator ==(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
 static BrutalEngine.Graphics.SamplerHandle.operator !=(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
 static BrutalEngine.Graphics.SamplerHandle.operator ==(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
 static BrutalEngine.Graphics.ShaderModuleHandle.operator !=(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
