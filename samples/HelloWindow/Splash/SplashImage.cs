@@ -14,6 +14,10 @@ namespace HelloWindow.Splash;
 /// and waits on a fence. The staging buffer, command pool and fence are destroyed before it returns. Its final barrier
 /// makes the upload visible to every later transfer read on the queue, so frames need no extra synchronisation.
 /// </para>
+/// <para>
+/// Every pointer passed to Vulkan (the barrier, region and submit structures) points at a local that outlives the call
+/// it is passed to, and Vulkan doesn't keep it.
+/// </para>
 /// <para>Dispose only when the device is idle. Single-threaded, like the rest of the sample.</para>
 /// </remarks>
 internal sealed unsafe class SplashImage : IDisposable
