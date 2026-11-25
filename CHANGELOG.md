@@ -22,5 +22,6 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - CI runs HelloWindow with validation on Linux, Windows and macOS (JIT and NativeAOT, with negative tests) and uploads the NativeAOT build per platform. Any change under `samples/` gets the full CI tier.
 - `BrutalEngine.Core.Logging.Sinks.ConsoleLogSink`: writes each log entry as one UTF-8 line (`2026-11-25T03:04:05.678Z INFO [Category] message`) to standard output, or to standard error from a configurable level (default `Warning`), flushing on errors. Streams can be injected, and steady-state writes allocate nothing.
 - `BrutalEngine.Core.Logging.Sinks.MemoryLogSink`: keeps the most recent log entries in fixed, preallocated memory (by entry count and message bytes), overwriting the oldest and counting drops. `CopyTo` copies them into caller buffers, for crash reports and the debug overlay, without allocating.
+- `BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink`: writes log lines to `engine.log` in a directory the host provides. Each run starts a fresh file, files rotate by size (default 10 MiB), at most `MaxFiles` are kept (default 5), and entries at or above `FlushLevel` (default `Warning`) are flushed as soon as they're written. It's thread-safe.
 
 [Unreleased]: https://github.com/harry-stanley/brutal-engine/commits/main

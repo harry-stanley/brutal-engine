@@ -158,6 +158,27 @@ BrutalEngine.Core.Logging.Sinks.MemoryLogSink.DroppedCount.get -> long
 BrutalEngine.Core.Logging.Sinks.MemoryLogSink.Flush() -> void
 BrutalEngine.Core.Logging.Sinks.MemoryLogSink.MemoryLogSink(int capacityEntries, int capacityBytes) -> void
 BrutalEngine.Core.Logging.Sinks.MemoryLogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Dispose() -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Flush() -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.RotatingFileLogSink(BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions! options) -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.<Clone>$() -> BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions!
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.Directory.get -> string!
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.Directory.init -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.Equals(BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions? other) -> bool
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.FileName.get -> string!
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.FileName.init -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.FlushLevel.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.FlushLevel.init -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.IncludeCallerInfo.get -> bool
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.IncludeCallerInfo.init -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.MaxFileBytes.get -> long
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.MaxFileBytes.init -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.MaxFiles.get -> int
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.MaxFiles.init -> void
+BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.RotatingFileLogSinkOptions() -> void
 BrutalEngine.Core.Logging.TraceLevel
 BrutalEngine.Core.Logging.TraceLevel.TraceLevel() -> void
 BrutalEngine.Core.Logging.WarningLevel
@@ -242,6 +263,9 @@ override BrutalEngine.Core.Logging.LoggerOptions.ToString() -> string!
 override BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Equals(object? obj) -> bool
 override BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.GetHashCode() -> int
 override BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.ToString() -> string!
+override BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.Equals(object? obj) -> bool
+override BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.GetHashCode() -> int
+override BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.ToString() -> string!
 override BrutalEngine.Core.Result.ToString() -> string!
 override BrutalEngine.Core.Result<T>.ToString() -> string!
 static BrutalEngine.Core.EngineError.Native(int nativeCode, string! message) -> BrutalEngine.Core.EngineError
@@ -262,6 +286,8 @@ static BrutalEngine.Core.Logging.LoggerOptions.operator !=(BrutalEngine.Core.Log
 static BrutalEngine.Core.Logging.LoggerOptions.operator ==(BrutalEngine.Core.Logging.LoggerOptions? left, BrutalEngine.Core.Logging.LoggerOptions? right) -> bool
 static BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.operator !=(BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? left, BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? right) -> bool
 static BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.operator ==(BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? left, BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions? right) -> bool
+static BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.operator !=(BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions? left, BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions? right) -> bool
+static BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions.operator ==(BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions? left, BrutalEngine.Core.Logging.Sinks.RotatingFileLogSinkOptions? right) -> bool
 static BrutalEngine.Core.Logging.TraceLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Logging.WarningLevel.Level.get -> BrutalEngine.Core.Logging.LogLevel
 static BrutalEngine.Core.Result.Failure(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
