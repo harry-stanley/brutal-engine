@@ -13,7 +13,7 @@ namespace BrutalEngine.Core.Memory;
 /// <para>Stateless and thread-safe. Allocation never allocates managed memory.</para>
 /// <para>
 /// <see cref="Free"/> must only receive pointers from this allocator. Passing anything else is undefined
-/// behaviour, as with C's <c>free</c>. Wrap the heap in a tracking allocator to detect such
+/// behaviour, as with C's <c>free</c>. Wrap the heap in a <see cref="TrackingAllocator"/> to detect such
 /// mistakes and leaks.
 /// </para>
 /// </remarks>
