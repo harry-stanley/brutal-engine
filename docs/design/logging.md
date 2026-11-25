@@ -95,6 +95,31 @@ The recent log tail, kept in memory for crash reports ([Architecture 3.5](../03-
 - **Threading:** `Write`, `CopyTo` and `DroppedCount` take the sink's lock, so a copy never sees a half-written entry, and the sink can be shared by several loggers. `Flush` does nothing. The sink holds no unmanaged resources and isn't disposable.
 - **Memory:** `Write`, `CopyTo` and `DroppedCount` allocate nothing. Category and caller-file strings are kept by reference: a logger passes the category's own name and a compile-time literal.
 
+### `RotatingFileLogSink`
+
+The persistent log: lines in the shared format, in files in a directory the host provides.
+
+| Option (`RotatingFileLogSinkOptions`) | Default | Meaning |
+|------|---------|---------|
+| `Directory` | required | Fully qualified path (otherwise `ArgumentException`). Created if missing. |
+| `FileName` | `engine.log` | A bare file name: no directory part, not `.` or `..`, no invalid characters. |
+| `MaxFileBytes` | 10 MiB | At least 64 KiB. Rotate before a line would take a non-empty file past it. |
+| `MaxFiles` | 5 | 1 to 100, counting the current file, so `MaxFiles - 1` archives. |
+| `FlushLevel` | `Warning` | Entries at or above it are flushed as soon as they're written. `None` flushes only on `Flush()`/`Dispose()`. |
+| `IncludeCallerInfo` | `false` | Appends ` (file:line)`. |
+
+Invalid options throw (`ArgumentNullException`, `ArgumentException` or `ArgumentOutOfRangeException`) before the sink touches the disk.
+
+- **No VFS, by maintainer decision:** the sink takes an absolute directory and uses `System.IO` directly. Logging must work before the VFS exists (M1 Platform) and while the engine is crashing. In M1 the host gets the directory from the platform's user paths.
+- **Files:** the current file is `engine.log`; archives are `engine.1.log` (the newest) to `engine.<MaxFiles - 1>.log`. A name without an extension gets `game.1`, `game.2` and so on.
+- **Startup rotation:** construction rotates an existing `engine.log` away, so each run starts a fresh file. It also deletes archives numbered from `MaxFiles` up to 100, left by an earlier run with a larger `MaxFiles`. Other files in the directory are never touched.
+- **Size rotation:** when a line would take a non-empty file past `MaxFileBytes`, the sink closes the file, shifts each `engine.<n>.log` to `n + 1` (oldest first), deletes the archive now beyond `MaxFiles - 1`, renames `engine.log` to `engine.1.log` (or deletes it when `MaxFiles` is 1) and opens a new `engine.log`. The file is closed before any rename, because Windows can't rename a file another handle holds open without `FileShare.Delete`.
+- **Oversized lines:** a line longer than `MaxFileBytes` is written whole, alone in a fresh file. An empty file takes any line, so the sink never creates an empty archive.
+- **Writing:** one buffered `FileStream` (16 KiB buffer), opened with `FileShare.Read` so the log can be tailed. It's flushed after each entry at or above `FlushLevel`, and on `Flush()` and `Dispose()`. A flush is `FileStream.Flush()`, to the operating system, never `Flush(true)` (fsync): flushed lines survive a process crash but not a power loss. An fsync on every warning would cost too much.
+- **Failures, interim:** I/O exceptions (`IOException`, `UnauthorizedAccessException`) propagate from the constructor, `Write`, `Flush` and `Dispose`, as the console sink's do. A logger isolates the ones from `Write` and `Flush` and counts them in `SinkFailureCount`. A failed rotation leaves no file open, and the next `Write` retries it. This is replaced in #23: any I/O failure will put the sink into a permanent faulted state (`Fault`, `DroppedCount`), and only misuse will throw.
+- **Threading and lifecycle:** every member takes the sink's lock, so lines never interleave and rotation never races a write. The sink can be shared by several loggers. After `Dispose`, `Write` and `Flush` throw `ObjectDisposedException`, and a second `Dispose` does nothing.
+- **Memory:** writes that don't rotate allocate nothing, apart from the line buffer (8 KiB to start) growing for a line longer than any before. Rotation allocates file names and a new stream, once per `MaxFileBytes` written, so it isn't steady state.
+
 ## Memory and threading
 
 - Every `Logger` member is thread-safe. Dispatch, category creation, `SetLevel`, `Flush` and `Dispose` are serialised with a `System.Threading.Lock`. Level checks are lock-free reads of a volatile field.
@@ -124,3 +149,4 @@ The recent log tail, kept in memory for crash reports ([Architecture 3.5](../03-
 - Mutation-checked: inverting the level comparison, or cutting truncated messages at a raw byte instead of a code-point boundary, fails the suite.
 - Sinks: the line format is pinned byte for byte (every level token, UTC conversion, millisecond truncation, the caller suffix and its omission, lone surrogates), plus a CsCheck property that random categories and caller files fit `GetMaxLength` and give valid UTF-8. The console sink's routing, flushing, ownership and lifecycle are tested on recording streams; 8 threads writing 500 lines each produce only whole lines, with no overlapping `Write` calls; and steady-state console writes allocate 0 bytes, also under Windows dynamic coverage. Mutation-checked: swapping the routing comparison, or dropping the Error flush, fails the suite.
 - Memory sink: overwriting by entry count and by bytes (with the ring wrapping), drop counting, truncation checked on the raw bytes for 2-, 3- and 4-byte code points, and `CopyTo` with buffers too small (newest without gaps) and with every field kept. A CsCheck property runs random writes and small copies against a `List`-based reference model, with its own rune-by-rune truncation. 8 writers and a concurrent reader find only whole entries, each writer's entries stay in order, and kept plus dropped equals written. Writes and copies that overwrite, truncate and wrap allocate 0 bytes, also under Windows dynamic coverage. Mutation-checked: an off-by-one in the ring wrap or the tail slot, cutting at a raw byte, or not counting drops, fails the suite.
+- Rotating file sink: each test uses its own temp directory, and no test holds a handle across a rotation. The tests cover startup rotation (including `MaxFiles = 1`, stale archives and names without an extension), size rotation at the exact boundary, retention, oversized lines, the flush policy (each file is read with `FileShare.ReadWrite` while the sink holds it), `Dispose` releasing the file, and every invalid option. A CsCheck property writes random line lengths, sometimes over the maximum, under random `MaxFiles`, and compares every file with a reference model of the rotation rule. It also checks that the kept files are exactly the newest whole lines. 8 threads writing 500 lines each across several rotations produce only whole lines, all present, with no file over the maximum. An I/O failure is forced on every OS by putting a non-empty directory where the archive must go, so it doesn't depend on permissions that root or an administrator would bypass. Through a logger, the failure is isolated and counted. Mutation-checked: not deleting archives beyond the limit, not resetting the byte counter after rotation, rotating an empty file, an off-by-one flush level, and writing without the lock each fail the suite.
