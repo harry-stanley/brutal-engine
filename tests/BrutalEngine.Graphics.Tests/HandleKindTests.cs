@@ -16,6 +16,11 @@ public sealed class HandleKindTests
     private static readonly HandleKind[] _kinds =
     [
         new HandleKind<BufferHandle>("Buffer", h => new BufferHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<TextureHandle>("Texture", h => new TextureHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<TextureViewHandle>("TextureView", h => new TextureViewHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<SamplerHandle>("Sampler", h => new SamplerHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<ShaderModuleHandle>("ShaderModule", h => new ShaderModuleHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<SwapchainHandle>("Swapchain", h => new SwapchainHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
     ];
 
     // Indexes and generations from a tiny range, so equal handles are common; generation 0 is the null handle.
