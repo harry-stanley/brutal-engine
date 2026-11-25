@@ -250,6 +250,14 @@ BrutalEngine.Core.StaleHandleException.StaleHandleException() -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(BrutalEngine.Core.Handle handle) -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message) -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message, System.Exception! innerException) -> void
+BrutalEngine.Core.WrongThreadException
+BrutalEngine.Core.WrongThreadException.ActualThreadId.get -> int
+BrutalEngine.Core.WrongThreadException.ApiName.get -> string!
+BrutalEngine.Core.WrongThreadException.ExpectedThreadId.get -> int
+BrutalEngine.Core.WrongThreadException.WrongThreadException() -> void
+BrutalEngine.Core.WrongThreadException.WrongThreadException(string! apiName, int expectedThreadId, int actualThreadId) -> void
+BrutalEngine.Core.WrongThreadException.WrongThreadException(string! message) -> void
+BrutalEngine.Core.WrongThreadException.WrongThreadException(string! message, System.Exception! innerException) -> void
 const BrutalEngine.Core.HandleAllocator.MaxSlotLimit = 2147483591 -> int
 override BrutalEngine.Core.EngineError.Equals(object? obj) -> bool
 override BrutalEngine.Core.EngineError.GetHashCode() -> int
