@@ -1,0 +1,83 @@
+name: Set up bundled Vulkan (macOS)
+description: >-
+  Lays out the macOS Vulkan natives a BrutalEngine game bundles (the Khronos loader and MoltenVK) plus the Khronos
+  validation layers for tests, with no Vulkan SDK and no Homebrew Vulkan, using the pins and scripts in
+  natives/macos-vulkan. The loader and layer builds are cached, because the layer build takes 6-13 minutes.
+  Exports VK_DRIVER_FILES (the bundled MoltenVK ICD only), VK_LAYER_PATH (the bundled layers only) and
+  BUNDLED_VULKAN_LOADER. macOS arm64 only, and the repository must be checked out.
+
+outputs:
+  loader:
+    description: Absolute path of the bundled libvulkan.1.dylib. Preload it before BRUTAL resolves the loader.
+    value: ${{ steps.layout.outputs.loader }}
+
+runs:
+  using: composite
+  steps:
+    - name: Reject unsupported runner
+      if: runner.os != 'macOS' || runner.arch != 'ARM64'
+      shell: bash
+      run: |
+        echo "::error::setup-macos-vulkan supports macOS arm64 runners only."
+        exit 1
+
+    - name: Compute the build cache key
+      id: key
+      shell: bash
+      run: |
+        set -euo pipefail
+        natives=$GITHUB_WORKSPACE/natives/macos-vulkan
+        source "$natives/pins.env"
+        script=$(shasum -a 256 "$natives/build-from-source.sh" | cut -c1-16)
+        key="vulkan-macos-arm64-${ImageOS:-unknown}-loader-${LOADER_COMMIT:0:12}-vvl-${VALIDATION_LAYERS_COMMIT:0:12}-$script"
+        echo "Cache key: $key"
+        echo "key=$key" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the loader and validation layer builds
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/vulkan-macos/built
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Build the loader and validation layers (cache miss)
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: >-
+        bash "$GITHUB_WORKSPACE/natives/macos-vulkan/build-from-source.sh" "$GITHUB_WORKSPACE/natives/macos-vulkan/pins.env"
+        "$RUNNER_TEMP/vulkan-macos/src" "$RUNNER_TEMP/vulkan-macos/built"
+
+    # Saved straight away rather than in a post step, so a later failing step doesn't discard a 10-minute build.
+    - name: Save the loader and validation layer builds
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/vulkan-macos/built
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Fetch MoltenVK and lay out the bundle
+      id: layout
+      shell: bash
+      run: |
+        set -euo pipefail
+        natives=$GITHUB_WORKSPACE/natives/macos-vulkan
+        root=$RUNNER_TEMP/vulkan-macos
+        bundle=$root/bundle
+
+        # The layout a game ships: loader, driver and ICD manifest side by side.
+        bash "$natives/fetch-moltenvk.sh" "$natives/pins.env" "$root/moltenvk" "$bundle"
+        cp -L "$root/built/lib/libvulkan.1.dylib" "$bundle/"
+
+        # Nothing installed system-wide takes part: the harness checks which loader BRUTAL used,
+        # VK_DRIVER_FILES limits the drivers to the bundled ICD, and VK_LAYER_PATH limits the layer search.
+        if ls /opt/homebrew/lib/libvulkan* /usr/local/lib/libvulkan* 2>/dev/null; then
+          echo "::notice::This runner has a system Vulkan loader; the bundled one is used instead."
+        fi
+
+        {
+          echo "VK_DRIVER_FILES=$bundle/MoltenVK_icd.json"
+          echo "VK_LAYER_PATH=$root/built/layers"
+          echo "BUNDLED_VULKAN_LOADER=$bundle/libvulkan.1.dylib"
+        } >> "$GITHUB_ENV"
+        echo "loader=$bundle/libvulkan.1.dylib" >> "$GITHUB_OUTPUT"
+        shasum -a 256 "$bundle"/* "$root/built/layers"/*

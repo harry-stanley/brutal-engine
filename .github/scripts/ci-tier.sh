@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Extend this when a module starts touching native code, or the smoke harness starts using a module.
-readonly FULL_TIER_PATHS='^(src/BrutalEngine\.(Platform|Graphics|Audio|Runtime)[^/]*/|tests/BrutalEngine\.Aot\.Smoke/|\.github/(actions|scripts)/|\.github/workflows/ci\.yml$|global\.json$|[Nn]u[Gg]et\.config$|(.*/)?Directory\.(Build|Packages)\.(props|targets)$)'
+readonly FULL_TIER_PATHS='^(src/BrutalEngine\.(Platform|Graphics|Audio|Runtime)[^/]*/|tests/BrutalEngine\.Aot\.Smoke/|natives/|\.github/(actions|scripts)/|\.github/workflows/ci\.yml$|global\.json$|[Nn]u[Gg]et\.config$|(.*/)?Directory\.(Build|Packages)\.(props|targets)$)'
 
 paths=$(cat)
 if [ -z "$paths" ]; then

@@ -66,10 +66,14 @@ jobs:
             tier=$(printf '%s' "$paths" | bash .github/scripts/ci-tier.sh)
           fi
 
-          linux='{"os":"ubuntu-24.04","rid":"linux-x64"}'
-          windows='{"os":"windows-2025","rid":"win-x64"}'
+          # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran);
+          # macOS uses MoltenVK on the runner's paravirtual Metal GPU through the bundled loader, which
+          # BRUTAL can't find by itself (docs/spikes/README.md, S1).
+          linux='{"os":"ubuntu-24.04","rid":"linux-x64","smoke_args":"--require-cpu"}'
+          windows='{"os":"windows-2025","rid":"win-x64","smoke_args":"--require-cpu"}'
+          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk --vulkan-loader \"$BUNDLED_VULKAN_LOADER\""}'
           if [ "$tier" = "full" ]; then
-            matrix="[$linux,$windows]"
+            matrix="[$linux,$windows,$macos]"
           else
             matrix="[$linux]"
           fi
@@ -157,7 +161,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Linux runs in every tier. Windows (and macOS, once added) run in the full tier only.
+  # Linux runs in every tier. Windows and macOS run in the full tier only.
   vulkan-smoke:
     name: Vulkan smoke, JIT + NativeAOT (${{ matrix.os }})
     needs: tier
@@ -178,15 +182,19 @@ jobs:
           cache: true
           cache-dependency-path: "**/packages.lock.json"
       - name: Set up software Vulkan (lavapipe + validation layers)
+        if: runner.os != 'macOS'
         uses: ./.github/actions/setup-software-vulkan
+      - name: Set up bundled Vulkan (loader + MoltenVK + validation layers)
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/setup-macos-vulkan
       - name: Build smoke harness
         run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release
-      - name: Run (JIT, CPU device required)
-        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen --require-cpu
+      - name: Run (JIT)
+        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }}
       - name: Negative test (JIT, injected validation error must exit 2)
         run: |
           set +e
-          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen --require-cpu --inject-validation-error
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }} --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
@@ -196,12 +204,12 @@ jobs:
         run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
       - name: Publish (NativeAOT, ${{ matrix.rid }})
         run: dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
-      - name: Run (NativeAOT, CPU device required)
-        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen --require-cpu
+      - name: Run (NativeAOT)
+        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen ${{ matrix.smoke_args }}
       - name: Negative test (NativeAOT, injected validation error must exit 2)
         run: |
           set +e
-          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen --require-cpu --inject-validation-error
+          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen ${{ matrix.smoke_args }} --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"

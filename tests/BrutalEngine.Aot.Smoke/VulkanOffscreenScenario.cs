@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Brutal;
@@ -14,8 +15,9 @@ namespace BrutalEngine.Aot.Smoke;
 /// (including synchronization validation) enabled throughout.
 /// </summary>
 /// <remarks>
-/// Proven on GitHub runners by spike S3 (docs/spikes/README.md). Fails rather than silently running without
-/// validation when the layer is missing.
+/// Proven on GitHub runners by spikes S1 and S3 (docs/spikes/README.md). Fails rather than silently running without
+/// validation when the layer is missing. Portability drivers such as MoltenVK are opted in to when the loader
+/// supports portability enumeration, and get <c>VK_KHR_portability_subset</c> enabled on the device.
 /// </remarks>
 internal static unsafe class VulkanOffscreenScenario
 {
@@ -28,12 +30,29 @@ internal static unsafe class VulkanOffscreenScenario
     private static ReadOnlySpan<byte> ExpectedPixel => [51, 102, 204, 255];
 
     /// <summary>Runs the scenario.</summary>
-    /// <param name="requireCpu">Accept only a CPU (software) device, to prove CI ran on lavapipe.</param>
-    /// <param name="injectValidationError">Record a wrong image layout on purpose, so validation must report it.</param>
+    /// <param name="options">The command-line options.</param>
     /// <returns>The outcome.</returns>
-    public static ExitCode Run(bool requireCpu, bool injectValidationError)
+    public static ExitCode Run(SmokeOptions options)
     {
         var total = Stopwatch.StartNew();
+
+        // Must happen before the first use of BRUTAL's Vulkan class, which resolves the loader once.
+        if (options.VulkanLoader is not null)
+        {
+            nint preloaded = VulkanLoader.Preload(options.VulkanLoader);
+            if (!VulkanLoader.IsUsedByBrutal(preloaded))
+            {
+                Console.WriteLine($"BRUTAL resolved a different Vulkan loader than {options.VulkanLoader}.");
+                return ExitCode.SetupFailure;
+            }
+
+            Console.WriteLine($"Vulkan loader: {options.VulkanLoader} (preloaded, used by BRUTAL)");
+        }
+
+        int loaderVersion;
+        Vulkan.EnumerateInstanceVersion(&loaderVersion);
+        Console.WriteLine($"Vulkan loader version {FormatVersion(loaderVersion)}");
+
         if (!HasValidationLayer())
         {
             Console.WriteLine($"{ValidationLayer} is not available. Install the Vulkan validation layers.");
@@ -52,11 +71,23 @@ internal static unsafe class VulkanOffscreenScenario
             EnabledValidationFeatures = enables,
         };
 
+        HashSet<string> extensions = [VK.EXT_DEBUG_UTILS_EXTENSION_NAME, "VK_EXT_validation_features"];
+        VkInstanceCreateFlags flags = VkInstanceCreateFlags.None;
+
+        // MoltenVK is a portability driver: the loader lists it only if the instance opts in. Opting in changes
+        // nothing where no portability driver is installed (lavapipe, desktop drivers).
+        if (InstanceExtensions().Contains(VK.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
+        {
+            extensions.Add(VK.KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+            flags |= VkInstanceCreateFlags.EnumeratePortabilityBitKHR;
+        }
+
+        Console.WriteLine($"Instance extensions: {string.Join(", ", extensions)}");
         using Instance instance = Vulkan.CreateInstance(new Instance.CreateInfo
         {
             AppInfo = new VkApplicationInfo { ApiVersion = VK.API_VERSION_1_3 },
-            Flags = VkInstanceCreateFlags.None,
-            EnabledExtensions = [VK.EXT_DEBUG_UTILS_EXTENSION_NAME, "VK_EXT_validation_features"],
+            Flags = flags,
+            EnabledExtensions = extensions,
             EnabledLayers = [ValidationLayer],
             Next = &validationFeatures,
         });
@@ -65,7 +96,7 @@ internal static unsafe class VulkanOffscreenScenario
         ExitCode result;
         try
         {
-            result = RunOnDevice(instance, requireCpu, injectValidationError);
+            result = RunOnDevice(instance, options);
         }
         finally
         {
@@ -104,7 +135,29 @@ internal static unsafe class VulkanOffscreenScenario
         return false;
     }
 
-    private static ExitCode RunOnDevice(Instance instance, bool requireCpu, bool injectValidationError)
+    private static HashSet<string> InstanceExtensions()
+    {
+        // No layer name: the extensions of the loader, the drivers and the implicit layers.
+        var properties = new VkExtensionProperties[Vulkan.EnumerateInstanceExtensionProperties_Count(default)];
+        VkResult result = Vulkan.EnumerateInstanceExtensionProperties_Write(default, properties);
+        if (result != VkResult.Success)
+        {
+            throw new InvalidOperationException($"vkEnumerateInstanceExtensionProperties returned {result}.");
+        }
+
+        HashSet<string> names = [];
+        for (int i = 0; i < properties.Length; i++)
+        {
+            fixed (byte* name = properties[i].ExtensionName)
+            {
+                _ = names.Add(ReadName(name));
+            }
+        }
+
+        return names;
+    }
+
+    private static ExitCode RunOnDevice(Instance instance, SmokeOptions options)
     {
         PhysicalDevice? chosen = null;
         foreach (PhysicalDevice candidate in instance.PhysicalDevices)
@@ -116,16 +169,19 @@ internal static unsafe class VulkanOffscreenScenario
 
             Console.WriteLine(
                 $"Device: {ReadName(properties.DeviceName)} ({properties.DeviceType}), API {FormatVersion(properties.ApiVersion)}, "
-                + $"driver {ReadName(driver.DriverName)} {ReadName(driver.DriverInfo)}");
+                + $"driver {ReadName(driver.DriverName)} ({driver.DriverID}) {ReadName(driver.DriverInfo)}");
 
             bool suitable = properties.ApiVersion >= VK.API_VERSION_1_3
-                && (!requireCpu || properties.DeviceType == VkPhysicalDeviceType.Cpu);
+                && (!options.RequireCpu || properties.DeviceType == VkPhysicalDeviceType.Cpu)
+                && (options.RequireDriver is not { } required || driver.DriverID == required);
             chosen ??= suitable ? candidate : null;
         }
 
         if (chosen is null)
         {
-            Console.WriteLine($"No Vulkan 1.3 device{(requireCpu ? " of type CPU" : string.Empty)} found.");
+            Console.WriteLine(
+                $"No Vulkan 1.3 device{(options.RequireCpu ? " of type CPU" : string.Empty)}"
+                + $"{(options.RequireDriver is { } id ? $" with driver {id}" : string.Empty)} found.");
             return ExitCode.SetupFailure;
         }
 
@@ -145,10 +201,21 @@ internal static unsafe class VulkanOffscreenScenario
             return ExitCode.SetupFailure;
         }
 
+        // A portability driver that exposes VK_KHR_portability_subset requires it to be enabled
+        // (VUID-VkDeviceCreateInfo-pProperties-04451).
+        HashSet<string> deviceExtensions = [];
+        if (chosen.SupportsExtension(VK.KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
+        {
+            _ = deviceExtensions.Add(VK.KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        }
+
+        Console.WriteLine($"Device extensions: {(deviceExtensions.Count == 0 ? "(none)" : string.Join(", ", deviceExtensions))}");
+
         float priority = 1.0f;
         VkPhysicalDeviceVulkan13Features enabled = new() { DynamicRendering = true, Synchronization2 = true };
         using Device device = chosen.CreateDevice(new Device.CreateInfo
         {
+            Extensions = deviceExtensions,
             QueueCreateInfos =
             [
                 new VkDeviceQueueCreateInfo { QueueFamilyIndex = queueFamily, QueueCount = 1, QueuePriorities = &priority },
@@ -158,7 +225,7 @@ internal static unsafe class VulkanOffscreenScenario
 
         try
         {
-            return ClearAndReadBack(device, chosen, queueFamily, injectValidationError);
+            return ClearAndReadBack(device, chosen, queueFamily, options.InjectValidationError);
         }
         finally
         {
