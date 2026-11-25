@@ -6,7 +6,7 @@ The platform layer is everything the engine needs from the operating system: win
 
 This note is the API sketch for M1's Platform issues. Signatures are the contract; XML docs, `PublicAPI.Unshipped.txt` entries, argument validation and tests follow the usual rules ([Coding standards](../07-coding-standards.md#public-api-design)). Where a member says "main thread", calling it from any other thread throws `WrongThreadException` (see [threading](#9-threading)).
 
-BRUTAL citations are paths in the BRUTAL repository, re-checked against the sources pinned with `Ahwoo.Brutal.Sdl` 2026.10.3. Behaviour marked **observed** was seen on Windows 11 with the RTX 2070 SUPER (SDL 3.4, a scratch probe run for this note) or in CI run 45599521930 (the #41 `vulkan-smoke` logs).
+BRUTAL citations are paths in the BRUTAL repository, re-checked against the sources pinned with `Ahwoo.Brutal.Sdl` 2026.10.3. Behaviour marked **observed** was seen on Windows 11 with the RTX 2070 SUPER (SDL 3.4, a scratch probe run for this note) or in CI run 45599521930 (the #41 `vulkan-smoke` logs). Other statements about SDL's behaviour come from SDL 3's documentation and haven't been run for this note; the issue that implements each part verifies them.
 
 ## 1. Platform, windows and sizes
 
@@ -43,7 +43,7 @@ public interface IPlatform : IDisposable
 - **Created by a backend, owned by the host.** `SdlPlatform.Create` ([section 11](#11-what-platformsdl3-exposes)) returns it; the host (Runtime, a sample or a test) disposes it after every window and after the graphics device. There is no global instance.
 - **One per process.** SDL's video subsystem and hints are process-wide, so a second live `SdlPlatform` is misuse (`InvalidOperationException`). The backend counts live instances in a `static int`, which the static-state rule allows (primitive).
 - **Thread-safety:** main thread only, except `BackendName`, `VideoDriver`, `Headless`, `Clock` and `BaseDirectory` (immutable, any thread).
-- **Allocation:** `PumpEvents`, `Events`, `WaitForEvents`, `Displays` and every `IWindow` getter allocate nothing. `CreateWindow`, clipboard, cursor creation (first use of each shape), display changes, message boxes and failures (the error message) allocate.
+- **Allocation:** in steady state, `PumpEvents`, `Events`, `WaitForEvents`, `Displays` and every `IWindow` getter allocate nothing (a pumped display event rebuilds `Displays`, which allocates). `CreateWindow`, clipboard, cursor creation (first use of each shape), display changes, message boxes and failures (the error message) allocate.
 - **Dispose** destroys any window the host forgot (logging a warning for each), then quits SDL. A second `Dispose` does nothing; every other member then throws `ObjectDisposedException`.
 
 ### Windows: an object, not a handle
@@ -95,7 +95,7 @@ public sealed record WindowOptions
 
 **Why an object.** A window owns a native resource with a strict destruction order (its graphics surface first, then the window, then the platform), and there are only a handful per process. [Architecture 3.3](../03-architecture.md#33-memory) gives owners `IDisposable` and keeps handles for non-owning references to many pooled objects; a window is the former. An interface also lets a window carry capabilities (`VulkanSurface`) without a lookup table. Events refer to windows by `WindowId`, a plain value, so the event struct stays unmanaged and allocation-free.
 
-- `CreateWindow` returns a failed `Result` for expected failures: the OS or driver refused (`ErrorKind.Native` with SDL's message), or the requested surface can't work in this mode (`ErrorKind.Unsupported`, [section 3](#3-headless-mode)). Invalid options (`null`, sizes out of range, `ExclusiveFullscreen`, an unknown display) throw `ArgumentException`.
+- `CreateWindow` returns a failed `Result` for expected failures: the OS or driver refused (`ErrorKind.Native` with SDL's message), or the requested surface can't work in this mode (`ErrorKind.Unsupported`, [section 3](#3-headless-mode)). Invalid options (`null`, sizes out of range, `ExclusiveFullscreen`) throw `ArgumentException`. A `Display` that doesn't exist fails with `ErrorKind.NotFound`: displays can be unplugged between enumeration and the call.
 - **Getters are snapshots** taken at creation and updated only by `PumpEvents`, so they stay consistent for a whole frame and cost no native call. Setters ask the OS; the snapshot changes when the resulting event is pumped (SDL applies some changes asynchronously).
 - **Setters** return `Result`: the OS may refuse (fullscreen on the `dummy` driver, relative mouse mode without a mouse). `BE1001` flags a discarded one.
 - Main thread only. After `Dispose`, every member throws `ObjectDisposedException`; a second `Dispose` does nothing.
@@ -281,7 +281,7 @@ public sealed class PlatformEventBuffer   // filled by backends; read through Pl
 - **Overflow policy: defer, never drop.** When the buffer is full, the pump stops dequeuing: the rest stay in SDL's own queue, in order, and arrive at the next pump (`HasDeferredEvents`, `DeferredPumpCount`). Dropping either end loses edges: dropping the newest loses key releases (stuck keys), dropping the oldest loses presses whose releases survive. Deferring only delays them by a frame. The one lossy case is text: SDL 3's text events have no length limit (`SdlTextInputEvent.text` is a `byte*`, `Brutal.Sdl/Generated/Sdl.Structs.gen.cs:348`), so a single event longer than the remaining text space (at least 1 KiB, because the pump stops below `TextReserveBytes`) is cut at a code-point boundary and counted in `TruncatedTextCount`.
 - **Lifetime:** a batch, and the spans and text it hands out, are valid until the next `PumpEvents` or `Dispose` (`WaitForEvents` keeps the event it receives aside and doesn't touch the current batch). Reading one after that is a bug; the `ref struct` keeps a batch from being stored in a field.
 - **Zero allocation:** the event array and text buffer are allocated once at creation; translating, adding and reading allocate nothing. An allocation test pumps 1,000 batches of every kind and asserts 0 bytes ([section 12](#12-testing)).
-- **Waiting:** `WaitForEvents(timeout)` blocks in `SDL_WaitEventTimeout` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9599`) and keeps the event it receives for the next pump, which hands it out first. It returns false on timeout. Hosts use it while every window is minimised, as HelloWindow does (`samples/HelloWindow/HelloWindowApp.cs:142-151`).
+- **Waiting:** `WaitForEvents(timeout)` blocks in `SDL_WaitEventTimeout` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9599`) and translates the event it receives at once, copying its text (if any) into storage of its own, because SDL 3's event text is SDL-owned memory released by later event calls. The next pump hands that event out first; the current batch isn't touched. It returns false on timeout. Hosts use it while every window is minimised, as HelloWindow does (`samples/HelloWindow/HelloWindowApp.cs:142-151`).
 - **Quit:** `QuitRequested` (all windows closed, or the OS asked) and `WindowCloseRequested` are plain events; closing is the host's decision.
 
 ## 3. Headless mode
@@ -328,7 +328,7 @@ public interface IVulkanSurfaceSource
 
 - **Extension names** are what the instance must enable to create surfaces for this window, e.g. `VK_KHR_surface` and `VK_KHR_win32_surface`. They come from `SDL_Vulkan_GetInstanceExtensions` (`Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:9-17`), called through the raw binding once at window creation and copied into storage the window owns: BRUTAL's convenience wrapper allocates a `string[]` per call (`:47-59`). The names are ASCII, valid UTF-8, and the same for every window of one platform, so a graphics backend reads them from its first window before creating its instance. Getters allocate nothing and run on any thread. `index` outside `0..Count-1` throws `ArgumentOutOfRangeException`. The spans stay valid while the window is alive.
 - **`CreateVulkanSurface(instance)`** calls the raw `SDL_Vulkan_CreateSurface` (`Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:19-32`) with no allocation callbacks, not BRUTAL's wrapper, which throws instead of returning a status (`:61-67`). `instance` is the `VkInstance`, which must have been created with every required extension. It returns the `VkSurfaceKHR` as `nint`: a non-dispatchable 64-bit handle fits because every supported RID is 64-bit, and it is what BRUTAL's binding passes (`Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:7`). Expected failure is a `Result`, never an exception: SDL's error text with `ErrorKind.Native`. Misuse throws: `instance == 0` (`ArgumentException`), a disposed window (`ObjectDisposedException`), the wrong thread (`WrongThreadException`).
-- **Ownership.** The caller owns the surface. The graphics backend that created it destroys it with `vkDestroySurfaceKHR` from its own instance (as HelloWindow does, `samples/HelloWindow/VulkanContext.cs:87-90`), after its swapchain and **before the window is disposed** and before the instance is destroyed. The window can't observe `vkDestroySurfaceKHR`, so it can't check this: the order is a documented rule kept by the host's reverse-order shutdown (graphics before platform, [Architecture 3.2](../03-architecture.md#lifecycle)). One live surface per window.
+- **Ownership.** The caller owns the surface. The graphics backend that created it destroys it with `vkDestroySurfaceKHR` from its own instance (as HelloWindow does, `samples/HelloWindow/VulkanContext.cs:87-90`), after its swapchain and **before the window is disposed** and before the instance is destroyed. The window can't observe `vkDestroySurfaceKHR`, so it can't check this: the order is a documented rule kept by the host's reverse-order shutdown (graphics before platform, [Architecture 3.2](../03-architecture.md#lifecycle)). Likewise there is at most one live surface per window, a rule the window can't check for the same reason.
 - **Threads.** `CreateVulkanSurface` is main thread only (window-system calls; on macOS the Metal layer must be made there). The extension getters are any thread.
 - **Lifetime.** Exists exactly as long as its window: `IWindow.VulkanSurface` returns the same object until `Dispose`, after which its members throw `ObjectDisposedException`. It is `null` for a window created with `WindowSurface.None`.
 - **A window that can't present doesn't exist.** A headless window that would need `VK_EXT_headless_surface` without a driver offering it fails at `CreateWindow` with `ErrorKind.Unsupported` ([section 3](#3-headless-mode)), so every `IVulkanSurfaceSource` handed out can at least attempt a surface. Whether a queue family can present to it is Graphics' check.
@@ -436,7 +436,8 @@ Backends:
 
 Threading and allocation:
 
-- `VirtualFileSystem` is thread-safe: asset I/O threads read while the main thread mounts ([Architecture 3.2](../03-architecture.md#threading-model)). Mounts are an immutable array replaced under a lock; operations read it lock-free. `InMemoryFileSystem` is thread-safe (a lock). `DirectoryFileSystem` is thread-safe as far as the OS is: concurrent writers of one path race, and the last rename wins.
+- `VirtualFileSystem` is thread-safe: asset I/O threads read while the main thread mounts ([Architecture 3.2](../03-architecture.md#threading-model)). Mounts are an immutable array replaced under a lock; operations read it lock-free. `InMemoryFileSystem` is thread-safe (a lock). `DirectoryFileSystem` is thread-safe as far as the OS is: concurrent writers of one path race, and the last rename wins. Every `IFileSystem` implementation must be thread-safe, because `VirtualFileSystem` calls it from any thread.
+- `VirtualFileSystem` doesn't own what it mounts: `IFileSystem` isn't disposable, `Unmount` only removes the mount, and whoever created a file system keeps any resources it holds.
 - File I/O is not a hot path, and it allocates: results, byte arrays, streams, entry lists, error messages and `VerifyCase` listings. Nothing here runs in a steady-state frame. Asynchronous reads arrive with the asset database (M2), behind the same paths.
 
 ## 6. Paths
@@ -477,9 +478,11 @@ public enum MessageBoxKind { Information = 0, Warning, Error }
 | Every `IWindow` member, `IVulkanSurfaceSource.CreateVulkanSurface` | main thread only |
 | `IVulkanSurfaceSource` extension getters | any thread |
 | `PlatformEventBatch` | the pumping thread, until the next pump |
+| `PlatformEventBuffer` | not thread-safe: owned by one backend, used on the pumping thread |
 | `VfsPath`, `VirtualFileSystem`, `InMemoryFileSystem`, `DirectoryFileSystem` | thread-safe |
+| Any `IFileSystem` implementation | must be thread-safe |
 
-- **The main thread is the thread that created the platform.** On macOS it must also be the process's main thread when the `cocoa` driver is used: SDL requires it ([Architecture 3.2](../03-architecture.md#threading-model)). `SdlPlatform.Create` checks this with `SDL_IsMainThread` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11978`) when the driver is `cocoa`, and fails with `ErrorKind.Unsupported` instead of letting Cocoa abort the process. P3 verifies on macos-15 that `SDL_IsMainThread` reports the process's main thread there.
+- **The main thread is the thread that created the platform.** On macOS it must also be the process's main thread when the `cocoa` driver is used: SDL requires it ([Architecture 3.2](../03-architecture.md#threading-model)). Cocoa's rule already applies to `SDL_Init`, so on macOS `SdlPlatform.Create` checks **before** it: it works out the driver SDL will use (the `SDL_VIDEO_DRIVER` environment variable if set, otherwise the driver it is about to request, otherwise `cocoa`) and, unless that is `dummy` or `offscreen`, calls `SDL_IsMainThread` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11978`). SDL documents that call as safe on any thread and, on Apple platforms, as reporting the thread that runs `main()`. If it returns false, `Create` fails with `ErrorKind.Unsupported` instead of letting Cocoa abort the process. P3 verifies this on macos-15.
 - **Misuse is detected on every call, in every build:** each main-thread member starts with a thread check that throws `WrongThreadException` naming the API. That is stricter than 3.2's "asserted in debug builds", because a wrong-thread SDL call in a release build is undefined behaviour rather than a clean failure, and the check is one integer comparison, which stays within the zero-allocation, no-measurable-cost budget.
 - **Shared types in Core.** Graphics and World need the same check, so it lands in `BrutalEngine.Core`, added by P1:
 
@@ -489,6 +492,9 @@ namespace BrutalEngine.Core;
 public sealed class WrongThreadException : InvalidOperationException
 {
     public WrongThreadException(string apiName, int expectedThreadId, int actualThreadId);
+    public WrongThreadException();                                          // the three standard constructors (CA1032)
+    public WrongThreadException(string message);
+    public WrongThreadException(string message, Exception innerException);
     public string ApiName { get; }
     public int ExpectedThreadId { get; }
     public int ActualThreadId { get; }
@@ -503,8 +509,10 @@ public readonly struct ThreadAffinity    // captures one thread; default(ThreadA
 }
 ```
 
+The engine always throws through the first constructor (via `ThreadAffinity`), with the API's name and both managed thread ids. The standard three, as on `StaleHandleException` (`src/BrutalEngine.Core/StaleHandleException.cs:14-38`), leave `ApiName` empty and both ids 0.
+
 - **Tests and SDL threads.** xUnit runs tests on worker threads, not the process's main thread. The design assumes SDL's video functions work from the thread that initialised them on Windows and Linux. On macOS, `cocoa` needs the process's main thread, so native-boundary tests use the `dummy` driver (and `offscreen` where they need Vulkan), which don't use Cocoa. **Assumptions to verify in P3** on all three runners, before anything builds on them: SDL initialises and runs `dummy` (and `offscreen`, in `vulkan-smoke`) from a test worker thread. If it doesn't, the choice between a main-thread test harness and macOS-only exclusions comes back to the maintainer.
-- Because SDL is process-wide and the platform is one per process, Platform.Sdl3's native tests share one platform per test assembly through a collection fixture ([Testing strategy](../05-testing-strategy.md#test-conventions)).
+- Because SDL is process-wide and the platform is one per process, every Platform.Sdl3 native test is in one non-parallel collection ([Testing strategy](../05-testing-strategy.md#test-conventions)), and each test creates and disposes its own platform. No fixture keeps a platform alive between tests, so the create/dispose and one-per-process tests can run.
 
 ## 10. Native status checks and the BRUTAL log bridge
 
@@ -565,7 +573,7 @@ public sealed record SdlPlatformOptions
 }
 ```
 
-- `Create` sets the hints, calls `SDL_Init(SDL_INIT_VIDEO)` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11928`) and reads the driver. Expected failures are `Result`s: no display or video driver, the requested headless mode unavailable, the main-thread rule broken on macOS (all `Unsupported` or `Native`). Misuse throws: invalid options, a second live instance.
+- `Create` checks the macOS main-thread rule ([section 9](#9-threading)), sets the hints, calls `SDL_Init(SDL_INIT_VIDEO)` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11928`) and reads the driver. Expected failures are `Result`s: no display or video driver, the requested headless mode unavailable, the main-thread rule broken on macOS (all `Unsupported` or `Native`). Misuse throws: invalid options, a second live instance.
 - `VulkanLibraryPath` points SDL at the Vulkan loader that BRUTAL already uses, so both load one library: the bundled macOS loader, or an explicit `--vulkan-loader`. The constant is `Sdl.Constants.HintVulkanLibrary` (`Brutal.Sdl/Generated/Sdl.Constants.gen.cs:350`), as in `samples/HelloWindow/BundledVulkan.cs:117-140`. Choosing and preloading the loader is Graphics.Vulkan's job; the host passes the path it chose. If the user forced the hint through the environment, the refused hint is logged, not an error (as for the video driver).
 - No other public type: the window, surface source, event translation, cursors and `SdlCheck` are internal. Nothing exposes an SDL type, so the backend's public surface needs no binding types at all.
 
@@ -575,6 +583,7 @@ public sealed record SdlPlatformOptions
 |---------|--------|
 | SDL can't start video, no display, required headless driver unavailable, macOS off the main thread | `SdlPlatform.Create` fails: `Unsupported` or `Native` with SDL's message |
 | Window creation refused by the OS or driver | `CreateWindow` fails: `Native` |
+| A display that no longer exists; a fullscreen mode SDL no longer lists | `CreateWindow`, `GetFullscreenModes` or `SetExclusiveFullscreen` fails: `NotFound` |
 | Vulkan surface requested on `NoSurface`, or on `Offscreen` without `VK_EXT_headless_surface` | `CreateWindow` fails: `Unsupported` ([section 3](#3-headless-mode)) |
 | `SDL_Vulkan_CreateSurface` fails | `CreateVulkanSurface` fails: `Native` |
 | A setter, clipboard, cursor or message box refused | that call's `Result` fails: `Native` (`Unavailable` for message boxes when headless) |
@@ -602,7 +611,7 @@ The design follows 3.7 except for the points below. None of them touches an ADR.
 - **Platform (pure, every OS, `tests/BrutalEngine.Platform.Tests`):** every rule above as unit tests: options validation, `PlatformEvent` payload views (including the wrong-view exception), `Keycode`, `PlatformEventBuffer` (capacity, `HasRoom` and the text reserve, deferral, truncation on code-point boundaries for 2-, 3- and 4-byte sequences, `Clear`), `VfsPath` grammar and every rejection, `VirtualFileSystem` routing and error kinds, `InMemoryFileSystem`, and `DirectoryFileSystem` on temporary directories (atomic replace, read-only mounts, `VerifyCase` on all three OSes, which covers both case-sensitive and case-insensitive file systems).
 - **Property tests (CsCheck):** `VfsPath` normalisation is idempotent; a parsed path never contains `..`, `\`, `//` or a trailing `/`, and round-trips through `ToString`; with generated segments of 1- to 4-byte UTF-8 characters, a segment of allowed characters parses if and only if it is at most 255 UTF-8 bytes (and the path at most 1,024); random strings either fail to parse or yield a path that a `DirectoryFileSystem` resolves strictly inside its root; random buffer fills against a reference model keep every event, in order, across deferral.
 - **Allocation tests:** filling and reading 1,000 batches of every event kind (pure, in Platform.Tests), and in Platform.Sdl3 1,000 `PumpEvents` calls over events pushed with `SDL_PushEvent` plus every `IWindow` getter, allocate 0 managed bytes. Also run under Windows dynamic coverage, as CI does.
-- **Native boundary (Platform.Sdl3, every OS, `build-test` job):** with the `dummy` driver and `WindowSurface.None`: create and dispose, the one-per-process rule, the driver derivation from `SDL_VIDEO_DRIVER`, window creation and sizes, setters' results, the startup size event, the `NoSurface`+Vulkan failure, clipboard round-trip, displays. Event translation is table-driven over synthetic `SdlEvent` values (pure), plus an `SDL_PushEvent` round trip. Thread checks are tested from a second thread.
+- **Native boundary (Platform.Sdl3, every OS, `build-test` job):** with the `dummy` driver and `WindowSurface.None`: create and dispose, the one-per-process rule, the driver derivation from `SDL_VIDEO_DRIVER` (set in the native environment with `SDL_SetEnvironmentVariable` on `SDL_GetEnvironment()`, `Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:188` and `:141`, because .NET's `Environment.SetEnvironmentVariable` doesn't reach native code on Linux and macOS, `samples/HelloWindow/BundledVulkan.cs:164-165`; or in a child process), window creation and sizes, setters' results, the startup size event, the `NoSurface`+Vulkan failure, clipboard round-trip, displays. Event translation is table-driven over synthetic `SdlEvent` values (pure), plus an `SDL_PushEvent` round trip. Thread checks are tested from a second thread.
 - **Vulkan surfaces** need a Vulkan driver, so they run in the `vulkan-smoke` job (or the conformance project that `docs/design/graphics.md`, #54, defines): `offscreen` surfaces on Linux and macOS, windowed on the Windows runner, and the `Offscreen`+Vulkan `Unsupported` failure on Windows. Locally they run on the RTX 2070 SUPER.
 - **Manual (reference machine, release QA checklist, [Testing strategy](../05-testing-strategy.md#test-layers)):** DPI change while running (moving a window between displays with different scales, changing Windows' scale setting), multi-monitor fullscreen modes, IME text commits, minimise and restore. These can't run on CI runners (one virtual display, fixed DPI) and are unverified until done by hand.
 
