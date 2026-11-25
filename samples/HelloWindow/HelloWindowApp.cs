@@ -11,6 +11,7 @@ internal sealed unsafe class HelloWindowApp
 {
     private readonly HelloWindowOptions _options;
     private bool _setupComplete;
+    private int _resizes;
 
     private HelloWindowApp(HelloWindowOptions options) => _options = options;
 
@@ -101,6 +102,7 @@ internal sealed unsafe class HelloWindowApp
                     break;
                 }
 
+                ExerciseResize(window, presented);
                 if (checkExtent || recreate || swapchain is null)
                 {
                     VkSurfaceCapabilitiesKHR capabilities = vulkan.PhysicalDevice.GetSurfaceCapabilitiesKHR(vulkan.Surface);
@@ -170,6 +172,28 @@ internal sealed unsafe class HelloWindowApp
         SampleConsole.Info($"Presented {presented} frames in {seconds:F2} s ({presented / seconds:F1} fps); "
             + $"swapchain recreations {recreations}, out-of-date {outOfDate}, suboptimal {suboptimal}; "
             + $"{frameBytes} managed bytes allocated by frames after the first.");
+        if (_options.ExerciseResize && recreations == 0)
+        {
+            throw new InvalidOperationException("--exercise-resize: the swapchain was never recreated.");
+        }
+    }
+
+    private void ExerciseResize(SdlWindow window, int presented)
+    {
+        // Shrink at a third of the run and restore at two thirds: two size changes, each needing a new swapchain.
+        if (!_options.ExerciseResize || _options.Frames is not { } frames)
+        {
+            return;
+        }
+
+        if ((_resizes == 0 && presented >= frames / 3) || (_resizes == 1 && presented >= 2 * frames / 3))
+        {
+            bool shrink = _resizes++ == 0;
+            int width = shrink ? Math.Max(1, _options.Width * 3 / 4) : _options.Width;
+            int height = shrink ? Math.Max(1, _options.Height * 3 / 4) : _options.Height;
+            SampleConsole.Info($"Resizing the window to {width}x{height} (at frame {presented})");
+            NativeCheck.Sdl(Sdl.Video.SetWindowSize(window, width, height), "SDL_SetWindowSize");
+        }
     }
 
     private static bool PumpEvents(ref bool checkExtent)
