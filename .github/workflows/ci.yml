@@ -96,11 +96,48 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  vulkan-smoke:
+    name: Vulkan smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: windows-2025
+            rid: win-x64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+      - name: Set up software Vulkan (lavapipe + validation layers)
+        uses: ./.github/actions/setup-software-vulkan
+      - name: Build smoke harness
+        run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release
+      - name: Run (JIT, CPU device required)
+        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen --require-cpu
+      - name: Negative test (JIT, injected validation error must exit 2)
+        run: |
+          set +e
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen --require-cpu --inject-validation-error
+          code=$?
+          set -e
+          echo "exit code: $code"
+          test "$code" -eq 2
+
   # Single required status check for branch protection: passes only if every job above passed.
   ci-ok:
     name: CI passed
     if: always()
-    needs: [format, build-test, pack]
+    needs: [format, build-test, pack, vulkan-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
