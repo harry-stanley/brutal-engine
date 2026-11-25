@@ -373,3 +373,283 @@ On `EcsWorld`: `public void RunSchedule(ScheduleLabel label, TimeSpan delta)` ru
 - **Exceptions** thrown by a system propagate unchanged out of `Run`; the run's unplayed command buffers are cleared (reservations released) and the schedule stays usable. Structural state stays consistent, because non-exclusive systems change structure only through buffers.
 - **Determinism:** for the same initial world, schedule and inputs, a run produces the same world: system order is fixed as above, buffers play back in system order and then recording order, entity indices are reused FIFO, and iteration order follows archetype creation, chunk and row order. Nothing depends on addresses, hash order or wall-clock time.
 - **Parallel execution in M2**, behind this API: the executor runs waves of ready, mutually non-conflicting systems on BRUTAL's `JobScheduler`, one preallocated `IJob` per system (`Brutal.Concurrency/Jobs/IJob.cs:6-9`), with `Queue` (`Brutal.Concurrency/Jobs/JobScheduler.cs:65-74`), `ExecuteJobs` (`Brutal.Concurrency/Jobs/JobScheduler.cs:89`) and `Wait` (`Brutal.Concurrency/Jobs/JobScheduler.cs:79-83`) per wave (S5's proposal, `DESIGN-NOTES.md:146`). `Queue` throws while jobs run (`Brutal.Concurrency/Jobs/JobScheduler.cs:67-68`), which is why the executor works in waves, and `Wait` busy-spins. `JobRunner` doesn't catch a job's exception (`Brutal.Concurrency/Jobs/JobRunner.cs:281-308`), so the executor catches inside each job and rethrows on the owner thread. Chunk-parallel iteration inside one system splits slices of at most 16k rows (`DESIGN-NOTES.md:119`). `ISystem`, `SystemBuilder` and `SystemContext` already contain nothing thread-specific.
+
+## 8. Hierarchy and transforms
+
+### Hierarchy
+
+```csharp
+namespace BrutalEngine.World.Hierarchy;
+
+public readonly struct Parent : IComponent                       // engine-managed
+{
+    public Entity Value { get; }
+}
+
+public readonly struct Children : IComponent                     // engine-managed; only internal fields (the slab range)
+{
+}
+
+// On EcsWorld (namespace BrutalEngine.World):
+public void SetParent(Entity child, Entity parent);              // re-parents if child already has a parent
+public void ClearParent(Entity child);                           // no-op without a parent
+public ReadOnlySpan<Entity> GetChildren(Entity parent);          // insertion order; empty if none
+```
+
+- **Storage:** `Parent` is an ordinary component. Children lists live **outside** the chunks, because variable-length data would break fixed row sizes (`DESIGN-NOTES.md:109`): a world-owned unmanaged slab of `Entity` arrays in power-of-two capacity classes with a free list per class. The internal fields of `Children` locate a parent's range. The span from `GetChildren` is invalidated by any structural change.
+- **Both sides change together.** `SetParent`, `ClearParent` and despawns update `Parent` and the parent's children list in one operation, directly or at command-buffer playback (`DESIGN-NOTES.md:110`). A parent gains `Children` with its first child and loses it with its last (a structural change). Direct `Add`, `Set`, `Remove` or `Write` of `Parent` or `Children` throws `InvalidOperationException`; use the hierarchy members.
+- **Order:** children keep insertion order; removal preserves the order of the rest. Deterministic.
+- **Misuse** throws `InvalidOperationException`: parenting an entity to itself or to one of its descendants (found by walking up from `parent`, at most `MaxHierarchyDepth` steps), or a result deeper than `MaxHierarchyDepth`.
+- **Recursive despawn:** despawning an entity despawns its descendants, children before parents, in children order, using unmanaged scratch (`DESIGN-NOTES.md:114`). In command-buffer playback the descendants join the sorted despawn run (section 6). To keep the children, `ClearParent` them first. Despawning a child removes it from its parent's list.
+
+### 2D transforms
+
+```csharp
+namespace BrutalEngine.World.Transforms;
+
+public struct LocalTransform2D : IComponent                      // mutable data
+{
+    public float2 Position;
+    public float Rotation;                                       // radians, as float3x2.CreateRotation
+    public float2 Scale;
+    public static LocalTransform2D Identity { get; }
+    public readonly float3x2 ToMatrix();                         // scale, then rotation, then translation
+}
+
+public struct WorldTransform2D : IComponent                      // written by the transform system
+{
+    public float3x2 Matrix;
+}
+
+public sealed class TransformSystem : ISystem { /* Configure and Run, below */ }
+```
+
+`float2` and `float3x2` are `Brutal.Numerics` types (`Brutal.Numerics/Matrix/float3x2/float3x2.gen.cs:10-30`, three `float2` rows). They follow System.Numerics' row-vector convention, so `a * b` applies `a` first (`Brutal.Numerics/Matrix/float3x2/float3x2.operators.gen.cs:35-56`); the factories are `CreateScale`, `CreateRotation` and `CreateTranslation` (`Brutal.Numerics/Matrix/float3x2/float3x2.numerics.gen.cs:22`, `:129`, `:239`).
+
+**Propagation.** The world installs one `TransformSystem` as the last system of `PostUpdate` (name `"TransformSystem"`); games may add more instances, for example in `FixedUpdate` when physics needs world transforms within a tick. Each run:
+
+1. **Roots** (`Read<LocalTransform2D>`, `Write<WorldTransform2D>`, `Without<Parent>`): a chunk loop computing `World = Local.ToMatrix()`, skipping chunks whose `LocalTransform2D` `Changed` and `Added` ticks are not newer than the system's last run. A scene of flat, moving sprites (the SpriteStress case) only takes this path.
+2. **Descendants:** for each root with `Children`, a depth-first walk in children order computing `World(child) = Local(child).ToMatrix() * World(parent)`. In M1 every descendant is recomputed every run, through record lookups.
+
+An entity missing `LocalTransform2D` or `WorldTransform2D` is skipped, and its children use the identity as their parent matrix. Games add both components (for example with `Spawn<LocalTransform2D, WorldTransform2D>`); the system never adds components itself. Interpolation between fixed steps belongs to the Runtime and renderer ([Architecture 3.2](../03-architecture.md#32-application-host-and-main-loop)), not the world.
+
+S5 proposed depth-ordered propagation with chunk skipping at every level (`DESIGN-NOTES.md:112`). M1 skips unchanged chunks only for roots: per-level lists or depth tags add bookkeeping to every hierarchy change, and the benchmark issue measures a 10,000-node hierarchy first. If it misses its budget, per-level lists replace the walk internally, with no API change. Hand-written SIMD for the root loop (`DESIGN-NOTES.md:72`, `:150`) waits for the same measurement.
+
+## 9. Generated code
+
+`src/BrutalEngine.Generators`: an incremental Roslyn generator targeting netstandard2.0 with `Microsoft.CodeAnalysis.CSharp` 5.0.0 ([Repository layout](../04-repo-layout.md#shared-build-settings), `docs/04-repo-layout.md:96`). It is packed into the `BrutalEngine.World` package under `analyzers/dotnet/cs`, so referencing World brings it, and it is not a package of its own. `src/Directory.Build.props` says Roslyn components "aren't packed yet" (`src/Directory.Build.props:4-8`); the generator issue updates that comment and packs it from `BrutalEngine.World.csproj`. Repository projects reference it with `OutputItemType="Analyzer"`.
+
+The attributes are public World types: `ComponentAttribute` (`SchemaVersion`, default 1), `EcsSystemAttribute`, and the generic method attributes `WithAttribute<T>`, `WithoutAttribute<T>`, `ChangedAttribute<T>` and `AddedAttribute<T>`.
+
+```csharp
+using Brutal.Numerics;
+using BrutalEngine.World;
+using BrutalEngine.World.Transforms;
+
+[Component]
+public partial struct Velocity { public float2 Value; }
+
+[Component]
+public partial struct Frozen { }                                 // a tag
+
+[EcsSystem]
+public sealed partial class MoveSystem
+{
+    public float Speed = 1f;
+
+    [Without<Frozen>]
+    private void Execute(in SystemContext context, ref LocalTransform2D transform, in Velocity velocity)
+        => transform.Position += velocity.Value * (Speed * context.DeltaSeconds);
+}
+
+// setup: world.Schedules[ScheduleLabel.FixedUpdate].Add(new MoveSystem(), new SystemOptions { Name = "Move" });
+```
+
+What it emits:
+
+```csharp
+partial struct Velocity : IComponent
+{
+    static ComponentInfo IComponent.Info => new()
+    {
+        StableId = new StableComponentId(0x...UL),               // FNV-1a of "MyGame.Velocity", computed at compile time
+        SchemaVersion = 1,
+        FullName = "MyGame.Velocity",
+        IsTag = false,
+    };
+}
+
+partial class MoveSystem : ISystem
+{
+    private Query _query = null!;
+
+    void ISystem.Configure(SystemBuilder builder)
+    {
+        _query = builder.Query().Write<LocalTransform2D>().Read<Velocity>().Without<Frozen>().Build();
+        OnConfigure(builder);                                    // optional user partial: extra Reads/Writes
+    }
+
+    partial void OnConfigure(SystemBuilder builder);
+
+    void ISystem.Run(in SystemContext context)
+    {
+        foreach (ChunkView chunk in _query)
+        {
+            Span<LocalTransform2D> p0 = chunk.Write<LocalTransform2D>();
+            ReadOnlySpan<Velocity> p1 = chunk.Read<Velocity>();
+            for (int i = 0; i < p0.Length; i++)
+            {
+                Execute(in context, ref p0[i], in p1[i]);
+            }
+        }
+    }
+}
+```
+
+- **`Execute` parameters:** an optional leading `in SystemContext`, an optional `Entity`, then 1 to 8 components: `ref` declares `Write`, `in` declares `Read`. Filters come from the method attributes. One `Execute` per system in M1; a system that needs several queries implements `ISystem` by hand.
+- **Diagnostics** (errors; `BE2xxx`, beside the analyzers' `BE1xxx` in [Coding standards](../07-coding-standards.md#analyzer-rules-we-own-brutalengineanalyzers-ids-be1xxx)): BE2001 `[Component]` type is not a `partial struct`; BE2002 it isn't unmanaged; BE2003 it is generic or nested in a generic type; BE2004 two components in the compilation share a stable id; BE2005 `SchemaVersion` is 0; BE2006 an `[EcsSystem]` type is not a `sealed partial class` with exactly one `Execute`; BE2007 an invalid `Execute` parameter (by-value or duplicate component, a tag as a parameter, more than 8 components). The registry still validates at runtime, because tests and engine types may implement `IComponent` by hand.
+- **Engine components** (`Parent`, `Children`, the transforms) implement `IComponent` by hand, so World doesn't need its own generator to build; a test checks their ids against `StableComponentId.FromFullName`.
+- **AOT safety:** no reflection, no `MakeGenericType`, no runtime code generation. Static abstract members bind at compile time and every generic instantiation is over a value type the compiler sees. S5 never published with NativeAOT (`DESIGN-NOTES.md:165`), so the system-generation issue adds a world scenario to `tests/BrutalEngine.Aot.Smoke`, which CI publishes and runs on all three RIDs.
+- **M2:** serialisers (scenes and prefabs) and an assembly-level list of components for loading by stable id.
+
+## 10. Threading and allocation
+
+- **Owner thread:** the thread that constructs the `EcsWorld`. The world captures Core's `ThreadAffinity.CurrentThread()`, and every member of `EcsWorld`, `ComponentRegistry`, `Query`, `CommandBuffer`, `Schedule` and `ScheduleCollection` calls `ThrowIfNotCurrentThread(apiName)`, so a call from another thread throws `WrongThreadException` naming the API ([Architecture 3.2](../03-architecture.md#threading-model)). Both types are added to Core by the Platform work. The check runs in every build, as in the Platform and Graphics notes: it is one integer comparison.
+- `ChunkView` and the spans it returns are `ref struct`s and aren't checked; they can't leave the stack. In M2, jobs receive chunk slices from the executor, and recording into command buffers and read-only lookups inside a running schedule become allowed from job threads. Loosening a check doesn't break callers.
+- **Steady-state frames allocate zero managed bytes:** direct component access, structural changes that reuse existing archetypes, query enumeration, command-buffer recording and playback, `Schedule.Run`, the transform system and timings. Unmanaged growth (entity table, chunk pool, query caches, command streams, children slab, playback scratch) goes through `INativeAllocator`, never the GC.
+- **Allocating, at setup only:** creating worlds, registering components, creating archetypes (once per new signature), queries, command buffers, schedules and systems, and `Schedule.Build`.
+- **Measuring:** single-threaded M1 tests use `GC.GetAllocatedBytesForCurrentThread()`. Once jobs run (M2), allocation tests count the whole process with `GC.GetTotalAllocatedBytes(precise: true)` (`DESIGN-NOTES.md:120`), and because xUnit runs test classes in parallel, those tests go in a collection with parallelisation disabled; otherwise other tests' allocations are counted.
+
+## 11. Failure modes
+
+The M1 World API has no expected runtime failures besides lookups, which use `bool`/`Try*`. Everything else is misuse and throws immediately ([errors](errors.md#purpose), [Architecture 3.5](../03-architecture.md#35-error-handling)). `Result` appears with serialisation in M2.
+
+| Situation | Behaviour |
+|-----------|-----------|
+| Invalid `WorldOptions`, `SystemOptions` or span lengths | `ArgumentNullException` / `ArgumentOutOfRangeException` / `ArgumentException` naming the value |
+| `Entity.Null` passed to a member | `ArgumentException` |
+| Stale entity (dead, retired or from another world) in a direct call | `StaleHandleException` |
+| Pending entity in a direct call | `InvalidOperationException` |
+| `Get`/`Write` of a missing component; data access to a tag | `InvalidOperationException` naming entity and component |
+| `Add` of a component the entity already has | `InvalidOperationException` (use `Set`) |
+| Structural change during a live enumeration, or from a non-exclusive system | `InvalidOperationException` |
+| Undeclared access (chunk view or random access) | `InvalidOperationException` naming system or query and component |
+| Component over 1,024 bytes or aligned over 64; archetype row too wide; registry full; stable-id collision; re-registration with another schema | `ArgumentException` / `InvalidOperationException` at registration or at the structural change |
+| `MaxEntities` exhausted | `InvalidOperationException` |
+| Hierarchy cycle or depth over `MaxHierarchyDepth`; direct write of `Parent`/`Children` | `InvalidOperationException` |
+| Schedule: duplicate or unknown system name, ordering cycle | `ArgumentException` / `InvalidOperationException` |
+| Playback of a command whose target another unplayed buffer reserved | `InvalidOperationException`; earlier commands stay applied, the rest are discarded |
+| Command targeting a dead entity | Skipped and counted (`LastPlaybackSkippedCount`) |
+| A system throws | Propagates out of `Schedule.Run`; the run's unplayed buffers are cleared |
+| Wrong thread | `WrongThreadException` |
+| Any member after `Dispose` | `ObjectDisposedException` |
+| Out of native memory | `OutOfMemoryException` from the allocator |
+
+## 12. Testing
+
+`tests/BrutalEngine.World.Tests` (xUnit v3, CsCheck), `tests/BrutalEngine.Generators.Tests`, and `tests/BrutalEngine.Benchmarks` ([Testing strategy](../05-testing-strategy.md#test-layers)):
+
+- **Unit tests** for every rule and every row of the failure table, each world created over a `TrackingAllocator` that is checked with `ThrowIfLeaks()` after `Dispose` (leak tests come free with every test).
+- **Reference-model property tests** (CsCheck), as S5 did with 5 seeds x 4,000 steps (`DESIGN-NOTES.md:162`): random sequences of spawn, despawn, add, set, remove, get and stale access against a dictionary model, checking every entity and component value after each step; the same through command buffers (batched spawns, sorted despawns, dead targets, `Clear`); random `SetParent`/`ClearParent`/despawn against a parent-map model; propagation against a naive recursive reference, compared bit for bit because both multiply in the same order.
+- **Change detection:** `Changed`/`Added` per chunk with explicit ticks, a system not seeing its own writes, an early-`break` enumeration, and tick clamping across 2³⁰ through the internal seam.
+- **Determinism:** a seeded scenario run twice produces the same hash over every entity and component byte in iteration order.
+- **Allocation:** 1,000 steady-state frames of each hot path (queries, command buffers, schedules, propagation) allocate 0 bytes.
+- **Architecture:** the World project is referenced by `tests/BrutalEngine.Architecture.Tests`, so the layering, binding-surface and static-state rules check it ([architecture tests](architecture-tests.md#rules)).
+- **Generator:** snippets compiled with `CSharpCompilation` as in `tests/BrutalEngine.Analyzers.Tests/AnalyzerHarness.cs`: emitted source for components and systems, every diagnostic with positive and negative cases, and generated stable ids equal to `StableComponentId.FromFullName`.
+- **NativeAOT:** the world scenario in the AOT smoke harness (section 9).
+- **Benchmarks** (BenchmarkDotNet, [Tech stack](../02-tech-stack.md#development-and-test-tooling)), against ADR-0006: iterate 1M entities x 2 components under 1 ms (chunk loop and generated system); 100k spawn + 100k despawn per frame through a command buffer under 5 ms in spawn and shuffled order, with p99; the transform system over 100k roots and a 10,000-node hierarchy; 0 bytes allocated. They run on the reference machine (Ryzen 9 5950X, `docs/spikes/README.md:9`) and the numbers go in the PR. Min-spec results stay unverified until a min-spec machine exists ([docs/09 open question Q7](../09-roadmap.md#open-questions-to-resolve-during-milestones)). CI doesn't gate on timings.
+- **Mutation self-checks** per issue, for example: swap-remove without updating the moved entity's record; stamping `Changed` on `Read`; skipping retirement at `uint.MaxValue`; dropping the despawn sort's row order; ignoring `After` constraints.
+
+## 13. Issue split
+
+Each World issue edits the same project and `PublicAPI.Unshipped.txt`, so they run one after another. Estimates include tests and docs.
+
+| Issue | Scope | Blocked by | Est. |
+|-------|-------|------------|------|
+| W1 feat(world): add entities, the entity table and the component registry | Creates `src/BrutalEngine.World` + tests: `WorldOptions`, `EcsWorld` (construction, disposal, counts, owner-thread checks), `Entity`, the entity table (FIFO reuse, retirement, pending state), `IComponent`, `ComponentInfo`, `StableComponentId` (FNV-1a vectors), `ComponentId`, `ComponentType`, `ComponentRegistry` with ordinal slots; Architecture.Tests reference; a ci-tier self-test case (fast tier) | this note; Core `ThreadAffinity`/`WrongThreadException` from the Platform work | ~650 |
+| W2 feat(world): store components in pooled 64 KiB chunks by archetype | Chunk pool, archetype layout and capacity, columns and tags, edges, signature map, the dense invariant | W1 | ~650 |
+| W3 feat(world): spawn, despawn, add and remove components | Direct API of section 2, `EntityRef`, moves and swap-remove with tick stamps, reference-model property test | W2 | ~650 |
+| W4 feat(world): query archetypes chunk by chunk with change detection | `QueryBuilder`, `Query`, `ChunkEnumerator`, `ChunkView`, access checks, iteration guard, ticks and clamping | W3 | ~650 |
+| W5 feat(world): defer structural changes through command buffers | `CommandBuffer`, reservation, batched spawn, sorted despawn, dead-target policy, property test through buffers | W3 | ~700 |
+| W6 feat(world): run systems in named schedules | `ISystem`, `SystemBuilder`, `SystemContext`, `Schedule`, `ScheduleCollection`, ordering, conflicts and report, access enforcement, sync points, timings, determinism test | W4, W5 | ~700 |
+| W7 feat(world): add parent and children relationships | `Parent`, `Children`, the children slab, `SetParent`/`ClearParent`/`GetChildren`, recursive despawn, the command-buffer hierarchy ops | W5 | ~600 |
+| W8 feat(world): propagate 2D transforms through the hierarchy | `Ahwoo.Brutal.Numerics` reference, `LocalTransform2D`, `WorldTransform2D`, `TransformSystem` installed in `PostUpdate`, reference test | W6, W7 | ~600 |
+| W9 feat(generators): generate component registration | Creates `src/BrutalEngine.Generators` + tests, the attributes in World, component emission, BE2001-BE2005, packing into the World package | W1 | ~650 |
+| W10 feat(generators): generate system query loops | `[EcsSystem]` emission, BE2006-BE2007, the AOT smoke world scenario | W9, W6 | ~650 |
+| W11 perf(world): benchmark the world against ADR-0006's targets | `tests/BrutalEngine.Benchmarks` and the BenchmarkDotNet central version, the suites in section 12, reference-machine numbers in the PR | W8, W10 | ~400 |
+
+Ordering notes: W1 needs the Core threading types; W6 owns access enforcement, so it needs both queries (W4) and command buffers (W5); W8 waits for W6 because the transform system is a system; W11 benchmarks the generated system shape, so it waits for W10. W9 needs only W1, but it adds the attributes to World's public API, so like every World issue it runs between the others, not beside them.
+
+## ADR-0006 consistency
+
+| ADR-0006 decision | This note |
+|-------------------|-----------|
+| Unmanaged-struct components, generational ids | Sections 2 and 3 |
+| Named schedules, explicit ordering, declared access, parallel on `JobScheduler` when access sets don't conflict | Section 7. Parallel execution is phased to M2 by maintainer decision; the API and the conflict rules are final in M1 |
+| Command buffers applied at sync points | Sections 6 and 7 |
+| `Parent`/`Children` and transform propagation | Section 8 |
+| Change detection with per-component, per-chunk versions | Sections 4 and 5 |
+| Events/messages between systems | **Not in M1.** The M1 roadmap scope doesn't list them and no M1 consumer needs them; they come with their first consumer (input or physics events, M2 or M3) in a later design change |
+| Scenes and prefabs; generated serialisers | M2, by maintainer decision (section 9) |
+| Generated queries and registration, AOT-safe | Section 9 |
+| Ergonomic layer: typed handle with `Get<T>`/`Set<T>`/`Add<T>`, query `foreach` over ref spans | `EntityRef` (section 2); chunk `foreach` with spans (section 5) |
+| Targets: 1M x 2 iterate under 1 ms on min-spec, 100k spawn+despawn under 5 ms, 0 B | Benchmarks on the reference machine (section 12); min-spec unverified |
+
+No ADR-0006 decision is contradicted. Events are the only item with no M1 design here.
+
+## S5 recommendations
+
+Every recommendation in S5's `DESIGN-NOTES.md`, with this note's decision.
+
+| Recommendation | Decision | Reason |
+|----------------|----------|--------|
+| Archetype tables in fixed-size, pooled, 64-byte-aligned chunks of 64 KiB (`DESIGN-NOTES.md:8-9`) | Adopted | Measured: 16 KiB was 18-31% slower; tables defeat change detection (section 4) |
+| Chunk layout and capacity formula (`DESIGN-NOTES.md:13-21`) | Adopted, changed | Change ticks moved out of the chunk into per-archetype arrays, so skipping a chunk doesn't touch it (section 4) |
+| Dense invariant with swap-remove; emptied tail chunk back to the pool (`DESIGN-NOTES.md:22`) | Adopted | No liveness checks during iteration (section 4) |
+| Chunk size as a world-creation parameter (`DESIGN-NOTES.md:36`) | Adopted | `WorldOptions.ChunkBytes`, same code path for every size (section 1) |
+| Columns aligned to max(16, alignment); tags without columns (`DESIGN-NOTES.md:39`) | Adopted | S5's 1-byte tag columns waste chunk space (sections 3 and 4) |
+| Side pool for components over about 1 KB (`DESIGN-NOTES.md:40`) | Rejected | M1 enforces a 1,024-byte limit with a clear error instead; no M1 consumer needs bigger components, and a side pool can be added behind the same API |
+| Optional small first chunk (`DESIGN-NOTES.md:41`) | Deferred | Two layouts per archetype complicate offsets; the real cost of many small archetypes was never measured. A smaller `ChunkBytes` covers worlds that need it (section 1) |
+| `Entity` = 32-bit index + 32-bit generation, generation 0 null (`DESIGN-NOTES.md:45`) | Adopted | Matches Core's `Handle` (section 2) |
+| Unmanaged 16-byte location records and a free list (`DESIGN-NOTES.md:46`) | Adopted, changed | FIFO reuse instead of LIFO, per the handles rule, so generations advance slowly (section 2) |
+| Retire slots instead of wrapping generations (`DESIGN-NOTES.md:47`) | Adopted | Same rule as Core's handles (section 2) |
+| Pack chunk and row into one `int` for 12-byte records (`DESIGN-NOTES.md:48`) | Rejected | 16-byte records stay aligned (four per cache line) and keep `Archetype` free to encode the state; record size was never measured as a bottleneck |
+| Generated `ComponentInfo` with stable id (name hash + schema version), size, alignment, name; generated registration (`DESIGN-NOTES.md:55`) | Adopted, changed | Size and alignment come from `T` at registration so they can't disagree with the compiler; serialiser pointers wait for M2 (sections 3 and 9) |
+| World-owned registry mapping stable id to a dense per-world index (`DESIGN-NOTES.md:56`) | Adopted | Registries must be instance-owned and rebuildable for hot reload (3.21); a dense index keeps masks and column tables small (section 3) |
+| Generated static `ComponentIndex<T>` slot re-stamped by the registry (`DESIGN-NOTES.md:57`) | Rejected | One slot can't serve two worlds; replaced by a process-wide, never re-stamped `int` ordinal plus a per-registry map, which passes the static-state rule (section 3) |
+| 256-bit mask, variable-length if more types are needed (`DESIGN-NOTES.md:58`) | Adopted, changed | Width fixed per world by `MaxComponentTypes` (256 default, up to 4,096) (section 3) |
+| Chunk iteration as the core primitive; `Write` stamps, `Read` doesn't (`DESIGN-NOTES.md:64-66`) | Adopted | Fastest measured shape at 0 B, and declared access drives change detection (section 5) |
+| Struct-callback `ForEach` as the generator target (`DESIGN-NOTES.md:67`) | Adopted, changed | Generated systems emit the chunk loop and call the user's method directly; no public callback interface is needed (sections 5 and 9) |
+| Don't ship the per-entity `ref` pair enumerator (`DESIGN-NOTES.md:68-69`) | Adopted | It failed the 1 ms target at 1.31 ms (section 5) |
+| Two-level form `chunk.Columns<Pos, Vel>()` (`DESIGN-NOTES.md:70`) | Rejected | `Read<T>`/`Write<T>` already give the two-level loop in two lines, with the access mode explicit per column; a tuple of spans isn't possible and a deconstructing ref struct adds API without speed |
+| Generator rewrites a `[System]` method into a chunk loop (`DESIGN-NOTES.md:71`) | Adopted | `[EcsSystem]` with `Execute` (section 9) |
+| SIMD-friendly BRUTAL maths types; cast columns to `float` spans (`DESIGN-NOTES.md:72`) | Adopted | Transforms use `float2`/`float3x2`; columns are spans of unmanaged structs, so `MemoryMarshal.Cast` works (section 8) |
+| Query created once with an incremental archetype cache (`DESIGN-NOTES.md:75`) | Adopted | Archetypes are append-only, so a refresh scans only new ones and never allocates (section 5) |
+| Cache column indices per matched archetype (`DESIGN-NOTES.md:76`) | Adopted | Avoids a per-chunk lookup through a per-archetype table, which S5 found wasteful in memory (section 5) |
+| `Changed<T>`/`Added<T>` chunk filters and `Optional<T>` (`DESIGN-NOTES.md:78`) | Adopted | Physics sync, render extract and networking need them, and a chunk filter costs one tick compare per chunk (section 5) |
+| Unmanaged command stream; playback keeps capacity (`DESIGN-NOTES.md:82-83`) | Adopted | Measured at 0 B in steady state and only about 20% over direct calls (section 6) |
+| Reserve entities at record time (`DESIGN-NOTES.md:84`) | Adopted | Later commands, and components, can refer to an entity spawned in the same frame (section 6) |
+| Skip commands on dead targets (`DESIGN-NOTES.md:85`) | Adopted, changed | Skips are also counted, so tests and diagnostics can see them (section 6) |
+| Batched spawn op and bulk `SpawnBatch` API (`DESIGN-NOTES.md:88-89`) | Adopted | Needed for the 5 ms target (section 6) |
+| Sorted bulk despawn (`DESIGN-NOTES.md:90`) | Adopted | Shuffled despawn failed at about 6 ms (section 6) |
+| Avoid the double liveness check (`DESIGN-NOTES.md:91`) | Adopted | Part of the per-entity cost that put spawn+despawn over 5 ms (section 6) |
+| One command buffer per system, played back in system order (`DESIGN-NOTES.md:94`) | Adopted | Playback order is then fixed by the schedule, not by thread timing, which keeps results deterministic (section 7) |
+| Thread-safe, lock-free reservation (`DESIGN-NOTES.md:95`) | Deferred | M2, with parallel recording; M1 records on the owner thread by maintainer decision, with no API change later (section 6) |
+| Resolve archetypes at playback, or lock creation (`DESIGN-NOTES.md:96`) | Adopted | Resolved at playback, so recording never mutates archetype tables (section 6) |
+| Pending state; direct structural calls on it throw (`DESIGN-NOTES.md:97`) | Adopted | Prevents the double placement S5 found in review, for the cost of one compare (section 2) |
+| Per-chunk, per-column ticks stamped with a world version per tick or system run (`DESIGN-NOTES.md:101`) | Adopted | Advanced per system run (sections 5 and 7) |
+| Wrap-safe tick comparison (`DESIGN-NOTES.md:102`) | Adopted, changed | Plus periodic clamping, so ages never exceed 2³¹ ticks (section 5) |
+| Stamp every column when a row moves into another chunk (`DESIGN-NOTES.md:103`) | Adopted | Coarse but correct: chunk-level consumers must see rows that arrived in a chunk (section 4) |
+| Separate structural `Added` version (`DESIGN-NOTES.md:104`) | Adopted | Consumers must tell new rows from modified ones, for example to create a physics body only once (section 5) |
+| Optional per-row dirty bitset for sparse updates (`DESIGN-NOTES.md:105`) | Deferred | Its consumer is networking replication (M5); chunk granularity serves M1 |
+| `Parent` component, `Children` in a slab outside chunks (`DESIGN-NOTES.md:109`) | Adopted | Variable-length lists in chunks would break fixed row sizes (section 8) |
+| Hierarchy changes as structural commands (`DESIGN-NOTES.md:110`) | Adopted | Direct and buffered forms (section 8) |
+| Depth-ordered propagation skipping unchanged chunks, or cascade queries (`DESIGN-NOTES.md:112-113`) | Adopted, changed | Chunk skipping for roots; descendants are walked depth-first and recomputed every run in M1, pending the benchmark (section 8) |
+| Recursive despawn inside playback (`DESIGN-NOTES.md:114`) | Adopted | Orphans with dangling `Parent` values would be a silent bug; recursing inside playback keeps despawn deferred and deterministic (section 8) |
+| Parallel queries with preallocated jobs and slices of at most 16k rows (`DESIGN-NOTES.md:119`) | Deferred | M2, with parallel schedules (section 7) |
+| Allocation tests count process bytes when jobs run (`DESIGN-NOTES.md:120`) | Adopted | Per-thread counts miss allocations on job threads; tests that count the process run without xUnit parallelism (section 10) |
+| Engine chunk pool on aligned allocation, since `Mem` has none (`DESIGN-NOTES.md:129-130`) | Adopted | Chunks come from `INativeAllocator` with 64-byte alignment (section 4) |
+| Don't use BRUTAL `NativeList` for columns or chunk lists (`DESIGN-NOTES.md:132-138`) | Adopted | Class with a finalizer, allocating `foreach`, copy-on-growth; World manages its own unmanaged arrays (section 4) |
+| Schedule executor as waves of jobs over `JobScheduler` (`DESIGN-NOTES.md:146`) | Deferred | M2 by maintainer decision; `Queue` throws while jobs run, so waves are the workable shape then (section 7) |
+| Hand SIMD for hot built-in systems (`DESIGN-NOTES.md:150`) | Deferred | After the benchmarks show where it pays (section 8) |
+| Sorted arrays or small hash maps for edges instead of dense tables (`DESIGN-NOTES.md:158`) | Adopted | A dense table costs 3 KB per archetype and would grow with `MaxComponentTypes` (section 4) |
