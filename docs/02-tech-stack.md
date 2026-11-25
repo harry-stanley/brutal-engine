@@ -13,7 +13,7 @@ Versions marked *(verified)* were checked against the published NuGet packages o
 | Language | C# 14 (the .NET 10 default) | `unsafe`, function pointers, `ref struct`, generic math and `field` keyword all available |
 | Release publishing | NativeAOT, trimmed | Fast startup, no JIT, single native executable. JIT for development. [ADR-0007](adr/0007-nativeaot-release.md) |
 
-The maintainer's machine has the .NET 8 and .NET 11 SDKs but **not the .NET 10 SDK**. Install the .NET 10 SDK before M0 starts.
+Development machines need the .NET 10 SDK (any `10.0.x` feature band. The maintainer's Windows machine has 10.0.404) and the Vulkan SDK for validation layers (1.4.363 installed on the maintainer's machine).
 
 ## BRUTAL packages used
 

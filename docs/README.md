@@ -22,4 +22,4 @@ These documents are the engineering plan. They are the reference for every pull 
 
 ## Status
 
-Planning. Nothing here is implemented yet. [ADR-0006](adr/0006-world-model.md) (world model) is **Proposed** and needs the maintainer's decision before M1 starts.
+Planning complete, M0 next. Nothing is implemented yet. All ADRs are accepted.
