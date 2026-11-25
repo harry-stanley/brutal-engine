@@ -52,10 +52,11 @@ public interface IPlatform : IDisposable
 public interface IWindow : IDisposable
 {
     WindowId Id { get; }                        // matches PlatformEvent.Window
-    WindowSize Size { get; }                    // logical units (window coordinates)
+    WindowSize Size { get; }                    // SDL window coordinates: pixels on Windows and X11, points on macOS and Wayland
     WindowSize PixelSize { get; }               // drawable pixels
-    float PixelDensity { get; }                 // pixels per logical unit
-    float DisplayScale { get; }                 // UI content scale
+    WindowSize ContentSize { get; }             // PixelSize / DisplayScale, rounded: the UI layout space
+    float PixelDensity { get; }                 // PixelSize / Size
+    float DisplayScale { get; }                 // SDL's content scale, relative to pixels
     WindowState State { get; }
     WindowMode Mode { get; }
     DisplayId Display { get; }
@@ -64,7 +65,7 @@ public interface IWindow : IDisposable
     IVulkanSurfaceSource? VulkanSurface { get; } // section 4; null unless created with WindowSurface.Vulkan
 
     Result SetTitle(string title);
-    Result SetSize(WindowSize size);
+    Result SetContentSize(WindowSize contentSize);
     Result SetMode(WindowMode mode);            // Windowed or BorderlessFullscreen
     Result SetExclusiveFullscreen(DisplayMode mode);
     Result StartTextInput();
@@ -83,7 +84,7 @@ public enum WindowSurface { None = 0, Vulkan }
 public sealed record WindowOptions
 {
     public string Title { get; init; } = "BrutalEngine";
-    public WindowSize Size { get; init; } = new(1280, 720);   // logical; each side 1..16384
+    public WindowSize ContentSize { get; init; } = new(1280, 720); // content units (below); each side 1..16384
     public WindowMode Mode { get; init; } = WindowMode.Windowed; // ExclusiveFullscreen is rejected here: use SetExclusiveFullscreen
     public bool Resizable { get; init; } = true;
     public bool HighPixelDensity { get; init; } = true;      // ask for full-resolution pixels on high-DPI displays
@@ -99,17 +100,34 @@ public sealed record WindowOptions
 - **Setters** return `Result`: the OS may refuse (fullscreen on the `dummy` driver, relative mouse mode without a mouse). `BE1001` flags a discarded one.
 - Main thread only. After `Dispose`, every member throws `ObjectDisposedException`; a second `Dispose` does nothing.
 
-### Logical size, pixel size and scale
+### Window coordinates, pixels and content units
+
+There are three sizes, because SDL's window coordinates mean different things on different OSes:
 
 | Member | Meaning | SDL source |
 |--------|---------|-----------|
-| `Size` | Window size in logical units: what layout, mouse coordinates and `SetSize` use | `SDL_GetWindowSize` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:6330`) |
-| `PixelSize` | Drawable size in pixels: what the swapchain uses | `SDL_GetWindowSizeInPixels` (`:6386`) |
-| `PixelDensity` | `PixelSize / Size`, e.g. 2.0 on a Retina display | `SDL_GetWindowPixelDensity` (`:6091`) |
-| `DisplayScale` | How much bigger UI should be drawn: the pixel density times the OS's content scale (e.g. 1.5 at 150 % on Windows) | `SDL_GetWindowDisplayScale` (`:6101`) |
-| `DisplayInfo.ContentScale` | The display's own content scale | `SDL_GetDisplayContentScale` (`:5990`) |
+| `Size` | The window in SDL's window coordinates, the space of mouse positions and `WindowResized`. Their unit is the OS's: pixels on Windows and X11, points on macOS and Wayland | `SDL_GetWindowSize` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:6330`) |
+| `PixelSize` | The drawable size in pixels: what the swapchain uses | `SDL_GetWindowSizeInPixels` (`:6386`) |
+| `PixelDensity` | `PixelSize / Size`: 1.0 on Windows at any scale setting, 2.0 on a Retina display | `SDL_GetWindowPixelDensity` (`:6091`) |
+| `DisplayScale` | SDL's content scale, relative to pixels: how many pixels one unit of content takes (2.0 at 200 % on Windows, and on a Retina display) | `SDL_GetWindowDisplayScale` (`:6101`) |
+| `ContentSize` | `PixelSize / DisplayScale`, rounded: the window in **content units**, where UI and gameplay lay out | derived |
+| `DisplayInfo.ContentScale` | The display's content scale | `SDL_GetDisplayContentScale` (`:5990`) |
 
-Each change is its own event: `WindowResized` (new `Size`), `WindowPixelSizeChanged` (new `PixelSize`), `WindowDisplayScaleChanged` (new `DisplayScale`; `PixelDensity` is re-read with it) and `WindowDisplayChanged` (moved to another display). Proven behaviour the consumers must handle:
+SDL's high-DPI documentation gives this example, a 3840x2160 display at 200 %:
+
+| OS | `Size` | `PixelSize` | `PixelDensity` | `DisplayScale` | `ContentSize` |
+|----|--------|-------------|----------------|----------------|---------------|
+| Windows | 3840x2160 | 3840x2160 | 1.0 | 2.0 | 1920x1080 |
+| macOS (`HighPixelDensity`) | 1920x1080 | 3840x2160 | 2.0 | 2.0 | 1920x1080 |
+
+Rules:
+
+- **Scale once, from pixels.** UI and layout work in content units and render at content × `DisplayScale` pixels. Multiplying `Size` by `DisplayScale` scales twice on macOS, so nothing does that.
+- **Converting positions:** pixels = window coordinates × `PixelDensity`; content units = pixels / `DisplayScale`.
+- **Window sizes are requested in content units.** `WindowOptions.ContentSize` and `SetContentSize` take content units, so a 1280x720 window has the same physical size on every OS at the same scale setting. The backend converts with window coordinates = content × `DisplayScale` / `PixelDensity`. At creation it estimates with the target display's `ContentScale` (`SDL_GetDisplayContentScale`), then reads the new window's own `DisplayScale` and `PixelDensity` and resizes once if the estimate was off, rounding to whole window coordinates. `ContentSize` reports the result, which can differ from the request by rounding or because the OS clamped it.
+- **Not run yet.** These semantics come from SDL's documentation. The probe behind this note ran at scale 1.0 only, where all three spaces coincide. P3 verifies them on the three OSes at a scale other than 1 (Windows locally at 150 % and 200 %; Linux and macOS where a runner or machine allows, otherwise in manual QA, [section 12](#12-testing)).
+
+Each change is its own event: `WindowResized` (new `Size`), `WindowPixelSizeChanged` (new `PixelSize`), `WindowDisplayScaleChanged` (new `DisplayScale`; `PixelDensity` is re-read with it) and `WindowDisplayChanged` (moved to another display). `ContentSize` is recomputed after any of them. Proven behaviour the consumers must handle:
 
 - **SDL reports a size change right after creating a window** (`samples/HelloWindow/HelloWindowApp.cs:154`; **observed** as `WindowPixelSizeChanged` on the `windows`, `offscreen` and `dummy` drivers), so consumers compare sizes instead of reacting to the event alone.
 - **A minimised window can report a zero pixel size** (`samples/HelloWindow/SwapchainPlanner.cs:26`, `samples/HelloWindow/HelloWindowApp.cs:142`). `State` has `Minimized`, and renderers skip frames while it is set or `PixelSize` has a zero side.
@@ -170,7 +188,7 @@ public readonly record struct MouseWheelData(float X, float Y, float MouseX, flo
 
 `PlatformEventKind` (`ushort`, `None = 0`) for M1: `QuitRequested`; window: `WindowShown`, `WindowHidden`, `WindowMoved`, `WindowResized`, `WindowPixelSizeChanged`, `WindowDisplayScaleChanged`, `WindowDisplayChanged`, `WindowMinimized`, `WindowMaximized`, `WindowRestored`, `WindowFocusGained`, `WindowFocusLost`, `WindowMouseEntered`, `WindowMouseLeft`, `WindowOccluded`, `WindowExposed`, `WindowCloseRequested`; keyboard and text: `KeyDown`, `KeyUp`, `TextInput`; mouse: `MouseMotion`, `MouseButtonDown`, `MouseButtonUp`, `MouseWheel`; displays: `DisplayAdded`, `DisplayRemoved`, `DisplayContentScaleChanged`, `DisplayCurrentModeChanged`. New kinds are appended, never renumbered. Every other SDL event (gamepads, touch, pen, drops, IME editing, audio devices) is ignored in M1.
 
-- **Mouse positions** are in the window's logical units (as SDL's float coordinates are); multiply by `PixelDensity` for pixels.
+- **Mouse positions** are in window coordinates, the same space as `Size` (SDL's float coordinates). Convert them as in [section 1](#window-coordinates-pixels-and-content-units).
 - **Timestamps** come from `IPlatform.Clock` at translation, not from SDL's event timestamp, whose time base is SDL's own. Events of one pump keep the OS order, and that order (not the timestamp) is what input latching ([Architecture 3.10](../03-architecture.md#310-input-brutalengineinput)) relies on.
 
 ### Keys
