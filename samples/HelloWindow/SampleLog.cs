@@ -25,6 +25,11 @@ internal sealed class SampleLog : IDisposable
     /// <summary>The category of the Vulkan setup and the validation layer's messages.</summary>
     public const string VulkanCategoryName = "HelloWindow.Vulkan";
 
+    // The logger's largest message size (its default is 4096 bytes). A failure report is one entry holding the whole
+    // exception.ToString(), which for an AggregateException of up to 16 SDL callback failures, or a deep stack trace,
+    // can be far longer than the default; a cut report ends in an ellipsis and loses the frames that matter.
+    private const int MaxMessageBytes = 65_536;
+
     private readonly ConsoleLogSink _sink;
     private readonly Logger _logger;
 
@@ -36,7 +41,7 @@ internal sealed class SampleLog : IDisposable
         _sink = new ConsoleLogSink(sinkOptions);
         try
         {
-            _logger = new Logger(new LoggerOptions { Sinks = [_sink] });
+            _logger = new Logger(new LoggerOptions { Sinks = [_sink], MaxMessageBytes = MaxMessageBytes });
             App = _logger.CreateCategory(AppCategoryName);
             Vulkan = _logger.CreateCategory(VulkanCategoryName);
         }
