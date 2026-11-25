@@ -107,6 +107,17 @@ public sealed class SplashCapabilitiesTests
     }
 
     [Fact]
+    public void Choose_BlitWithoutTransferSrcFeature_IsSetupFailure()
+    {
+        // The logo image is the blit's source, so it needs TRANSFER_SRC (VUID-vkCmdBlitImage-srcImage-00219). Without
+        // it the copy is ruled out too, so there is no way left.
+        SplashPlan plan = SplashCapabilities.Choose(Support(BlitFeatures & ~VkFormatFeatureFlags.TransferSrcBit), Logo, Scaled);
+
+        Assert.False(plan.IsSupported);
+        Assert.Contains("TransferSrcBit", plan.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Choose_SurfaceWithoutTransferDstUsage_IsSetupFailure()
     {
         SplashPlan plan = SplashCapabilities.Choose(Support(BlitFeatures, usage: VkImageUsageFlags.ColorAttachmentBit), Logo, Unscaled);
