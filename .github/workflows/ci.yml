@@ -61,13 +61,10 @@ jobs:
           PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
-          # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran);
-          # macOS uses MoltenVK on the runner's paravirtual Metal GPU. Its bundled loader path is added by the
-          # smoke steps from BUNDLED_VULKAN_LOADER (set by setup-macos-vulkan), because BRUTAL can't find the
-          # loader by itself (docs/spikes/README.md, S1).
+          # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran). Windows and
+          # Linux are the tested targets (docs/adr/0015-tested-platforms-windows-linux.md).
           linux='{"os":"ubuntu-24.04","rid":"linux-x64","smoke_args":"--require-cpu"}'
           windows='{"os":"windows-2025","rid":"win-x64","smoke_args":"--require-cpu"}'
-          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk"}'
 
           pr_url=""
           proof_url=""
@@ -75,7 +72,7 @@ jobs:
             # A push to main skips what the merged PR already proved on the same tree. The check fails safe: any
             # error or doubt (and every other event) runs the full tier.
             if ! check=$(SMOKE_FAST_OS=$(jq -r .os <<< "$linux") \
-              SMOKE_FULL_OS="$(jq -r .os <<< "$windows") $(jq -r .os <<< "$macos")" \
+              SMOKE_FULL_OS=$(jq -r .os <<< "$windows") \
               bash .github/scripts/ci-merge-check.sh); then
               echo "::warning::The merge check failed, so the full tier runs."
               check=decision=full
@@ -108,9 +105,9 @@ jobs:
 
           # build: format, build, test and pack. smoke: the Vulkan smoke job, over smoke_matrix.
           case "$tier" in
-            full) build=true smoke=true matrix="[$linux,$windows,$macos]" ;;
+            full) build=true smoke=true matrix="[$linux,$windows]" ;;
             fast) build=true smoke=true matrix="[$linux]" ;;
-            smoke-delta) build=false smoke=true matrix="[$windows,$macos]" ;;
+            smoke-delta) build=false smoke=true matrix="[$windows]" ;;
             # docs and verified skip the smoke job, but a matrix must still be valid JSON with at least one entry.
             docs | verified) build=false smoke=false matrix="[$linux]" ;;
             *)
@@ -168,7 +165,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, ubuntu-24.04, macos-15]
+        os: [windows-2025, ubuntu-24.04]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -211,7 +208,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Linux runs in the fast and full tiers, Windows and macOS in the full and smoke-delta tiers. The name must match
+  # Linux runs in the fast and full tiers, Windows in the full and smoke-delta tiers. The name must match
   # SMOKE_JOB_PREFIX in .github/scripts/ci-merge-check.sh, which reads it from the merged PR's check runs.
   vulkan-smoke:
     name: Vulkan smoke, JIT + NativeAOT (${{ matrix.os }})
@@ -237,23 +234,17 @@ jobs:
         with:
           project: tests/BrutalEngine.Aot.Smoke
       - name: Set up software Vulkan (lavapipe + validation layers)
-        if: runner.os != 'macOS'
         uses: ./.github/actions/setup-software-vulkan
-      - name: Set up bundled Vulkan (loader + MoltenVK + validation layers)
-        if: runner.os == 'macOS'
-        uses: ./.github/actions/setup-macos-vulkan
       - name: Build smoke harness
         run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release --no-restore
-      # SMOKE_ARGS is split into words on purpose. BUNDLED_VULKAN_LOADER is set on macOS only.
+      # SMOKE_ARGS is split into words on purpose.
       - name: Run (JIT)
-        run: >-
-          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS
-          ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
+        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS
       - name: Negative test (JIT, injected validation error must exit 2)
         run: |
           set +e
           dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS \
-            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
+            --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
@@ -279,18 +270,17 @@ jobs:
           dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
           ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
       - name: Run (NativeAOT)
-        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
+        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS
       - name: Negative test (NativeAOT, injected validation error must exit 2)
         run: |
           set +e
-          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS \
-            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
+          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
           test "$code" -eq 2
 
-      # HelloWindow (samples/HelloWindow) reuses this job's Vulkan setup and NativeAOT toolchain. Linux and macOS present
+      # HelloWindow (samples/HelloWindow) reuses this job's Vulkan setup and NativeAOT toolchain. Linux presents
       # headless (SDL's offscreen driver, through VK_EXT_headless_surface). No Windows driver offers that extension,
       # lavapipe included, so Windows runs windowed in the runner's desktop session and resizes the window as well.
       # --frames counts the BRUTAL splash too: headless shows it for the first 120 frames; windowed for at least 2.0 s,
@@ -312,15 +302,14 @@ jobs:
         run: |
           set -euo pipefail
           log=$RUNNER_TEMP/hello-window-jit.log
-          dotnet run --project samples/HelloWindow -c Release --no-build -- $HELLO_WINDOW_ARGS $SMOKE_ARGS \
-            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} | tee "$log"
+          dotnet run --project samples/HelloWindow -c Release --no-build -- $HELLO_WINDOW_ARGS $SMOKE_ARGS | tee "$log"
           # The splash ran, and so did the scene after it.
           grep -E ' INFO \[HelloWindow\] splash: [1-9][0-9]* frames over [0-9]+\.[0-9]{2} s, scene: [1-9][0-9]* frames$' "$log"
       - name: Negative tests (HelloWindow JIT, injected validation error must exit 2, bad option must exit 64)
         run: |
           set +e
           dotnet run --project samples/HelloWindow -c Release --no-build -- $HELLO_WINDOW_ARGS $SMOKE_ARGS \
-            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
+            --inject-validation-error
           injected=$?
           dotnet run --project samples/HelloWindow -c Release --no-build -- --bogus
           usage=$?
@@ -344,47 +333,19 @@ jobs:
           grep -F "BRUTAL game development framework is Copyright (c) 2024 Ahwoo Limited." "$OUT/CREDITS.txt"
           find "$OUT/LICENSES" -type f -size +0 | sort | tee "$RUNNER_TEMP/hello-window-licences.txt"
           test -s "$RUNNER_TEMP/hello-window-licences.txt"
-      # What a macOS game ships: the loader, MoltenVK and its ICD manifest next to the executable, where HelloWindow's
-      # BundledVulkan finds them.
-      - name: Bundle the Vulkan loader and MoltenVK with HelloWindow (macOS)
-        if: runner.os == 'macOS'
-        env:
-          OUT: artifacts/hello-window/${{ matrix.rid }}
-        run: |
-          set -euo pipefail
-          bundle=$(dirname "$BUNDLED_VULKAN_LOADER")
-          cp "$bundle/libvulkan.1.dylib" "$bundle/libMoltenVK.dylib" "$bundle/MoltenVK_icd.json" "$OUT/"
-          # The loader resolves a relative library_path against the manifest's directory, so the files stay together.
-          python3 -I -c 'import json, sys; p = json.load(open(sys.argv[1]))["ICD"]["library_path"]; print("library_path:", p); sys.exit(p != "./libMoltenVK.dylib")' \
-            "$OUT/MoltenVK_icd.json"
-          ls -l "$OUT"
-      # On macOS the published app runs self-contained: no --vulkan-loader and no VK_DRIVER_FILES. VK_LAYER_PATH stays,
-      # because the validation layers are a test tool, not something a game ships.
       - name: Run HelloWindow (NativeAOT)
         env:
           OUT: artifacts/hello-window/${{ matrix.rid }}
         run: |
           set -euo pipefail
           log=$RUNNER_TEMP/hello-window-aot.log
-          if [ "$RUNNER_OS" = macOS ]; then
-            unset VK_DRIVER_FILES
-          fi
           "$OUT/HelloWindow" $HELLO_WINDOW_ARGS $SMOKE_ARGS | tee "$log"
           # The splash ran, and so did the scene after it.
           grep -E ' INFO \[HelloWindow\] splash: [1-9][0-9]* frames over [0-9]+\.[0-9]{2} s, scene: [1-9][0-9]* frames$' "$log"
-          if [ "$RUNNER_OS" = macOS ]; then
-            # Prove the bundled loader and driver were used, not ones found elsewhere on the runner.
-            dir=$(cd "$OUT" && pwd -P)
-            grep -F "Vulkan loader: $dir/libvulkan.1.dylib (bundled;" "$log"
-            grep -F "VK_DRIVER_FILES=$dir/MoltenVK_icd.json (bundled driver)" "$log"
-          fi
       - name: Negative test (HelloWindow NativeAOT, injected validation error must exit 2)
         env:
           OUT: artifacts/hello-window/${{ matrix.rid }}
         run: |
-          if [ "$RUNNER_OS" = macOS ]; then
-            unset VK_DRIVER_FILES
-          fi
           set +e
           "$OUT/HelloWindow" $HELLO_WINDOW_ARGS $SMOKE_ARGS --inject-validation-error
           code=$?
