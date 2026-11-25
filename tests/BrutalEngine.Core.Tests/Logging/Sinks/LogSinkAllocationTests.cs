@@ -65,6 +65,63 @@ public sealed class LogSinkAllocationTests
         Assert.True(sink.DroppedCount > Iterations);
     }
 
+    [Fact]
+    public void FileSinkWrite_DoesNotAllocate()
+    {
+        // 2,000 short lines stay far below the default 10 MiB, so the measured window never rotates.
+        string directory = Path.Combine(Path.GetTempPath(), "BrutalEngine.Core.Tests", "FileSinkAllocation-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using RotatingFileLogSink sink = new(new RotatingFileLogSinkOptions { Directory = directory, IncludeCallerInfo = true });
+            DateTimeOffset timestamp = new(2026, 11, 25, 12, 0, 0, TimeSpan.FromHours(13));
+
+            for (int i = 0; i < WarmUpIterations; i++)
+            {
+                WriteFile(sink, timestamp, i);
+            }
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < Iterations; i++)
+            {
+                WriteFile(sink, timestamp, i);
+            }
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
+            Assert.Null(sink.Fault);
+            Assert.Equal("engine.log", Path.GetFileName(Assert.Single(Directory.GetFiles(directory))));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    private static void WriteFile(RotatingFileLogSink sink, DateTimeOffset timestamp, int i)
+    {
+        LogEntry information = new()
+        {
+            Level = LogLevel.Information,
+            Category = "Allocation",
+            Timestamp = timestamp.AddMilliseconds(i),
+            ThreadId = 1,
+            Message = "Loaded 42 assets in 3.5 ms \u2026"u8,
+            CallerFilePath = "/src/BrutalEngine.Assets/AssetLoader.cs",
+            CallerLineNumber = i,
+        };
+        sink.Write(information);
+
+        // At the flush level (Warning by default), so every iteration also flushes to the OS.
+        LogEntry warning = new() { Level = LogLevel.Warning, Category = "Allocation", Timestamp = timestamp, Message = "Frame took 18.2 ms"u8 };
+        sink.Write(warning);
+        sink.Flush();
+        _ = sink.DroppedCount;
+    }
+
     private static void WriteMemory(MemoryLogSink sink, MemoryLogRecord[] records, byte[] buffer, byte[] longMessage, int i)
     {
         LogEntry entry = new()

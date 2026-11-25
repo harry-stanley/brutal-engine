@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -34,12 +35,13 @@ namespace BrutalEngine.Core.Logging.Sinks;
 /// because doing so on every warning costs too much.
 /// </para>
 /// <para>
-/// Failures: for now, I/O exceptions (<see cref="IOException"/>, <see cref="UnauthorizedAccessException"/>)
-/// propagate from every member, as <see cref="ConsoleLogSink"/>'s do; a logger isolates those from
-/// <see cref="Write"/> and <see cref="Flush"/> and counts them. A failed rotation leaves no file open, and the next
-/// <see cref="Write"/> tries the rotation again. Retrying loses no archives: archives only ever move into a free
-/// slot, so a retry after a rotation that shifted them, but failed to rename the current file, moves nothing. This
-/// is interim: a later change (#23) reports I/O failures through a fault state instead of throwing.
+/// Failures: only misuse throws (invalid options, an out-of-range level, use after <see cref="Dispose"/>). I/O
+/// never does. The first <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/>, while creating
+/// the directory, rotating, opening, writing, flushing or closing, puts the sink in a permanent faulted state:
+/// <see cref="Fault"/> describes it, the file is closed, and every later entry is dropped and counted in
+/// <see cref="DroppedCount"/>, as is the entry being written when the failure happened. A faulted sink never
+/// recovers, even if the cause goes away; the next run's sink starts afresh. A logger therefore never sees a file
+/// sink fail: check <see cref="Fault"/> to report it.
 /// </para>
 /// <para>
 /// Thread-safe: every member may be called from any thread, takes the sink's lock, and lines from concurrent
@@ -66,11 +68,14 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     private readonly int _keptArchives;
     private readonly LogLevel _flushLevel;
     private readonly bool _includeCallerInfo;
+    private readonly Func<string, Stream> _openFile;
     private byte[] _line = new byte[InitialLineBufferBytes];
 
-    // Null only after a failed rotation (until the next write retries it) or after Dispose.
-    private FileStream? _stream;
+    // Null when the sink is faulted or disposed, or after a non-I/O exception escaped a rotation (see Fault).
+    private Stream? _stream;
     private long _fileBytes;
+    private EngineError? _fault;
+    private long _droppedCount;
     private bool _disposed;
 
     /// <summary>
@@ -92,13 +97,17 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     /// <see cref="RotatingFileLogSinkOptions.MaxFiles"/> is outside 1 to 100, or
     /// <see cref="RotatingFileLogSinkOptions.FlushLevel"/> isn't a defined <see cref="LogLevel"/>.
     /// </exception>
-    /// <exception cref="IOException">
-    /// Creating the directory, rotating or opening the file failed. Interim: replaced by a fault state in #23.
-    /// </exception>
-    /// <exception cref="UnauthorizedAccessException">
-    /// Access to the directory or a log file was denied. Interim: replaced by a fault state in #23.
-    /// </exception>
+    /// <remarks>
+    /// Never throws for I/O: if creating the directory, rotating or opening the file fails, the sink starts
+    /// faulted (<see cref="Fault"/> is set) and drops every entry.
+    /// </remarks>
     public RotatingFileLogSink(RotatingFileLogSinkOptions options)
+        : this(options, OpenFile)
+    {
+    }
+
+    /// <summary>Creates a sink that opens each new log file with the given function (tests use this).</summary>
+    internal RotatingFileLogSink(RotatingFileLogSinkOptions options, Func<string, Stream> openFile)
     {
         ArgumentNullException.ThrowIfNull(options);
         string directory = options.Directory ?? throw new ArgumentNullException(nameof(options), "RotatingFileLogSinkOptions.Directory is null.");
@@ -136,9 +145,65 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
         _keptArchives = options.MaxFiles - 1;
         _flushLevel = options.FlushLevel;
         _includeCallerInfo = options.IncludeCallerInfo;
+        _openFile = openFile;
 
-        _ = Directory.CreateDirectory(directory);
-        Rotate(startup: true);
+        try
+        {
+            _ = Directory.CreateDirectory(directory);
+            Rotate(startup: true);
+        }
+        catch (Exception exception) when (IsIoFailure(exception))
+        {
+            EnterFault("opening", exception);
+        }
+    }
+
+    /// <summary>
+    /// The I/O failure that faulted the sink, with kind <see cref="ErrorKind.Io"/>, or <see langword="null"/> while
+    /// it's healthy. Once set it never changes: the first failure is kept.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only <see cref="IOException"/> and <see cref="UnauthorizedAccessException"/> fault the sink. Any other
+    /// exception from a rotation (in practice only <see cref="OutOfMemoryException"/>: options validation rules out
+    /// the file APIs' argument exceptions) propagates from <see cref="Write"/> after the old file was closed. The
+    /// sink then has no file but no fault either: later entries are dropped and counted in
+    /// <see cref="DroppedCount"/> while this stays <see langword="null"/>.
+    /// </para>
+    /// <para>Thread-safe; doesn't allocate.</para>
+    /// </remarks>
+    public EngineError? Fault
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _fault;
+            }
+        }
+    }
+
+    /// <summary>
+    /// How many entries weren't written because the sink is faulted, including the one being written when it
+    /// faulted. Zero while it's healthy.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A lower bound on lost entries: lines already accepted but still buffered when a <see cref="Flush"/>, a
+    /// flush-level write or the final flush in <see cref="Dispose"/> failed aren't counted, because they may or may
+    /// not have reached the operating system.
+    /// </para>
+    /// <para>Thread-safe; doesn't allocate.</para>
+    /// </remarks>
+    public long DroppedCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _droppedCount;
+            }
+        }
     }
 
     /// <summary>
@@ -147,16 +212,14 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     /// </summary>
     /// <param name="entry">The entry. Nothing of it is kept after the call returns.</param>
     /// <remarks>
-    /// Thread-safe. Allocates only when it rotates, or when the line is longer than any written before.
+    /// <para>
+    /// Never throws for I/O. When the sink is faulted, the entry is dropped and counted in
+    /// <see cref="DroppedCount"/>; when writing, flushing or rotating fails, the sink faults and drops this entry.
+    /// </para>
+    /// <para>Thread-safe. Allocates only when it rotates or faults, or when the line is longer than any before.</para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">The entry's level is outside Trace to Critical.</exception>
     /// <exception cref="ObjectDisposedException">The sink is disposed.</exception>
-    /// <exception cref="IOException">
-    /// Writing, flushing or rotating failed. Interim: replaced by a fault state in #23.
-    /// </exception>
-    /// <exception cref="UnauthorizedAccessException">
-    /// Rotating was denied access to a log file. Interim: replaced by a fault state in #23.
-    /// </exception>
     /// <exception cref="OverflowException">
     /// The entry's category or caller file is so long (hundreds of millions of characters) that no line buffer can
     /// hold the line.
@@ -171,6 +234,13 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
         lock (_lock)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_stream is null)
+            {
+                // Faulted: the sink never writes again.
+                _droppedCount++;
+                return;
+            }
+
             int maxLength = LogLineFormatter.GetMaxLength(entry, _includeCallerInfo);
             if (maxLength > _line.Length)
             {
@@ -180,39 +250,60 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
 
             int length = LogLineFormatter.Format(entry, _includeCallerInfo, _line);
 
-            // A line goes whole into the current file, or starts a fresh one: an empty file takes any line.
-            if (_stream is null || (_fileBytes > 0 && _fileBytes + length > _maxFileBytes))
+            // Names the step for the fault message; both are literals, so this doesn't allocate.
+            string operation = "rotating";
+            try
             {
-                Rotate(startup: false);
-            }
+                // A line goes whole into the current file, or starts a fresh one: an empty file takes any line.
+                if (_fileBytes > 0 && _fileBytes + length > _maxFileBytes)
+                {
+                    Rotate(startup: false);
+                }
 
-            _stream.Write(_line, 0, length);
-            _fileBytes += length;
-            if (entry.Level >= _flushLevel)
+                operation = "writing";
+                _stream.Write(_line, 0, length);
+                _fileBytes += length;
+                if (entry.Level >= _flushLevel)
+                {
+                    _stream.Flush();
+                }
+            }
+            catch (Exception exception) when (IsIoFailure(exception))
             {
-                _stream.Flush();
+                EnterFault(operation, exception);
+                _droppedCount++;
             }
         }
     }
 
     /// <summary>Flushes buffered lines to the operating system (not forced to the disk).</summary>
-    /// <remarks>Thread-safe; doesn't allocate. Does nothing while a failed rotation left no file open.</remarks>
+    /// <remarks>
+    /// Thread-safe; doesn't allocate unless it faults. Does nothing when the sink is faulted. Never throws for I/O:
+    /// a failed flush faults the sink.
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">The sink is disposed.</exception>
-    /// <exception cref="IOException">The flush failed. Interim: replaced by a fault state in #23.</exception>
     public void Flush()
     {
         lock (_lock)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            _stream?.Flush();
+            try
+            {
+                _stream?.Flush();
+            }
+            catch (Exception exception) when (IsIoFailure(exception))
+            {
+                EnterFault("flushing", exception);
+            }
         }
     }
 
     /// <summary>Flushes buffered lines and closes the file. Later calls do nothing.</summary>
-    /// <remarks>Thread-safe. Every other member throws <see cref="ObjectDisposedException"/> afterwards.</remarks>
-    /// <exception cref="IOException">
-    /// The final flush failed; the file is closed anyway. Interim: replaced by a fault state in #23.
-    /// </exception>
+    /// <remarks>
+    /// Thread-safe. Never throws: if the final flush fails, the file is closed anyway and <see cref="Fault"/> is
+    /// set. <see cref="Write"/> and <see cref="Flush"/> throw <see cref="ObjectDisposedException"/> afterwards;
+    /// <see cref="Fault"/> and <see cref="DroppedCount"/> stay readable.
+    /// </remarks>
     public void Dispose()
     {
         lock (_lock)
@@ -223,9 +314,38 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
             }
 
             _disposed = true;
-            FileStream? stream = _stream;
+            Stream? stream = _stream;
             _stream = null;
+            try
+            {
+                stream?.Dispose();
+            }
+            catch (Exception exception) when (IsIoFailure(exception))
+            {
+                EnterFault("closing", exception);
+            }
+        }
+    }
+
+    private static bool IsIoFailure(Exception exception) => exception is IOException or UnauthorizedAccessException;
+
+    // Called with _lock held, or from the constructor. Keeps the first fault and closes the file for good.
+    private void EnterFault(string operation, Exception exception)
+    {
+        // The first fault wins by construction: every caller is either the constructor or a catch around work on
+        // a non-null _stream, and this method nulls _stream, so it runs at most once per sink.
+        Debug.Assert(_fault is null, "EnterFault ran twice on one sink.");
+        _fault ??= new EngineError(ErrorKind.Io, string.Concat("RotatingFileLogSink failed ", operation, " '", _path, "': ", exception.Message));
+        Stream? stream = _stream;
+        _stream = null;
+        try
+        {
             stream?.Dispose();
+        }
+        catch (Exception closing) when (IsIoFailure(closing))
+        {
+            // Already faulted: the first failure is the one reported. Dispose releases the handle even when its
+            // final flush throws.
         }
     }
 
@@ -234,7 +354,7 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     private void Rotate(bool startup)
     {
         // Close first: Windows can't rename or delete a file while a handle without FileShare.Delete has it open.
-        FileStream? previous = _stream;
+        Stream? previous = _stream;
         _stream = null;
         previous?.Dispose();
 
@@ -242,10 +362,11 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
         if (hasCurrent)
         {
             // Make archive 1 free by moving the run of archives 1, 2, ... up by one, oldest first. Only that run
-            // moves: archives after the first free slot stay where they are. So a retry after a rotation that
-            // shifted the archives but couldn't rename the current file finds slot 1 free and moves nothing, instead
-            // of ageing (and finally deleting) every archive once per attempt. When all slots are taken, the oldest
-            // moves to MaxFiles, overwriting whatever an earlier run or a crash left there, and is deleted below.
+            // moves: archives after the first free slot stay where they are. So the next rotation after one that
+            // shifted the archives but couldn't rename the current file (the next run's startup, since that failure
+            // faults this sink) finds slot 1 free and moves nothing, instead of ageing the archives a second time.
+            // When all slots are taken, the oldest moves to MaxFiles, overwriting whatever an earlier run or a crash
+            // left there, and is deleted below.
             int free = 1;
             while (free <= _keptArchives && File.Exists(ArchivePath(free)))
             {
@@ -277,15 +398,18 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
             }
         }
 
-        _stream = new FileStream(_path, new FileStreamOptions
-        {
-            Mode = FileMode.Create,
-            Access = FileAccess.Write,
-            Share = FileShare.Read,
-            BufferSize = FileBufferBytes,
-        });
+        _stream = _openFile(_path);
         _fileBytes = 0;
     }
+
+    // A new, empty log file: one buffered stream, readable (tailable) by others while the sink writes.
+    private static FileStream OpenFile(string path) => new(path, new FileStreamOptions
+    {
+        Mode = FileMode.Create,
+        Access = FileAccess.Write,
+        Share = FileShare.Read,
+        BufferSize = FileBufferBytes,
+    });
 
     private string ArchivePath(int number) =>
         string.Concat(_archivePrefix, number.ToString(CultureInfo.InvariantCulture), _archiveSuffix);
