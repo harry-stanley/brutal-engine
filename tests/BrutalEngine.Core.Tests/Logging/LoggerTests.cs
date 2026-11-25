@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using BrutalEngine.Core.Logging;
 using Xunit;
 
@@ -180,9 +181,162 @@ public sealed class LoggerTests
         Assert.Equal("Core", category.Name);
     }
 
+    [Fact]
+    public void Log_BelowMinimumLevel_DoesNotReachSinks()
+    {
+        RecordingSink sink = new();
+        using Logger logger = CreateLogger(sink, LogLevel.Warning);
+        LogCategory category = logger.CreateCategory("Core");
+
+        category.Trace($"trace");
+        category.Debug($"debug");
+        category.Information($"information");
+        category.Log(LogLevel.Information, $"dynamic information");
+        category.Log(LogLevel.None, $"none");
+        category.Warning($"warning");
+
+        Assert.Equal(["warning"], sink.Messages);
+    }
+
+    [Fact]
+    public void Log_Enabled_ReachesEverySinkOnceInOrder()
+    {
+        RecordingSink first = new();
+        RecordingSink second = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [first, second], MinimumLevel = LogLevel.Trace });
+        LogCategory category = logger.CreateCategory("Core");
+
+        category.Trace($"1");
+        category.Debug($"2");
+        category.Information($"3");
+        category.Warning($"4");
+        category.Error($"5");
+        category.Critical($"6");
+        category.Log(LogLevel.Error, $"7");
+
+        LogLevel[] expectedLevels =
+        [
+            LogLevel.Trace, LogLevel.Debug, LogLevel.Information, LogLevel.Warning, LogLevel.Error, LogLevel.Critical, LogLevel.Error,
+        ];
+        foreach (RecordingSink sink in new[] { first, second })
+        {
+            Assert.Equal(["1", "2", "3", "4", "5", "6", "7"], sink.Messages);
+            Assert.Equal(expectedLevels, sink.Entries.ConvertAll(e => e.Level));
+            Assert.All(sink.Entries, e => Assert.Equal("Core", e.Category));
+        }
+    }
+
+    [Fact]
+    public void Log_StampsTimeThreadAndCallerInfo()
+    {
+        DateTimeOffset now = new(2026, 11, 25, 9, 30, 15, 250, TimeSpan.Zero);
+        RecordingSink sink = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [sink], TimeProvider = new FixedTimeProvider(now) });
+        LogCategory category = logger.CreateCategory("Physics");
+
+        int expectedLine = CurrentLine() + 1;
+        category.Error($"Step {3} failed");
+
+        RecordedEntry entry = Assert.Single(sink.Entries);
+        Assert.Equal(now, entry.Timestamp);
+        Assert.Equal(Environment.CurrentManagedThreadId, entry.ThreadId);
+        Assert.EndsWith(nameof(LoggerTests) + ".cs", entry.CallerFilePath, StringComparison.Ordinal);
+        Assert.Equal(expectedLine, entry.CallerLineNumber);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Equal("Physics", entry.Category);
+        Assert.Equal("Step 3 failed", entry.Message);
+    }
+
+    [Fact]
+    public void Log_SinkThrows_OtherSinksStillReceiveAndFailureIsCounted()
+    {
+        RecordingSink failing = new() { ThrowOnWrite = true };
+        RecordingSink healthy = new();
+        using Logger logger = CreateLogger(failing, healthy);
+        LogCategory category = logger.CreateCategory("Core");
+
+        category.Information($"first");
+        category.Error($"second");
+
+        Assert.Equal(["first", "second"], healthy.Messages);
+        Assert.Equal(2, logger.SinkFailureCount);
+    }
+
+    [Fact]
+    public void Log_FromInsideASink_IsDroppedInsteadOfRecursing()
+    {
+        ReentrantSink reentrant = new();
+        RecordingSink recorder = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [reentrant, recorder] });
+        LogCategory category = logger.CreateCategory("Core");
+        reentrant.Category = category;
+
+        category.Information($"outer");
+
+        Assert.Equal(["outer"], recorder.Messages);
+        Assert.Equal(1, reentrant.WriteCount);
+        Assert.Equal(0, logger.SinkFailureCount);
+    }
+
+    [Fact]
+    public void Log_HandlerBuiltForAnotherCategoryOrLevel_Throws()
+    {
+        RecordingSink sink = new();
+        using Logger logger = CreateLogger(sink);
+        LogCategory core = logger.CreateCategory("Core");
+        LogCategory audio = logger.CreateCategory("Audio");
+
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            LogMessageHandler<InformationLevel> handler = new(0, 0, core, out _);
+            audio.Information(ref handler);
+        });
+        _ = Assert.Throws<ArgumentException>(() =>
+        {
+            LogMessageHandler<DynamicLevel> handler = new(0, 0, core, LogLevel.Error, out _);
+            core.Log(LogLevel.Warning, ref handler);
+        });
+
+        Assert.Empty(sink.Entries);
+    }
+
+    [Fact]
+    public void LogAfterDispose_IsNoOp()
+    {
+        RecordingSink sink = new();
+        Logger logger = CreateLogger(sink);
+        LogCategory category = logger.CreateCategory("Core");
+        logger.Dispose();
+
+        category.Critical($"late {42}");
+        category.Log(LogLevel.Critical, $"late");
+
+        Assert.Empty(sink.Entries);
+    }
+
     private static Logger CreateLogger(RecordingSink sink, LogLevel minimumLevel = LogLevel.Information) =>
         new(new LoggerOptions { Sinks = [sink], MinimumLevel = minimumLevel });
 
     private static Logger CreateLogger(params RecordingSink[] sinks) =>
         new(new LoggerOptions { Sinks = sinks });
+
+    private static int CurrentLine([CallerLineNumber] int line = 0) => line;
+
+    /// <summary>A sink that logs through the logger that is calling it.</summary>
+    private sealed class ReentrantSink : ILogSink
+    {
+        public LogCategory Category { get; set; }
+
+        public int WriteCount { get; private set; }
+
+        public void Write(scoped in LogEntry entry)
+        {
+            WriteCount++;
+            Category.Error($"inner {WriteCount}");
+        }
+
+        public void Flush()
+        {
+        }
+    }
 }

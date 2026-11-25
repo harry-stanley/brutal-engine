@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using BrutalEngine.Core.Logging;
 
 namespace BrutalEngine.Core.Tests.Logging;
@@ -8,6 +9,9 @@ internal sealed record RecordedEntry(
     string Category,
     DateTimeOffset Timestamp,
     int ThreadId,
-    string Message,
+    byte[] MessageBytes,
     string CallerFilePath,
-    int CallerLineNumber);
+    int CallerLineNumber)
+{
+    public string Message => Encoding.UTF8.GetString(MessageBytes);
+}

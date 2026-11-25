@@ -14,7 +14,12 @@ namespace BrutalEngine.Core.Logging;
 /// <c>default(LogCategory)</c> is a valid no-op category: it logs nothing, <see cref="IsEnabled"/> is always
 /// <see langword="false"/>, and it never throws.
 /// </para>
-/// <para>Thread-safe. No member allocates.</para>
+/// <para>
+/// Log with the level methods, e.g. <c>category.Information($"Loaded {count} assets in {ms:F1} ms")</c>. The
+/// compiler builds a <see cref="LogMessageHandler{TLevel}"/> that formats nothing unless the level is enabled.
+/// Logging after the logger is disposed does nothing.
+/// </para>
+/// <para>Thread-safe. No member allocates, except as described on <see cref="LogMessageHandler{TLevel}"/>.</para>
 /// </remarks>
 public readonly struct LogCategory : IEquatable<LogCategory>
 {
@@ -35,6 +40,116 @@ public readonly struct LogCategory : IEquatable<LogCategory>
     /// logger is disposed. Never throws.
     /// </returns>
     public bool IsEnabled(LogLevel level) => _state is not null && _state.IsEnabled(level);
+
+    /// <summary>Logs a <see cref="LogLevel.Trace"/> message: very detailed tracing.</summary>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Trace(
+        [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<TraceLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, LogLevel.Trace, callerFile, callerLine);
+
+    /// <summary>Logs a <see cref="LogLevel.Debug"/> message: diagnostic detail.</summary>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Debug(
+        [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<DebugLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, LogLevel.Debug, callerFile, callerLine);
+
+    /// <summary>Logs a <see cref="LogLevel.Information"/> message: normal operation.</summary>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Information(
+        [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<InformationLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, LogLevel.Information, callerFile, callerLine);
+
+    /// <summary>Logs a <see cref="LogLevel.Warning"/> message: something unexpected that was recovered from.</summary>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Warning(
+        [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<WarningLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, LogLevel.Warning, callerFile, callerLine);
+
+    /// <summary>Logs a <see cref="LogLevel.Error"/> message: a failed operation.</summary>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Error(
+        [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<ErrorLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, LogLevel.Error, callerFile, callerLine);
+
+    /// <summary>Logs a <see cref="LogLevel.Critical"/> message: a failure that likely ends the process or session.</summary>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Critical(
+        [InterpolatedStringHandlerArgument("")] ref LogMessageHandler<CriticalLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, LogLevel.Critical, callerFile, callerLine);
+
+    /// <summary>Logs a message at a level chosen at run time.</summary>
+    /// <param name="level">
+    /// The level. The compiler passes it to the message handler, which checks it. <see cref="LogLevel.None"/>
+    /// logs nothing.
+    /// </param>
+    /// <param name="message">
+    /// The message, as an interpolated string. Its parts are formatted only if the level is enabled.
+    /// </param>
+    /// <param name="callerFile">Filled in by the compiler.</param>
+    /// <param name="callerLine">Filled in by the compiler.</param>
+    /// <remarks>
+    /// No-op when disabled. Never throws, except from a value's own formatting code, or with a handler built by
+    /// hand for another category or level (<see cref="ArgumentException"/>).
+    /// </remarks>
+    public void Log(
+        LogLevel level,
+        [InterpolatedStringHandlerArgument("", nameof(level))] ref LogMessageHandler<DynamicLevel> message,
+        [CallerFilePath] string callerFile = "",
+        [CallerLineNumber] int callerLine = 0) => message.Complete(_state, level, callerFile, callerLine);
 
     /// <inheritdoc />
     public bool Equals(LogCategory other) => ReferenceEquals(_state, other._state);

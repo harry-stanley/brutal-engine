@@ -26,4 +26,21 @@ public sealed class LogCategoryTests
         Assert.False(category.Equals((object)default(LogCategory)));
         Assert.False(category.Equals("Core"));
     }
+
+    [Fact]
+    public void Default_LogsNothingAndDoesNotThrow()
+    {
+        LogCategory category = default;
+        CountingFormattable value = new();
+
+        category.Trace($"{value}");
+        category.Debug($"{value}");
+        category.Information($"{value}");
+        category.Warning($"{value}");
+        category.Error($"{value}");
+        category.Critical($"{value}");
+        category.Log(LogLevel.Critical, $"{value}");
+
+        Assert.Equal(0, value.FormatCount);
+    }
 }
