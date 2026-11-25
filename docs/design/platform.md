@@ -135,12 +135,34 @@ Each change is its own event: `WindowResized` (new `Size`), `WindowPixelSizeChan
 ### Displays
 
 ```csharp
-public sealed record DisplayInfo(DisplayId Id, string Name, DisplayRect Bounds, DisplayRect UsableBounds, float ContentScale, DisplayMode CurrentMode, bool IsPrimary);
-public readonly record struct DisplayRect(int X, int Y, int Width, int Height);   // logical desktop coordinates
-public readonly record struct DisplayMode(int Width, int Height, float PixelDensity, float RefreshRate); // pixels; 0 refresh = unknown
+public sealed record DisplayInfo
+{
+    public required DisplayId Id { get; init; }
+    public required string Name { get; init; }
+    public required DisplayRect Bounds { get; init; }        // desktop, in window coordinates
+    public required DisplayRect UsableBounds { get; init; }  // minus taskbars and menu bars
+    public required float ContentScale { get; init; }
+    public required DisplayMode CurrentMode { get; init; }
+    public bool IsPrimary { get; init; }
+}
+
+public readonly record struct DisplayRect(int X, int Y, int Width, int Height); // SDL's desktop coordinates (window coordinates)
+
+public readonly record struct DisplayMode
+{
+    public DisplayId Display { get; init; }    // the display this mode belongs to
+    public int Width { get; init; }            // in window coordinates, before pixel density
+    public int Height { get; init; }
+    public float PixelDensity { get; init; }   // pixels = Width x PixelDensity by Height x PixelDensity
+    public float RefreshRate { get; init; }    // Hz; 0 if unknown
+}
 ```
 
-`Displays` is a snapshot list rebuilt (allocating) at creation and whenever a display event is pumped (`DisplayAdded`, `DisplayRemoved`, `DisplayContentScaleChanged`, `DisplayCurrentModeChanged`). Sources: `SDL_GetDisplays` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:5905`, array freed with `SDL_free`, `:41`), `SDL_GetPrimaryDisplay` (`:5915`), `SDL_GetDisplayName` (`:5937`), `SDL_GetDisplayBounds` (`:5950`), `SDL_GetDisplayUsableBounds` (`:5960`), `SDL_GetCurrentDisplayMode` (`:6051`); `GetFullscreenModes` uses `SDL_GetFullscreenDisplayModes` (`:6000`). `SetMode(BorderlessFullscreen)` is `SDL_SetWindowFullscreen` (`:6536`); `SetExclusiveFullscreen` is `SDL_SetWindowFullscreenMode` (`:6111`) then `SDL_SetWindowFullscreen`.
+`DisplayInfo` and `DisplayMode` use init-only properties, not positional parameters, so fields can be added without breaking their constructors. A `DisplayMode` mirrors SDL's `SDL_DisplayMode` (`displayID`, `w`, `h`, `pixel_density`, `refresh_rate`; `Brutal.Sdl/Generated/Sdl.Structs.gen.cs:177-188`) without its pixel format, rational refresh rate and internal pointer. SDL's `w` and `h` are before pixel density (a 1920x1080 mode with density 2.0 has 3840x2160 pixels), and so are `Width` and `Height`.
+
+`Displays` is a snapshot list rebuilt (allocating) at creation and whenever a display event is pumped (`DisplayAdded`, `DisplayRemoved`, `DisplayContentScaleChanged`, `DisplayCurrentModeChanged`). Sources: `SDL_GetDisplays` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:5905`, array freed with `SDL_free`, `:41`), `SDL_GetPrimaryDisplay` (`:5915`), `SDL_GetDisplayName` (`:5937`), `SDL_GetDisplayBounds` (`:5950`), `SDL_GetDisplayUsableBounds` (`:5960`), `SDL_GetCurrentDisplayMode` (`:6051`); `GetFullscreenModes` uses `SDL_GetFullscreenDisplayModes` (`:6000`); an unknown display (never seen, or unplugged since) is `ErrorKind.NotFound`. `SetMode(BorderlessFullscreen)` is `SDL_SetWindowFullscreen` (`:6536`).
+
+**Exclusive fullscreen.** `SetExclusiveFullscreen(mode)` takes a mode from `GetFullscreenModes` (or `DisplayInfo.CurrentMode`); SDL accepts only modes it returned. The backend re-reads `SDL_GetFullscreenDisplayModes(mode.Display)` and uses the first entry whose `w`, `h`, `pixel_density` and `refresh_rate` equal the mode's exactly. Exact float comparison is sound because the values came from SDL unchanged. There is no "closest" matching: a game that wants the nearest mode picks it from `GetFullscreenModes` itself. If several entries differ only in pixel format, the first one SDL returned is used. Then it calls `SDL_SetWindowFullscreenMode` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:6111`) and `SDL_SetWindowFullscreen`. A mode that matches nothing (the display was unplugged, its modes changed, or the value was built by hand) fails with `ErrorKind.NotFound`; `default(DisplayMode)` (display 0) throws `ArgumentException`.
 
 ### Input-related window state
 
@@ -159,24 +181,37 @@ public enum SystemCursor { Default = 0, Text, Wait, Crosshair, Progress, ResizeN
 `PlatformEvent` is a tagged union: a 16-byte header plus a 24-byte payload whose meaning depends on `Kind`, 40 bytes in all (`[StructLayout(LayoutKind.Explicit, Size = 40)]`). It is unmanaged: no strings or references, so a buffer of them is one flat array that the GC never scans.
 
 ```csharp
+public readonly record struct PlatformEventHeader(PlatformEventKind Kind, WindowId Window, long Timestamp);
+
 public readonly struct PlatformEvent
 {
-    public PlatformEventKind Kind { get; }      // offset 0 (ushort)
+    public PlatformEventKind Kind { get; }      // offset 0 (ushort); offsets 2-3 reserved
     public WindowId Window { get; }             // offset 4; default for platform-wide events
     public long Timestamp { get; }              // offset 8: Clock.GetTimestamp() when the pump translated it
+    public PlatformEventHeader Header { get; }  // the three above
 
-    // Payload views (offset 16). Reading the view that doesn't match Kind throws InvalidOperationException.
-    public KeyEventData Key { get; }            // KeyDown, KeyUp
-    public TextEventData Text { get; }          // TextInput: a range in the batch's text buffer
-    public MouseMotionData MouseMotion { get; } // MouseMotion
-    public MouseButtonData MouseButton { get; } // MouseButtonDown, MouseButtonUp
-    public MouseWheelData MouseWheel { get; }   // MouseWheel
-    public WindowSize Size { get; }             // WindowResized, WindowPixelSizeChanged
-    public float Scale { get; }                 // WindowDisplayScaleChanged, DisplayContentScaleChanged
-    public DisplayId Display { get; }           // WindowDisplayChanged, Display*
+    // Payload views. Reading a view that Kind doesn't carry throws InvalidOperationException.
+    public KeyEventData Key { get; }
+    public TextEventData Text { get; }
+    public MouseMotionData MouseMotion { get; }
+    public MouseButtonData MouseButton { get; }
+    public MouseWheelData MouseWheel { get; }
+    public WindowSize Size { get; }
+    public DisplayId Display { get; }
+    public float Scale { get; }
 
-    // Factories for backends (one per payload shape), e.g.:
-    public static PlatformEvent CreateKey(PlatformEventKind kind, WindowId window, long timestamp, KeyEventData key);
+    // Factories, for backends and tests. Each throws ArgumentException if header.Kind isn't one of its kinds,
+    // or if a window kind has a default Window.
+    public static PlatformEvent Create(PlatformEventHeader header);                                   // kinds without a payload
+    public static PlatformEvent CreateKey(PlatformEventHeader header, KeyEventData key);
+    public static PlatformEvent CreateText(PlatformEventHeader header, TextEventData text);
+    public static PlatformEvent CreateMouseMotion(PlatformEventHeader header, MouseMotionData motion);
+    public static PlatformEvent CreateMouseButton(PlatformEventHeader header, MouseButtonData button);
+    public static PlatformEvent CreateMouseWheel(PlatformEventHeader header, MouseWheelData wheel);
+    public static PlatformEvent CreateSize(PlatformEventHeader header, WindowSize size);
+    public static PlatformEvent CreateDisplay(PlatformEventHeader header, DisplayId display);
+    public static PlatformEvent CreateScale(PlatformEventHeader header, float scale);
+    public static PlatformEvent CreateDisplayScale(PlatformEventHeader header, DisplayId display, float scale);
 }
 
 public readonly record struct KeyEventData(Scancode Scancode, Keycode Keycode, KeyModifiers Modifiers, bool IsRepeat);
@@ -185,6 +220,23 @@ public readonly record struct MouseMotionData(float X, float Y, float DeltaX, fl
 public readonly record struct MouseButtonData(MouseButton Button, byte Clicks, float X, float Y);
 public readonly record struct MouseWheelData(float X, float Y, float MouseX, float MouseY); // "natural" direction already applied
 ```
+
+Payloads, by kind (offsets are within the 40-byte event):
+
+| Kinds | Factory | Views (offsets) |
+|-------|---------|-----------------|
+| `QuitRequested`, `WindowShown`, `WindowHidden`, `WindowMoved`, `WindowMinimized`, `WindowMaximized`, `WindowRestored`, `WindowFocusGained`, `WindowFocusLost`, `WindowMouseEntered`, `WindowMouseLeft`, `WindowOccluded`, `WindowExposed`, `WindowCloseRequested` | `Create` | none. `WindowMoved` carries no position: M1 has no window-position API |
+| `KeyDown`, `KeyUp` | `CreateKey` | `Key` (16-27) |
+| `TextInput` | `CreateText` (normally through `PlatformEventBuffer.AddText`) | `Text` (16-23) |
+| `MouseMotion` | `CreateMouseMotion` | `MouseMotion` (16-35) |
+| `MouseButtonDown`, `MouseButtonUp` | `CreateMouseButton` | `MouseButton` (16-27) |
+| `MouseWheel` | `CreateMouseWheel` | `MouseWheel` (16-31) |
+| `WindowResized` (window coordinates), `WindowPixelSizeChanged` (pixels) | `CreateSize` | `Size` (16-23) |
+| `WindowDisplayChanged`, `DisplayAdded`, `DisplayRemoved`, `DisplayCurrentModeChanged` | `CreateDisplay` | `Display` (16-19) |
+| `WindowDisplayScaleChanged` | `CreateScale` | `Scale` (20-23) |
+| `DisplayContentScaleChanged` | `CreateDisplayScale` | `Display` (16-19) and `Scale` (20-23) |
+
+`Display` always sits at offset 16 and `Scale` at 20, so the one kind with both reads both. `QuitRequested` and the `Display*` kinds have a default `Window`; every `Window*` kind has a real one, and key, text and mouse kinds carry the window SDL reports them for (the focused one), or a default `WindowId` when SDL reports none.
 
 `PlatformEventKind` (`ushort`, `None = 0`) for M1: `QuitRequested`; window: `WindowShown`, `WindowHidden`, `WindowMoved`, `WindowResized`, `WindowPixelSizeChanged`, `WindowDisplayScaleChanged`, `WindowDisplayChanged`, `WindowMinimized`, `WindowMaximized`, `WindowRestored`, `WindowFocusGained`, `WindowFocusLost`, `WindowMouseEntered`, `WindowMouseLeft`, `WindowOccluded`, `WindowExposed`, `WindowCloseRequested`; keyboard and text: `KeyDown`, `KeyUp`, `TextInput`; mouse: `MouseMotion`, `MouseButtonDown`, `MouseButtonUp`, `MouseWheel`; displays: `DisplayAdded`, `DisplayRemoved`, `DisplayContentScaleChanged`, `DisplayCurrentModeChanged`. New kinds are appended, never renumbered. Every other SDL event (gamepads, touch, pen, drops, IME editing, audio devices) is ignored in M1.
 
