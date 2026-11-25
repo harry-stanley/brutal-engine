@@ -310,3 +310,173 @@ The front end's planner (G10) decides every transition from what the frame recor
 - **Swapchain images join the acquire and present semaphores**, exactly as M0 proved clean under synchronization validation (`samples/HelloWindow/FrameRenderer.cs:277-294`, `samples/HelloWindow/FrameRenderer.cs:318-333`): a transition out of `Undefined` on an acquired image uses `COLOR_ATTACHMENT_OUTPUT` as its source stage, the stage the acquire semaphore is waited at, so it chains after the presentation engine's release; the transition to `Present` uses `COLOR_ATTACHMENT_OUTPUT` as its destination stage with no access, the stage the render-finished semaphore signals at. The backend applies both stage rules to any transition of an image listed in `FramePlan.Acquired`, whatever the planner's states say.
 - **`ClearSwapchainImage`** (an acquired image no pass wrote) is recorded as an empty dynamic-rendering pass with `LOAD_OP_CLEAR` to opaque black, which needs only colour-attachment usage. So the planner surrounds it with `ColorTarget` transitions; G10 must follow this rule.
 - **Render passes** are `vkCmdBeginRendering` (`Brutal.Vulkan/Generated/Handles/VkDevice.gen.cs:208`) with one `VkRenderingAttachmentInfo` per attachment, in the layouts above; the viewport and scissor are reset to the full attachment at each begin (graphics note section 9).
+
+## 11. Timestamps
+
+- **Capability:** `TimestampQueries` is offered when the chosen queue family's `timestampValidBits` is non-zero (`Brutal.Vulkan/Generated/Structs/VkQueueFamilyProperties.gen.cs:39`) and `timestampPeriod` is positive (`Brutal.Vulkan/Generated/Structs/VkPhysicalDeviceLimits.gen.cs:681`). `GraphicsLimits.TimestampPeriodNanoseconds` is `timestampPeriod`. `timestampComputeAndGraphics` isn't needed: the one family is checked directly.
+- **Pools:** each frame slot owns one `VK_QUERY_TYPE_TIMESTAMP` pool, 256 queries to start. The front end assigns two indices per labelled pass (the contract's timestamps row); when a plan uses an index past the pool's size, `Execute` replaces the slot's pool with one twice as large before it begins the command buffer (the slot's previous frame has completed and nothing recorded refers to the old pool, so it is destroyed at once). That frame allocates; later ones don't.
+- **Writes:** `Execute` resets the used range with `vkCmdResetQueryPool` as the command buffer's first command, which is this backend's reset of the slot's query pool (the contract's `BeginFrame` comment) (`Brutal.Vulkan/Generated/Handles/VkDevice.gen.cs:92`), then writes `vkCmdWriteTimestamp2` at `TOP_OF_PIPE` before a pass begins and at `BOTTOM_OF_PIPE` after it ends, outside the rendering scope. G11 confirms these stage choices under validation.
+- **Reads, never waiting:** `TryReadTimestamps(slot, ticks)` returns `false` while the slot's frame isn't complete (`IsFrameComplete`), otherwise calls `vkGetQueryPoolResults` (`Brutal.Vulkan/Generated/Handles/VkDevice.gen.cs:67`) with `64_BIT` and no `WAIT` flag. `NOT_READY` is `false`; so is a lost device, which the next frame call reports. Ticks are masked to `timestampValidBits` before they are returned, so the front end's subtraction never sees garbage high bits. With two frames in flight, frame N's results are read about two frames later, as the graphics note says.
+- **Labels:** a labelled pass and every debug group become `vkCmdBeginDebugUtilsLabelEXT`/`EndDebugUtilsLabelEXT` (`Brutal.Vulkan/Generated/Handles/VkDevice.gen.cs:423-424`) when `VK_EXT_debug_utils` is enabled, with the label's UTF-8 name from `BackendObjectTable.GetLabel`.
+- The RTX 2070 SUPER reports `timestampValidBits = 64` and `timestampPeriod = 1` (the graphics note, from the maintainer's `vulkaninfo`); lavapipe is unknown until G11 runs there, and a device without timestamps takes the documented unsupported path.
+
+## 12. Device loss
+
+Decision (maintainer, 2026-11-26): detection everywhere, a typed `DeviceLost` event, and teardown and recreation through owner callbacks, with an internal fault-injection seam. The front end owns the event, `Recover` and its own seam (graphics note section 12). The backend's part:
+
+- **Detection in one place.** Every result-returning call goes through the device's call gate (section 13). `VK_ERROR_DEVICE_LOST` (`Brutal.Vulkan/Generated/Enums/VkResult.gen.cs:185`) from any of them sets the device's lost flag and returns the contract's loss value: `ErrorKind.Unavailable` with the native code, or `SwapchainStatus.DeviceLost`. A fence wait that runs out of `GpuTimeout` is `ErrorKind.Timeout`, which the front end reports as a loss with `TimedOut`. Once lost, frame calls and creations return `Unavailable` without calling the driver; destruction still calls it, because destroying objects stays valid after a loss.
+- **Teardown and recreation.** `Recover` (front end) calls the owners' `OnDeviceLost`, discards every id it held, disposes the `IBackendDevice` (section 5's order; `vkDeviceWaitIdle` returns `VK_ERROR_DEVICE_LOST` and is ignored), then calls `CreateDevice` with the same request and adapter selection. That builds a new instance, messenger, device, allocator and slots, and the front end recreates each swapchain through `CreateSurface` and `CreateSwapchain` before the owners' `OnDeviceRecreated`. Nothing survives in the backend; the old device's validation counts are added into the front end's statistics before it is disposed (G2b's rule that statistics survive).
+- **The backend's fault seam** proves its own detection, which the front end's seam (which replaces a status after the backend returned it) can't reach. Decision (this note): it is compiled into release builds, internal, and reachable only from `BrutalEngine.Graphics.Vulkan.Tests` through `InternalsVisibleTo`. The shipped code is then exactly the tested code, and the cost is one null check per call. An injected result replaces the native call, so no real object is created or submitted behind it.
+
+```csharp
+internal sealed class VulkanFaultInjector              // null in production; set only by Graphics.Vulkan.Tests
+{
+    public void FailNth(VulkanCall call, int occurrence, VkResult result); // the occurrence-th call (1-based) returns result
+    public bool TryTake(VulkanCall call, out VkResult result);            // consumed by the call gate before the native call
+}
+
+internal enum VulkanCall
+{
+    WaitForFences, GetFenceStatus, ResetCommandPool, ResetDescriptorPool, QueueSubmit2, AcquireNextImage, QueuePresent,
+    CreateSwapchain, CreateBuffer, CreateImage, AllocateDescriptorSets, CreatePipeline, GetQueryPoolResults, DeviceWaitIdle,
+}
+```
+
+- **What forces it:** `Graphics.Vulkan.Tests` (GPU trait, section 15) injects `VK_ERROR_DEVICE_LOST` at every `VulkanCall` and `VK_TIMEOUT` at `WaitForFences`, and checks the returned value, the lost flag, and a clean `Dispose` (validation clean, no VMA allocation left). The conformance suite's device-lost category forces loss through the front end's seam at fence wait, submit, acquire, present and resource creation, and runs `Recover` for real on lavapipe and the RTX (graphics note section 15).
+
+## 13. Status checking
+
+[Architecture 3.5](../03-architecture.md#35-error-handling) asks for one checking helper per library. For Vulkan and VMA it has two parts: a pure mapping and a per-device gate.
+
+```csharp
+internal static class VkCheck                          // pure; unit-tested as a table
+{
+    public static ErrorKind KindOf(VkResult result);    // below
+    public static SwapchainStatus SwapchainStatusOf(VkResult result); // section 4's table
+    public static EngineError Error(VkResult result, VulkanCall call); // message: a constant per call; no allocation
+    public static EngineError FromException(VkResultError error, string call); // BRUTAL-wrapper creation sites only
+}
+
+internal sealed class VulkanCallGate                   // one per device; every result-returning call passes through it
+{
+    public bool IsLost { get; }
+    public VulkanFaultInjector? Faults { get; set; }    // section 12
+    public bool TryTakeFault(VulkanCall call, out VkResult result);
+    public Result Check(VkResult result, VulkanCall call); // marks loss; allocates nothing on success or failure
+}
+```
+
+`KindOf`: out of host or device memory, and `OUT_OF_POOL_MEMORY` once its retry failed, are `OutOfMemory`; `DEVICE_LOST` is `Unavailable`; `TIMEOUT` is `Timeout`; `FORMAT_NOT_SUPPORTED`, `FEATURE_NOT_PRESENT`, `EXTENSION_NOT_PRESENT`, `LAYER_NOT_PRESENT` and `INCOMPATIBLE_DRIVER` are `Unsupported`; `INVALID_SHADER_NV` is `InvalidData`; everything else is `Native`, always with the code in `NativeCode`.
+
+Rules (G3 writes them into the project's design section; review enforces them):
+
+1. **Raw function tables for every result-returning call** after creation: `device.PInvoke.vkX.Invoke(...)`, `instance.PInvoke...`, and `Vulkan.PInvoke` for global calls, then `VulkanCallGate.Check`. BRUTAL's generated wrappers throw `VkResultError` for error codes, including a lost device in `WaitForFences` (`Brutal.Vulkan/Generated/Extensions/VkDeviceExtensions.gen.cs:1197`), and the `_Count` enumeration helpers drop their result (upstream issue draft #18), so neither is used.
+2. **Three BRUTAL wrappers are allowed**, each at one creation-time call site that catches `VkResultError` and converts it with `VkCheck.FromException`: `Vulkan.CreateInstance` and `PhysicalDevice.CreateDevice` (their classes own the function tables and have internal constructors) and `Brutal.Vulkan.Abstractions`' `AllocateCommandBuffers` (section 5). The only other caught exception is the `TypeInitializationException` of a missing loader, in `VulkanBackend.Create`. No exception is ever caught on the frame path.
+3. **Void commands** (`vkCmd*`, `vkDestroy*`, `vkUpdateDescriptorSets`) also go through the raw table in `Execute`, so no wrapper code sits between the command stream and the driver.
+4. **Extension entry points** are called only when their extension is enabled (section 3).
+5. **VMA:** only the generated, result-returning calls (section 6), through the same gate.
+6. **Queue locking:** BRUTAL's `Queue` takes a lock around submit and present (`Brutal.Vulkan/Manual/Classes/Queue.cs:81-98`; upstream issue draft #7). The backend calls `vkQueueSubmit2` and `vkQueuePresentKHR` through the raw table, which skips that lock; that is sound because the contract confines every call to the owner thread, and nothing in the backend calls a locking `Queue` member (M0 relies on the same, `samples/HelloWindow/FrameRenderer.cs:140-143`).
+7. **`uint64_t` timeouts** are `nint` in BRUTAL's binding (`Brutal.Vulkan/Generated/Extensions/VkDeviceExtensions.gen.cs:1169-1173`; upstream issue draft #5): `GpuTimeout` in nanoseconds is passed as `unchecked((nint)ns)`, which is exact on the 64-bit RIDs the engine supports.
+8. **A discarded status fails the build:** the BE1001 analyzer flags a discarded `Result` or `VkResult` (`src/BrutalEngine.Analyzers/DiscardedStatusResultAnalyzer.cs:39`).
+
+## 14. NativeAOT
+
+M0 proved under NativeAOT, with 0 trim and AOT warnings: BRUTAL's loader resolution and preloading, instance and device creation, the static messenger callback, raw acquire and present, `Brutal.Vulkan.Abstractions`' command buffer allocation (HelloWindow's frame loop) and a headless swapchain. BRUTAL declares no assembly AOT-compatible (upstream issue draft #12), so each new path needs an AOT run:
+
+| New path | First issue | AOT coverage |
+|----------|-------------|--------------|
+| The messenger callback reaching an instance through a `GCHandle` in `pUserData` | G3 | G3 moves the smoke harness's `ValidationMessenger` (`tests/BrutalEngine.Aot.Smoke/ValidationMessenger.cs:12-18`) to the same pattern, so its existing scenario runs it on every smoke OS |
+| `VulkanBackend.Create`, the loader host, `setenv` on macOS (unverified) | G3 | a new `graphics-vulkan` smoke scenario that creates the backend and logs its decision |
+| VMA: `[LibraryImport("vma")]`, resolved by .NET's default native probing (the package installs no resolver), from `runtimes/<rid>/native` under JIT and the published folder under AOT | G6 | the scenario creates a buffer and maps it |
+| The full device through `GraphicsDevice`: frames, a clear, a readback | G9b | the scenario renders offscreen with validation and checks `GraphicsStatistics.ValidationErrors` is 0 |
+
+The smoke's negative canary stays in the existing raw scenario: the backend's `InjectValidationError` is reachable only through `IBackendDevice` or the front end's internal seam. The backend itself uses no reflection, `Enum.ToString` or runtime code generation (driver names come from a table, section 3). `.github/scripts/ci-tier.sh` already gives `src/BrutalEngine.Graphics*` the full tier (`.github/scripts/ci-tier.sh:12`); G3 adds a self-test case for the new project's path.
+
+## 15. Testing
+
+| Where | What | Runs on |
+|-------|------|---------|
+| `BrutalEngine.Graphics.Vulkan.Tests`, no driver | The pure parts: `LoaderSetup` with a fake host (every macOS branch, on any OS), `AdapterSelector`, `SwapchainPlanner`, the status tables (`KindOf`, `SwapchainStatusOf`), the `ResourceState`, format, vertex-format, blend and sampler mappings, portability restrictions over hand-built feature structs, descriptor-pool and query-pool growth, the allow-list | the build-test job, every OS |
+| The same project, `Gpu` trait | Per-instance validation counts (two devices, a canary in one), allow-list suppression, selection on real adapters with each override, swapchains on a window made through BRUTAL's SDL binding (windowed on Windows, headless on Linux) with maintenance1 on and off, fences and `GpuTimeout`, VMA placement and leak checks, every fault injection (section 12), 1,000 steady frames of `Execute` and `Present` allocating 0 managed bytes | the vulkan-smoke job on Linux and Windows lavapipe (the build-test job excludes the trait; G3 adds both filters); locally on the RTX |
+| `BrutalEngine.Graphics.Conformance` (C1) | The backend-neutral contract through `GraphicsDevice`: validation-clean with synchronization validation, the negative canary, leak checks, readback and golden images (graphics note section 15) | the same CI drivers; locally on the RTX |
+| `BrutalEngine.Aot.Smoke` | Section 14's scenarios, JIT and NativeAOT | the vulkan-smoke job |
+
+- **Real GPU:** decision (maintainer, 2026-11-26): there is no self-hosted runner in M1. Each graphics PR records a local run on the RTX 2070 SUPER (Windows 11): verify.sh with `--gpu`, the `Gpu`-trait tests and the conformance suite. The software-Vulkan nightly runs the same suites. The decision is revisited at M1 close.
+- **CI drivers:** lavapipe on ubuntu-24.04 (layers 1.3.275) and windows-2025 (layers 1.4.363), so validation coverage differs between them ([spikes, S3](../spikes/README.md#s3-software-vulkan-on-githubs-linux-and-windows-runners)). Headless presentation runs on Linux only: no Windows driver offers `VK_EXT_headless_surface`.
+- **macOS:** unverified in M1. The portability rules are unit-tested with hand-built feature structs; nothing runs on MoltenVK until macOS returns to CI.
+- **Negative canaries:** `InjectValidationError` in the conformance suite and the `Gpu` tests; the raw AOT canary in the smoke harness. Each proves the layer is loaded where it runs.
+
+## 16. BRUTAL gaps
+
+Every gap below is worked around as described. The numbers are entries in the maintainer's draft of upstream issues (unfiled), so a fix upstream can be traced back here.
+
+| Draft | Gap | Workaround (section) |
+|-------|-----|----------------------|
+| #1 | Swapchain wrappers throw on `OUT_OF_DATE` (`Brutal.Vulkan/Generated/Extensions/VkDeviceExtensions.gen.cs:8442`), and every generated wrapper throws on `DEVICE_LOST` (`Brutal.Vulkan/Generated/Extensions/VkDeviceExtensions.gen.cs:8356-8365`) | raw function tables (4, 13) |
+| #3 | The macOS loader is never found next to the app (`Brutal.Vulkan/ImportResolver.cs:65`); a missing loader throws from a static constructor (`Brutal.Vulkan/ImportResolver.cs:69`) | preload by absolute path; catch the type-initialisation failure once (2) |
+| #4 | Command buffer allocation and memory mapping are internal in core (`Brutal.Vulkan/Generated/Extensions/VkDeviceExtensions.gen.cs:393`) | `Brutal.Vulkan.Abstractions` for allocation; VMA's persistent mapping (5, 6) |
+| #5 | `uint64_t` timeouts bound as `nint` | `unchecked((nint)ns)` on 64-bit RIDs (13) |
+| #6 | `Instance.CreateInfo` sets have no defaults | always pass both sets (1) |
+| #7 | `Queue` locks around submit and present | raw table on the owner thread (13) |
+| #12 | No assembly declares AOT compatibility | an AOT smoke run per new path (14) |
+| #17 | Slang decorates push-constant matrices `RowMajor` | a GPU round-trip test pins the convention (9) |
+| #18 | Enumeration helpers hide the written count and drop the result | raw two-call queries with a `VK_INCOMPLETE` retry (1, 3, 4) |
+| #19 (new) | VMA's convenience wrappers throw a bare `System.Exception` (`Brutal.Vulkan.Vma/Manual/VmaDeviceExtensions.cs:38-40`, `Brutal.Vulkan.Vma/Manual/VmaAllocator.cs:90-91`), and `VmaAllocator.MapMemory` ignores the region offset (`Brutal.Vulkan.Vma/Manual/VmaAllocator.cs:46-53`) | raw `vmaCreateAllocator` and the generated calls through an own `IVmaAllocator` struct (6) |
+| #20 (new) | `Instance`'s constructor enumerates devices after creating the instance, so a failure leaks it until the finalizer (`Brutal.Vulkan/Manual/Classes/Instance.cs:88-103`); `Device.Dispose` and `Instance.Dispose` free their function tables without a guard (`Brutal.Vulkan/Manual/Classes/Device.cs:120-126`) | catch at the one call site; an idempotent `Dispose` of our own (1, 5) |
+
+## 17. The issue split
+
+All Graphics.Vulkan issues edit one project and its `PublicAPI.Unshipped.txt`, so they run in sequence. Until the device facade (G9b) lands, each issue builds internal components and tests them directly through `InternalsVisibleTo`, with their GPU cases under the `Gpu` trait; no `IBackendDevice` member ever exists as a stub. `VulkanBackend` gains its public members as they become real: `Create`, `Name` and `LoaderPath` in G3, `EnumerateAdapters` in G4, and `IGraphicsBackend` with `CreateDevice` in G9b.
+
+| Issue | Scope from this note | Blocked by | Est. |
+|-------|----------------------|------------|------|
+| G3 feat(graphics-vulkan): create the instance, set up the loader and count validation messages | Creates `src/BrutalEngine.Graphics.Vulkan` and its tests; `VulkanBackend.Create`/`Name`/`LoaderPath`, `VulkanBackendOptions`, `ValidationAllowance`; the loader host and `LoaderSetup` (2); the instance, `ValidationSink`, allow-list (1); `VkCheck` (its swapchain mapping comes with G5), `VulkanCallGate`, `VulkanFaultInjector` (12, 13); the smoke's messenger on `pUserData` and the `graphics-vulkan` scenario (14); the `Gpu`-trait filters in CI; the ci-tier self-test case; the ObjectPool pin if P3 hasn't added it ([ADR-0011](../adr/0011-brutal-objectpool-dependency.md)) | this note, G1 | ~700 |
+| G4 feat(graphics-vulkan): select the adapter and create the device | Candidates, `AdapterSelector` with overrides and rejection reasons, the feature chain, extensions, portability restrictions, capabilities, limits and format support, debug names (3); `EnumerateAdapters` | G3, G2b (`BackendDeviceRequest`, `GraphicsAdapterInfo`) | ~700 |
+| G5 feat(graphics-vulkan): present through swapchains with frames in flight | Surfaces on a raw surface handle, `SwapchainPlanner`, swapchain creation and recreation, acquire and present statuses with `VkCheck.SwapchainStatusOf`, present fences with the idle fallback (4); frame slots, fences, command pools, submit and the `submitted` rule (5) | G4 | ~750 |
+| G6 feat(graphics-vulkan): allocate memory with VMA and track resources | The VMA package version, the allocator, `BackendMemory` placement, persistent mapping, budgets, buffers and textures, the object tables and backend leak report (6); the smoke's VMA step | G5 | ~650 |
+| G7 feat(graphics-vulkan): copy buffers and textures, and add views and samplers | Copy commands and the row-pitch mapping (7), texture views, samplers with the portability rule (3), the state table (10) for copies | G6 | ~600 |
+| G8 feat(graphics-vulkan): create shader modules, layouts and bind groups | Shader modules, set and pipeline layouts, persistent and frame descriptor pools, bind group writes (8, 9) | G7, T1 (a cooked test shader) | ~650 |
+| G9 feat(graphics-vulkan): create pipelines and record passes | Graphics and compute pipelines with dynamic rendering, the pipeline cache, the clip-space convention, the command-stream recorder for every `CommandKind`, barriers and the acquired-image stage rule (9, 10); the push-constant matrix round trip | G8, G2 (`CommandKind`, `CommandReader`) | ~750 |
+| G9b feat(graphics-vulkan): implement the backend device | `VulkanDevice : IBackendDevice` over the components, `CreateSurface` through `WindowSurfaceSource`, `IGraphicsBackend.CreateDevice`, `InjectValidationError`, the 1,000-frame allocation test, the smoke's full-device scenario (14) | G9 | ~600 |
+| G10 feat(graphics): order passes and insert barriers with a minimal frame graph | The graphics note's planner, plus two rules from this note: `ClearSwapchainImage` sits between `ColorTarget` transitions, and upload copies come first (7, 10) | G2 | ~650 |
+| G11 feat(graphics-vulkan): measure pass times with timestamps | Query pools and their growth, timestamp writes, `TryReadTimestamps`, debug labels, and offering `TimestampQueries` (11) | G9b | ~450 |
+| G12 feat(graphics-vulkan): prove device-loss detection and recovery | Fault injection at every `VulkanCall`, recovery through `Recover` end to end on lavapipe and the RTX (12) | G9b, G10 | ~500 |
+
+Order: G3 to G9b in sequence, then G11 and G12. C1 (the conformance suite) needs a whole backend device, so it waits for G9b and G10, not G7 as the graphics note's split assumed; until then each issue's GPU cases live in the backend's own `Gpu` tests.
+
+## Decisions made in this note
+
+Small choices the contract left to the backend:
+
+1. M1 records uploads on the graphics queue; the transfer-queue path is designed for M2 (section 7).
+2. Clip space is y-up with depth 0 to 1, through negative-height viewports (section 9).
+3. The backend fault seam is compiled into release builds, internal (section 12).
+4. Host-visible memory is required to be coherent (section 6); allocations stay within the heap budget.
+5. Swapchain formats are chosen from a fixed list of four, else `Unsupported` (section 4).
+6. `VulkanBackendOptions` carries the validation allow-list and the explicit loader path; `LoaderPath` is how the host hands the loader to Platform.Sdl3 (section "The backend's public surface").
+7. Backend GPU tests live in the backend's test project under a `Gpu` trait, run by the vulkan-smoke job (section 15).
+
+## Points for the graphics note (reported, not changed)
+
+None blocks an implementation of this note. Each is a clarification for the issue that owns it:
+
+1. An acquire that times out is `SwapchainStatus.DeviceLost` with `NativeCode` 2 (`VK_TIMEOUT`), so `DeviceLostEventArgs.TimedOut` stays false for it; the front end (G2b) could set `TimedOut` from that code.
+2. `CreateSwapchain` can fail during the acquire-time recreation (a window minimised between the front end's check and the surface query gives `Unavailable`); the status table has no row for it. Mapping it to `Minimised` fits the interface (G2b).
+3. "Otherwise the first format" (graphics note section 3) can't be honoured: `SwapchainInfo.Format` must be a `TextureFormat` (section 4 here).
+4. The interface states no clip-space convention; section 9 chooses one, and the graphics note should state it so every backend matches.
+5. `EnumerateAdapters` with a `CompatibleWindow` creates a temporary surface, so it must not run while a device presents to that window (the platform note's one-surface rule).
+6. The interface exposes no GPU memory budget; `GraphicsStatistics` could gain one later.
+7. The timestamp query count per frame is unbounded in the contract; the backend grows its pools (section 11).
+
+## Deviations from the architecture and testing docs
+
+1. **No transfer queue in M1** ([Architecture 3.8](../03-architecture.md#38-graphics-render-interface-brutalenginegraphics-and-vulkan-backend): "a transfer queue when available"), by section 7's decision.
+2. **No MoltenVK test runs in M1** (Architecture 3.8: portability restrictions "checked by tests running on MoltenVK"), by the maintainer's macOS decision.
+3. **No self-hosted real-GPU nightly** ([Testing strategy](../05-testing-strategy.md#gpu-testing-without-gpus)): local RTX runs per graphics PR, by the real-GPU decision.
+
+## Not verified
+
+- The note is design only; nothing in it has run. M0's proven behaviour is cited where it is ported.
+- Cited, not observed by this note: the RTX 2070 SUPER's swapchain maintenance1, timestamp and present-wait support (the maintainer's `vulkaninfo`, 2026-11-26); the y-flip keeping `FrontFace` meaning (from the Vulkan specification; G9 pins it); the specification's guarantee of a host-coherent memory type; `VK_EXT_swapchain_maintenance1` and timestamp support on lavapipe (unknown until G5 and G11 run there).
+- VMA has never run in this repository: the package isn't restored anywhere yet, and its native library loading under NativeAOT is unproven until G6.
+- Everything on macOS: portability enumeration, the bundled loader, `VK_DRIVER_FILES`, MoltenVK and the portability subset.
