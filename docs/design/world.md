@@ -205,7 +205,8 @@ public sealed class QueryBuilder                                 // from EcsWorl
 public sealed class Query : IDisposable                          // owned by its world; Dispose releases it early
 {
     public EcsWorld World { get; }
-    public uint LastRunTick { get; }
+    public uint LastRunTick { get; }                             // meaningful once HasRun is true
+    public bool HasRun { get; }                                  // a full enumeration has completed
     public ChunkEnumerator GetEnumerator();                      // foreach (ChunkView chunk in query)
     public int CountEntities();                                  // matching rows, ignoring Changed/Added filters
     public void Dispose();
@@ -254,10 +255,12 @@ foreach (ChunkView chunk in movers)                              // per frame
 
 **Change detection** (ADR-0006: per-component, per-chunk version counters):
 
-- `EcsWorld.ChangeTick` is a `uint` that starts at 1. A schedule advances it before each system runs (section 7); code outside schedules calls `AdvanceChangeTick()`. Writes stamp the current tick: `EcsWorld.Write`/`Set` stamp the entity's chunk, and `ChunkView.Write<T>()` stamps T's column when called, whether or not rows are then written. `Read` never stamps (`DESIGN-NOTES.md:66`, `:101`).
+- `EcsWorld.ChangeTick` is a `uint` that starts at 1 and only ever advances by one. It advances (a) before each system runs (section 7), (b) at the start of every `CommandBuffer.Playback()`, so every sync point (the implicit one at the end of each `Run` included) applies its commands with a tick no system has run at, (c) right after a standalone query's enumeration completes (below), and (d) on `AdvanceChangeTick()`. Writes stamp the current tick: `EcsWorld.Write`/`Set` stamp the entity's chunk, and `ChunkView.Write<T>()` stamps T's column when called, whether or not rows are then written. `Read` never stamps (`DESIGN-NOTES.md:66`, `:101`).
 - `Changed<T>` and `Added<T>` filter **chunks**: a chunk is yielded when T's tick there is newer than the query's `LastRunTick`. Several filters must all hold. Consumers re-check rows themselves; the granularity is one chunk (about 2,700 rows when a row is 24 bytes and chunks are 64 KiB). The `Added` tick is separate from `Changed` (`DESIGN-NOTES.md:104`), so physics and render extract can tell new rows from modified ones.
-- `LastRunTick` becomes the tick at which an enumeration started, but only when that enumeration ran to completion; a loop that breaks early sees the same chunks again next time. Queries owned by a system use the system's last-run tick instead (section 7), so a system never sees its own writes as changes.
-- **Wrap-safe comparison:** "newer" means `(int)(tick - since) > 0` (`DESIGN-NOTES.md:102`, `Ecs.cs:491-492`), valid while ages stay under 2³¹ ticks. To keep them there, whenever `ChangeTick` crosses a multiple of 2³⁰ the world rewrites every chunk tick and `LastRunTick` older than `ChangeTick - 2³⁰` to that value: one pass over chunk x column ticks and queries, no allocation. At 100 system runs per frame and 60 frames per second that is about every 50 hours, and at 1,000 runs and 240 frames per second about every 75 minutes; tests reach it through an internal seam that sets the tick.
+- **Standalone queries** (built from `EcsWorld.Query()`): when an enumeration runs to completion, `LastRunTick` becomes the current `ChangeTick` and the world then advances `ChangeTick`. Writes made during the loop stamp a tick that isn't newer than `LastRunTick`, so the query doesn't see its own loop's writes; any write after the loop stamps a later tick and is seen next time. A loop that breaks early changes nothing and sees the same chunks again.
+- **System-owned queries** use their system's last-run tick instead, which is the `ChangeTick` current when the system's `Run` returns (section 7). A system therefore never sees its own writes as changes, and sees every write stamped after it finished: by later systems, which run at later ticks, and by sync points, which play back at later ticks. Example: entities that a `PostUpdate` system spawns through its buffer are placed at the end-of-`Run` sync point, after `TransformSystem` ran, so their `Added` ticks are newer than its last run and it writes their `WorldTransform2D` on its next run.
+- **First run:** until a query completes its first enumeration, or a system completes its first run, its `Changed`/`Added` filters match every chunk and `ChunkView.Changed<T>()`/`Added<T>()` return true: everything that exists is new to it. `Query.HasRun` and `SystemContext.IsFirstRun` expose this. It is a flag, not a baseline tick, so it can't be defeated by wrap-around.
+- **Wrap-safe comparison:** "newer" means `(int)(tick - since) > 0` (`DESIGN-NOTES.md:102`, `Ecs.cs:491-492`), valid while ages stay under 2³¹ ticks. To keep them there, whenever `ChangeTick` crosses a multiple of 2³⁰ the world rewrites every chunk tick, every query's `LastRunTick` and every system's last-run tick older than `ChangeTick - 2³⁰` to that value: one pass over chunk x column ticks, queries and systems, no allocation. At 100 system runs per frame and 60 frames per second that is about every 50 hours, and at 1,000 runs and 240 frames per second about every 75 minutes; tests reach it through an internal seam that sets the tick.
 
 ## 6. Command buffers
 
@@ -325,7 +328,8 @@ public readonly struct SystemContext
     public CommandBuffer Commands { get; }                       // this system's buffer, played at the next sync point
     public TimeSpan Delta { get; }
     public float DeltaSeconds { get; }
-    public uint LastRunTick { get; }                             // 0 on the first run
+    public uint LastRunTick { get; }                             // ChangeTick when the previous run returned
+    public bool IsFirstRun { get; }                              // filters then match every chunk (section 5)
 }
 
 public readonly record struct ScheduleLabel(string Name)
@@ -371,7 +375,7 @@ On `EcsWorld`: `public void RunSchedule(ScheduleLabel label, TimeSpan delta)` ru
 - **Access and conflicts:** a system's access is the union of its queries' terms, `Reads`, `Writes` and `Exclusive`. Two systems conflict when one writes a component the other reads or writes, or either is exclusive. `ScheduleReport.UnorderedConflicts` lists conflicting pairs with no ordering path between them, for the log and the debug overlay. That is not an error: such a pair runs in insertion order in M1, and the M2 executor never runs conflicting systems concurrently and keeps the same order, so results don't depend on threading.
 - **Enforcement while a schedule runs:** the world knows the running system. Random access outside its `Reads`/`Writes`/query terms throws `InvalidOperationException`, and so does a direct structural call from a non-exclusive system (use `context.Commands`).
 - **Sync points:** every system gets its own command buffer. A sync point plays back, in system order, the buffers of all systems ordered before it that haven't been played. The end of every `Run` is an implicit sync point, and so is the start of each exclusive system.
-- **Ticks:** before each system runs, the world advances `ChangeTick`. `context.LastRunTick` is the tick of that system's previous run, and its queries filter against it.
+- **Ticks:** before each system runs, and at the start of each buffer's playback at a sync point, the world advances `ChangeTick`. When a system's `Run` returns, its last-run tick becomes the current `ChangeTick`; `context.LastRunTick` is that value from the previous run, and its queries filter against it (first runs: section 5).
 - **Timings:** each system's run is timed with `WorldOptions.Clock.GetTimestamp()`, for the debug overlay's per-system CPU panel. No allocation.
 - **Exceptions** thrown by a system propagate unchanged out of `Run`; the run's unplayed command buffers are cleared (reservations released) and the schedule stays usable. Structural state stays consistent, because non-exclusive systems change structure only through buffers.
 - **Determinism:** for the same initial world, schedule and inputs, a run produces the same world: system order is fixed as above, buffers play back in system order and then recording order, entity indices are reused FIFO, and iteration order follows archetype creation, chunk and row order. Nothing depends on addresses, hash order or wall-clock time.
@@ -554,7 +558,7 @@ The M1 World API has no expected runtime failures besides lookups, which use `bo
 
 - **Unit tests** for every rule and every row of the failure table, each world created over a `TrackingAllocator` that is checked with `ThrowIfLeaks()` after `Dispose` (leak tests come free with every test).
 - **Reference-model property tests** (CsCheck), as S5 did with 5 seeds x 4,000 steps (`DESIGN-NOTES.md:162`): random sequences of spawn, despawn, add, set, remove, get and stale access against a dictionary model, checking every entity and component value after each step; the same through command buffers (batched spawns, sorted despawns, dead targets, `Clear`); random `SetParent`/`ClearParent`/despawn against a parent-map model; propagation against a naive recursive reference, compared bit for bit because both multiply in the same order.
-- **Change detection:** `Changed`/`Added` per chunk with explicit ticks, a system not seeing its own writes, an early-`break` enumeration, and tick clamping across 2³⁰ through the internal seam.
+- **Change detection:** `Changed`/`Added` per chunk with explicit ticks; a system not seeing its own writes; a system seeing rows that a sync point placed after it ran (including an entity spawned through a buffer by an earlier `PostUpdate` system, which gets its `WorldTransform2D` written on the next `PostUpdate` run); standalone `CommandBuffer.Playback()` stamping a tick newer than every completed query; a standalone query seeing a write made after its loop and not its own loop's writes; an early-`break` enumeration seeing the same chunks again; a first run (system and query) matching every chunk, also when `ChangeTick` is past 2³¹; and tick clamping across 2³⁰ through the internal seam, checking chunk ticks, query ticks and system last-run ticks.
 - **Determinism:** a seeded scenario run twice produces the same hash over every entity and component byte in iteration order.
 - **Allocation:** 1,000 steady-state frames of each hot path (queries, command buffers, schedules, propagation) allocate 0 bytes.
 - **Architecture:** the World project is referenced by `tests/BrutalEngine.Architecture.Tests`, so the layering, binding-surface and static-state rules check it ([architecture tests](architecture-tests.md#rules)).
