@@ -356,6 +356,21 @@ jobs:
           grep -F "BRUTAL game development framework is Copyright (c) 2024 Ahwoo Limited." "$OUT/CREDITS.txt"
           find "$OUT/LICENSES" -type f -size +0 | sort | tee "$RUNNER_TEMP/hello-window-licences.txt"
           test -s "$RUNNER_TEMP/hello-window-licences.txt"
+      # Samples generate XML docs only so IDE0005 runs in the build (samples/Directory.Build.props). They aren't
+      # shipped: neither HelloWindow.xml nor a referenced project's (BrutalEngine.Core.xml) is in the publish output.
+      - name: Check HelloWindow ships no XML doc files
+        env:
+          OUT: artifacts/hello-window/${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          test -d "$OUT"
+          find "$OUT" -type f -iname '*.xml' | sort > "$RUNNER_TEMP/hello-window-xml.txt"
+          if [ -s "$RUNNER_TEMP/hello-window-xml.txt" ]; then
+            echo "::error::The HelloWindow publish output contains XML doc files:"
+            cat "$RUNNER_TEMP/hello-window-xml.txt"
+            exit 1
+          fi
+          echo "No *.xml files in $OUT ($(find "$OUT" -type f | wc -l) files)."
       - name: Run HelloWindow (NativeAOT)
         env:
           OUT: artifacts/hello-window/${{ matrix.rid }}
