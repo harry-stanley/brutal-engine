@@ -49,6 +49,41 @@ The compiler turns each call into: build the handler (which asks `render.IsEnabl
 
 "Structured" in 3.20 is met in M0 by fixed fields (level, category, time, thread, caller) plus a formatted message. **Open question:** whether to add key/value properties, and in what shape (named holes captured as typed values beside the message, or a separate property bag). Not implemented.
 
+## Sinks
+
+Concrete sinks live in `BrutalEngine.Core.Logging.Sinks`. Each one copies what it needs during `Write`, because `LogEntry.Message` is only valid for that call.
+
+### Line format
+
+Text sinks share one internal formatter (`LogLineFormatter`), so the console and the rotating file sink (#23) write identical lines:
+
+```text
+yyyy-MM-ddTHH:mm:ss.fffZ LEVEL [Category] message
+
+2026-11-25T03:04:05.678Z INFO [Render] Swapchain 1920x1080, 0.42 ms
+```
+
+- **Timestamp:** UTC, with milliseconds truncated (not rounded), as the `fff` format does. It always takes 24 bytes.
+- **LEVEL** is a fixed-width token: `TRCE DBUG INFO WARN EROR CRIT`. A sink given any other level (`None` or an undefined value) throws `ArgumentOutOfRangeException`. A logger never sends one, and it isolates and counts sink throws anyway.
+- **Message:** written as received, newlines included. It is valid UTF-8 by the `LogEntry` contract. The category and the caller file are encoded to UTF-8, with lone surrogates replaced by U+FFFD.
+- **Caller suffix** ` (file:line)` goes before the newline only when the sink's `IncludeCallerInfo` is set and the entry has a caller file.
+- The formatter writes into a caller-provided `Span<byte>` sized by `GetMaxLength` (an upper bound: 3 bytes per UTF-16 unit, plus the fixed parts). It doesn't allocate.
+
+### `ConsoleLogSink`
+
+| Option (`ConsoleLogSinkOptions`) | Default | Meaning |
+|------|---------|---------|
+| `Output` | `null`: standard output, opened by the sink | Entries below `ErrorThreshold`. |
+| `ErrorOutput` | `null`: standard error, opened by the sink | Entries at or above `ErrorThreshold`. May be the same stream as `Output`. |
+| `ErrorThreshold` | `Warning` | `None` sends everything to `Output`. |
+| `IncludeCallerInfo` | `false` | Appends ` (file:line)`. |
+
+- **One whole line per entry:** the line is formatted into the sink's own buffer and written with a single `Stream.Write` call, under the sink's lock, so lines from concurrent writers (or from several loggers sharing the sink) never interleave.
+- **Flushing:** after every `Error` or `Critical` entry (to whichever stream it went to), on `Flush()`, and on `Dispose()`. Lower levels rely on the stream's own buffering.
+- **Ownership:** the sink disposes only the standard streams it opened itself, never streams it was given. After `Dispose`, `Write` and `Flush` throw `ObjectDisposedException` and a second `Dispose` does nothing. Stream exceptions propagate to the logger, which isolates and counts them.
+- **Memory:** the line buffer starts at 8 KiB and grows (at least doubling) only when a line is longer than any before. Steady-state writes allocate no managed memory, as long as the streams' own writes don't. Tests use injected streams, never `System.Console`.
+- **Not done (by scope):** colours, and console encoding setup: the bytes are UTF-8 whatever the console's code page is.
+
 ## Memory and threading
 
 - Every `Logger` member is thread-safe. Dispatch, category creation, `SetLevel`, `Flush` and `Dispose` are serialised with a `System.Threading.Lock`. Level checks are lock-free reads of a volatile field.
@@ -76,3 +111,4 @@ The compiler turns each call into: build the handler (which asks `render.IsEnabl
 - Concurrency: 8 threads log 2,000 entries each; every entry arrives exactly once and whole, and no sink sees two writes at once.
 - Allocation tests: 1,000 enabled and 1,000 disabled logs of the common types, and 1,000 logs of a custom `IUtf8SpanFormattable` struct, allocate 0 managed bytes; so do `SetLevel`, `IsEnabled` and `SinkFailureCount`. They also pass under Windows dynamic coverage instrumentation, as CI runs them.
 - Mutation-checked: inverting the level comparison, or cutting truncated messages at a raw byte instead of a code-point boundary, fails the suite.
+- Sinks: the line format is pinned byte for byte (every level token, UTC conversion, millisecond truncation, the caller suffix and its omission, lone surrogates), plus a CsCheck property that random categories and caller files fit `GetMaxLength` and give valid UTF-8. The console sink's routing, flushing, ownership and lifecycle are tested on recording streams; 8 threads writing 500 lines each produce only whole lines, with no overlapping `Write` calls; and steady-state console writes allocate 0 bytes, also under Windows dynamic coverage. Mutation-checked: swapping the routing comparison, or dropping the Error flush, fails the suite.
