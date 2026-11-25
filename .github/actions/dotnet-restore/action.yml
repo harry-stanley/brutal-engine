@@ -1,0 +1,45 @@
+name: Restore NuGet packages
+description: >-
+  Runs a locked `dotnet restore` (RestoreLockedMode is on when CI=true). Windows and macOS restore through a NuGet
+  package cache keyed on every packages.lock.json. The cache is saved only from runs on main, and only by the job
+  that sets save-cache, so pull requests read main's copy instead of each storing their own (about 650-720 MB per OS).
+  Linux uses no cache, because downloading and extracting it takes longer than restoring from nuget.org.
+  See docs/06-ci-cd-and-release.md ("Caching").
+
+inputs:
+  project:
+    description: The solution or project to restore.
+    default: BrutalEngine.slnx
+  save-cache:
+    description: >-
+      "true" to save the cache after a miss. Takes effect only on main. Set it on one job per OS, so jobs don't race
+      to save the same key.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the NuGet cache
+      id: cache
+      if: runner.os != 'Linux'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.nuget/packages
+        # No restore-keys: a partial hit saved under the new key would carry stale packages forward.
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}
+
+    - name: Restore (locked)
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: dotnet restore "$PROJECT"
+
+    # Saved straight after the restore rather than in a post step, so a failing build or test doesn't lose it.
+    - name: Save the NuGet cache
+      if: >-
+        runner.os != 'Linux' && inputs.save-cache == 'true' && github.ref == 'refs/heads/main'
+        && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}

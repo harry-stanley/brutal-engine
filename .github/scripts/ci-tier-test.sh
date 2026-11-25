@@ -19,13 +19,21 @@ check() {
 
 nl=$'\n'
 
+# Docs tier: nothing that is built, tested or packed changed.
+check docs "docs folder" "docs/06-ci-cd-and-release.md${nl}docs/spikes/README.md"
+check docs "community files" "CONTRIBUTING.md${nl}CHANGELOG.md${nl}SECURITY.md${nl}CODE_OF_CONDUCT.md"
+check docs "GitHub templates and owners" ".github/ISSUE_TEMPLATE/bug_report.yml${nl}.github/pull_request_template.md${nl}.github/CODEOWNERS"
+check docs "name only starts like a backend" "docs/src/BrutalEngine.Graphics/notes.md"
+
 # Fast tier: no path can affect native interop, NativeAOT or GPU tests.
-check fast "docs only" "docs/06-ci-cd-and-release.md${nl}README.md"
+check fast "README is packed into every package" "docs/06-ci-cd-and-release.md${nl}README.md"
+check fast "NOTICE is packed into every package" "NOTICE.txt"
+check fast "markdown inside a project" "src/BrutalEngine.Core/README.md"
+check fast "docs plus code" "docs/a.md${nl}src/BrutalEngine.Core/Result.cs"
 check fast "Core code and tests" "src/BrutalEngine.Core/Memory/HeapAllocator.cs${nl}tests/BrutalEngine.Core.Tests/Memory/HeapAllocatorTests.cs"
 check fast "analyzers" "src/BrutalEngine.Analyzers/DiscardedStatusResultAnalyzer.cs"
 check fast "other workflows" ".github/workflows/codeql.yml${nl}.github/dependabot.yml"
 check fast "lock file outside the smoke harness" "tests/BrutalEngine.Core.Tests/packages.lock.json"
-check fast "name only starts like a backend" "docs/src/BrutalEngine.Graphics/notes.md"
 
 # Full tier.
 check full "empty list" ""

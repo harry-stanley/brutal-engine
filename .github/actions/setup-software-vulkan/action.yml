@@ -3,6 +3,8 @@ description: >-
   Installs the Vulkan loader, Mesa lavapipe (a CPU Vulkan 1.3+ driver) and the Khronos validation layers on a
   GitHub-hosted runner, so GPU tests can run without a GPU. Linux and Windows only. The setup and pinned versions
   come from spike S3 (docs/spikes/README.md). macOS uses bundled MoltenVK instead (setup-macos-vulkan).
+  On Windows, the files the tests use are cached, keyed on the pinned versions, so the Mesa archive and the
+  LunarG SDK installer are only downloaded when a pin changes.
 
 runs:
   using: composite
@@ -50,54 +52,125 @@ runs:
         echo "Using lavapipe ICD: $icd"
         echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
 
-    - name: Install lavapipe (Windows, pal1000/mesa-dist-win, pinned + SHA-256)
+    # Windows: lavapipe from pal1000/mesa-dist-win, and the loader and validation layers from the LunarG SDK, both
+    # pinned + SHA-256. Bump LAYOUT when the cached file set changes, so an old cache isn't reused.
+    - name: Pin the Windows Vulkan components
+      id: pins
       if: runner.os == 'Windows'
       shell: pwsh
+      run: |
+        $pins = [ordered]@{
+          mesa_version   = '26.3.1'
+          mesa_sha256    = '64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1'
+          sdk_version    = '1.4.363.1'
+          sdk_sha256     = 'c02932bd9a968b22d404536108adaacac908c081cd6b0113f5bfefc523dd0a6a'
+        }
+        $layout = 1
+        foreach ($name in $pins.Keys) { "$name=$($pins[$name])" >> $env:GITHUB_OUTPUT }
+        $key = "vulkan-windows-x64-mesa-$($pins.mesa_version)-sdk-$($pins.sdk_version)-layout$layout"
+        "Cache key: $key"
+        "key=$key" >> $env:GITHUB_OUTPUT
+
+    - name: Restore the Windows Vulkan components
+      id: restore
+      if: runner.os == 'Windows'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: C:\vulkan-ci
+        key: ${{ steps.pins.outputs.key }}
+
+    - name: Download the Windows Vulkan components (cache miss)
+      if: runner.os == 'Windows' && steps.restore.outputs.cache-hit != 'true'
+      shell: pwsh
       env:
-        MESA_VERSION: 26.3.1
-        MESA_SHA256: 64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1
+        MESA_VERSION: ${{ steps.pins.outputs.mesa_version }}
+        MESA_SHA256: ${{ steps.pins.outputs.mesa_sha256 }}
+        VULKAN_SDK_VERSION: ${{ steps.pins.outputs.sdk_version }}
+        VULKAN_SDK_SHA256: ${{ steps.pins.outputs.sdk_sha256 }}
       run: |
         $ErrorActionPreference = 'Stop'
+        $root = 'C:\vulkan-ci'
+
+        # lavapipe: the driver DLL and its ICD manifest, which names the DLL by a relative path.
         $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
         Invoke-WebRequest -Uri "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z" -OutFile $archive
         $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($hash -ne $env:MESA_SHA256) { throw "mesa-dist-win SHA-256 mismatch: $hash" }
-        $dir = 'C:\mesa-lvp'
-        & 7z e $archive "-o$dir" x64\vulkan_lvp.dll x64\lvp_icd.x86_64.json -y | Out-Null
+        & 7z e $archive "-o$root\mesa" x64\vulkan_lvp.dll x64\lvp_icd.x86_64.json -y | Out-Null
         if ($LASTEXITCODE -ne 0) { throw '7z extraction failed' }
-        # Runner processes are elevated, and the loader ignores VK_DRIVER_FILES for elevated processes,
-        # so the driver is registered in HKLM.
-        New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
-        New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name "$dir\lvp_icd.x86_64.json" -PropertyType DWord -Value 0 -Force | Out-Null
-        "VK_DRIVER_FILES=$dir\lvp_icd.x86_64.json" >> $env:GITHUB_ENV
 
-    - name: Install Vulkan loader and validation layers (Windows, LunarG SDK, pinned + SHA-256)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      env:
-        VULKAN_SDK_VERSION: 1.4.363.1
-        VULKAN_SDK_SHA256: c02932bd9a968b22d404536108adaacac908c081cd6b0113f5bfefc523dd0a6a
-      run: |
-        $ErrorActionPreference = 'Stop'
+        # LunarG SDK: install it to a temporary folder, then keep only the validation layer and the loader.
         $v = $env:VULKAN_SDK_VERSION
         $installer = Join-Path $env:RUNNER_TEMP 'vulkansdk.exe'
         Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe" -OutFile $installer
         $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($hash -ne $env:VULKAN_SDK_SHA256) { throw "Vulkan SDK SHA-256 mismatch: $hash" }
-        $root = "C:\VulkanSDK\$v"
-        $process = Start-Process -FilePath $installer -ArgumentList '--root', $root, '--accept-licenses', '--default-answer', '--confirm-command', 'install' -Wait -PassThru -NoNewWindow
+        $sdk = Join-Path $env:RUNNER_TEMP "VulkanSDK\$v"
+        $process = Start-Process -FilePath $installer -ArgumentList '--root', $sdk, '--accept-licenses', '--default-answer', '--confirm-command', 'install' -Wait -PassThru -NoNewWindow
         if ($process.ExitCode -ne 0) { throw "Vulkan SDK install failed with exit code $($process.ExitCode)" }
-        # BRUTAL loads vulkan-1.dll from System32 only (Brutal.Vulkan/ImportResolver.cs).
-        if (-not (Test-Path C:\Windows\System32\vulkan-1.dll)) {
-          Copy-Item "$root\Bin\vulkan-1.dll" C:\Windows\System32\vulkan-1.dll
+
+        New-Item -ItemType Directory -Path "$root\sdk\Bin" -Force | Out-Null
+        # The layer manifest names its DLL by a relative path, so the two stay side by side.
+        Copy-Item "$sdk\Bin\VkLayer_khronos_validation.dll", "$sdk\Bin\VkLayer_khronos_validation.json" "$root\sdk\Bin"
+        # The installer puts the loader (the Vulkan runtime) in System32, not in the SDK's Bin folder.
+        $loader = "$sdk\Bin\vulkan-1.dll", 'C:\Windows\System32\vulkan-1.dll' | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $loader) { throw 'The Vulkan SDK install left no vulkan-1.dll' }
+        Copy-Item $loader "$root\sdk\vulkan-1.dll"
+        Get-ChildItem $root -Recurse -File | Format-Table FullName, Length -AutoSize | Out-String -Width 200
+
+    # Saved straight away, so a failing smoke test doesn't discard it. Small (tens of MB) and keyed on the pins,
+    # so pull requests may save it too.
+    - name: Save the Windows Vulkan components
+      if: runner.os == 'Windows' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: C:\vulkan-ci
+        key: ${{ steps.pins.outputs.key }}
+
+    - name: Register lavapipe, the loader and the validation layers (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $root = 'C:\vulkan-ci'
+
+        function Set-RegistryKey([string] $Path) {
+          # New-Item -Force on an existing registry key would delete its values.
+          if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
         }
+
+        # Runner processes are elevated, and the loader ignores VK_DRIVER_FILES for elevated processes,
+        # so the driver is registered in HKLM.
+        $drivers = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
+        $icd = "$root\mesa\lvp_icd.x86_64.json"
+        Set-RegistryKey $drivers
+        New-ItemProperty -Path $drivers -Name $icd -PropertyType DWord -Value 0 -Force | Out-Null
+
+        # BRUTAL loads vulkan-1.dll from System32 only (Brutal.Vulkan/ImportResolver.cs). Install the pinned loader
+        # there unless the same or a newer one is already present, as the SDK installer does.
+        function Get-FileVersion([string] $Path) {
+          $info = (Get-Item $Path).VersionInfo
+          [version]::new($info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart)
+        }
+        $pinned = "$root\sdk\vulkan-1.dll"
+        $system = 'C:\Windows\System32\vulkan-1.dll'
+        if (-not (Test-Path $system) -or (Get-FileVersion $system) -lt (Get-FileVersion $pinned)) {
+          Copy-Item $pinned $system -Force
+        }
+        "Vulkan loader: $system $(Get-FileVersion $system)"
+
+        # Register exactly one Khronos validation layer: ours. On a cache miss the SDK installer may have
+        # registered its own copy from the temporary install folder.
         $layers = 'HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers'
-        $layerJson = "$root\Bin\VkLayer_khronos_validation.json"
-        if (-not ((Get-ItemProperty $layers -ErrorAction SilentlyContinue).PSObject.Properties.Name -contains $layerJson)) {
-          New-Item -Path $layers -Force | Out-Null
-          New-ItemProperty -Path $layers -Name $layerJson -PropertyType DWord -Value 0 -Force | Out-Null
-        }
-        "VULKAN_SDK=$root" >> $env:GITHUB_ENV
+        $layerJson = "$root\sdk\Bin\VkLayer_khronos_validation.json"
+        Set-RegistryKey $layers
+        (Get-Item $layers).GetValueNames() |
+          Where-Object { $_ -like '*VkLayer_khronos_validation.json' -and $_ -ne $layerJson } |
+          ForEach-Object { Remove-ItemProperty -Path $layers -Name $_ }
+        New-ItemProperty -Path $layers -Name $layerJson -PropertyType DWord -Value 0 -Force | Out-Null
+
+        "VK_DRIVER_FILES=$icd" >> $env:GITHUB_ENV
+        "VULKAN_SDK=$root\sdk" >> $env:GITHUB_ENV
 
     - name: Reject unsupported runner OS
       if: runner.os != 'Linux' && runner.os != 'Windows'

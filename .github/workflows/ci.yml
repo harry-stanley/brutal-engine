@@ -1,14 +1,14 @@
 name: CI
 
-# Two tiers (docs/06-ci-cd-and-release.md, "CI tiers"). Pull requests get the fast tier unless they touch
-# paths that can affect native interop, NativeAOT or GPU tests. Pushes to main, the nightly schedule and
-# manual runs always get the full tier.
+# Three tiers (docs/06-ci-cd-and-release.md, "CI tiers"). Pull requests get the fast tier unless they touch paths
+# that can affect native interop, NativeAOT or GPU tests (full tier), or only documentation (docs tier, which skips
+# the build). Pushes to main, the nightly schedule and manual runs always get the full tier.
 on:
   pull_request:
   push:
     branches: [main]
   schedule:
-    - cron: "0 15 * * *" # nightly full tier, 15:00 UTC
+    - cron: "0 15 * * *" # nightly full tier, 15:00 UTC. Also keeps main's caches from expiring.
   workflow_dispatch:
 
 permissions:
@@ -67,14 +67,16 @@ jobs:
           fi
 
           # smoke_args select the device: lavapipe must be a CPU device (proves the software driver ran);
-          # macOS uses MoltenVK on the runner's paravirtual Metal GPU through the bundled loader, which
-          # BRUTAL can't find by itself (docs/spikes/README.md, S1).
+          # macOS uses MoltenVK on the runner's paravirtual Metal GPU. Its bundled loader path is added by the
+          # smoke steps from BUNDLED_VULKAN_LOADER (set by setup-macos-vulkan), because BRUTAL can't find the
+          # loader by itself (docs/spikes/README.md, S1).
           linux='{"os":"ubuntu-24.04","rid":"linux-x64","smoke_args":"--require-cpu"}'
           windows='{"os":"windows-2025","rid":"win-x64","smoke_args":"--require-cpu"}'
-          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk --vulkan-loader \"$BUNDLED_VULKAN_LOADER\""}'
+          macos='{"os":"macos-15","rid":"osx-arm64","smoke_args":"--require-driver Moltenvk"}'
           if [ "$tier" = "full" ]; then
             matrix="[$linux,$windows,$macos]"
           else
+            # The docs tier skips the smoke job, but a matrix must still be valid JSON with at least one entry.
             matrix="[$linux]"
           fi
 
@@ -82,10 +84,16 @@ jobs:
           echo "Vulkan smoke matrix: $matrix"
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "smoke_matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "CI tier: **$tier** (Vulkan smoke on: $(printf '%s' "$matrix" | grep -o '"os":"[^"]*"' | cut -d'"' -f4 | paste -sd, -))" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$tier" = "docs" ]; then
+            echo "CI tier: **docs** (documentation only: format, build, test, pack and Vulkan smoke skipped)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "CI tier: **$tier** (Vulkan smoke on: $(printf '%s' "$matrix" | grep -o '"os":"[^"]*"' | cut -d'"' -f4 | paste -sd, -))" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   format:
     name: Format
+    needs: tier
+    if: needs.tier.outputs.tier != 'docs'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -93,13 +101,15 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-      - name: Restore
-        run: dotnet restore BrutalEngine.slnx
+      - uses: ./.github/actions/dotnet-restore
       - name: Check formatting
         run: dotnet format BrutalEngine.slnx --verify-no-changes --no-restore
 
+  # Pack runs here on Linux, from the Release build the tests use, rather than in a job that builds again.
   build-test:
     name: Build and test (${{ matrix.os }})
+    needs: tier
+    if: needs.tier.outputs.tier != 'docs'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -113,14 +123,26 @@ jobs:
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-      - name: Restore (locked)
-        run: dotnet restore BrutalEngine.slnx
+      - uses: ./.github/actions/dotnet-restore
+        with:
+          save-cache: "true"
+      # Debug only differs from Release in DEBUG-conditional code, which isn't OS-specific, so one OS covers it.
       - name: Build (Debug)
+        if: runner.os == 'Linux'
         run: dotnet build BrutalEngine.slnx -c Debug --no-restore
       - name: Build (Release)
         run: dotnet build BrutalEngine.slnx -c Release --no-restore
+      - name: Pack (with package validation)
+        if: runner.os == 'Linux'
+        run: dotnet pack BrutalEngine.slnx -c Release --no-build -o artifacts/packages
+      - name: Upload packages
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: artifacts/packages/
+          if-no-files-found: error
+          retention-days: 14
       - name: Test
         run: >-
           dotnet test --solution BrutalEngine.slnx -c Release --no-build
@@ -136,35 +158,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  pack:
-    name: Pack
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-      - name: Restore (locked)
-        run: dotnet restore BrutalEngine.slnx
-      - name: Pack (with package validation)
-        run: dotnet pack BrutalEngine.slnx -c Release --no-restore -o artifacts/packages
-      - name: Upload packages
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: packages
-          path: artifacts/packages/
-          if-no-files-found: error
-          retention-days: 14
-
-  # Linux runs in every tier. Windows and macOS run in the full tier only.
+  # Linux runs in the fast and full tiers. Windows and macOS run in the full tier only.
   vulkan-smoke:
     name: Vulkan smoke, JIT + NativeAOT (${{ matrix.os }})
     needs: tier
+    if: needs.tier.outputs.tier != 'docs'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -174,13 +172,16 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      SMOKE_ARGS: ${{ matrix.smoke_args }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
+      - uses: ./.github/actions/dotnet-restore
+        with:
+          project: tests/BrutalEngine.Aot.Smoke
       - name: Set up software Vulkan (lavapipe + validation layers)
         if: runner.os != 'macOS'
         uses: ./.github/actions/setup-software-vulkan
@@ -188,49 +189,85 @@ jobs:
         if: runner.os == 'macOS'
         uses: ./.github/actions/setup-macos-vulkan
       - name: Build smoke harness
-        run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release
+        run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release --no-restore
+      # SMOKE_ARGS is split into words on purpose. BUNDLED_VULKAN_LOADER is set on macOS only.
       - name: Run (JIT)
-        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }}
+        run: >-
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS
+          ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
       - name: Negative test (JIT, injected validation error must exit 2)
         run: |
           set +e
-          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen ${{ matrix.smoke_args }} --inject-validation-error
+          dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS \
+            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
           test "$code" -eq 2
-      - name: Install NativeAOT prerequisites (Linux)
+      # The runner image has versioned clang (clang-18 and so on) and zlib1g-dev, but no plain `clang`, which is
+      # what NativeAOT invokes by default. Point NativeAOT at the newest one rather than apt-installing the
+      # `clang` metapackage. Fall back to apt only if the image stops shipping them.
+      - name: Find NativeAOT toolchain (Linux)
         if: runner.os == 'Linux'
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
+        run: |
+          set -euo pipefail
+          cc=$(compgen -c clang | grep -xE 'clang(-[0-9]+)?' | sort -uV | tail -n1 || true)
+          if [ -z "$cc" ] || ! dpkg -s zlib1g-dev > /dev/null 2>&1; then
+            echo "::warning::The runner image has no clang or zlib1g-dev; installing them."
+            sudo apt-get update -q
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
+            cc=clang
+          fi
+          echo "NativeAOT compiler and linker: $cc ($(command -v "$cc"))"
+          echo "AOT_CC=$cc" >> "$GITHUB_ENV"
       - name: Publish (NativeAOT, ${{ matrix.rid }})
-        run: dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
+        run: >-
+          dotnet publish tests/BrutalEngine.Aot.Smoke -c Release -r ${{ matrix.rid }} -o artifacts/aot
+          ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
       - name: Run (NativeAOT)
-        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen ${{ matrix.smoke_args }}
+        run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"}
       - name: Negative test (NativeAOT, injected validation error must exit 2)
         run: |
           set +e
-          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen ${{ matrix.smoke_args }} --inject-validation-error
+          ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS \
+            ${BUNDLED_VULKAN_LOADER:+--vulkan-loader "$BUNDLED_VULKAN_LOADER"} --inject-validation-error
           code=$?
           set -e
           echo "exit code: $code"
           test "$code" -eq 2
 
-  # Single required status check for branch protection: passes only if every job above passed.
+  # Single required status check for branch protection. Passes only if the tier was selected and every other job
+  # passed. A skipped job counts as passed only in the docs tier, where the tier job skips them on purpose.
   ci-ok:
     name: CI passed
     if: always()
-    needs: [tier, format, build-test, pack, vulkan-smoke]
+    needs: [tier, format, build-test, vulkan-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check job results
         env:
+          TIER: ${{ needs.tier.outputs.tier }}
+          TIER_RESULT: ${{ needs.tier.result }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "Job results: $RESULTS"
+          echo "Tier: ${TIER:-none} (${TIER_RESULT}). Job results: $RESULTS"
+          if [ "$TIER_RESULT" != "success" ]; then
+            echo "::error::The CI tier could not be selected ($TIER_RESULT)."
+            exit 1
+          fi
           for result in $RESULTS; do
-            if [ "$result" != "success" ]; then
-              echo "::error::A required CI job did not succeed ($result)."
-              exit 1
-            fi
+            case "$result" in
+              success) ;;
+              skipped)
+                if [ "$TIER" != "docs" ]; then
+                  echo "::error::A required CI job was skipped outside the docs tier."
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "::error::A required CI job did not succeed ($result)."
+                exit 1
+                ;;
+            esac
           done
