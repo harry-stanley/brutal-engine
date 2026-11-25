@@ -18,6 +18,8 @@ Branch: `spike/s3-software-vulkan` (throwaway). Files: `spikes/s3/VulkanHeadless
 - linux (ubuntu-24.04), success: https://github.com/harry-stanley/brutal-engine/actions/runs/45549608616/job/138987356771
 - windows (windows-2025), success: https://github.com/harry-stanley/brutal-engine/actions/runs/45549608616/job/138987357080
 
+Re-run on the report commit `0a94885`: [45549932859](https://github.com/harry-stanley/brutal-engine/actions/runs/45549932859). Both jobs succeeded again.
+
 An earlier run, [45548871014](https://github.com/harry-stanley/brutal-engine/actions/runs/45548871014), passed on Linux but ran the test on .NET 11 (see Problems).
 Its Windows job died in a diagnostic step before reaching Vulkan: `Get-ChildItem HKLM:\SOFTWARE\Khronos -Recurse` on a missing key
 overflowed the pwsh stack after 4 minutes.
