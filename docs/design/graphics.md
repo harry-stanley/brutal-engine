@@ -14,7 +14,7 @@ Goals that shape every decision below:
 Decisions this note depends on (maintainer, 2026-11-26):
 
 - **Window to swapchain:** a documented L2 edge `Graphics -> Platform`. A window exposes a backend-neutral surface capability, `IWindow.VulkanSurface` (an `IVulkanSurfaceSource?`, namespace `BrutalEngine.Platform`), defined in the [platform design note](platform.md#4-vulkan-surface-source). This note references it and doesn't redefine it. The edge row lands with P1.
-- **Shader bytecode in M1:** shaders reach the runtime as committed SPIR-V cooked offline by `tools/BrutalEngine.Cook` (Slang), and pipeline layouts are declared in C# in M1. Recorded as ADR-0012 (#52).
+- **Shader bytecode in M1:** shaders reach the runtime as committed SPIR-V cooked offline by `tools/BrutalEngine.Cook` (Slang), and pipeline layouts are declared in C# in M1. Recorded as [ADR-0012](../adr/0012-m1-shader-cooking.md).
 - **Device loss:** detected everywhere, it raises a typed event, and the device recreates itself and calls owner-registered recreate callbacks. Fault injection is an internal seam, also visible to the conformance suite (section 12).
 
 ## Architecture: a front end over a backend interface
@@ -471,7 +471,7 @@ The 256-byte row pitch is WebGPU's rule, adopted so a D3D12 backend (whose copie
 
 ## 7. Shaders and pipelines
 
-By decision (maintainer, 2026-11-26; ADR-0012, #52), M1 shaders are Slang sources cooked offline to SPIR-V by `tools/BrutalEngine.Cook`, committed, and embedded as resources in the consuming assembly. The runtime never parses shader source (docs/03 3.8).
+By decision (maintainer, 2026-11-26; [ADR-0012](../adr/0012-m1-shader-cooking.md)), M1 shaders are Slang sources cooked offline to SPIR-V by `tools/BrutalEngine.Cook`, committed, and embedded as resources in the consuming assembly. The runtime never parses shader source (docs/03 3.8).
 
 ```csharp
 public sealed class GraphicsDevice
