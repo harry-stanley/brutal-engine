@@ -24,20 +24,38 @@ readonly RUN_URL=https://github.com/harry-stanley/brutal-engine/actions/runs/455
 # filter=all lists every attempt of every workflow run, so an earlier failed attempt is visible.
 readonly CHECKS_QUERY='check-runs?per_page=100&filter=all'
 
-# The fake gh: `gh api [--paginate] <path>` prints the fixture file named after the path, or fails like a 404.
+# The fake gh: `gh api [--paginate] <path>` prints the fixture file named after the path (page 1), or fails like a
+# 404. With --paginate it then prints the fixture's further pages (<file>.page2, <file>.page3, ...) one after another,
+# as gh does when it follows the Link header: each page is its own JSON object. A check-runs list can span pages, and
+# a caller that reads only page 1 judges the PR on part of its jobs, so the fake rejects a check-runs call without
+# --paginate outright.
 cat > "$work/gh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 [ "$1" = api ] || exit 2
 shift
-[ "$1" = --paginate ] && shift
+paginate=false
+if [ "$1" = --paginate ]; then
+  paginate=true
+  shift
+fi
 echo "$1" >> "$FAKE_GH_DIR/calls"
+if [[ $1 == */check-runs* ]] && ! $paginate; then
+  echo "gh (fake): a check-runs request without --paginate reads only the first page" >&2
+  exit 3
+fi
 file="$FAKE_GH_DIR/$(printf '%s' "$1" | tr '/?=&' '____')"
-if [ -f "$file" ]; then
-  cat "$file"
-else
+if [ ! -f "$file" ]; then
   echo "gh: Not Found (HTTP 404)" >&2
   exit 1
+fi
+cat "$file"
+if $paginate; then
+  page=2
+  while [ -f "$file.page$page" ]; do
+    cat "$file.page$page"
+    page=$((page + 1))
+  done
 fi
 EOF
 chmod +x "$work/gh"
@@ -55,9 +73,11 @@ fresh() {
 }
 case_number=0
 
+# fixture <API path> [page]: stores stdin as the answer for that path (page 1 unless a later page is given).
 fixture() {
-  local path=$1
-  cat > "$fixtures/$(printf '%s' "$path" | tr '/?=&' '____')"
+  local path=$1 page=${2-1} suffix=""
+  [ "$page" -eq 1 ] || suffix=".page$page"
+  cat > "$fixtures/$(printf '%s' "$path" | tr '/?=&' '____')$suffix"
 }
 
 pr_json() {
@@ -79,9 +99,15 @@ commit() {
     | fixture "repos/$REPO_NAME/commits/$sha"
 }
 
-# check_runs "<name>=<conclusion>[@<app slug>]" ...; conclusion "null" means still running.
+# check_runs "<name>=<conclusion>[@<app slug>]" ...; conclusion "null" means still running. Serves page 1 of the list;
+# check_runs_on_page <page> ... serves a later one (ids stay unique across pages). The script doesn't read total_count.
 check_runs() {
-  local entries=() run name conclusion app id=139142244000
+  check_runs_on_page 1 "$@"
+}
+check_runs_on_page() {
+  local page=$1 entries=() run name conclusion app id
+  shift
+  id=$((139142244000 + (page - 1) * 1000))
   for run in "$@"; do
     name=${run%%=*}
     conclusion=${run#*=}
@@ -97,7 +123,7 @@ check_runs() {
   done
   local IFS=,
   printf '{"total_count":%s,"check_runs":[%s]}' "${#entries[@]}" "${entries[*]}" \
-    | fixture "repos/$REPO_NAME/commits/$checks_on/$CHECKS_QUERY"
+    | fixture "repos/$REPO_NAME/commits/$checks_on/$CHECKS_QUERY" "$page"
 }
 
 readonly FAST_RUNS=("CI passed=success" "Select CI tier=success" "Format=success"
@@ -171,6 +197,33 @@ fresh; full_os="windows-2025 ubuntu-24.04-arm"; same_tree_pr
 check_runs "${FAST_RUNS[@]}" "Vulkan smoke, JIT + NativeAOT (windows-2025)=failure" \
   "Vulkan smoke, JIT + NativeAOT (ubuntu-24.04-arm)=success"
 check smoke-delta "same tree + two full-tier OSes, and the first one's smoke failed"
+
+# Check runs on more than one page: the script must read every page (gh api --paginate).
+fresh; same_tree_pr; check_runs "${FAST_RUNS[@]}"
+check_runs_on_page 2 "Vulkan smoke, JIT + NativeAOT (windows-2025)=success"
+check verified "same tree + full tier, with the full tier's smoke run on page 2 of the check runs"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+check_runs_on_page 2 "Build and test (ubuntu-24.04)=success" "Vulkan smoke, JIT + NativeAOT (ubuntu-24.04)=failure"
+check full "same tree + full tier, but a failed fast-tier smoke run on page 2 of the check runs"
+
+# The fake itself: it serves every page with --paginate, and refuses a check-runs call without it.
+check_fake() {
+  local expected=$1 description=$2 output status=0
+  shift 2
+  output=$(FAKE_GH_DIR="$fixtures" "$work/gh" api "$@" 2> /dev/null) || status=$?
+  if [ "$expected" = refused ] && [ "$status" -ne 0 ] && [ -z "$output" ]; then
+    echo "ok    refused  $description"
+  elif [ "$expected" = "two pages" ] && [ "$status" -eq 0 ] \
+    && [ "$(printf '%s' "$output" | jq -s 'length' | tr -d '\r')" = 2 ]; then
+    echo "ok    two pages  $description"
+  else
+    echo "FAIL  fake gh: expected $expected, got exit $status and $(printf '%s' "$output" | wc -c) bytes: $description"
+    failures=$((failures + 1))
+  fi
+}
+fresh; check_runs "${FAST_RUNS[@]}"; check_runs_on_page 2 "CI passed=success"
+check_fake refused "fake gh: check-runs call without --paginate" "repos/$REPO_NAME/commits/$HEAD/$CHECKS_QUERY"
+check_fake "two pages" "fake gh: check-runs call with --paginate" --paginate "repos/$REPO_NAME/commits/$HEAD/$CHECKS_QUERY"
 
 # Full: the tree differs.
 fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")"; commit "$SQUASH" "$TREE"; commit "$HEAD" "$OTHER_TREE"
