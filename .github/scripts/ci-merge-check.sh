@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Decides how much of the full tier a push to main still needs, from what the merged PR's CI already proved.
 #
-# A squash commit whose tree is identical to the merged PR's head tree has nothing new to test: the head already
-# contained main, so the PR's run built and tested exactly this tree, and global.json plus the lock files pin the
-# toolchain and packages. The nightly full run, which never uses this check, catches runner-image drift.
+# A squash commit whose tree is identical to the merged PR's head tree means the head contained main at merge time.
+# The PR's run tested the head merged with main as main was when the run started, and global.json plus the lock files
+# pin the toolchain and packages. So that run built and tested exactly this tree, unless main gained a change after
+# the run started and then reverted it before the merge: the trees still match, but the run tested the head plus that
+# change. The nightly full run, which never uses this check, is the backstop for that gap and for runner-image drift.
 #
 # Prints key=value lines on stdout (diagnostics go to stderr):
 #   decision=none         the event isn't a push (pull requests, the nightly schedule and manual runs keep their tiers)
@@ -105,10 +107,11 @@ if [ "$tree" != "$head_tree" ]; then
   decide full "tree $tree differs from PR #$pr's head tree $head_tree"
 fi
 
-# 3. What the PR's CI proved at that head. Only GitHub Actions check runs count, and every check run with a given
-# name must have succeeded (re-runs and repeated runs on the same head all have to agree): any doubt means more testing.
+# 3. What the PR's CI proved at that head. Only GitHub Actions check runs count. filter=all lists every attempt of
+# every workflow run on the head, not just the latest attempt, and every check run with a given name must have
+# succeeded: a job that failed and then passed on a re-run, or a cancelled duplicate run, means more testing.
 # One line per job name: "true" or "false" (all succeeded), the name, and the first run's link.
-if ! checks=$("$gh_bin" api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100"); then
+if ! checks=$("$gh_bin" api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100&filter=all"); then
   decide full "API error listing PR #$pr's check runs"
 fi
 if ! jobs=$(printf '%s' "$checks" | json -r -s \

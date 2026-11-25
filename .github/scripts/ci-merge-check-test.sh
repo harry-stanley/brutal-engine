@@ -21,6 +21,8 @@ readonly TREE=c5d0742a12a98cdaddfd232d173ec915dc62285b
 readonly OTHER_TREE=0123456789abcdef0123456789abcdef01234567
 readonly OTHER_SHA=89abcdef0123456789abcdef0123456789abcdef
 readonly RUN_URL=https://github.com/harry-stanley/brutal-engine/actions/runs/45596003295/job
+# filter=all lists every attempt of every workflow run, so an earlier failed attempt is visible.
+readonly CHECKS_QUERY='check-runs?per_page=100&filter=all'
 
 # The fake gh: `gh api [--paginate] <path>` prints the fixture file named after the path, or fails like a 404.
 cat > "$work/gh" << 'EOF'
@@ -40,11 +42,14 @@ fi
 EOF
 chmod +x "$work/gh"
 
-# Starts a case with no fixtures, so each case gets only the API answers it sets up.
+# Starts a case with no fixtures, so each case gets only the API answers it sets up. pushed is the commit the PR list
+# is served for; checks_on is the commit the check runs are served for.
 fresh() {
   fixtures="$work/case$((++case_number))"
   mkdir -p "$fixtures"
   : > "$fixtures/calls"
+  pushed=$SQUASH
+  checks_on=$HEAD
 }
 case_number=0
 
@@ -63,7 +68,7 @@ pr_json() {
 
 pulls() {
   local IFS=,
-  printf '[%s]' "$*" | fixture "repos/$REPO_NAME/commits/$SQUASH/pulls"
+  printf '[%s]' "$*" | fixture "repos/$REPO_NAME/commits/$pushed/pulls"
 }
 
 commit() {
@@ -86,11 +91,11 @@ check_runs() {
     [ "$conclusion" = null ] || conclusion="\"$conclusion\""
     id=$((id + 1))
     entries+=("$(printf '{"id":%s,"name":"%s","head_sha":"%s","status":"completed","conclusion":%s,"html_url":"%s/%s","app":{"slug":"%s"}}' \
-      "$id" "$name" "$HEAD" "$conclusion" "$RUN_URL" "$id" "$app")")
+      "$id" "$name" "$checks_on" "$conclusion" "$RUN_URL" "$id" "$app")")
   done
   local IFS=,
   printf '{"total_count":%s,"check_runs":[%s]}' "${#entries[@]}" "${entries[*]}" \
-    | fixture "repos/$REPO_NAME/commits/$HEAD/check-runs?per_page=100"
+    | fixture "repos/$REPO_NAME/commits/$checks_on/$CHECKS_QUERY"
 }
 
 readonly FAST_RUNS=("CI passed=success" "Select CI tier=success" "Format=success"
@@ -144,7 +149,7 @@ check() {
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
 check verified "same tree + full tier passed"
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "CI passed=success" "Vulkan smoke, JIT + NativeAOT (macos-15)=success"
-check verified "same tree + full tier passed twice on the head (re-run)"
+check verified "same tree + full tier passed in two workflow runs or attempts on the head"
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "CodeQL=failure@github-advanced-security"
 check verified "same tree + full tier; another app's failed check doesn't count"
 fresh
@@ -180,14 +185,20 @@ check full "PR merged into another branch"
 fresh; pulls "$(pr_json 38 "$SQUASH" "$HEAD")" "$(pr_json 39 "$SQUASH" "$HEAD")"; commit "$SQUASH" "$TREE"
 commit "$HEAD" "$TREE"; check_runs "${FULL_RUNS[@]}"
 check full "two PRs claim the merge commit"
-fresh; pulls "$(pr_json 38 "$SQUASH" "$SQUASH")"; commit "$SQUASH" "$TREE"
+# Everything else would verify, so only the guard against the PR head being the pushed commit makes this full.
+fresh; pulls "$(pr_json 38 "$SQUASH" "$SQUASH")"; commit "$SQUASH" "$TREE"; checks_on=$SQUASH
+check_runs "${FULL_RUNS[@]}"
 check full "PR head is the pushed commit itself"
 
 # Full: the PR's CI didn't prove the tree.
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/CI passed=failure}"
 check full "CI failed (CI passed concluded failure)"
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "CI passed=failure"
-check full "CI failed in one of two runs on the head"
+check full "CI passed failed in another workflow run on the head"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "Build and test (windows-2025)=failure" "CI passed=failure"
+check full "a job failed in an earlier attempt, then passed on a re-run"
+fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}" "Select CI tier=cancelled" "CI passed=cancelled"
+check full "a cancelled duplicate run on the head"
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/CI passed=null}"
 check full "CI still running (no conclusion)"
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]/CI passed=success/Select CI tier=success}"
@@ -219,15 +230,17 @@ check full "malformed JSON: an error object instead of the PR list"
 fresh; same_tree_pr; printf '{"sha":"%s","commit":{"tree":{}}}' "$HEAD" | fixture "repos/$REPO_NAME/commits/$HEAD"
 check_runs "${FULL_RUNS[@]}"
 check full "malformed JSON: commit without a tree SHA"
-fresh; same_tree_pr; printf '{"total_count":1,"check_runs":' | fixture "repos/$REPO_NAME/commits/$HEAD/check-runs?per_page=100"
+fresh; same_tree_pr; printf '{"total_count":1,"check_runs":' | fixture "repos/$REPO_NAME/commits/$HEAD/$CHECKS_QUERY"
 check full "malformed JSON: truncated check runs"
-fresh; same_tree_pr; printf '{"total_count":0}' | fixture "repos/$REPO_NAME/commits/$HEAD/check-runs?per_page=100"
+fresh; same_tree_pr; printf '{"total_count":0}' | fixture "repos/$REPO_NAME/commits/$HEAD/$CHECKS_QUERY"
 check full "malformed JSON: check runs without a list"
 
 # Full: bad inputs.
 fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
 check full "push to a branch other than main" push refs/heads/feat/x
-fresh; same_tree_pr; check_runs "${FULL_RUNS[@]}"
+# Fixtures keyed by the abbreviated SHA would verify, so only the SHA format check makes this full.
+fresh; pushed=f2a8d86; pulls "$(pr_json 38 f2a8d86 "$HEAD")"; commit f2a8d86 "$TREE"; commit "$HEAD" "$TREE"
+check_runs "${FULL_RUNS[@]}"
 check full "pushed SHA is abbreviated" push refs/heads/main f2a8d86
 
 # Not applied: other events keep their own tiers and never call the API.
