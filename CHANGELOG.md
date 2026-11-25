@@ -21,5 +21,6 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - `samples/HelloWindow` on macOS uses the Vulkan loader and MoltenVK bundled next to the executable, so a published build runs with no Vulkan SDK, Homebrew or `VK_DRIVER_FILES`.
 - CI runs HelloWindow with validation on Linux, Windows and macOS (JIT and NativeAOT, with negative tests) and uploads the NativeAOT build per platform. Any change under `samples/` gets the full CI tier.
 - `BrutalEngine.Core.Logging.Sinks.ConsoleLogSink`: writes each log entry as one UTF-8 line (`2026-11-25T03:04:05.678Z INFO [Category] message`) to standard output, or to standard error from a configurable level (default `Warning`), flushing on errors. Streams can be injected, and steady-state writes allocate nothing.
+- `BrutalEngine.Core.Logging.Sinks.MemoryLogSink`: keeps the most recent log entries in fixed, preallocated memory (by entry count and message bytes), overwriting the oldest and counting drops. `CopyTo` copies them into caller buffers, for crash reports and the debug overlay, without allocating.
 
 [Unreleased]: https://github.com/harry-stanley/brutal-engine/commits/main

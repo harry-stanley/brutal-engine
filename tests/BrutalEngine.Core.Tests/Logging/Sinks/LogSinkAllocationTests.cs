@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Logging.Sinks;
 using Xunit;
@@ -36,6 +37,52 @@ public sealed class LogSinkAllocationTests
         Assert.Equal(0, allocated);
         Assert.True(output.Position > 0);
         Assert.True(errorOutput.Position > 0);
+    }
+
+    [Fact]
+    public void MemorySinkWrite_DoesNotAllocate()
+    {
+        // Small capacities, so the measured writes keep overwriting, truncating and wrapping the rings.
+        MemoryLogSink sink = new(capacityEntries: 16, capacityBytes: 256);
+        var records = new MemoryLogRecord[16];
+        byte[] buffer = new byte[256];
+        byte[] longMessage = Encoding.UTF8.GetBytes(new string('\u00e9', 200));
+
+        for (int i = 0; i < WarmUpIterations; i++)
+        {
+            WriteMemory(sink, records, buffer, longMessage, i);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < Iterations; i++)
+        {
+            WriteMemory(sink, records, buffer, longMessage, i);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.True(sink.DroppedCount > Iterations);
+    }
+
+    private static void WriteMemory(MemoryLogSink sink, MemoryLogRecord[] records, byte[] buffer, byte[] longMessage, int i)
+    {
+        LogEntry entry = new()
+        {
+            Level = LogLevel.Warning,
+            Category = "Allocation",
+            Timestamp = DateTimeOffset.UnixEpoch.AddTicks(i),
+            ThreadId = 1,
+            Message = "Frame took 18.2 ms \u2026"u8,
+            CallerFilePath = "/src/BrutalEngine.Runtime/FrameLoop.cs",
+            CallerLineNumber = i,
+        };
+        sink.Write(entry);
+
+        LogEntry oversized = new() { Level = LogLevel.Error, Category = "Allocation", Message = longMessage };
+        sink.Write(oversized);
+        sink.Flush();
+        _ = sink.CopyTo(records, buffer);
     }
 
     private static void WriteEntries(ConsoleLogSink sink, MemoryStream output, MemoryStream errorOutput, DateTimeOffset timestamp, int i)
