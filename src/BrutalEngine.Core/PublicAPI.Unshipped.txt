@@ -54,10 +54,17 @@ BrutalEngine.Core.Logging.ILogSink.Write(scoped in BrutalEngine.Core.Logging.Log
 BrutalEngine.Core.Logging.InformationLevel
 BrutalEngine.Core.Logging.InformationLevel.InformationLevel() -> void
 BrutalEngine.Core.Logging.LogCategory
+BrutalEngine.Core.Logging.LogCategory.Critical(ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.CriticalLevel> message, string! callerFile = "", int callerLine = 0) -> void
+BrutalEngine.Core.Logging.LogCategory.Debug(ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.DebugLevel> message, string! callerFile = "", int callerLine = 0) -> void
 BrutalEngine.Core.Logging.LogCategory.Equals(BrutalEngine.Core.Logging.LogCategory other) -> bool
+BrutalEngine.Core.Logging.LogCategory.Error(ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.ErrorLevel> message, string! callerFile = "", int callerLine = 0) -> void
+BrutalEngine.Core.Logging.LogCategory.Information(ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.InformationLevel> message, string! callerFile = "", int callerLine = 0) -> void
 BrutalEngine.Core.Logging.LogCategory.IsEnabled(BrutalEngine.Core.Logging.LogLevel level) -> bool
+BrutalEngine.Core.Logging.LogCategory.Log(BrutalEngine.Core.Logging.LogLevel level, ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.DynamicLevel> message, string! callerFile = "", int callerLine = 0) -> void
 BrutalEngine.Core.Logging.LogCategory.LogCategory() -> void
 BrutalEngine.Core.Logging.LogCategory.Name.get -> string!
+BrutalEngine.Core.Logging.LogCategory.Trace(ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.TraceLevel> message, string! callerFile = "", int callerLine = 0) -> void
+BrutalEngine.Core.Logging.LogCategory.Warning(ref BrutalEngine.Core.Logging.LogMessageHandler<BrutalEngine.Core.Logging.WarningLevel> message, string! callerFile = "", int callerLine = 0) -> void
 BrutalEngine.Core.Logging.LogEntry
 BrutalEngine.Core.Logging.LogEntry.CallerFilePath.get -> string!
 BrutalEngine.Core.Logging.LogEntry.CallerFilePath.init -> void
@@ -82,6 +89,19 @@ BrutalEngine.Core.Logging.LogLevel.Information = 2 -> BrutalEngine.Core.Logging.
 BrutalEngine.Core.Logging.LogLevel.None = 6 -> BrutalEngine.Core.Logging.LogLevel
 BrutalEngine.Core.Logging.LogLevel.Trace = 0 -> BrutalEngine.Core.Logging.LogLevel
 BrutalEngine.Core.Logging.LogLevel.Warning = 3 -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(System.ReadOnlySpan<byte> utf8) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(System.ReadOnlySpan<char> value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(bool value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(object? value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(object? value, string? format) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted(string? value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted<T>(T value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendFormatted<T>(T value, string? format) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.AppendLiteral(string! value) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.LogMessageHandler() -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.LogMessageHandler(int literalLength, int formattedCount, BrutalEngine.Core.Logging.LogCategory category, BrutalEngine.Core.Logging.LogLevel level, out bool isEnabled) -> void
+BrutalEngine.Core.Logging.LogMessageHandler<TLevel>.LogMessageHandler(int literalLength, int formattedCount, BrutalEngine.Core.Logging.LogCategory category, out bool isEnabled) -> void
 BrutalEngine.Core.Logging.Logger
 BrutalEngine.Core.Logging.Logger.CreateCategory(string! name) -> BrutalEngine.Core.Logging.LogCategory
 BrutalEngine.Core.Logging.Logger.Dispose() -> void

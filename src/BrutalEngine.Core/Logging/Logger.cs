@@ -39,6 +39,7 @@ public sealed class Logger : IDisposable
     private readonly LogLevel _minimumLevel;
     private long _sinkFailureCount;
     private volatile bool _disposed;
+    private bool _dispatching;
 
     /// <summary>Creates a logger.</summary>
     /// <param name="options">Settings. The sink list is copied, so later changes to it have no effect.</param>
@@ -206,6 +207,54 @@ public sealed class Logger : IDisposable
             }
 
             FlushSinks();
+        }
+    }
+
+    /// <summary>Passes one formatted entry to every sink. Called by <see cref="LogMessageHandler{TLevel}"/>.</summary>
+    /// <remarks>
+    /// The timestamp is taken inside the lock, so timestamps never go backwards in delivery order. An entry
+    /// logged by a sink while it is being called (on the same thread, so the lock is already held) is dropped
+    /// instead of recursing.
+    /// </remarks>
+    internal void Dispatch(LogCategoryState category, LogLevel level, ReadOnlySpan<byte> message, string callerFile, int callerLine)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _dispatching)
+            {
+                return;
+            }
+
+            _dispatching = true;
+            try
+            {
+                LogEntry entry = new()
+                {
+                    Level = level,
+                    Category = category.Name,
+                    Timestamp = TimeProvider.GetUtcNow(),
+                    ThreadId = Environment.CurrentManagedThreadId,
+                    Message = message,
+                    CallerFilePath = callerFile,
+                    CallerLineNumber = callerLine,
+                };
+
+                foreach (ILogSink sink in _sinks)
+                {
+                    try
+                    {
+                        sink.Write(in entry);
+                    }
+                    catch (Exception exception) when (exception is not OutOfMemoryException)
+                    {
+                        _ = Interlocked.Increment(ref _sinkFailureCount);
+                    }
+                }
+            }
+            finally
+            {
+                _dispatching = false;
+            }
         }
     }
 

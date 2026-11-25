@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using BrutalEngine.Core.Logging;
 
 namespace BrutalEngine.Core.Tests.Logging;
@@ -30,7 +29,7 @@ internal sealed class RecordingSink : ILogSink
             entry.Category,
             entry.Timestamp,
             entry.ThreadId,
-            Encoding.UTF8.GetString(entry.Message),
+            entry.Message.ToArray(),
             entry.CallerFilePath,
             entry.CallerLineNumber));
     }

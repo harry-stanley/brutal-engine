@@ -17,5 +17,6 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - README, MIT licence and BRUTAL's `NOTICE.txt`.
 - Community health files: contributing guide, security policy, code of conduct (Contributor Covenant 2.1), this changelog, pull request and issue templates, and CODEOWNERS.
 - `samples/HelloWindow`: an SDL3 window presenting a Vulkan 1.3 clear-colour swapchain, with resize and minimise handling, validation counting and NativeAOT support.
+- `BrutalEngine.Core.Logging`: an instance-owned logging facade (`Logger`, `LogCategory`, `ILogSink`) with a global minimum level and per-category overrides, UTF-8 formatting that allocates nothing for common types (enabled or not), messages truncated to a byte limit, and sink failures isolated and counted. It has no BRUTAL dependency.
 
 [Unreleased]: https://github.com/harry-stanley/brutal-engine/commits/main
