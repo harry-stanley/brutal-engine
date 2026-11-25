@@ -225,36 +225,108 @@ public sealed class ConsoleLogSinkTests
     }
 
     [Fact]
-    public void Dispose_OpenedStreams_DisposesThem()
+    public void Dispose_BothStreamsOpened_DisposesBoth()
     {
         RecordingStream openedOutput = new();
         RecordingStream openedErrorOutput = new();
-        RecordingStream given = new();
-        ConsoleLogSink defaults = new(new ConsoleLogSinkOptions(), () => openedOutput, () => openedErrorOutput);
-        ConsoleLogSink mixed = new(new ConsoleLogSinkOptions { ErrorOutput = given }, () => openedOutput, () => throw new InvalidOperationException("Not opened."));
+        ConsoleLogSink sink = new(new ConsoleLogSinkOptions(), () => openedOutput, () => openedErrorOutput);
 
-        Write(defaults, LogLevel.Information, "out");
-        Write(defaults, LogLevel.Error, "err");
-        defaults.Dispose();
-        mixed.Dispose();
+        Write(sink, LogLevel.Information, "out");
+        Write(sink, LogLevel.Error, "err");
+        sink.Dispose();
 
         Assert.Equal([$"{Prefix} INFO [Core] out\n"], openedOutput.Writes);
         Assert.Equal([$"{Prefix} EROR [Core] err\n"], openedErrorOutput.Writes);
         Assert.True(openedOutput.IsDisposed);
         Assert.True(openedErrorOutput.IsDisposed);
+    }
+
+    [Fact]
+    public void Dispose_OutputOpenedErrorOutputGiven_DisposesOnlyOpenedOutput()
+    {
+        RecordingStream openedOutput = new();
+        RecordingStream given = new();
+        ConsoleLogSink sink = new(new ConsoleLogSinkOptions { ErrorOutput = given }, () => openedOutput, () => throw new InvalidOperationException("Not opened."));
+
+        sink.Dispose();
+
+        Assert.True(openedOutput.IsDisposed);
         Assert.False(given.IsDisposed);
     }
 
     [Fact]
-    public void Members_AfterDispose_ThrowObjectDisposed()
+    public void Dispose_OutputGivenErrorOutputOpened_DisposesOnlyOpenedErrorOutput()
+    {
+        RecordingStream given = new();
+        RecordingStream openedErrorOutput = new();
+        ConsoleLogSink sink = new(new ConsoleLogSinkOptions { Output = given }, () => throw new InvalidOperationException("Not opened."), () => openedErrorOutput);
+
+        sink.Dispose();
+
+        Assert.True(openedErrorOutput.IsDisposed);
+        Assert.False(given.IsDisposed);
+    }
+
+    [Fact]
+    public void Constructor_OpeningErrorOutputThrows_DisposesOpenedOutputAndPropagates()
+    {
+        RecordingStream openedOutput = new();
+        InvalidOperationException failure = new("Can't open standard error (test).");
+
+        InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(
+            () => new ConsoleLogSink(new ConsoleLogSinkOptions(), () => openedOutput, () => throw failure));
+
+        Assert.Same(failure, thrown);
+        Assert.True(openedOutput.IsDisposed);
+    }
+
+    [Fact]
+    public void Write_AfterDispose_ThrowsObjectDisposed()
     {
         RecordingStream output = new();
         ConsoleLogSink sink = new(new ConsoleLogSinkOptions { Output = output, ErrorOutput = output });
         sink.Dispose();
 
         _ = Assert.Throws<ObjectDisposedException>(() => Write(sink, LogLevel.Information, "m"));
-        _ = Assert.Throws<ObjectDisposedException>(sink.Flush);
         Assert.Empty(output.Writes);
+    }
+
+    [Fact]
+    public void Flush_AfterDispose_ThrowsObjectDisposed()
+    {
+        RecordingStream output = new();
+        ConsoleLogSink sink = new(new ConsoleLogSinkOptions { Output = output, ErrorOutput = output });
+        sink.Dispose();
+
+        _ = Assert.Throws<ObjectDisposedException>(sink.Flush);
+        Assert.Equal(1, output.FlushCount);
+    }
+
+    [Fact]
+    public void Write_StreamThrows_PropagatesAndSinkStaysUsable()
+    {
+        RecordingStream output = new() { FailingWrites = 1 };
+        using ConsoleLogSink sink = new(new ConsoleLogSinkOptions { Output = output, ErrorOutput = output });
+
+        _ = Assert.Throws<IOException>(() => Write(sink, LogLevel.Information, "lost"));
+        Write(sink, LogLevel.Information, "next");
+
+        Assert.Equal([$"{Prefix} INFO [Core] next\n"], output.Writes);
+    }
+
+    [Fact]
+    public void Write_StreamThrowsUnderLogger_CountsOneSinkFailureAndKeepsLogging()
+    {
+        RecordingStream output = new() { FailingWrites = 1 };
+        using ConsoleLogSink sink = new(new ConsoleLogSinkOptions { Output = output, ErrorOutput = output });
+        using Logger logger = new(new LoggerOptions { Sinks = [sink], TimeProvider = new FixedTimeProvider(DateTimeOffset.UnixEpoch) });
+        LogCategory category = logger.CreateCategory("Game");
+
+        category.Information($"lost");
+        category.Information($"kept");
+
+        Assert.Equal(1, logger.SinkFailureCount);
+        Assert.Equal([$"{Prefix} INFO [Game] kept\n"], output.Writes);
     }
 
     [Fact]
@@ -296,6 +368,9 @@ public sealed class ConsoleLogSinkTests
 
         public bool IsDisposed { get; private set; }
 
+        /// <summary>How many of the next write calls throw an <see cref="IOException"/> instead of recording.</summary>
+        public int FailingWrites { get; set; }
+
         public override bool CanRead => false;
 
         public override bool CanSeek => false;
@@ -331,6 +406,12 @@ public sealed class ConsoleLogSinkTests
         private void Record(ReadOnlySpan<byte> bytes)
         {
             ObjectDisposedException.ThrowIf(IsDisposed, this);
+            if (FailingWrites > 0)
+            {
+                FailingWrites--;
+                throw new IOException("Stream write failure (test).");
+            }
+
             if (Interlocked.Exchange(ref _writing, 1) != 0)
             {
                 OverlappingWrites++;
