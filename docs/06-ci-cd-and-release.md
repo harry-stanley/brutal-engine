@@ -30,16 +30,33 @@ Arch is a rolling release, so its runner also catches driver and Mesa regression
 
 ## Workflows
 
-### `ci.yml`: every PR and every push to `main`
+### `ci.yml`: every PR and every push to `main`, plus nightly
 
 1. **Lint:** `dotnet format --verify-no-changes`, markdown link check on docs, licence-header check.
 2. **Build matrix** (3 OSes): restore in locked mode, then `dotnet build -c Release` (warnings are errors), then `dotnet build -c Debug`.
 3. **Test matrix** (3 OSes): unit, property, native-boundary, integration, allocation, leak, determinism, plus GPU conformance and golden tests on software Vulkan. Test results go to the job summary. Failed golden images upload their diff artifacts.
-4. **AOT smoke** (3 OSes): publish one sample with NativeAOT for the runner's RID and run it headless.
+4. **AOT smoke:** publish `tests/BrutalEngine.Aot.Smoke` (later, one sample) with NativeAOT for the runner's RID and run it headless, with its JIT build and negative test. Linux runs in every tier. Windows and macOS run in the full tier (see *CI tiers*).
 5. **Pack:** `dotnet pack`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
 6. **Security** (separate workflows so they can also run on a schedule): `codeql.yml` (C# and Actions, `security-and-quality` queries, also weekly) and `dependency-review.yml` (blocks new dependencies with moderate or worse known vulnerabilities). Dependabot (`.github/dependabot.yml`) proposes weekly NuGet, .NET SDK and Actions updates.
 
-The aggregate `CI passed` job, `CodeQL (csharp)`, `CodeQL (actions)` and `Dependency review` are the required status checks on `main`. Branch protection: PRs required, 1 approving review (the maintainer), linear history, no force pushes, required checks up to date before merge.
+The aggregate `CI passed` job, `CodeQL (csharp)`, `CodeQL (actions)` and `Dependency review` are the required status checks on `main`. Branch protection (ruleset "Protect Main"): PRs required, squash merges only, no force pushes or deletion, required checks must pass.
+
+Required approvals are 0 for now. PRs are opened under the maintainer's own account, and GitHub doesn't let a PR author approve their own PR. Only accounts with write access (currently just the maintainer) can merge, so fork PRs can't be merged by their authors. If a second identity starts opening PRs (for example, a bot account for automated work), set the required approvals to 1 and require approval of the most recent push.
+
+#### CI tiers
+
+CI is split so a typical PR gets feedback in about two minutes, while native and GPU coverage still runs before and after every merge:
+
+| Tier | When | Adds |
+|------|------|------|
+| **Fast** | PRs whose changed paths can't affect native interop, NativeAOT or GPU tests | Format, build and test on all 3 OSes, pack, and the Linux Vulkan + NativeAOT smoke |
+| **Full** | PRs touching native-relevant paths, every push to `main`, nightly (15:00 UTC), manual runs | The fast tier plus the Windows (and, once added, macOS) Vulkan + NativeAOT smoke |
+
+- The `Select CI tier` job classifies a PR's changed paths, including the old name of renamed files, with `.github/scripts/ci-tier.sh`. The paths that force the full tier are listed in that script: backend modules (Platform, Graphics, Audio, Runtime), the smoke harness, `.github/actions` and `.github/scripts`, `ci.yml`, `global.json`, NuGet config, and any `Directory.Build`/`Directory.Packages` file.
+- The job runs `ci-tier-test.sh` first, so a broken rule fails CI instead of silently skipping coverage. Add a case there when the list changes.
+- Nothing is skipped: the smoke matrix is computed by the tier job, so `CI passed` still requires every job it needs to succeed.
+- Anything the fast tier misses is caught by the full run on the merge to `main`.
+- **Time budget:** a fast-tier PR should finish in under 3 minutes, and no single step should take over 2 minutes on a warm cache. A step that grows past that gets cached, prebuilt or moved to the nightly run.
 
 **Every merge into `main` is a squash merge**, so `main` has one commit per PR and its history stays clean. The repository allows only squash merging (merge commits and rebase merging are disabled), uses the PR title as the squash commit title, and deletes head branches after merge.
 
