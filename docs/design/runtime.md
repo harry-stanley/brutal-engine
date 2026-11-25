@@ -395,7 +395,7 @@ public sealed class SplashLogo                       // immutable; thread-safe
 | BRUTAL LICENSE 1.0: the copyright and permission notice in all copies (`LICENSE.txt:12-13`) | BRUTAL's packages carry `LICENSE.txt`; copied into game output by the M2 publish step, by the samples' target in M1 |
 | BRUTAL LICENSE 2.1: the copyright notice in the credits (`LICENSE.txt:20-21`) | The credits API (`docs/03-architecture.md:257`), not in M1: it lands in Runtime with M3's UI, which can show a credits screen. `CREDITS.txt` generation moves from HelloWindow into the M2 publish step |
 | BRUTAL LICENSE 4.0: third-party licences in `LICENSES/` (`LICENSE.txt:41-43`) | The M2 publish step (`docs/03-architecture.md:258`); the samples' target in M1 |
-| docs/03 3.23: splash module, credits API, publish copies and a test | Splash: [this section](#5-the-splash). Credits: M3. Publish copies and their test: M2 |
+| docs/03 3.23: splash module, credits API, publish copies and a test | Splash: [this section](#5-the-splash) and [testing](#11-testing). Credits: M3. Publish copies and their test: M2 |
 
 No engine package is published to NuGet in M1, so every M1 product is a sample built in this repository, and the samples' targets meet 1.0, 2.1, 2.3 and 4.0 until the M2 publish step replaces them.
 
@@ -435,3 +435,154 @@ Step: <HostStep>   Phase: <HostPhase>   Frame: <FrameNumber>
 - **Location.** `<user data>/crashes/crash-<yyyyMMdd-HHmmss>-<run id>.txt`, written with `System.IO`, not the VFS, for the same reason as the log file: it must work while things are failing (`docs/design/platform.md:447`). Without a user data directory, the fallback directory of section 7. After writing, only the newest `MaxReports` files matching `crash-*.txt` are kept.
 - **Message box**, only after the report is on disk (platform note section 8): `IPlatform.ShowMessageBox` with `MessageBoxKind.Error`, the title "<Application> stopped unexpectedly", and the report's path; or `SdlPlatform.TryShowFatalError` if the platform never started or the default platform isn't in use. Skipped when headless, when `CI` is set, or when `ShowMessageBox` is false.
 - **Exit code** `Crashed` (70). `HostRunResult` carries the exception and the report path.
+
+## 7. Logging
+
+The host builds one `Logger` at the `Logging` step and passes it everywhere (no global instance, [logging note](logging.md#rules)):
+
+```csharp
+public sealed record LoggingOptions
+{
+    public LogLevel MinimumLevel { get; init; } = LogLevel.Information;
+    public bool Console { get; init; } = true;
+    public bool File { get; init; } = true;                  // <user data>/logs/engine.log
+    public int MemoryTailEntries { get; init; } = 1000;      // the crash report's and the overlay's tail
+    public int MemoryTailBytes { get; init; } = 256 * 1024;
+    public IReadOnlyList<ILogSink> AdditionalSinks { get; init; } = []; // the game's; not owned by the host
+}
+```
+
+- **Default sinks:** `ConsoleLogSink` (standard output and error), `MemoryLogSink(MemoryTailEntries, MemoryTailBytes)`, exposed as `EngineContext.LogTail`, and the rotating file sink. Categories: `Runtime` for the host, `Game` for the game, a module's name for each module, and `Platform`, `Graphics` and `Brutal.*` from the services ([platform note section 10](platform.md#10-native-status-checks-and-the-brutal-log-bridge)).
+- **The file sink needs a directory that only exists later.** A logger's sinks are fixed when it is created (`LoggerOptions.Sinks`, `src/BrutalEngine.Core/Logging/LoggerOptions.cs:24`), but the user data directory comes from the platform, which is created with the logger. So the third sink is an internal `DeferredFileLogSink`: until the `UserData` step it drops entries (the memory sink has them); at that step the host creates a `RotatingFileLogSink` with `Directory = Path.Join(userDataDirectory, "logs")` (absolute, as the decision requires), replays the memory tail into it as `LogEntry` values (a public `ref struct` with init properties, `src/BrutalEngine.Core/Logging/LogEntry.cs:16`), and forwards from then on. Attaching happens on the main thread before the host starts anything that logs from another thread, so no entry is lost or doubled.
+- **Fallback directory.** If `GetUserDataDirectory` fails, `UserData` degrades and logs and crash reports go to `Path.Join(Path.GetTempPath(), Organization, Application)`. If the file sink faults later, it drops lines by design; the host reports its `Fault` (`src/BrutalEngine.Core/Logging/Sinks/RotatingFileLogSink.cs:175`) once in the console log, at exit, and in a crash report.
+- **The BRUTAL log bridge** (P6) needs nothing from the host beyond `PlatformOptions.Logger`: Platform.Sdl3 installs it at creation and disables it at `Dispose` (`docs/design/platform.md:534`). The host disposes the platform before the logger.
+- **Order at exit:** the logger is flushed and disposed last, after the platform, and the host then disposes the sinks it created (not `AdditionalSinks`).
+
+## 8. The headless host
+
+TestUtilities' "headless host stub" (`docs/04-repo-layout.md:64`) lands with R1 in `tests/TestUtilities` (namespace `BrutalEngine.TestUtilities`; whichever issue needs the project first creates it). It runs the real `GameHost.Execute` with test backends.
+
+```csharp
+namespace BrutalEngine.TestUtilities;
+
+public sealed class HeadlessHost
+{
+    public HeadlessHost(HeadlessHostOptions options);
+    public FakePlatform Platform { get; }
+    public ManualTimeProvider Time { get; }
+    public HostRunResult Run<TGame>(int frames) where TGame : IGame, new();
+    public HostRunResult Run(IGame game, int frames);
+}
+
+public sealed record HeadlessHostOptions
+{
+    public EngineOptions Engine { get; init; } = new() { Organization = "Tests", Application = "Headless" };
+    public IGraphicsBackend? Graphics { get; init; }       // null: NoSurface; set: the fake or a real backend
+    public TimeSpan FrameTime { get; init; } = TimeSpan.FromSeconds(1.0 / 60);   // clock advance per frame
+}
+
+public sealed class FakePlatform : IPlatform            // scripted events, fake windows, recorded message boxes
+{
+    public void Enqueue(in PlatformEvent platformEvent);
+    public IReadOnlyList<MessageBoxRequest> MessageBoxes { get; }
+    // plus the IPlatform members
+}
+
+public sealed class ManualTimeProvider : TimeProvider
+{
+    public void Advance(TimeSpan delta);
+    // GetTimestamp and TimestampFrequency return the scripted time
+}
+```
+
+- **What it fakes:** the operating system and, optionally, the GPU. `FakePlatform` has no SDL: its windows have the sizes and states the test sets, a fake `IVulkanSurfaceSource` that only a fake backend accepts, events the test enqueues, a base directory and a user data directory in fresh temporary folders, and message boxes recorded instead of shown. `ManualTimeProvider` is its clock; `WaitForEvents(timeout)` advances it by the timeout and returns at once, so `NoSurface` pacing costs no real time. Each frame advances it by `FrameTime`. Graphics is the in-memory fake backend from the render interface's split (G2b) or, in the `vulkan-smoke` job, the real Vulkan backend.
+- **What really runs:** everything in `BrutalEngine.Runtime`: option and command-line handling, the lifecycle and its failure paths, the module registry, the frame loop and `FixedStepClock`, world schedules on a real `EcsWorld`, the splash timeline (and its drawing, with a graphics backend), crash reports into the temporary user data directory, logging, the leak check and the allocation measurement.
+- Tests are deterministic and parallel: no SDL, no wall clock, no process-wide state (the one-host-per-process count covers only the default SDL platform).
+
+## 9. The debug overlay
+
+The overlay (ImGui, `BrutalEngine.DebugOverlay`, an L4 host: `tests/BrutalEngine.Architecture.Tests/EngineLayers.cs:40`) is "compiled out of release builds by default" (`docs/03-architecture.md:234`).
+
+```csharp
+public static class RuntimeFeatures
+{
+    [FeatureSwitchDefinition("BrutalEngine.Runtime.DevelopmentBuild")]
+    public static bool IsDevelopmentBuild { get; }    // AppContext switch; default true
+}
+```
+
+- **Development build** is one AppContext switch. Runtime ships an MSBuild props file (packed under `buildTransitive/`, and imported by the in-repo samples) that sets it to false when the game's `Configuration` is `Release` (`RuntimeHostConfigurationOption` with `Trim="true"`). Overriding the property gives a release build with the overlay or a debug build without it. The switch decides the defaults of `DebugOverlay`, `GraphicsSettings.Validation` and `LeakCheck`.
+- **Compiled out.** The host installs the overlay only inside `if (RuntimeFeatures.IsDevelopmentBuild && options.DebugOverlay)`. `[FeatureSwitchDefinition]` lets the trimmer and NativeAOT treat the property as the constant `false` in release builds, so the branch and every overlay type it reaches are removed from the executable. The native ImGui library is still copied by NuGet; leaving it out of release output belongs to the M2 publish step.
+- **The hook.** DebugOverlay is below Runtime, so it can't implement `IEngineModule`. Runtime wraps O1's public overlay type in an internal `DebugOverlayModule` (an `IFrameModule`), registered first and recorded last (section 3), skipped for `NoSurface`. It passes the overlay its inputs each frame: the pumped events, `FrameTiming`, `SpiralCount`, per-system timings (`Schedule.GetTimings`), per-pass GPU timings (`GraphicsDevice.TryGetPassTimings`) and `LogTail`. The input type is O1's and O3's to define.
+
+## 10. Threading
+
+- **The main thread is the one that calls `Run` or `Execute`.** The host captures Core's `ThreadAffinity` there ([platform note section 9](platform.md#9-threading)); on macOS the platform also requires it to be the process's main thread and fails start-up otherwise. Every `IGame` and `IEngineModule` callback, every frame hook and every schedule runs on it.
+- Every `EngineContext` and `ModuleRegistry` member checks the thread and throws `WrongThreadException` naming the API (docs/03, `docs/03-architecture.md:87`), in every build, as Platform, Graphics and World do. The exception is `RequestExit`, which any thread may call (a volatile flag the loop reads once per frame).
+- `FixedStepClock` is not thread-safe (owned by the loop). `EngineOptions` and its records, `SplashLogo` and `HostRunResult` are immutable and thread-safe. The crash handler for other threads (section 6) reads only cached start-up data, the thread-safe `MemoryLogSink` and the frame-timing ring (a torn read there costs one wrong number in a report).
+- **No static mutable state** beyond `GameHost`'s `static int` run count (section 1): the host's state lives in a per-run instance, and `RuntimeFeatures` reads its switch through `AppContext`, as the static-state rule requires ([architecture tests](architecture-tests.md#rules)).
+
+## 11. Testing
+
+| Area | Tests (`tests/BrutalEngine.Runtime.Tests` unless noted) |
+|------|------|
+| Fixed-step clock (R2) | Unit tests for each rule; CsCheck property tests over random timestamp sequences, rates and limits: total steps equal `floor(sum(min(delta, max)) * rate / frequency)` exactly; `Alpha` in `[0, 1)`; `SpiralCount` equals the number of clamped frames; a delta split across frames gives the same steps as one frame when nothing is clamped; the same input always gives the same output (determinism); `Rebase` never adds steps. Allocation test: 1,000 `Advance` calls allocate 0 bytes |
+| Lifecycle and modules (R1) | With the headless host: the step order recorded by probe modules; a failure injected at every fatal step gives exit 3 or 4 and undoes exactly the completed steps in reverse; degradable failures continue and are listed; dependency order, ties, cycles, unknown names, a degraded dependency; `Stop` exceptions don't stop shutdown; misuse throws |
+| Options (R1b) | Command line: every option, every error (64) with a table of bad inputs; `engine.json`: every key, invalid JSON, unknown keys and bad values ignored with warnings, precedence code < file < command line |
+| Frame loop (R1) | Scripted clock: `FixedUpdate` runs exactly the clock's steps; phases switch once; minimised windows wait and rebase; `FrameLimit`; device loss with the fake backend's fault seam calls `Recover` and owners; a failed recovery exits 4. Allocation: 1,000 steady-state frames with a world schedule and a frame module allocate 0 bytes, also under Windows dynamic coverage |
+| Logging (R1b) | Deferred file sink: boot lines before `UserData` reach the file once, in order; the fallback directory; the `Fault` report |
+| Splash (R3) | The promoted unit tests (layout, timeline, compositor, statistics); the presented-time clock (a minimised period doesn't count); game-logo area and duration caps; skip rules (nothing skips the first 2 s); PNG decoder: the BRUTAL logo decodes to the same RGBA bytes as `SDL_LoadPNG` gives (a hash recorded from the M0 path), every filter type, CRC and truncation errors, and a CsCheck round trip against a test-side encoder over the BCL's `ZLibStream`; the embedded logo's SHA-256; GPU (conformance project, lavapipe in CI, the RTX 2070 SUPER locally): a 1:1 splash frame read back equals the logo composited onto black, byte for byte, and a scaled one stays inside the fitted rectangle on black |
+| Crash reports (R4) | Without killing the test host: the headless host runs games that throw in `Initialize`, in a system and in `Shutdown`; each returns 70 with the report in the temporary user data directory, every section present, the log tail ending with the last line logged, the message box recorded only when not headless, and no graphics call after the throw (the fake backend counts calls); retention keeps `MaxReports`; the other-thread handler is invoked directly, not by crashing |
+| Architecture | Runtime is referenced by `tests/BrutalEngine.Architecture.Tests` (layering, binding surface, static state) |
+| NativeAOT | The rewritten HelloWindow (S1) and SpriteStress publish on Runtime and run in `vulkan-smoke`; the overlay switch is checked by publishing with it off and asserting no `BrutalEngine.DebugOverlay` type is in the output's symbol map (R5) |
+
+Mutation self-checks, for example: accumulate the unclamped delta; leave a started module unstopped after a later failure; let a key press skip the BRUTAL logo before 2 s; call `GraphicsDevice.WaitIdle` on the crash path.
+
+## 12. Issue split
+
+| Issue | Scope | Blocked by | Est. |
+|-------|-------|------------|------|
+| R2 feat(runtime): run a fixed-step loop with interpolation | Creates `src/BrutalEngine.Runtime` + tests: `FrameLoopOptions`, `FixedStepClock`, `FrameTiming` (section 4); the Architecture.Tests reference | this note | ~450 |
+| R1 feat(runtime): host the engine's lifecycle, modules and frame loop | `IGame`, `Game`, `GameHost`, `EngineOptions` (without `Splash`, `CrashReports` and `DebugOverlay`, which R3, R4 and R5 add), `GraphicsSettings`, `HostBackends`, `HostExitCode`, `HostRunResult`, `HostFailure`, `HostStep`, `EngineContext`, `HostPhase`, the module types (section 3), `FrameContext`, `RenderTarget`, the loop (section 4), device-loss recovery, `RuntimeFeatures` and its props file (section 9), the leak check, console and memory logging; `tests/TestUtilities` with `HeadlessHost`, `FakePlatform`, `ManualTimeProvider` | R2; P5 (`SdlPlatform` complete); G5 and G2b (device, swapchain, fake backend); W6 (schedules); the Vulkan backend factory from #55's split | ~750 |
+| R1b feat(runtime): read the command line and engine.json, and log to a file | The command-line table and usage errors, `engine.json`, `LoggingOptions`, `DeferredFileLogSink`, the fallback directory (sections 1, 7) | R1 | ~550 |
+| R3 feat(runtime): show the BRUTAL splash before gameplay | `SplashOptions`, `SplashLogo`, the promoted splash types and their tests, the PNG decoder, `splash.slang` and its cooked SPIR-V, the embedded logo, the splash phase (section 5); HelloWindow's copies stay until S1 | R1; G9 (pipelines, draws); T1 (shader cooking) | ~700 |
+| R4 feat(runtime): write crash reports | `CrashReportOptions`, the boundary catch, the other-thread handler, the report writer, retention, message boxes (section 6) | R1b (log tail and file directory) | ~500 |
+| R5 feat(runtime): install the debug overlay in development builds | `EngineOptions.DebugOverlay`, `DebugOverlayModule`, the release-build trimming check (section 9) | R1; O1 (and O3 for the panels' inputs) | ~250 |
+
+Order: R2, R1, then R1b, R3 and R5 as their other blockers land (one at a time, because they share Runtime's `PublicAPI.Unshipped.txt`), then R4. S1 (HelloWindow on Runtime) needs R3; S2 (SpriteStress) needs R1.
+
+## Failure modes
+
+| Failure | Result |
+|---------|--------|
+| Invalid options; a second host in the process | `ArgumentException` / `InvalidOperationException` from `Run`, before anything starts |
+| Bad command line | exit 64, usage on standard error |
+| Bad `engine.json` | `Warning`, keys ignored |
+| A fatal start-up step fails | `Critical` log, message box, partial teardown, exit 3 |
+| A degradable step or module fails | `Warning`, `Degradations`, the run continues |
+| Module dependency cycle or unknown name | `InvalidOperationException`, reported as a crash (70) |
+| Device lost | `Recover()`; failure: crash report, exit 4 |
+| Unhandled exception on the main thread | crash report, message box, exit 70, no GPU calls |
+| Unhandled exception on another thread | crash report; the runtime ends the process |
+| Validation messages, leaks | exit 2, exit 4 |
+| Wrong thread | `WrongThreadException` |
+
+## Consistency with docs/03
+
+| docs/03 says | This note | Why |
+|--------------|-----------|-----|
+| `BrutalEngine.Run<TGame>(options)` (3.2) | `GameHost.Run<TGame>(options)` | Section 1: a `BrutalEngine` type hides the namespace |
+| Audio device and asset database in the lifecycle (3.2) | Reserved steps 80 and 90 | Not in M1 |
+| `world.RunSchedule(Update)` only (3.2) | `PostUpdate` runs after `Update` | The world note's transform system |
+| "Minimised windows skip rendering" (3.5) | Simulation pauses too | M0's behaviour; a keep-simulating option comes with networking |
+| Thread checks "asserted in debug builds" (3.2) | Checked in every build | As Platform, Graphics and World |
+| Crash: report, message box, exit (3.5) | No shutdown callbacks or GPU teardown after a crash | A crashed or lost device can hang them |
+| Splash from M0: `SDL_LoadPNG` and a blit | Managed PNG decoding and a textured quad | Section 5: no native calls in Runtime, no blit in the render interface |
+| Configure from "options, CLI args, config file" | `user://engine.json` only, applied after the platform starts | Section 1 |
+
+## Not verified
+
+- The note is design only; nothing in it has run. The splash rules it keeps were verified by M0 (`samples/HelloWindow/README.md`); its drawing path is new and is proven by R3's GPU test.
+- `[FeatureSwitchDefinition]` removing the overlay branch under NativeAOT is the documented .NET behaviour, not yet observed here: R5 checks it.
+- The Vulkan backend factory's shape is #55's; this note relies only on it returning an `IGraphicsBackend` and the loader path.
+- Windows and Linux are the tested targets in M1. macOS keeps its code paths (the main-thread rule, the bundled loader) but is unverified.
