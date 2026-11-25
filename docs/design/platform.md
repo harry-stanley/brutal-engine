@@ -213,3 +213,187 @@ public sealed class PlatformEventBuffer   // filled by backends; read through Pl
 - **Zero allocation:** the event array and text buffer are allocated once at creation; translating, adding and reading allocate nothing. An allocation test pumps 1,000 batches of every kind and asserts 0 bytes ([section 12](#12-testing)).
 - **Waiting:** `WaitForEvents(timeout)` blocks in `SDL_WaitEventTimeout` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9599`) and keeps the event it receives for the next pump, which hands it out first. It returns false on timeout. Hosts use it while every window is minimised, as HelloWindow does (`samples/HelloWindow/HelloWindowApp.cs:125-134`).
 - **Quit:** `QuitRequested` (all windows closed, or the OS asked) and `WindowCloseRequested` are plain events; closing is the host's decision.
+
+## 3. Headless mode
+
+```csharp
+public enum HeadlessMode
+{
+    None = 0,   // real windows on the desktop
+    Offscreen,  // invisible windows; Vulkan presents through VK_EXT_headless_surface where a driver offers it
+    NoSurface,  // invisible windows with no graphics surface: platform tests, servers
+}
+```
+
+The host asks for it with `PlatformOptions.Headless`. The backend picks the SDL video driver before `SDL_Init` by setting the `SDL_VIDEO_DRIVER` hint (`Sdl.Constants.HintVideoDriver`, `Brutal.Sdl/Generated/Sdl.Constants.gen.cs:316`; `SDL_SetHint`, `Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:11814`), as HelloWindow does (`samples/HelloWindow/HelloWindowApp.cs:73-77`):
+
+| Mode | SDL driver | Windows | Linux | macOS |
+|------|-----------|---------|-------|-------|
+| `None` | SDL's default | `windows` | `x11` or `wayland` | `cocoa` |
+| `Offscreen` | `offscreen` | windows work; Vulkan surfaces don't (below) | works (Mesa lavapipe in CI) | works (bundled MoltenVK in CI) |
+| `NoSurface` | `dummy` | works | works | works |
+
+Rules:
+
+- **The driver in use wins.** An `SDL_VIDEO_DRIVER` environment variable overrides the hint, and `SDL_SetHint` then returns false (**observed**: with the variable set to `dummy`, the hint `offscreen` was refused and `dummy` was used). So a refused hint is not an error. After `SDL_Init` the backend reads `SDL_GetCurrentVideoDriver` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:5882`), exposes it as `VideoDriver`, and derives `Headless` from it (`offscreen` is `Offscreen`, `dummy` is `NoSurface`, anything else `None`). If the host asked for a headless mode and the driver doesn't give it, `SdlPlatform.Create` fails with `ErrorKind.Unsupported`, naming the driver and the variable. A host that asked for `None` gets whatever the user forced, and can read it from `Headless`.
+- **`NoSurface` has no Vulkan.** SDL's `dummy` driver refuses `SDL_WINDOW_VULKAN` (**observed**: "Vulkan support is either not configured in SDL or not available in current SDL video driver (dummy) or platform"). `CreateWindow` with `WindowSurface.Vulkan` therefore fails fast with `ErrorKind.Unsupported` without calling SDL. Platform tests use `WindowSurface.None`.
+- **`Offscreen` and Vulkan on Windows fail fast.** SDL's offscreen driver creates surfaces with `VK_EXT_headless_surface`, and no Windows driver we have offers it (NVIDIA on the RTX 2070 SUPER, Mesa lavapipe for Windows; `samples/HelloWindow/README.md:62-64`). SDL doesn't fail the window: on Windows it creates it and lists only `VK_KHR_surface` as required (**observed**, with "Installed Vulkan doesn't implement the VK_EXT_headless_surface extension" on SDL's log), while on Linux and macOS it lists `VK_KHR_surface, VK_EXT_headless_surface` (**observed**, CI run 45599521930, HelloWindow's "Instance extensions" lines on ubuntu-24.04 and macos-15). So for an `Offscreen` window with `WindowSurface.Vulkan`, the backend reads SDL's required extensions right after creating the window and, if `VK_EXT_headless_surface` isn't among them, destroys the window and returns `ErrorKind.Unsupported`: "Headless Vulkan windows need VK_EXT_headless_surface, which no installed Vulkan driver offers. Windows drivers don't; run windowed." The rule is about the extension, not the OS, so a future Windows driver that offers it simply works. Windows GPU tests run windowed (the CI runner has a desktop session).
+- **Swapchain extent.** A headless surface reports an undefined current extent (`0xFFFFFFFF`), so the swapchain takes its size from `PixelSize` (`samples/HelloWindow/SwapchainPlanner.cs:19-20`). That is Graphics' rule; Platform guarantees `PixelSize` is real in every mode.
+- Headless platforms never show message boxes ([section 8](#8-message-boxes-and-fatal-errors)).
+
+## 4. Vulkan surface source
+
+Decision (maintainer, 2026-11-26): add one documented L2 edge Graphics → Platform; the window exposes a backend-neutral surface source (`nint` and spans only), implemented by Platform.Sdl3. This section owns that capability's definition; `docs/design/graphics.md` (#54) references it and builds swapchain creation on it.
+
+```csharp
+namespace BrutalEngine.Platform;
+
+public interface IVulkanSurfaceSource
+{
+    int RequiredInstanceExtensionCount { get; }
+    ReadOnlySpan<byte> GetRequiredInstanceExtension(int index);   // UTF-8 name, no NUL terminator
+    Result<nint> CreateVulkanSurface(nint instance);              // returns the VkSurfaceKHR
+}
+```
+
+- **Extension names** are what the instance must enable to create surfaces for this window, e.g. `VK_KHR_surface` and `VK_KHR_win32_surface`. They come from `SDL_Vulkan_GetInstanceExtensions` (`Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:9-17`), called through the raw binding once at window creation and copied into storage the window owns: BRUTAL's convenience wrapper allocates a `string[]` per call (`:47-59`). The names are ASCII, valid UTF-8, and the same for every window of one platform, so a graphics backend reads them from its first window before creating its instance. Getters allocate nothing and run on any thread. `index` outside `0..Count-1` throws `ArgumentOutOfRangeException`. The spans stay valid while the window is alive.
+- **`CreateVulkanSurface(instance)`** calls the raw `SDL_Vulkan_CreateSurface` (`Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:19-32`) with no allocation callbacks, not BRUTAL's wrapper, which throws instead of returning a status (`:61-67`). `instance` is the `VkInstance`, which must have been created with every required extension. It returns the `VkSurfaceKHR` as `nint`: a non-dispatchable 64-bit handle fits because every supported RID is 64-bit, and it is what BRUTAL's binding passes (`Brutal.Sdl/Manual/Libraries/Sdl.Vulkan.cs:7`). Expected failure is a `Result`, never an exception: SDL's error text with `ErrorKind.Native`. Misuse throws: `instance == 0` (`ArgumentException`), a disposed window (`ObjectDisposedException`), the wrong thread (`WrongThreadException`).
+- **Ownership.** The caller owns the surface. The graphics backend that created it destroys it with `vkDestroySurfaceKHR` from its own instance (as HelloWindow does, `samples/HelloWindow/VulkanContext.cs:87-90`), after its swapchain and **before the window is disposed** and before the instance is destroyed. The window can't observe `vkDestroySurfaceKHR`, so it can't check this: the order is a documented rule kept by the host's reverse-order shutdown (graphics before platform, [Architecture 3.2](../03-architecture.md#lifecycle)). One live surface per window.
+- **Threads.** `CreateVulkanSurface` is main thread only (window-system calls; on macOS the Metal layer must be made there). The extension getters are any thread.
+- **Lifetime.** Exists exactly as long as its window: `IWindow.VulkanSurface` returns the same object until `Dispose`, after which its members throw `ObjectDisposedException`. It is `null` for a window created with `WindowSurface.None`.
+- **A window that can't present doesn't exist.** A headless window that would need `VK_EXT_headless_surface` without a driver offering it fails at `CreateWindow` with `ErrorKind.Unsupported` ([section 3](#3-headless-mode)), so every `IVulkanSurfaceSource` handed out can at least attempt a surface. Whether a queue family can present to it is Graphics' check.
+
+**The layer edge.** Approving this note approves one listed same-layer edge, which P1 adds to `EngineLayers` (`tests/BrutalEngine.Architecture.Tests/EngineLayers.cs:51-55`) and to the edge table in [architecture tests](architecture-tests.md#the-layer-map) with this reason:
+
+| Edge | Reason |
+|------|--------|
+| Graphics → Platform | the render interface creates swapchains for Platform windows through `IVulkanSurfaceSource` ([platform](platform.md#4-vulkan-surface-source)) |
+
+Only Graphics gets the edge. `Graphics.Vulkan` must not reference Platform: the map allows a backend exactly one same-layer edge, to the abstraction it implements (`tests/BrutalEngine.Architecture.Tests/LayerMap.cs:108-115`), and the layering rule checks direct references (`tests/BrutalEngine.Architecture.Tests/LayeringRule.cs:65`). So Graphics hands the backend the surface source through a Graphics-owned type, and no Graphics.Vulkan signature or call names an `IWindow` or `IVulkanSurfaceSource`.
+
+## 5. Virtual file system
+
+All engine file access goes through mount points ([Architecture 3.7](../03-architecture.md#37-platform-layer-brutalengineplatform-backend-platformsdl3)). The VFS is pure managed code (`System.IO` for directories), lives in `BrutalEngine.Platform` (namespace `BrutalEngine.Platform.Vfs`), and needs no backend. The in-memory file system is a public type here, not a test-only helper (Decision (maintainer, 2026-11-26): TestUtilities moves to M1, and its in-memory VFS lands with Platform).
+
+### Paths
+
+```text
+path    = scheme "://" [ segment *( "/" segment ) ]
+scheme  = lower *( lower / digit / "-" )       ; 1-32 characters, e.g. res, user, test-assets
+segment = 1*( allowed character )              ; at most 255 UTF-16 code units
+```
+
+- **Allowed characters:** any Unicode scalar except U+0000 to U+001F, U+007F, and `\ / : * ? " < > |`. A segment may not end in `.` or a space, or be a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, in any case, with or without an extension). The whole path is at most 1,024 UTF-16 code units. These are the rules of the strictest supported OS, so a path that works on one OS works on all three.
+- **Normalisation:** `.` segments are removed, repeated `/` are collapsed and a trailing `/` is dropped. Nothing else changes: no case folding, no Unicode normalisation, and `\` is rejected rather than converted, so Windows-only paths fail everywhere.
+- **Traversal rejection:** a `..` segment is invalid anywhere. Paths are never resolved against a parent, so no valid path can name anything outside its mount.
+- **Comparison** is ordinal and case-sensitive on every OS.
+
+```csharp
+namespace BrutalEngine.Platform.Vfs;
+
+public readonly struct VfsPath : IEquatable<VfsPath>
+{
+    public static VfsPath Parse(string path);                  // ArgumentException if invalid (for literals in code)
+    public static bool TryParse(string? path, out VfsPath result); // for data and user input
+    public string Scheme { get; }                              // "res"
+    public string RelativePath { get; }                        // "textures/hero.png"; "" for the mount root
+    public string Name { get; }                                // last segment, "" for the root
+    public VfsPath Combine(string relative);                   // relative is parsed with the same rules
+    public bool IsDefault { get; }                             // default(VfsPath) is invalid: passing it throws ArgumentException
+    public override string ToString();                         // "res://textures/hero.png"
+}
+```
+
+`VfsPath` is immutable and thread-safe. `Parse`/`TryParse` allocate (the normalised text and its two parts); paths are built at load time, not per frame.
+
+### Mounts and operations
+
+```csharp
+public sealed class VirtualFileSystem
+{
+    public void Mount(string scheme, IFileSystem fileSystem);     // duplicate or invalid scheme: InvalidOperationException / ArgumentException
+    public bool Unmount(string scheme);
+    public bool IsMounted(string scheme);
+
+    public Result<bool> Exists(VfsPath path);
+    public Result<VfsEntryKind> GetEntryKind(VfsPath path);
+    public Result<byte[]> ReadAllBytes(VfsPath path);
+    public Result<Stream> OpenRead(VfsPath path);                 // the caller disposes the stream
+    public Result WriteAllBytes(VfsPath path, ReadOnlySpan<byte> contents); // atomic replace, creates parent directories
+    public Result Delete(VfsPath path);                           // a file, or an empty directory
+    public Result CreateDirectory(VfsPath path);
+    public Result<IReadOnlyList<VfsEntry>> List(VfsPath directory); // one level, sorted ordinally
+}
+
+public interface IFileSystem   // what a mount implements; relativePath is a normalised VfsPath.RelativePath
+{
+    bool IsReadOnly { get; }
+    Result<VfsEntryKind> GetEntryKind(string relativePath);
+    Result<byte[]> ReadAllBytes(string relativePath);
+    Result<Stream> OpenRead(string relativePath);
+    Result WriteAllBytes(string relativePath, ReadOnlySpan<byte> contents);
+    Result Delete(string relativePath);
+    Result CreateDirectory(string relativePath);
+    Result<IReadOnlyList<VfsEntry>> List(string relativePath);
+}
+
+public enum VfsEntryKind { None = 0, File, Directory }
+public readonly record struct VfsEntry(string Name, VfsEntryKind Kind, long Length); // Length is 0 for directories
+```
+
+Mount points:
+
+| Scheme | Mounted by | Backed by | Writable |
+|--------|-----------|-----------|----------|
+| `res://` | the host (Runtime) | `DirectoryFileSystem` over `IPlatform.BaseDirectory`, or an absolute directory the host passes (the game's `assets/` folder in development). Packs arrive with Assets in M2 | no |
+| `user://` | the host | `DirectoryFileSystem` over `IPlatform.GetUserDataDirectory()` | yes |
+| any other scheme | tests, tools | usually `InMemoryFileSystem` | as created |
+
+Errors (`EngineError.Kind`):
+
+| Failure | Kind |
+|---------|------|
+| No file system mounted at the scheme; the entry doesn't exist; a file was expected and a directory found, or the reverse | `NotFound` |
+| Write, delete or create on a read-only mount; a file too large for `ReadAllBytes` (over `Array.MaxLength`) | `Unsupported` |
+| Access denied by the OS | `Unavailable` |
+| Any other OS I/O error (sharing violation, disk full, deleting a non-empty directory) | `Io`, with the OS message and `HResult` as `NativeCode` |
+| Programming errors: `default(VfsPath)`, `null` arguments, mounting a scheme twice | exceptions, as above |
+
+Backends:
+
+- **`DirectoryFileSystem(DirectoryFileSystemOptions options)`** with `RootDirectory` (absolute, must exist), `IsReadOnly` and `VerifyCase` (default true). Paths are joined under the root after VFS validation, so they can't leave it lexically; symbolic links inside the root are followed. `VerifyCase` makes every path segment match the on-disk name exactly, also on case-insensitive file systems (Windows, default macOS), so a game that loads `Hero.png` as `hero.png` fails on the developer's Windows machine instead of only on Linux. It costs a directory listing per path segment per call, which suits M1's load-time I/O; the asset database (M2) revisits it. `WriteAllBytes` writes a temporary sibling, flushes it to disk, then renames it over the target, so a crash never leaves a half-written save.
+- **`InMemoryFileSystem(bool isReadOnly = false)`**: a dictionary of byte arrays, for tests and generated content. `WriteAllBytes` copies the bytes; `OpenRead` returns a read-only `MemoryStream` over a copy. Tests seed it by writing, then may make it read-only with `Freeze()`.
+
+Threading and allocation:
+
+- `VirtualFileSystem` is thread-safe: asset I/O threads read while the main thread mounts ([Architecture 3.2](../03-architecture.md#threading-model)). Mounts are an immutable array replaced under a lock; operations read it lock-free. `InMemoryFileSystem` is thread-safe (a lock). `DirectoryFileSystem` is thread-safe as far as the OS is: concurrent writers of one path race, and the last rename wins.
+- File I/O is not a hot path, and it allocates: results, byte arrays, streams, entry lists, error messages and `VerifyCase` listings. Nothing here runs in a steady-state frame. Asynchronous reads arrive with the asset database (M2), behind the same paths.
+
+## 6. Paths
+
+- **`BaseDirectory`** is the absolute directory holding the application, from `SDL_GetBasePath` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9742`; BRUTAL's marshaller copies SDL's string and doesn't free it, which is right because SDL owns it, `Brutal.Sdl/CustomStringMarshaller.cs:91-97`). It is read once at creation; if SDL fails, creation fails with `ErrorKind.Native`. `res://` maps here by default.
+- **`GetUserDataDirectory()`** is `SDL_GetPrefPath(Organization, Application)` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9757`; it returns a `byte*` that is copied and then freed with `SDL_free`, `:41`). It is resolved on first call, not at creation, because SDL creates the directory: a test or tool that never asks never creates a folder in the user's profile. Later calls return the cached value. Failure is `ErrorKind.Io` with SDL's message. `PlatformOptions.UserDataDirectory` (absolute) replaces it, so tests pass a temporary directory. `Organization` and `Application` become folder names, so each must match `[A-Za-z0-9 ._-]{1,64}`, otherwise `ArgumentException`.
+- **The rotating file log sink bypasses the VFS** (Decision (maintainer, 2026-11-25)): logging must work before the VFS exists and while crashing. The host passes it an absolute directory: `Path.Join(platform.GetUserDataDirectory().Value, "logs")`, or a directory of its own when that fails.
+- Both strings are OS paths for `System.IO` and native code, never `VfsPath`s.
+
+## 7. Clock
+
+The clock is the BCL's `TimeProvider`, which the engine already uses for log timestamps (`LoggerOptions.TimeProvider`, [logging](logging.md#key-types)):
+
+- `IPlatform.Clock` is `PlatformOptions.Clock`, defaulting to `TimeProvider.System`. Frame timing uses `GetTimestamp()` and `TimestampFrequency` (or `GetElapsedTime`): monotonic, high-resolution (`TimeProvider.System` reads `Stopwatch.GetTimestamp()`), and allocation-free.
+- Tests inject a hand-written `TimeProvider` subclass that returns scripted timestamps ([Testing strategy](../05-testing-strategy.md#test-conventions): time is injected). No new dependency is needed.
+- **No platform clock type and no SDL clock.** `SDL_GetPerformanceCounter`/`Frequency` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:14232`, `:14242`) would read the same kind of counter through a native call per read, and a second interface would duplicate `TimeProvider`. Event timestamps use the same clock ([section 2](#the-event-struct)), so one time base serves the loop, input and logs. (This drops the SDL clock first planned for P5.)
+
+## 8. Message boxes and fatal errors
+
+```csharp
+public sealed record MessageBoxRequest(MessageBoxKind Kind, string Title, string Message)
+{
+    public IWindow? Parent { get; init; }
+}
+public enum MessageBoxKind { Information = 0, Warning, Error }
+```
+
+- `IPlatform.ShowMessageBox(request)` shows a modal OS box with an OK button (`SDL_ShowSimpleMessageBox`, `Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:12235`; flags from `SdlMessageBoxFlags`) and blocks until it is dismissed. Main thread only. A refusal is a `Result` (`ErrorKind.Native`). On a headless platform it returns `ErrorKind.Unavailable` at once without calling SDL, so CI never blocks on a dialog.
+- **Crash reports** ([Architecture 3.5](../03-architecture.md#35-error-handling)) run after the host boundary has caught the exception, on the main thread. If the platform still exists, Runtime calls `ShowMessageBox` with `MessageBoxKind.Error`. If it doesn't (it failed to start, or was already disposed), Runtime calls `SdlPlatform.TryShowFatalError(string title, string message)`, a stateless static that needs no `SdlPlatform` instance, never throws, and returns false if no box could be shown. Runtime skips both when running headless or under CI. P5 verifies on the three OSes that `SDL_ShowSimpleMessageBox` works without `SDL_Init`, which `TryShowFatalError` relies on. Both must be shown only after the crash report is on disk.
+- Message boxes allocate (marshalling), which is fine on these paths.
