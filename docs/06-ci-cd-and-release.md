@@ -33,10 +33,10 @@ Arch is a rolling release, so its runner also catches driver and Mesa regression
 ### `ci.yml`: every PR and every push to `main`, plus nightly
 
 1. **Lint:** `dotnet format --verify-no-changes`, markdown link check on docs, licence-header check.
-2. **Build matrix** (3 OSes): restore in locked mode, then `dotnet build -c Release` (warnings are errors), then `dotnet build -c Debug`.
+2. **Build matrix** (3 OSes): restore in locked mode, then `dotnet build -c Release` (warnings are errors). Linux also runs `dotnet build -c Debug`: Debug differs from Release only in `DEBUG`-conditional code, which isn't OS-specific.
 3. **Test matrix** (3 OSes): unit, property, native-boundary, integration, allocation, leak, determinism, plus GPU conformance and golden tests on software Vulkan. Test results go to the job summary. Failed golden images upload their diff artifacts.
 4. **AOT smoke:** publish `tests/BrutalEngine.Aot.Smoke` (later, one sample) with NativeAOT for the runner's RID and run it headless, with its JIT build and negative test. Linux runs in every tier. Windows and macOS run in the full tier (see *CI tiers*).
-5. **Pack:** `dotnet pack`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
+5. **Pack** (in the Linux build job, from the Release build the tests use): `dotnet pack --no-build`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
 6. **Security** (separate workflows so they can also run on a schedule): `codeql.yml` (C# and Actions, `security-and-quality` queries, also weekly) and `dependency-review.yml` (blocks new dependencies with moderate or worse known vulnerabilities). Dependabot (`.github/dependabot.yml`) proposes weekly NuGet, .NET SDK and Actions updates.
 
 The aggregate `CI passed` job, `CodeQL (csharp)`, `CodeQL (actions)` and `Dependency review` are the required status checks on `main`. Branch protection (ruleset "Protect Main"): PRs required, squash merges only, no force pushes or deletion, required checks must pass.

@@ -104,6 +104,7 @@ jobs:
       - name: Check formatting
         run: dotnet format BrutalEngine.slnx --verify-no-changes --no-restore
 
+  # Pack runs here on Linux, from the Release build the tests use, rather than in a job that builds again.
   build-test:
     name: Build and test (${{ matrix.os }})
     needs: tier
@@ -124,10 +125,23 @@ jobs:
       - uses: ./.github/actions/dotnet-restore
         with:
           save-cache: "true"
+      # Debug only differs from Release in DEBUG-conditional code, which isn't OS-specific, so one OS covers it.
       - name: Build (Debug)
+        if: runner.os == 'Linux'
         run: dotnet build BrutalEngine.slnx -c Debug --no-restore
       - name: Build (Release)
         run: dotnet build BrutalEngine.slnx -c Release --no-restore
+      - name: Pack (with package validation)
+        if: runner.os == 'Linux'
+        run: dotnet pack BrutalEngine.slnx -c Release --no-build -o artifacts/packages
+      - name: Upload packages
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: artifacts/packages/
+          if-no-files-found: error
+          retention-days: 14
       - name: Test
         run: >-
           dotnet test --solution BrutalEngine.slnx -c Release --no-build
@@ -141,30 +155,6 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: TestResults/
           if-no-files-found: warn
-          retention-days: 14
-
-  pack:
-    name: Pack
-    needs: tier
-    if: needs.tier.outputs.tier != 'docs'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
-        with:
-          global-json-file: global.json
-      - uses: ./.github/actions/dotnet-restore
-      - name: Pack (with package validation)
-        run: dotnet pack BrutalEngine.slnx -c Release --no-restore -o artifacts/packages
-      - name: Upload packages
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: packages
-          path: artifacts/packages/
-          if-no-files-found: error
           retention-days: 14
 
   # Linux runs in the fast and full tiers. Windows and macOS run in the full tier only.
@@ -228,7 +218,7 @@ jobs:
   ci-ok:
     name: CI passed
     if: always()
-    needs: [tier, format, build-test, pack, vulkan-smoke]
+    needs: [tier, format, build-test, vulkan-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
