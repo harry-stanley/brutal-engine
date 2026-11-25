@@ -6,7 +6,7 @@ namespace BrutalEngine.Core;
 /// <summary>Describes an expected runtime failure: a kind, a human-readable message and an optional native code.</summary>
 /// <remarks>
 /// <para>
-/// Use <see cref="EngineError"/> as the failure value of result types for failures a caller is
+/// Use <see cref="EngineError"/> with <see cref="Result"/> and <see cref="Result{T}"/> for failures a caller is
 /// expected to handle, such as a missing asset or an unavailable device. Programming errors (bad arguments,
 /// stale handles, wrong thread) throw exceptions instead (see docs/03-architecture.md, section 3.5).
 /// </para>

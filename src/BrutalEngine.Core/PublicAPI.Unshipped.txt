@@ -38,6 +38,31 @@ BrutalEngine.Core.HandleAllocator.MaxSlots.get -> int
 BrutalEngine.Core.HandleAllocator.RetiredCount.get -> int
 BrutalEngine.Core.HandleAllocator.TryAllocate(out BrutalEngine.Core.Handle handle) -> bool
 BrutalEngine.Core.HandleAllocator.TryFree(BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.Result
+BrutalEngine.Core.Result.Error.get -> BrutalEngine.Core.EngineError
+BrutalEngine.Core.Result.IsFailure.get -> bool
+BrutalEngine.Core.Result.IsSuccess.get -> bool
+BrutalEngine.Core.Result.Result() -> void
+BrutalEngine.Core.Result.ThrowIfFailed() -> void
+BrutalEngine.Core.Result.TryGetError(out BrutalEngine.Core.EngineError error) -> bool
+BrutalEngine.Core.Result<T>
+BrutalEngine.Core.Result<T>.Error.get -> BrutalEngine.Core.EngineError
+BrutalEngine.Core.Result<T>.GetValueOrDefault(T fallback) -> T
+BrutalEngine.Core.Result<T>.IsFailure.get -> bool
+BrutalEngine.Core.Result<T>.IsSuccess.get -> bool
+BrutalEngine.Core.Result<T>.Result() -> void
+BrutalEngine.Core.Result<T>.Result(BrutalEngine.Core.EngineError error) -> void
+BrutalEngine.Core.Result<T>.Result(T value) -> void
+BrutalEngine.Core.Result<T>.ToResult() -> BrutalEngine.Core.Result
+BrutalEngine.Core.Result<T>.TryGetError(out BrutalEngine.Core.EngineError error) -> bool
+BrutalEngine.Core.Result<T>.TryGetValue(out T value) -> bool
+BrutalEngine.Core.Result<T>.Value.get -> T
+BrutalEngine.Core.ResultFailedException
+BrutalEngine.Core.ResultFailedException.Error.get -> BrutalEngine.Core.EngineError
+BrutalEngine.Core.ResultFailedException.ResultFailedException() -> void
+BrutalEngine.Core.ResultFailedException.ResultFailedException(BrutalEngine.Core.EngineError error) -> void
+BrutalEngine.Core.ResultFailedException.ResultFailedException(string! message) -> void
+BrutalEngine.Core.ResultFailedException.ResultFailedException(string! message, System.Exception! innerException) -> void
 BrutalEngine.Core.StaleHandleException
 BrutalEngine.Core.StaleHandleException.Handle.get -> BrutalEngine.Core.Handle
 BrutalEngine.Core.StaleHandleException.StaleHandleException() -> void
@@ -51,6 +76,8 @@ override BrutalEngine.Core.EngineError.ToString() -> string!
 override BrutalEngine.Core.Handle.Equals(object? obj) -> bool
 override BrutalEngine.Core.Handle.GetHashCode() -> int
 override BrutalEngine.Core.Handle.ToString() -> string!
+override BrutalEngine.Core.Result.ToString() -> string!
+override BrutalEngine.Core.Result<T>.ToString() -> string!
 static BrutalEngine.Core.EngineError.Native(int nativeCode, string! message) -> BrutalEngine.Core.EngineError
 static BrutalEngine.Core.EngineError.operator !=(BrutalEngine.Core.EngineError left, BrutalEngine.Core.EngineError right) -> bool
 static BrutalEngine.Core.EngineError.operator ==(BrutalEngine.Core.EngineError left, BrutalEngine.Core.EngineError right) -> bool
@@ -58,3 +85,8 @@ static BrutalEngine.Core.Handle.FromRawValue(ulong rawValue) -> BrutalEngine.Cor
 static BrutalEngine.Core.Handle.Null.get -> BrutalEngine.Core.Handle
 static BrutalEngine.Core.Handle.operator !=(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
 static BrutalEngine.Core.Handle.operator ==(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
+static BrutalEngine.Core.Result.Failure(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
+static BrutalEngine.Core.Result.Success.get -> BrutalEngine.Core.Result
+static BrutalEngine.Core.Result.implicit operator BrutalEngine.Core.Result(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
+static BrutalEngine.Core.Result<T>.implicit operator BrutalEngine.Core.Result<T>(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result<T>
+static BrutalEngine.Core.Result<T>.implicit operator BrutalEngine.Core.Result<T>(T value) -> BrutalEngine.Core.Result<T>
