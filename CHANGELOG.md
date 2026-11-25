@@ -18,6 +18,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ### Changed
 
+- `Microsoft.Extensions.ObjectPool`, which BRUTAL's `Ahwoo.Brutal.Strings` brings in as the pre-release `11.0.0-preview.5.26302.115`, is pinned centrally to the 11.0.0 GA release ([ADR-0011](docs/adr/0011-brutal-objectpool-dependency.md)), so `samples/HelloWindow` and its builds ship the GA package. The smoke harness checks at start that BRUTAL's string-builder pool runs on it, and an architecture test keeps `Ahwoo.Brutal.Strings` and the pool out of Core, Platform, Graphics and World.
 - Package versions: builds after the `v0.1.0-alpha` tag are versioned `0.2.0-alpha.0.N` (N = commits since the tag) until `v0.2.0` is tagged, instead of `0.1.0-alpha.N`.
 - CI builds, tests and smoke-runs on Windows and Linux only. macOS is best-effort and unverified ([ADR-0015](docs/adr/0015-tested-platforms-windows-linux.md)), so there is no `hello-window-osx-arm64` artifact any more. The macOS code, the `osx-arm64` RID, the pinned natives and the macOS setup action are kept.
 - `samples/HelloWindow` logs through `BrutalEngine.Core`'s `Logger` and `ConsoleLogSink` (categories `HelloWindow` and `HelloWindow.Vulkan`) instead of plain console writes, so each line now reads `2026-11-26T01:02:03.456Z INFO [HelloWindow] message`. Messages may be up to 64 KiB, so a failure's full exception report stays whole. The validation messenger keeps its counts per instance and reaches them through the callback's user data, with no static state. CI's splash check matches the new line format.
