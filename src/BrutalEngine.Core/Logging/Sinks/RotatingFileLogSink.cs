@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -331,6 +332,9 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     // Called with _lock held, or from the constructor. Keeps the first fault and closes the file for good.
     private void EnterFault(string operation, Exception exception)
     {
+        // The first fault wins by construction: every caller is either the constructor or a catch around work on
+        // a non-null _stream, and this method nulls _stream, so it runs at most once per sink.
+        Debug.Assert(_fault is null, "EnterFault ran twice on one sink.");
         _fault ??= new EngineError(ErrorKind.Io, string.Concat("RotatingFileLogSink failed ", operation, " '", _path, "': ", exception.Message));
         Stream? stream = _stream;
         _stream = null;
