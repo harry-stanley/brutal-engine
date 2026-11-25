@@ -250,6 +250,11 @@ BrutalEngine.Core.StaleHandleException.StaleHandleException() -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(BrutalEngine.Core.Handle handle) -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message) -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message, System.Exception! innerException) -> void
+BrutalEngine.Core.ThreadAffinity
+BrutalEngine.Core.ThreadAffinity.IsCurrentThread.get -> bool
+BrutalEngine.Core.ThreadAffinity.ThreadAffinity() -> void
+BrutalEngine.Core.ThreadAffinity.ThreadId.get -> int
+BrutalEngine.Core.ThreadAffinity.ThrowIfNotCurrentThread(string! apiName) -> void
 BrutalEngine.Core.WrongThreadException
 BrutalEngine.Core.WrongThreadException.ActualThreadId.get -> int
 BrutalEngine.Core.WrongThreadException.ApiName.get -> string!
@@ -305,3 +310,4 @@ static BrutalEngine.Core.Result.Success.get -> BrutalEngine.Core.Result
 static BrutalEngine.Core.Result.implicit operator BrutalEngine.Core.Result(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result
 static BrutalEngine.Core.Result<T>.implicit operator BrutalEngine.Core.Result<T>(BrutalEngine.Core.EngineError error) -> BrutalEngine.Core.Result<T>
 static BrutalEngine.Core.Result<T>.implicit operator BrutalEngine.Core.Result<T>(T value) -> BrutalEngine.Core.Result<T>
+static BrutalEngine.Core.ThreadAffinity.CurrentThread() -> BrutalEngine.Core.ThreadAffinity

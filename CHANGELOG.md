@@ -12,6 +12,10 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 - The engine targets .NET 11 (`net11.0`) instead of .NET 10 ([ADR-0014](docs/adr/0014-dotnet-11.md), superseding ADR-0001). `global.json` pins SDK 11.0.100 (`rollForward: latestPatch`). Migration: games and tools that reference BrutalEngine projects or packages target `net11.0` and build with the .NET 11 SDK. BRUTAL's `net10.0` packages are used unchanged; NativeAOT builds use the 11.0.0 compiler packs.
 
+### Added
+
+- `BrutalEngine.Core`: `ThreadAffinity`, which captures an owner thread and checks that a call is on it (`ThrowIfNotCurrentThread` runs in every build, and is a null check plus one integer comparison that allocates nothing when it passes), and `WrongThreadException`, thrown with the member's name and both managed thread ids when the check fails.
+
 ### Changed
 
 - Package versions: builds after the `v0.1.0-alpha` tag are versioned `0.2.0-alpha.0.N` (N = commits since the tag) until `v0.2.0` is tagged, instead of `0.1.0-alpha.N`.
