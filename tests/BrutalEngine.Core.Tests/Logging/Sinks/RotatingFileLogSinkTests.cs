@@ -551,7 +551,9 @@ public sealed class RotatingFileLogSinkTests : IDisposable
 
             Write(sink, LogLevel.Information, Message(1, 40_000));
 
-            Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+            EngineError fault = Assert.NotNull(sink.Fault);
+            Assert.Equal(ErrorKind.Io, fault.Kind);
+            Assert.StartsWith("RotatingFileLogSink failed rotating ", fault.Message, StringComparison.Ordinal);
             Assert.Equal(1, sink.DroppedCount);
         }
 
@@ -587,7 +589,9 @@ public sealed class RotatingFileLogSinkTests : IDisposable
 
         Write(sink, LogLevel.Information, "lost");
 
-        Assert.Equal(ErrorKind.Io, Assert.NotNull(sink.Fault).Kind);
+        EngineError fault = Assert.NotNull(sink.Fault);
+        Assert.Equal(ErrorKind.Io, fault.Kind);
+        Assert.StartsWith("RotatingFileLogSink failed writing ", fault.Message, StringComparison.Ordinal);
         Assert.Equal(1, sink.DroppedCount);
         Assert.True(file.IsDisposed);
     }

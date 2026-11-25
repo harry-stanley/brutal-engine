@@ -233,6 +233,8 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
 
             int length = LogLineFormatter.Format(entry, _includeCallerInfo, _line);
 
+            // Names the step for the fault message; both are literals, so this doesn't allocate.
+            string operation = "rotating";
             try
             {
                 // A line goes whole into the current file, or starts a fresh one: an empty file takes any line.
@@ -241,6 +243,7 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
                     Rotate(startup: false);
                 }
 
+                operation = "writing";
                 _stream.Write(_line, 0, length);
                 _fileBytes += length;
                 if (entry.Level >= _flushLevel)
@@ -250,7 +253,7 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
             }
             catch (Exception exception) when (IsIoFailure(exception))
             {
-                EnterFault("writing", exception);
+                EnterFault(operation, exception);
                 _droppedCount++;
             }
         }
