@@ -83,13 +83,14 @@ brutal-engine/
 
 ## Shared build settings
 
-Three layers of `Directory.Build.props`. Each one imports the one above it.
+Four layers of `Directory.Build.props`: the root file, plus one each for `src/`, `tests/` and `samples/` that imports it.
 
 | File | Applies to | Sets |
 |------|------------|------|
 | `Directory.Build.props` | everything | `net10.0`, latest C#, nullable, explicit usings, unsafe allowed, **warnings as errors**, `AnalysisLevel=latest-recommended`, code style enforced in build, deterministic/CI builds, locked restores (`packages.lock.json`, locked mode on CI), NuGet audit of all (incl. transitive) packages, authors/copyright/repository, `IsPackable=false` |
 | `src/Directory.Build.props` | shipped libraries | `IsPackable`, `IsAotCompatible`, XML docs, package ID = root namespace = project name, MIT licence expression, README + `NOTICE.txt` packed, SourceLink + `.snupkg` symbols, package validation, MinVer versioning (`v` tag prefix, 0.1 minimum), public API tracking (`PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`), `InternalsVisibleTo` for the matching test project only |
 | `tests/Directory.Build.props` | test projects | xUnit v3 on Microsoft.Testing.Platform v2 (executable test apps), CsCheck, code coverage and TRX report extensions, not packable |
+| `samples/Directory.Build.props` | samples | `OutputType=Exe`, not packable, XML docs generated so IDE0005 runs in the build (every sample type is internal, so no public API is tracked) |
 
 `Directory.Packages.props` pins every package version centrally, with transitive pinning on. Runtime identifiers are set only by executables (samples, games, AOT smoke tests), not by libraries.
 
