@@ -39,19 +39,28 @@ internal sealed unsafe class VulkanContext : IDisposable
     /// <summary>Creates everything up to the queue. Destroys what it created if a step fails.</summary>
     /// <param name="window">The SDL window, created with <see cref="SdlWindowFlags.Vulkan"/>.</param>
     /// <param name="options">The command-line options (validation and device requirements).</param>
+    /// <param name="validation">The validation messenger if <see cref="HelloWindowOptions.Validation"/> is set, otherwise
+    /// null. The caller disposes it after this context: the instance calls it until it is destroyed.</param>
     /// <returns>The context.</returns>
+    /// <exception cref="ArgumentException"><paramref name="validation"/> is null with validation on, or set with it
+    /// off.</exception>
     /// <exception cref="SampleFailureException">The validation layer or headless-surface extension is missing, or no
     /// device is suitable.</exception>
     /// <exception cref="VkResultError">A Vulkan call failed.</exception>
     /// <exception cref="SdlException">SDL couldn't create the surface.</exception>
-    public static VulkanContext Create(SdlWindow window, HelloWindowOptions options)
+    public static VulkanContext Create(SdlWindow window, HelloWindowOptions options, ValidationMessenger? validation)
     {
-        var context = new VulkanContext(CreateInstance(options));
+        if (options.Validation != validation is not null)
+        {
+            throw new ArgumentException("A validation messenger is needed exactly when validation is on.", nameof(validation));
+        }
+
+        var context = new VulkanContext(CreateInstance(options, validation));
         try
         {
-            if (options.Validation)
+            if (validation is not null)
             {
-                context._messenger = context._instance.CreateDebugUtilsMessengerEXT(ValidationMessenger.CreateInfo(), null);
+                context._messenger = context._instance.CreateDebugUtilsMessengerEXT(validation.CreateInfo(), null);
             }
 
             context.Surface = new VkSurfaceKHR(Sdl.Vulkan.CreateSurface(window, context._instance.VkHandle));
@@ -99,9 +108,9 @@ internal sealed unsafe class VulkanContext : IDisposable
         _instance.Dispose();
     }
 
-    private static Instance CreateInstance(HelloWindowOptions options)
+    private static Instance CreateInstance(HelloWindowOptions options, ValidationMessenger? messenger)
     {
-        bool validation = options.Validation;
+        bool validation = messenger is not null;
         HashSet<string> available = InstanceExtensionNames();
 
         // SDL's offscreen driver needs VK_EXT_headless_surface. The Windows drivers checked so far (NVIDIA, Mesa
@@ -124,8 +133,9 @@ internal sealed unsafe class VulkanContext : IDisposable
 
         // Chained into instance creation too, so vkCreateInstance and vkDestroyInstance are validated and counted.
         // Sound: the chain points at these stack locals, which live until Vulkan.CreateInstance below has returned,
-        // and the loader copies what it keeps (the messenger callback is a static function pointer).
-        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = ValidationMessenger.CreateInfo();
+        // and the loader copies what it keeps: the callback, a static function pointer, and its user data, a GCHandle
+        // that the caller keeps allocated until the instance is destroyed.
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = messenger is null ? new() : messenger.CreateInfo();
         VkValidationFeatureEnableEXT synchronizationValidation = VkValidationFeatureEnableEXT.SynchronizationValidationEXT;
         VkValidationFeaturesEXT validationFeatures = new()
         {

@@ -27,10 +27,12 @@ internal sealed unsafe class HelloWindowApp
 
     private ExitCode RunAndReport()
     {
+        // Disposed last: the instance calls the messenger until vkDestroyInstance, inside RunWithSdl, has returned.
+        using ValidationMessenger? validation = _options.Validation ? new ValidationMessenger() : null;
         ExitCode result = ExitCode.Pass;
         try
         {
-            RunWithSdl();
+            RunWithSdl(validation);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -44,10 +46,10 @@ internal sealed unsafe class HelloWindowApp
             }
         }
 
-        if (_options.Validation)
+        if (validation is not null)
         {
-            SampleConsole.Info($"Validation: {ValidationMessenger.Errors} error(s), {ValidationMessenger.Warnings} warning(s).");
-            if (result == ExitCode.Pass && ValidationMessenger.Errors + ValidationMessenger.Warnings > 0)
+            SampleConsole.Info($"Validation: {validation.Errors} error(s), {validation.Warnings} warning(s).");
+            if (result == ExitCode.Pass && validation.Errors + validation.Warnings > 0)
             {
                 result = ExitCode.ValidationMessages;
             }
@@ -57,7 +59,7 @@ internal sealed unsafe class HelloWindowApp
         return result;
     }
 
-    private void RunWithSdl()
+    private void RunWithSdl(ValidationMessenger? validation)
     {
         // BRUTAL resolves the Vulkan loader once, on first use of its Vulkan class. Do that before SDL loads Vulkan for
         // the window, so both use the same library. A published macOS build brings its own loader and MoltenVK; an
@@ -96,7 +98,7 @@ internal sealed unsafe class HelloWindowApp
                 _options.Width,
                 _options.Height,
                 SdlWindowFlags.Vulkan | SdlWindowFlags.Resizable | SdlWindowFlags.HighPixelDensity);
-            using var vulkan = VulkanContext.Create(window, _options);
+            using var vulkan = VulkanContext.Create(window, _options, validation);
             using var renderer = new FrameRenderer(vulkan);
             RunFrames(window, vulkan, renderer, logo);
         }
