@@ -34,11 +34,16 @@
   </ItemGroup>
 
   <!--
-    BRUTAL LICENSE 2.3: NOTICE.txt ships alongside the product. LICENSE 4.0: each package's LICENSES/ directory lists the
-    third-party components it redistributes, with their licences. The packages have no contentFiles or build targets
-    that would copy these, so collect them from the root of every BRUTAL package that contributes a runtime asset
-    (managed or native, direct or transitive) and copy them next to the executable. Nothing is vendored into the repo.
-    Every package carries the same NOTICE.txt; the build fails if they ever differ, rather than picking one silently.
+    BRUTAL's licence duties for a product built on it, met next to the executable (nothing is vendored into the repo):
+    - LICENSE 1.0: BRUTAL's copyright and permission notice ship with every copy, as LICENSE.txt.
+    - LICENSE 2.1: BRUTAL's copyright notice appears in the credits. CREDITS.txt is generated at build time from that
+      LICENSE.txt's copyright line and the repo LICENSE's (BrutalEngine), so neither is retyped.
+    - LICENSE 2.3: NOTICE.txt ships alongside the product.
+    - LICENSE 4.0: each package's LICENSES/ directory lists the third-party components it redistributes, with their
+      licences.
+    The packages have no contentFiles or build targets that would copy these, so collect them from the root of every
+    BRUTAL package that contributes a runtime asset (managed or native, direct or transitive). Every package carries
+    the same LICENSE.txt and NOTICE.txt; the build fails if any copy differs, rather than picking one silently.
   -->
   <Target Name="HelloWindowCollectBrutalLicenceFiles" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolvePackageAssets">
     <ItemGroup>
@@ -48,26 +53,68 @@
       <_HelloWindowBrutalPackage Include="@(_HelloWindowBrutalAsset->'%(NuGetPackageId)'->Distinct())" />
       <_HelloWindowBrutalPackageRoot Include="$([MSBuild]::EnsureTrailingSlash('$(NuGetPackageRoot)'))$([System.String]::Copy('%(_HelloWindowBrutalPackage.Identity)').ToLowerInvariant())/%(_HelloWindowBrutalPackage.NuGetPackageVersion)/"
                                      PackageId="%(_HelloWindowBrutalPackage.Identity)" />
-      <_HelloWindowBrutalNotice Include="%(_HelloWindowBrutalPackageRoot.Identity)NOTICE.txt" />
+      <!-- Files every package ships once, identically; OutputName is their name in the output. -->
+      <_HelloWindowBrutalSharedFile Include="%(_HelloWindowBrutalPackageRoot.Identity)NOTICE.txt" OutputName="NOTICE.txt" />
+      <_HelloWindowBrutalSharedFile Include="%(_HelloWindowBrutalPackageRoot.Identity)LICENSE.txt" OutputName="LICENSE.txt" />
       <!-- One folder per package: packages ship different files under the same name (Sdl and Sdl.Native, for example). -->
       <_HelloWindowBrutalLicence Include="%(_HelloWindowBrutalPackageRoot.Identity)LICENSES/**/*" PackageId="%(_HelloWindowBrutalPackageRoot.PackageId)" />
     </ItemGroup>
 
-    <Error Condition="'@(_HelloWindowBrutalPackage)' == ''" Text="No Ahwoo.Brutal package assets were resolved, so BRUTAL's NOTICE.txt and LICENSES can't be collected." />
-    <Error Condition="!Exists('%(_HelloWindowBrutalNotice.Identity)')" Text="BRUTAL package without NOTICE.txt: %(_HelloWindowBrutalNotice.Identity)" />
-    <GetFileHash Files="@(_HelloWindowBrutalNotice)">
-      <Output TaskParameter="Items" ItemName="_HelloWindowBrutalNoticeHash" />
+    <Error Condition="'@(_HelloWindowBrutalPackage)' == ''" Text="No Ahwoo.Brutal package assets were resolved, so BRUTAL's licence files can't be collected." />
+    <Error Condition="!Exists('%(_HelloWindowBrutalSharedFile.Identity)')" Text="BRUTAL package without %(_HelloWindowBrutalSharedFile.OutputName): %(_HelloWindowBrutalSharedFile.Identity)" />
+    <GetFileHash Files="@(_HelloWindowBrutalSharedFile)">
+      <Output TaskParameter="Items" ItemName="_HelloWindowBrutalSharedFileHash" />
     </GetFileHash>
     <ItemGroup>
-      <_HelloWindowBrutalNoticeDistinct Include="@(_HelloWindowBrutalNoticeHash->'%(FileHash)'->Distinct())" />
+      <_HelloWindowBrutalSharedFileVariant Include="@(_HelloWindowBrutalSharedFileHash->'%(OutputName)/%(FileHash)'->Distinct())" OutputName="%(OutputName)" />
     </ItemGroup>
-    <Error Condition="@(_HelloWindowBrutalNoticeDistinct->Count()) != 1" Text="The BRUTAL packages' NOTICE.txt files differ: @(_HelloWindowBrutalNotice, '; ')" />
+    <Error Condition="'%(_HelloWindowBrutalSharedFileVariant.OutputName)' != '' and @(_HelloWindowBrutalSharedFileVariant->Count()) != 1"
+           Text="The BRUTAL packages' %(_HelloWindowBrutalSharedFileVariant.OutputName) files differ." />
 
+    <ItemGroup>
+      <_HelloWindowBrutalNotice Include="@(_HelloWindowBrutalSharedFile->WithMetadataValue('OutputName', 'NOTICE.txt'))" />
+      <_HelloWindowBrutalLicense Include="@(_HelloWindowBrutalSharedFile->WithMetadataValue('OutputName', 'LICENSE.txt'))" />
+    </ItemGroup>
+    <!-- The copies are identical (checked above), so any one will do: batching leaves the last. -->
     <PropertyGroup>
       <_HelloWindowBrutalNoticeFile>%(_HelloWindowBrutalNotice.FullPath)</_HelloWindowBrutalNoticeFile>
+      <_HelloWindowBrutalLicenseFile>%(_HelloWindowBrutalLicense.FullPath)</_HelloWindowBrutalLicenseFile>
     </PropertyGroup>
+    <PropertyGroup>
+      <_HelloWindowEngineLicenseFile>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)../../LICENSE'))</_HelloWindowEngineLicenseFile>
+      <_HelloWindowCreditsFile>$(IntermediateOutputPath)CREDITS.txt</_HelloWindowCreditsFile>
+    </PropertyGroup>
+
+    <!-- CREDITS.txt: the copyright lines, copied from the licences rather than retyped. -->
+    <ReadLinesFromFile File="$(_HelloWindowBrutalLicenseFile)">
+      <Output TaskParameter="Lines" ItemName="_HelloWindowBrutalLicenseLine" />
+    </ReadLinesFromFile>
+    <ReadLinesFromFile File="$(_HelloWindowEngineLicenseFile)">
+      <Output TaskParameter="Lines" ItemName="_HelloWindowEngineLicenseLine" />
+    </ReadLinesFromFile>
     <ItemGroup>
+      <_HelloWindowBrutalCopyright Include="@(_HelloWindowBrutalLicenseLine)" Condition="$([System.String]::Copy('%(Identity)').Contains('is Copyright (c)'))" />
+      <_HelloWindowEngineCopyright Include="@(_HelloWindowEngineLicenseLine)" Condition="$([System.String]::Copy('%(Identity)').StartsWith('Copyright (c)'))" />
+      <_HelloWindowEngineLicenseName Include="@(_HelloWindowEngineLicenseLine)" Condition="$([System.String]::Copy('%(Identity)').EndsWith(' License'))" />
+    </ItemGroup>
+    <Error Condition="@(_HelloWindowBrutalCopyright->Count()) != 1" Text="Expected one copyright line in $(_HelloWindowBrutalLicenseFile), found @(_HelloWindowBrutalCopyright->Count())." />
+    <Error Condition="@(_HelloWindowEngineCopyright->Count()) != 1 or @(_HelloWindowEngineLicenseName->Count()) != 1"
+           Text="Expected one licence name and one copyright line in $(_HelloWindowEngineLicenseFile)." />
+    <!-- One property, so blank lines survive (the text has no ';' to split it into items), with the platform's newlines. -->
+    <PropertyGroup>
+      <_HelloWindowNewLine>$([System.Environment]::NewLine)</_HelloWindowNewLine>
+      <_HelloWindowCreditsText>HelloWindow, a BrutalEngine sample.$(_HelloWindowNewLine)$(_HelloWindowNewLine)</_HelloWindowCreditsText>
+      <_HelloWindowCreditsText>$(_HelloWindowCreditsText)Built with BRUTAL:$(_HelloWindowNewLine)@(_HelloWindowBrutalCopyright)$(_HelloWindowNewLine)</_HelloWindowCreditsText>
+      <_HelloWindowCreditsText>$(_HelloWindowCreditsText)BRUTAL's licence is in LICENSE.txt, its notice in NOTICE.txt, and the licences of the third-party components it redistributes in LICENSES/.$(_HelloWindowNewLine)$(_HelloWindowNewLine)</_HelloWindowCreditsText>
+      <_HelloWindowCreditsText>$(_HelloWindowCreditsText)BrutalEngine (@(_HelloWindowEngineLicenseName)):$(_HelloWindowNewLine)@(_HelloWindowEngineCopyright)</_HelloWindowCreditsText>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_HelloWindowCreditsFile)" Lines="$(_HelloWindowCreditsText)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <FileWrites Include="$(_HelloWindowCreditsFile)" />
       <None Include="$(_HelloWindowBrutalNoticeFile)" Link="NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <None Include="$(_HelloWindowBrutalLicenseFile)" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <None Include="$(_HelloWindowCreditsFile)" Link="CREDITS.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
       <None Include="@(_HelloWindowBrutalLicence)" Link="LICENSES/%(_HelloWindowBrutalLicence.PackageId)/%(_HelloWindowBrutalLicence.RecursiveDir)%(_HelloWindowBrutalLicence.Filename)%(_HelloWindowBrutalLicence.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
