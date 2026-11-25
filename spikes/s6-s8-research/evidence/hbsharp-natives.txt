@@ -1,0 +1,17 @@
+   2148072  runtimes/linux-arm/native/libHarfBuzzSharp.so
+   3027312  runtimes/linux-arm64/native/libHarfBuzzSharp.so
+   3314784  runtimes/linux-bionic-arm64/native/libHarfBuzzSharp.so
+   3279808  runtimes/linux-bionic-x64/native/libHarfBuzzSharp.so
+   3013576  runtimes/linux-loongarch64/native/libHarfBuzzSharp.so
+   2185252  runtimes/linux-musl-arm/native/libHarfBuzzSharp.so
+   3143744  runtimes/linux-musl-arm64/native/libHarfBuzzSharp.so
+   3385400  runtimes/linux-musl-loongarch64/native/libHarfBuzzSharp.so
+   2920568  runtimes/linux-musl-riscv64/native/libHarfBuzzSharp.so
+   3205664  runtimes/linux-musl-x64/native/libHarfBuzzSharp.so
+   2740664  runtimes/linux-riscv64/native/libHarfBuzzSharp.so
+   3083304  runtimes/linux-x64/native/libHarfBuzzSharp.so
+   3300472  runtimes/linux-x86/native/libHarfBuzzSharp.so
+   2362168  runtimes/win-arm64/native/libHarfBuzzSharp.dll
+   2187064  runtimes/win-x64/native/libHarfBuzzSharp.dll
+   1836856  runtimes/win-x86/native/libHarfBuzzSharp.dll
+   3123680  runtimes/osx/native/libHarfBuzzSharp.dylib

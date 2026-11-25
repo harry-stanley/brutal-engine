@@ -1,0 +1,199 @@
+## files in dl/ahwoo.brutal.sdl.mixer.native/ahwoo.brutal.sdl.mixer.native.2026.10.3.nupkg
+         519  _rels/.rels
+        1018  Ahwoo.BRUTAL.Sdl.Mixer.Native.nuspec
+        2233  brutal-icon-32px.png
+        3023  LICENSE.txt
+         212  NOTICE.txt
+         448  CONTRIBUTORS.md
+         661  README.md
+       12189  LICENSES/BRUTAL-SDL-MIXER-THIRD-PARTY-NOTICES.txt
+      404464  runtimes/linux-x64/native/libSDL3_mixer.so
+      404464  runtimes/linux-x64/native/libSDL3_mixer.so.0
+      404464  runtimes/linux-x64/native/libSDL3_mixer.so.0.2.4
+      341176  runtimes/osx-arm64/native/libSDL3_mixer.0.2.4.dylib
+      341176  runtimes/osx-arm64/native/libSDL3_mixer.0.dylib
+      341176  runtimes/osx-arm64/native/libSDL3_mixer.dylib
+      280576  runtimes/win-x64/native/SDL3_mixer.dll
+       22380  build/natives/lib/win-x64/SDL3_mixer.lib
+         951  [Content_Types].xml
+         698  package/services/metadata/core-properties/a2267405553143758d1c3a4409983c26.psmdcp
+       12980  .signature.p7s
+
+### runtimes/linux-x64/native/libSDL3_mixer.so (404464 bytes)
+linked libs (string scan): ['libSDL3.so.0', 'libSDL3_mixer.so.0', 'libc.so.6']
+  keyword 'stb_vorbis': 25 distinct strings; sample: ['decoder_stb_vorbis.c', 'stb_vorbis_close', 'stb_vorbis_decode_memory', 'stb_vorbis_get_comment', 'stb_vorbis_get_error', 'stb_vorbis_get_file_offset', 'stb_vorbis_get_frame_float', 'stb_vorbis_get_frame_float.constprop.0', 'stb_vorbis_get_frame_short', 'stb_vorbis_get_frame_short_interleaved', 'stb_vorbis_get_info', 'stb_vorbis_get_playback_sample_offset']
+  keyword 'vorbis': 68 distinct strings; sample: ['MIX_Decoder_STBVORBIS', 'Not an Ogg Vorbis audio stream', 'STBVORBIS', 'STBVORBIS_decode', 'STBVORBIS_init', 'STBVORBIS_init_audio', 'STBVORBIS_init_track', 'STBVORBIS_quit', 'STBVORBIS_quit_audio', 'STBVORBIS_quit_track', 'STBVORBIS_seek', 'SetStbVorbisError']
+  keyword 'opus': 1 distinct strings; sample: ['decoder_opus.c']
+  keyword 'ogg': 16 distinct strings; sample: ['COggS', 'MIX_ParseOggComments', 'Not an Ogg Vorbis audio stream', 'OggS', 'ParseOggTime', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported', 'drflac__init_private__ogg.constprop.0', 'drflac__on_read_ogg', 'drflac__on_seek_ogg', 'drflac__on_tell_ogg']
+  keyword 'flac': 88 distinct strings; sample: ['DRFLAC', 'DRFLAC_IoRead', 'DRFLAC_IoSeek', 'DRFLAC_IoTell', 'DRFLAC_OnMetadata', 'DRFLAC_decode', 'DRFLAC_init_audio', 'DRFLAC_init_track', 'DRFLAC_quit_audio', 'DRFLAC_quit_track', 'DRFLAC_seek', 'MIX_Decoder_DRFLAC']
+  keyword 'mp3': 61 distinct strings; sample: ['DRMP3', 'DRMP3_IoRead', 'DRMP3_IoSeek', 'DRMP3_IoTell', 'DRMP3_decode', 'DRMP3_init_audio', 'DRMP3_init_track', 'DRMP3_quit_audio', 'DRMP3_quit_track', 'DRMP3_seek', 'MIX_Decoder_DRMP3', 'decoder_drmp3.c']
+  keyword 'xmp': 1 distinct strings; sample: ['decoder_xmp.c']
+  keyword 'wavpack': 1 distinct strings; sample: ['decoder_wavpack.c']
+  keyword 'mpg123': 1 distinct strings; sample: ['decoder_mpg123.c']
+
+### runtimes/linux-x64/native/libSDL3_mixer.so.0 (404464 bytes)
+linked libs (string scan): ['libSDL3.so.0', 'libSDL3_mixer.so.0', 'libc.so.6']
+  keyword 'stb_vorbis': 25 distinct strings; sample: ['decoder_stb_vorbis.c', 'stb_vorbis_close', 'stb_vorbis_decode_memory', 'stb_vorbis_get_comment', 'stb_vorbis_get_error', 'stb_vorbis_get_file_offset', 'stb_vorbis_get_frame_float', 'stb_vorbis_get_frame_float.constprop.0', 'stb_vorbis_get_frame_short', 'stb_vorbis_get_frame_short_interleaved', 'stb_vorbis_get_info', 'stb_vorbis_get_playback_sample_offset']
+  keyword 'vorbis': 68 distinct strings; sample: ['MIX_Decoder_STBVORBIS', 'Not an Ogg Vorbis audio stream', 'STBVORBIS', 'STBVORBIS_decode', 'STBVORBIS_init', 'STBVORBIS_init_audio', 'STBVORBIS_init_track', 'STBVORBIS_quit', 'STBVORBIS_quit_audio', 'STBVORBIS_quit_track', 'STBVORBIS_seek', 'SetStbVorbisError']
+  keyword 'opus': 1 distinct strings; sample: ['decoder_opus.c']
+  keyword 'ogg': 16 distinct strings; sample: ['COggS', 'MIX_ParseOggComments', 'Not an Ogg Vorbis audio stream', 'OggS', 'ParseOggTime', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported', 'drflac__init_private__ogg.constprop.0', 'drflac__on_read_ogg', 'drflac__on_seek_ogg', 'drflac__on_tell_ogg']
+  keyword 'flac': 88 distinct strings; sample: ['DRFLAC', 'DRFLAC_IoRead', 'DRFLAC_IoSeek', 'DRFLAC_IoTell', 'DRFLAC_OnMetadata', 'DRFLAC_decode', 'DRFLAC_init_audio', 'DRFLAC_init_track', 'DRFLAC_quit_audio', 'DRFLAC_quit_track', 'DRFLAC_seek', 'MIX_Decoder_DRFLAC']
+  keyword 'mp3': 61 distinct strings; sample: ['DRMP3', 'DRMP3_IoRead', 'DRMP3_IoSeek', 'DRMP3_IoTell', 'DRMP3_decode', 'DRMP3_init_audio', 'DRMP3_init_track', 'DRMP3_quit_audio', 'DRMP3_quit_track', 'DRMP3_seek', 'MIX_Decoder_DRMP3', 'decoder_drmp3.c']
+  keyword 'xmp': 1 distinct strings; sample: ['decoder_xmp.c']
+  keyword 'wavpack': 1 distinct strings; sample: ['decoder_wavpack.c']
+  keyword 'mpg123': 1 distinct strings; sample: ['decoder_mpg123.c']
+
+### runtimes/linux-x64/native/libSDL3_mixer.so.0.2.4 (404464 bytes)
+linked libs (string scan): ['libSDL3.so.0', 'libSDL3_mixer.so.0', 'libc.so.6']
+  keyword 'stb_vorbis': 25 distinct strings; sample: ['decoder_stb_vorbis.c', 'stb_vorbis_close', 'stb_vorbis_decode_memory', 'stb_vorbis_get_comment', 'stb_vorbis_get_error', 'stb_vorbis_get_file_offset', 'stb_vorbis_get_frame_float', 'stb_vorbis_get_frame_float.constprop.0', 'stb_vorbis_get_frame_short', 'stb_vorbis_get_frame_short_interleaved', 'stb_vorbis_get_info', 'stb_vorbis_get_playback_sample_offset']
+  keyword 'vorbis': 68 distinct strings; sample: ['MIX_Decoder_STBVORBIS', 'Not an Ogg Vorbis audio stream', 'STBVORBIS', 'STBVORBIS_decode', 'STBVORBIS_init', 'STBVORBIS_init_audio', 'STBVORBIS_init_track', 'STBVORBIS_quit', 'STBVORBIS_quit_audio', 'STBVORBIS_quit_track', 'STBVORBIS_seek', 'SetStbVorbisError']
+  keyword 'opus': 1 distinct strings; sample: ['decoder_opus.c']
+  keyword 'ogg': 16 distinct strings; sample: ['COggS', 'MIX_ParseOggComments', 'Not an Ogg Vorbis audio stream', 'OggS', 'ParseOggTime', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported', 'drflac__init_private__ogg.constprop.0', 'drflac__on_read_ogg', 'drflac__on_seek_ogg', 'drflac__on_tell_ogg']
+  keyword 'flac': 88 distinct strings; sample: ['DRFLAC', 'DRFLAC_IoRead', 'DRFLAC_IoSeek', 'DRFLAC_IoTell', 'DRFLAC_OnMetadata', 'DRFLAC_decode', 'DRFLAC_init_audio', 'DRFLAC_init_track', 'DRFLAC_quit_audio', 'DRFLAC_quit_track', 'DRFLAC_seek', 'MIX_Decoder_DRFLAC']
+  keyword 'mp3': 61 distinct strings; sample: ['DRMP3', 'DRMP3_IoRead', 'DRMP3_IoSeek', 'DRMP3_IoTell', 'DRMP3_decode', 'DRMP3_init_audio', 'DRMP3_init_track', 'DRMP3_quit_audio', 'DRMP3_quit_track', 'DRMP3_seek', 'MIX_Decoder_DRMP3', 'decoder_drmp3.c']
+  keyword 'xmp': 1 distinct strings; sample: ['decoder_xmp.c']
+  keyword 'wavpack': 1 distinct strings; sample: ['decoder_wavpack.c']
+  keyword 'mpg123': 1 distinct strings; sample: ['decoder_mpg123.c']
+
+### runtimes/osx-arm64/native/libSDL3_mixer.0.2.4.dylib (341176 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libSDL3.0.dylib', '@rpath/libSDL3_mixer.0.dylib', 'libSDL3_mixer.0.2.4.dylib']
+  keyword 'stb_vorbis': 26 distinct strings; sample: ['_stb_vorbis_close', '_stb_vorbis_decode_memory', '_stb_vorbis_get_comment', '_stb_vorbis_get_error', '_stb_vorbis_get_file_offset', '_stb_vorbis_get_frame_float', '_stb_vorbis_get_frame_short', '_stb_vorbis_get_frame_short_interleaved', '_stb_vorbis_get_info', '_stb_vorbis_get_playback_sample_offset', '_stb_vorbis_get_sample_offset', '_stb_vorbis_get_samples_float']
+  keyword 'vorbis': 70 distinct strings; sample: ['?vorbis', 'Not an Ogg Vorbis audio stream', 'STBVORBIS', 'VORBIS_bad_packet_type', 'VORBIS_cant_find_last_page', 'VORBIS_continued_packet_flag_invalid', 'VORBIS_feature_not_supported', 'VORBIS_file_open_failure', 'VORBIS_incorrect_stream_serial_number', 'VORBIS_invalid_api_mixing', 'VORBIS_invalid_first_page', 'VORBIS_invalid_setup']
+  keyword 'opus': 0 distinct strings; sample: []
+  keyword 'ogg': 13 distinct strings; sample: ['Not an Ogg Vorbis audio stream', 'OggS', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported', '_MIX_ParseOggComments', '_ParseOggTime', '_drflac__init_private__ogg', '_drflac__on_read_ogg', '_drflac__on_seek_ogg', '_drflac__on_tell_ogg', '_drflac_ogg__read_page_header_after_capture_pattern']
+  keyword 'flac': 82 distinct strings; sample: ['DRFLAC', 'Not a FLAC audio stream', 'SDL_mixer.decoder_drflac.metadata', '_DRFLAC_IoRead', '_DRFLAC_IoSeek', '_DRFLAC_IoTell', '_DRFLAC_OnMetadata', '_DRFLAC_decode', '_DRFLAC_init_audio', '_DRFLAC_init_track', '_DRFLAC_quit_audio', '_DRFLAC_quit_track']
+  keyword 'mp3': 70 distinct strings; sample: ['DRMP3', '_DRMP3_IoRead', '_DRMP3_IoSeek', '_DRMP3_IoTell', '_DRMP3_decode', '_DRMP3_init_audio', '_DRMP3_init_track', '_DRMP3_quit_audio', '_DRMP3_quit_track', '_DRMP3_seek', '_MIX_Decoder_DRMP3', '_drmp3_L12_read_scale_info.g_bitalloc_code_tab']
+  keyword 'xmp': 0 distinct strings; sample: []
+  keyword 'wavpack': 0 distinct strings; sample: []
+  keyword 'mpg123': 0 distinct strings; sample: []
+
+### runtimes/osx-arm64/native/libSDL3_mixer.0.dylib (341176 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libSDL3.0.dylib', '@rpath/libSDL3_mixer.0.dylib', 'libSDL3_mixer.0.2.4.dylib']
+  keyword 'stb_vorbis': 26 distinct strings; sample: ['_stb_vorbis_close', '_stb_vorbis_decode_memory', '_stb_vorbis_get_comment', '_stb_vorbis_get_error', '_stb_vorbis_get_file_offset', '_stb_vorbis_get_frame_float', '_stb_vorbis_get_frame_short', '_stb_vorbis_get_frame_short_interleaved', '_stb_vorbis_get_info', '_stb_vorbis_get_playback_sample_offset', '_stb_vorbis_get_sample_offset', '_stb_vorbis_get_samples_float']
+  keyword 'vorbis': 70 distinct strings; sample: ['?vorbis', 'Not an Ogg Vorbis audio stream', 'STBVORBIS', 'VORBIS_bad_packet_type', 'VORBIS_cant_find_last_page', 'VORBIS_continued_packet_flag_invalid', 'VORBIS_feature_not_supported', 'VORBIS_file_open_failure', 'VORBIS_incorrect_stream_serial_number', 'VORBIS_invalid_api_mixing', 'VORBIS_invalid_first_page', 'VORBIS_invalid_setup']
+  keyword 'opus': 0 distinct strings; sample: []
+  keyword 'ogg': 13 distinct strings; sample: ['Not an Ogg Vorbis audio stream', 'OggS', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported', '_MIX_ParseOggComments', '_ParseOggTime', '_drflac__init_private__ogg', '_drflac__on_read_ogg', '_drflac__on_seek_ogg', '_drflac__on_tell_ogg', '_drflac_ogg__read_page_header_after_capture_pattern']
+  keyword 'flac': 82 distinct strings; sample: ['DRFLAC', 'Not a FLAC audio stream', 'SDL_mixer.decoder_drflac.metadata', '_DRFLAC_IoRead', '_DRFLAC_IoSeek', '_DRFLAC_IoTell', '_DRFLAC_OnMetadata', '_DRFLAC_decode', '_DRFLAC_init_audio', '_DRFLAC_init_track', '_DRFLAC_quit_audio', '_DRFLAC_quit_track']
+  keyword 'mp3': 70 distinct strings; sample: ['DRMP3', '_DRMP3_IoRead', '_DRMP3_IoSeek', '_DRMP3_IoTell', '_DRMP3_decode', '_DRMP3_init_audio', '_DRMP3_init_track', '_DRMP3_quit_audio', '_DRMP3_quit_track', '_DRMP3_seek', '_MIX_Decoder_DRMP3', '_drmp3_L12_read_scale_info.g_bitalloc_code_tab']
+  keyword 'xmp': 0 distinct strings; sample: []
+  keyword 'wavpack': 0 distinct strings; sample: []
+  keyword 'mpg123': 0 distinct strings; sample: []
+
+### runtimes/osx-arm64/native/libSDL3_mixer.dylib (341176 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libSDL3.0.dylib', '@rpath/libSDL3_mixer.0.dylib', 'libSDL3_mixer.0.2.4.dylib']
+  keyword 'stb_vorbis': 26 distinct strings; sample: ['_stb_vorbis_close', '_stb_vorbis_decode_memory', '_stb_vorbis_get_comment', '_stb_vorbis_get_error', '_stb_vorbis_get_file_offset', '_stb_vorbis_get_frame_float', '_stb_vorbis_get_frame_short', '_stb_vorbis_get_frame_short_interleaved', '_stb_vorbis_get_info', '_stb_vorbis_get_playback_sample_offset', '_stb_vorbis_get_sample_offset', '_stb_vorbis_get_samples_float']
+  keyword 'vorbis': 70 distinct strings; sample: ['?vorbis', 'Not an Ogg Vorbis audio stream', 'STBVORBIS', 'VORBIS_bad_packet_type', 'VORBIS_cant_find_last_page', 'VORBIS_continued_packet_flag_invalid', 'VORBIS_feature_not_supported', 'VORBIS_file_open_failure', 'VORBIS_incorrect_stream_serial_number', 'VORBIS_invalid_api_mixing', 'VORBIS_invalid_first_page', 'VORBIS_invalid_setup']
+  keyword 'opus': 0 distinct strings; sample: []
+  keyword 'ogg': 13 distinct strings; sample: ['Not an Ogg Vorbis audio stream', 'OggS', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported', '_MIX_ParseOggComments', '_ParseOggTime', '_drflac__init_private__ogg', '_drflac__on_read_ogg', '_drflac__on_seek_ogg', '_drflac__on_tell_ogg', '_drflac_ogg__read_page_header_after_capture_pattern']
+  keyword 'flac': 82 distinct strings; sample: ['DRFLAC', 'Not a FLAC audio stream', 'SDL_mixer.decoder_drflac.metadata', '_DRFLAC_IoRead', '_DRFLAC_IoSeek', '_DRFLAC_IoTell', '_DRFLAC_OnMetadata', '_DRFLAC_decode', '_DRFLAC_init_audio', '_DRFLAC_init_track', '_DRFLAC_quit_audio', '_DRFLAC_quit_track']
+  keyword 'mp3': 70 distinct strings; sample: ['DRMP3', '_DRMP3_IoRead', '_DRMP3_IoSeek', '_DRMP3_IoTell', '_DRMP3_decode', '_DRMP3_init_audio', '_DRMP3_init_track', '_DRMP3_quit_audio', '_DRMP3_quit_track', '_DRMP3_seek', '_MIX_Decoder_DRMP3', '_drmp3_L12_read_scale_info.g_bitalloc_code_tab']
+  keyword 'xmp': 0 distinct strings; sample: []
+  keyword 'wavpack': 0 distinct strings; sample: []
+  keyword 'mpg123': 0 distinct strings; sample: []
+
+### runtimes/win-x64/native/SDL3_mixer.dll (280576 bytes)
+PE imports: ['SDL3.dll', 'VCRUNTIME140.dll', 'api-ms-win-crt-runtime-l1-1-0.dll', 'KERNEL32.dll']
+PE exports (94):
+    MIX_AudioFramesToMS
+    MIX_AudioMSToFrames
+    MIX_CreateAudioDecoder
+    MIX_CreateAudioDecoder_IO
+    MIX_CreateGroup
+    MIX_CreateMixer
+    MIX_CreateMixerDevice
+    MIX_CreateSineWaveAudio
+    MIX_CreateTrack
+    MIX_DecodeAudio
+    MIX_DestroyAudio
+    MIX_DestroyAudioDecoder
+    MIX_DestroyGroup
+    MIX_DestroyMixer
+    MIX_DestroyTrack
+    MIX_FramesToMS
+    MIX_Generate
+    MIX_GetAudioDecoder
+    MIX_GetAudioDecoderFormat
+    MIX_GetAudioDecoderProperties
+    MIX_GetAudioDuration
+    MIX_GetAudioFormat
+    MIX_GetAudioProperties
+    MIX_GetGroupMixer
+    MIX_GetGroupProperties
+    MIX_GetMixerFormat
+    MIX_GetMixerFrequencyRatio
+    MIX_GetMixerGain
+    MIX_GetMixerProperties
+    MIX_GetNumAudioDecoders
+    MIX_GetTaggedTracks
+    MIX_GetTrack3DPosition
+    MIX_GetTrackAudio
+    MIX_GetTrackAudioStream
+    MIX_GetTrackFadeFrames
+    MIX_GetTrackFrequencyRatio
+    MIX_GetTrackGain
+    MIX_GetTrackLoops
+    MIX_GetTrackMixer
+    MIX_GetTrackPlaybackPosition
+    MIX_GetTrackProperties
+    MIX_GetTrackRemaining
+    MIX_GetTrackTags
+    MIX_Init
+    MIX_LoadAudio
+    MIX_LoadAudioNoCopy
+    MIX_LoadAudioWithProperties
+    MIX_LoadAudio_IO
+    MIX_LoadRawAudio
+    MIX_LoadRawAudioNoCopy
+    MIX_LoadRawAudio_IO
+    MIX_LockMixer
+    MIX_MSToFrames
+    MIX_PauseAllTracks
+    MIX_PauseTag
+    MIX_PauseTrack
+    MIX_PlayAudio
+    MIX_PlayTag
+    MIX_PlayTrack
+    MIX_Quit
+    MIX_ResumeAllTracks
+    MIX_ResumeTag
+    MIX_ResumeTrack
+    MIX_SetGroupPostMixCallback
+    MIX_SetMixerFrequencyRatio
+    MIX_SetMixerGain
+    MIX_SetPostMixCallback
+    MIX_SetTagGain
+    MIX_SetTrack3DPosition
+    MIX_SetTrackAudio
+    MIX_SetTrackAudioStream
+    MIX_SetTrackCookedCallback
+    MIX_SetTrackFrequencyRatio
+    MIX_SetTrackGain
+    MIX_SetTrackGroup
+    MIX_SetTrackIOStream
+    MIX_SetTrackLoops
+    MIX_SetTrackOutputChannelMap
+    MIX_SetTrackPlaybackPosition
+    MIX_SetTrackRawCallback
+    MIX_SetTrackRawIOStream
+    MIX_SetTrackStereo
+    MIX_SetTrackStoppedCallback
+    MIX_StopAllTracks
+    MIX_StopTag
+    MIX_StopTrack
+    MIX_TagTrack
+    MIX_TrackFramesToMS
+    MIX_TrackMSToFrames
+    MIX_TrackPaused
+    MIX_TrackPlaying
+    MIX_UnlockMixer
+    MIX_UntagTrack
+    MIX_Version
+  keyword 'stb_vorbis': 3 distinct strings; sample: ['stb_vorbis_open_io', 'stb_vorbis_open_memory', 'stb_vorbis_seek']
+  keyword 'vorbis': 26 distinct strings; sample: ['Not an Ogg Vorbis audio stream', 'STBVORBIS', 'VORBIS_bad_packet_type', 'VORBIS_cant_find_last_page', 'VORBIS_continued_packet_flag_invalid', 'VORBIS_feature_not_supported', 'VORBIS_file_open_failure', 'VORBIS_incorrect_stream_serial_number', 'VORBIS_invalid_api_mixing', 'VORBIS_invalid_first_page', 'VORBIS_invalid_setup', 'VORBIS_invalid_stream']
+  keyword 'opus': 0 distinct strings; sample: []
+  keyword 'ogg': 7 distinct strings; sample: ['Not an Ogg Vorbis audio stream', 'OggS', 'OggSA', 'OggSH', 'SDL_mixer.metadata.ogg.', 'SDL_mixer.metadata.ogg.vendor', 'VORBIS_ogg_skeleton_not_supported']
+  keyword 'flac': 4 distinct strings; sample: ['DRFLAC', 'Not a FLAC audio stream', 'SDL_mixer.decoder_drflac.metadata', 'fLaC']
+  keyword 'mp3': 1 distinct strings; sample: ['DRMP3']
+  keyword 'xmp': 0 distinct strings; sample: []
+  keyword 'wavpack': 0 distinct strings; sample: []
+  keyword 'mpg123': 0 distinct strings; sample: []

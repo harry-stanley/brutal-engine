@@ -1,0 +1,6 @@
+DT_NEEDED: ['libSDL3.so.0', 'libc.so.6']
+total exported dynamic symbols: 95
+prefix 'MIX_': 94 ['MIX_AudioFramesToMS', 'MIX_AudioMSToFrames', 'MIX_CreateAudioDecoder', 'MIX_CreateAudioDecoder_IO', 'MIX_CreateGroup', 'MIX_CreateMixer', 'MIX_CreateMixerDevice', 'MIX_CreateSineWaveAudio', 'MIX_CreateTrack', 'MIX_DecodeAudio', 'MIX_DestroyAudio', 'MIX_DestroyAudioDecoder', 'MIX_DestroyGroup', 'MIX_DestroyMixer', 'MIX_DestroyTrack', 'MIX_FramesToMS', 'MIX_Generate', 'MIX_GetAudioDecoder', 'MIX_GetAudioDecoderFormat', 'MIX_GetAudioDecoderProperties', 'MIX_GetAudioDuration', 'MIX_GetAudioFormat', 'MIX_GetAudioProperties', 'MIX_GetGroupMixer', 'MIX_GetGroupProperties']
+prefix 'stb_': 0 []
+prefix 'drflac': 0 []
+prefix 'drmp3': 0 []

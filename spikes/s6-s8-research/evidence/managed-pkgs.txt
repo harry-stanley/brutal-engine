@@ -1,0 +1,94 @@
+nuspec: ['<id>NVorbis', '<version>1.0.0-rc.2', '<license type="file">LICENSE', '<licenseUrl>https://aka.ms/deprecateLicenseUrl', '<repository type="git" url="https://github.com/NVorbis/NVorbis" commit="abd594e1b5cd6249552a353a5eb3d32986b8f37a" />\r\n    ']
+     80384  lib/netstandard2.0/NVorbis.dll
+     80384  lib/netstandard2.1/NVorbis.dll
+
+## lib/netstandard2.0/NVorbis.dll (80384 bytes)
+  hints: ['ArrayPool', 'Span`1']
+  native names: []
+
+## lib/netstandard2.1/NVorbis.dll (80384 bytes)
+  hints: ['ArrayPool', 'Span`1']
+  native names: []
+
+nuspec: ['<id>NVorbis', '<version>0.10.5', '<license type="file">LICENSE', '<licenseUrl>https://aka.ms/deprecateLicenseUrl', '<repository type="git" url="https://github.com/NVorbis/NVorbis" />\r\n    ']
+     81408  lib/net45/NVorbis.dll
+     81408  lib/netstandard2.0/NVorbis.dll
+
+## lib/net45/NVorbis.dll (81408 bytes)
+  hints: ['Span`1']
+  native names: []
+
+## lib/netstandard2.0/NVorbis.dll (81408 bytes)
+  hints: ['Span`1']
+  native names: []
+
+nuspec: ['<id>Concentus', '<version>2.2.3', '<license type="file">LICENSE', '<licenseUrl>https://aka.ms/deprecateLicenseUrl', '<repository type="git" url="https://github.com/lostromb/concentus" commit="9edc8dcd3ae9f3fa4793c03ff3caeaec1add42c5" />\r\n    ']
+    392704  lib/net452/Concentus.dll
+    398336  lib/net8.0/Concentus.dll
+    389632  lib/netstandard1.1/Concentus.dll
+    392192  lib/netstandard2.0/Concentus.dll
+
+## lib/net452/Concentus.dll (392704 bytes)
+  hints: ['Span`1', 'Marshal', 'Vector`1']
+  native names: []
+
+## lib/net8.0/Concentus.dll (398336 bytes)
+  hints: ['IsTrimmable', 'LibraryImportAttribute', 'Span`1', 'Marshal', 'Vector`1']
+  native names: []
+
+## lib/netstandard1.1/Concentus.dll (389632 bytes)
+  hints: ['Span`1', 'Marshal', 'Vector`1']
+  native names: []
+
+## lib/netstandard2.0/Concentus.dll (392192 bytes)
+  hints: ['Span`1', 'Marshal', 'Vector`1']
+  native names: []
+
+nuspec: ['<id>Concentus.Oggfile', '<version>1.0.7', '<license type="expression">MIT', '<licenseUrl>https://licenses.nuget.org/MIT', '<repository type="git" url="https://github.com/lostromb/concentus.oggfile" commit="27c3125205ddcd891822a398284b246636fafb94" />\r\n    ']
+     50176  lib/net452/Concentus.Oggfile.dll
+     50176  lib/net8.0/Concentus.Oggfile.dll
+     50688  lib/netstandard1.1/Concentus.Oggfile.dll
+     50176  lib/netstandard2.0/Concentus.Oggfile.dll
+
+## lib/net452/Concentus.Oggfile.dll (50176 bytes)
+  hints: ['Span`1']
+  native names: []
+
+## lib/net8.0/Concentus.Oggfile.dll (50176 bytes)
+  hints: ['Span`1']
+  native names: []
+
+## lib/netstandard1.1/Concentus.Oggfile.dll (50688 bytes)
+  hints: ['Span`1']
+  native names: []
+
+## lib/netstandard2.0/Concentus.Oggfile.dll (50176 bytes)
+  hints: ['Span`1']
+  native names: []
+
+nuspec: ['<id>HarfBuzzSharp', '<version>14.4.0.200', '<license type="expression">MIT', '<licenseUrl>https://licenses.nuget.org/MIT', '<repository type="git" url="https://go.microsoft.com/fwlink/?linkid=868515" branch="release/4.157.0" commit="2a53a3c8641073bc914c63ee158bbf62b8a0bb92" />\r\n    ']
+    144224  lib/net10.0-android36.0/HarfBuzzSharp.dll
+    144184  lib/net10.0-ios26.0/HarfBuzzSharp.dll
+    144224  lib/net10.0-maccatalyst26.0/HarfBuzzSharp.dll
+    144184  lib/net10.0-macos26.0/HarfBuzzSharp.dll
+    144224  lib/net10.0-tizen10.0/HarfBuzzSharp.dll
+    144184  lib/net10.0-tvos26.0/HarfBuzzSharp.dll
+    148792  lib/net10.0-windows10.0.19041/HarfBuzzSharp.dll
+    144184  lib/net10.0/HarfBuzzSharp.dll
+    258912  lib/net462/HarfBuzzSharp.dll
+    258360  lib/net48/HarfBuzzSharp.dll
+    129336  lib/net6.0/HarfBuzzSharp.dll
+    144184  lib/net9.0-android35.0/HarfBuzzSharp.dll
+    144184  lib/net9.0-ios18.0/HarfBuzzSharp.dll
+    144184  lib/net9.0-maccatalyst18.0/HarfBuzzSharp.dll
+    144184  lib/net9.0-macos15.0/HarfBuzzSharp.dll
+    144224  lib/net9.0-tvos18.0/HarfBuzzSharp.dll
+    148832  lib/net9.0-windows10.0.19041/HarfBuzzSharp.dll
+    144224  lib/net9.0/HarfBuzzSharp.dll
+    138552  lib/netstandard2.0/HarfBuzzSharp.dll
+    135008  lib/netstandard2.1/HarfBuzzSharp.dll
+
+## lib/net10.0/HarfBuzzSharp.dll (144184 bytes)
+  hints: ['IsTrimmable', 'LibraryImportAttribute', 'ArrayPool', 'Span`1', 'DisableRuntimeMarshalling', 'UnmanagedCallersOnly', 'Marshal']
+  native names: ['HarfBuzzSharp', 'HarfBuzzSharp.Internals', 'HarfBuzzSharp.NativeObject', 'HarfBuzzSharp.dll', 'HarfBuzzSharp.pdb', 'libHarfBuzzSharp']
+

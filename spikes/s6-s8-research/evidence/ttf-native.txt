@@ -1,0 +1,194 @@
+## files in dl/ahwoo.brutal.sdl.ttf.native/ahwoo.brutal.sdl.ttf.native.2026.10.3.nupkg
+         517  _rels/.rels
+        1014  Ahwoo.BRUTAL.Sdl.Ttf.Native.nuspec
+        2233  brutal-icon-32px.png
+        3023  LICENSE.txt
+         212  NOTICE.txt
+         448  CONTRIBUTORS.md
+         641  README.md
+       23103  LICENSES/BRUTAL-SDL-TTF-THIRD-PARTY-NOTICES.txt
+     2368696  runtimes/linux-x64/native/libSDL3_ttf.so
+     2368696  runtimes/linux-x64/native/libSDL3_ttf.so.0
+     2368696  runtimes/linux-x64/native/libSDL3_ttf.so.0.2.2
+     2056184  runtimes/osx-arm64/native/libSDL3_ttf.0.2.2.dylib
+     2056184  runtimes/osx-arm64/native/libSDL3_ttf.0.dylib
+     2056184  runtimes/osx-arm64/native/libSDL3_ttf.dylib
+     1593344  runtimes/win-x64/native/SDL3_ttf.dll
+       28030  build/natives/lib/win-x64/SDL3_ttf.lib
+         951  [Content_Types].xml
+         694  package/services/metadata/core-properties/3ee7107d89b449319e2e3829d0f01076.psmdcp
+       12979  .signature.p7s
+
+### runtimes/linux-x64/native/libSDL3_ttf.so (2368696 bytes)
+linked libs (string scan): ['libSDL3.so.0', 'libSDL3_ttf.so.0', 'libc.so.6', 'libgcc_s.so.1', 'libm.so.6']
+  keyword 'hb_shape': 22 distinct strings; sample: ['HB_SHAPER_LIST', '_Z14hb_object_finiI15hb_shape_plan_tEvPT_', '_Z15_hb_shapers_getv', '_Z19hb_object_referenceI15hb_shape_plan_tEPT_S2_', '_ZN19hb_shape_plan_key_t19user_features_matchEPKS_', '_ZN19hb_shape_plan_key_t4initEbP9hb_face_tPK23hb_segm', '_ZN19hb_shape_plan_key_t5equalEPKS_', 'hb_ot_shape_plan_t5init0EP9hb_face_tPK19hb_shape_plan_key_t', 'hb_shape', 'hb_shape_full', 'hb_shape_list_shapers', 'hb_shape_plan_create']
+  keyword 'hb_buffer': 171 distinct strings; sample: ['1hb_ot_apply_context_tC1EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '1hb_ot_apply_context_tC2EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '35hb_aat_layout_remove_deleted_glyphsP11hb_buffer_t', 'ATSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'OTSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'RKT_PK18hb_ot_shape_plan_tP9hb_font_tP11hb_buffer_t', '_Z14hb_object_finiI11hb_buffer_tEvPT_', '_Z20find_syllables_indicP11hb_buffer_t', '_ZL11output_charP11hb_buffer_tjj', '_ZL18find_syllables_useP11hb_buffer_t', '_ZL19buffer_verify_errorP11hb_buffer_tP9hb_font_tPKcz', '_ZL21_output_dotted_circleP11hb_buffer_t']
+  keyword 'harfbuzz': 6 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'TTF_GetHarfBuzzVersion', 'harfbuzz ', 'harfbuzz.cc']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 1 distinct strings; sample: ['FT_Init_FreeType']
+
+### runtimes/linux-x64/native/libSDL3_ttf.so.0 (2368696 bytes)
+linked libs (string scan): ['libSDL3.so.0', 'libSDL3_ttf.so.0', 'libc.so.6', 'libgcc_s.so.1', 'libm.so.6']
+  keyword 'hb_shape': 22 distinct strings; sample: ['HB_SHAPER_LIST', '_Z14hb_object_finiI15hb_shape_plan_tEvPT_', '_Z15_hb_shapers_getv', '_Z19hb_object_referenceI15hb_shape_plan_tEPT_S2_', '_ZN19hb_shape_plan_key_t19user_features_matchEPKS_', '_ZN19hb_shape_plan_key_t4initEbP9hb_face_tPK23hb_segm', '_ZN19hb_shape_plan_key_t5equalEPKS_', 'hb_ot_shape_plan_t5init0EP9hb_face_tPK19hb_shape_plan_key_t', 'hb_shape', 'hb_shape_full', 'hb_shape_list_shapers', 'hb_shape_plan_create']
+  keyword 'hb_buffer': 171 distinct strings; sample: ['1hb_ot_apply_context_tC1EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '1hb_ot_apply_context_tC2EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '35hb_aat_layout_remove_deleted_glyphsP11hb_buffer_t', 'ATSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'OTSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'RKT_PK18hb_ot_shape_plan_tP9hb_font_tP11hb_buffer_t', '_Z14hb_object_finiI11hb_buffer_tEvPT_', '_Z20find_syllables_indicP11hb_buffer_t', '_ZL11output_charP11hb_buffer_tjj', '_ZL18find_syllables_useP11hb_buffer_t', '_ZL19buffer_verify_errorP11hb_buffer_tP9hb_font_tPKcz', '_ZL21_output_dotted_circleP11hb_buffer_t']
+  keyword 'harfbuzz': 6 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'TTF_GetHarfBuzzVersion', 'harfbuzz ', 'harfbuzz.cc']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 1 distinct strings; sample: ['FT_Init_FreeType']
+
+### runtimes/linux-x64/native/libSDL3_ttf.so.0.2.2 (2368696 bytes)
+linked libs (string scan): ['libSDL3.so.0', 'libSDL3_ttf.so.0', 'libc.so.6', 'libgcc_s.so.1', 'libm.so.6']
+  keyword 'hb_shape': 22 distinct strings; sample: ['HB_SHAPER_LIST', '_Z14hb_object_finiI15hb_shape_plan_tEvPT_', '_Z15_hb_shapers_getv', '_Z19hb_object_referenceI15hb_shape_plan_tEPT_S2_', '_ZN19hb_shape_plan_key_t19user_features_matchEPKS_', '_ZN19hb_shape_plan_key_t4initEbP9hb_face_tPK23hb_segm', '_ZN19hb_shape_plan_key_t5equalEPKS_', 'hb_ot_shape_plan_t5init0EP9hb_face_tPK19hb_shape_plan_key_t', 'hb_shape', 'hb_shape_full', 'hb_shape_list_shapers', 'hb_shape_plan_create']
+  keyword 'hb_buffer': 171 distinct strings; sample: ['1hb_ot_apply_context_tC1EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '1hb_ot_apply_context_tC2EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '35hb_aat_layout_remove_deleted_glyphsP11hb_buffer_t', 'ATSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'OTSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'RKT_PK18hb_ot_shape_plan_tP9hb_font_tP11hb_buffer_t', '_Z14hb_object_finiI11hb_buffer_tEvPT_', '_Z20find_syllables_indicP11hb_buffer_t', '_ZL11output_charP11hb_buffer_tjj', '_ZL18find_syllables_useP11hb_buffer_t', '_ZL19buffer_verify_errorP11hb_buffer_tP9hb_font_tPKcz', '_ZL21_output_dotted_circleP11hb_buffer_t']
+  keyword 'harfbuzz': 6 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'TTF_GetHarfBuzzVersion', 'harfbuzz ', 'harfbuzz.cc']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 1 distinct strings; sample: ['FT_Init_FreeType']
+
+### runtimes/osx-arm64/native/libSDL3_ttf.0.2.2.dylib (2056184 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '/usr/lib/libc++.1.dylib', '@rpath/libSDL3.0.dylib', '@rpath/libSDL3_ttf.0.dylib', 'libSDL3_ttf.0.2.2.dylib']
+  keyword 'hb_shape': 23 distinct strings; sample: ['HB_SHAPER_LIST', '__Z15_hb_shapers_getv', '__ZN19hb_shape_plan_key_t19user_features_matchEPKS_', '__ZN19hb_shape_plan_key_t4initEbP9hb_face_tPK23hb_segm', '__ZN19hb_shape_plan_key_t5equalEPKS_', '__ZN24hb_shapers_lazy_loader_t6createEv', '__ZNK16hb_lazy_loader_tIPKc28hb_shaper_list_lazy_loader_tvLj0ES1_E11get_uncon', '_hb_shape', '_hb_shape_full', '_hb_shape_list_shapers', '_hb_shape_plan_create', '_hb_shape_plan_create2']
+  keyword 'hb_buffer': 169 distinct strings; sample: ['1hb_ot_apply_context_tC2EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '35hb_aat_layout_remove_deleted_glyphsP11hb_buffer_t', 'ATSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'OTSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'RKT_PK18hb_ot_shape_plan_tP9hb_font_tP11hb_buffer_t', '__Z20find_syllables_indicP11hb_buffer_t', '__Z20find_syllables_khmerP11hb_buffer_t', '__Z22find_syllables_myanmarP11hb_buffer_t', '__ZL19buffer_verify_errorP11hb_buffer_tP9hb_font_tPKcz', '__ZL26_output_with_dotted_circleP11hb_buffer_t', '__ZL27_hb_buffer_deserialize_jsonP11hb_buffer_tPKcjPS2_P9hb_font_t', '__ZL28_hb_buffer_serialize_formats']
+  keyword 'harfbuzz': 6 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'HarfBuzzVersion', '_TTF_GetHarfBuzzVersion', 'harfbuzz ']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 1 distinct strings; sample: ['_FT_Init_FreeType']
+
+### runtimes/osx-arm64/native/libSDL3_ttf.0.dylib (2056184 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '/usr/lib/libc++.1.dylib', '@rpath/libSDL3.0.dylib', '@rpath/libSDL3_ttf.0.dylib', 'libSDL3_ttf.0.2.2.dylib']
+  keyword 'hb_shape': 23 distinct strings; sample: ['HB_SHAPER_LIST', '__Z15_hb_shapers_getv', '__ZN19hb_shape_plan_key_t19user_features_matchEPKS_', '__ZN19hb_shape_plan_key_t4initEbP9hb_face_tPK23hb_segm', '__ZN19hb_shape_plan_key_t5equalEPKS_', '__ZN24hb_shapers_lazy_loader_t6createEv', '__ZNK16hb_lazy_loader_tIPKc28hb_shaper_list_lazy_loader_tvLj0ES1_E11get_uncon', '_hb_shape', '_hb_shape_full', '_hb_shape_list_shapers', '_hb_shape_plan_create', '_hb_shape_plan_create2']
+  keyword 'hb_buffer': 169 distinct strings; sample: ['1hb_ot_apply_context_tC2EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '35hb_aat_layout_remove_deleted_glyphsP11hb_buffer_t', 'ATSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'OTSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'RKT_PK18hb_ot_shape_plan_tP9hb_font_tP11hb_buffer_t', '__Z20find_syllables_indicP11hb_buffer_t', '__Z20find_syllables_khmerP11hb_buffer_t', '__Z22find_syllables_myanmarP11hb_buffer_t', '__ZL19buffer_verify_errorP11hb_buffer_tP9hb_font_tPKcz', '__ZL26_output_with_dotted_circleP11hb_buffer_t', '__ZL27_hb_buffer_deserialize_jsonP11hb_buffer_tPKcjPS2_P9hb_font_t', '__ZL28_hb_buffer_serialize_formats']
+  keyword 'harfbuzz': 6 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'HarfBuzzVersion', '_TTF_GetHarfBuzzVersion', 'harfbuzz ']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 1 distinct strings; sample: ['_FT_Init_FreeType']
+
+### runtimes/osx-arm64/native/libSDL3_ttf.dylib (2056184 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '/usr/lib/libc++.1.dylib', '@rpath/libSDL3.0.dylib', '@rpath/libSDL3_ttf.0.dylib', 'libSDL3_ttf.0.2.2.dylib']
+  keyword 'hb_shape': 23 distinct strings; sample: ['HB_SHAPER_LIST', '__Z15_hb_shapers_getv', '__ZN19hb_shape_plan_key_t19user_features_matchEPKS_', '__ZN19hb_shape_plan_key_t4initEbP9hb_face_tPK23hb_segm', '__ZN19hb_shape_plan_key_t5equalEPKS_', '__ZN24hb_shapers_lazy_loader_t6createEv', '__ZNK16hb_lazy_loader_tIPKc28hb_shaper_list_lazy_loader_tvLj0ES1_E11get_uncon', '_hb_shape', '_hb_shape_full', '_hb_shape_list_shapers', '_hb_shape_plan_create', '_hb_shape_plan_create2']
+  keyword 'hb_buffer': 169 distinct strings; sample: ['1hb_ot_apply_context_tC2EjP9hb_font_tP11hb_buffer_tP9hb_blob_t', '35hb_aat_layout_remove_deleted_glyphsP11hb_buffer_t', 'ATSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'OTSubTableHeaderEEEE4kernEP9hb_font_tP11hb_buffer_tjb', 'RKT_PK18hb_ot_shape_plan_tP9hb_font_tP11hb_buffer_t', '__Z20find_syllables_indicP11hb_buffer_t', '__Z20find_syllables_khmerP11hb_buffer_t', '__Z22find_syllables_myanmarP11hb_buffer_t', '__ZL19buffer_verify_errorP11hb_buffer_tP9hb_font_tPKcz', '__ZL26_output_with_dotted_circleP11hb_buffer_t', '__ZL27_hb_buffer_deserialize_jsonP11hb_buffer_tPKcjPS2_P9hb_font_t', '__ZL28_hb_buffer_serialize_formats']
+  keyword 'harfbuzz': 6 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'HarfBuzzVersion', '_TTF_GetHarfBuzzVersion', 'harfbuzz ']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 1 distinct strings; sample: ['_FT_Init_FreeType']
+
+### runtimes/win-x64/native/SDL3_ttf.dll (1593344 bytes)
+PE imports: ['SDL3.dll', 'GDI32.dll', 'USP10.dll', 'RPCRT4.dll', 'KERNEL32.dll', 'USER32.dll', 'VCRUNTIME140.dll', 'VCRUNTIME140_1.dll', 'api-ms-win-crt-heap-l1-1-0.dll', 'api-ms-win-crt-runtime-l1-1-0.dll', 'api-ms-win-crt-convert-l1-1-0.dll', 'api-ms-win-crt-environment-l1-1-0.dll', 'api-ms-win-crt-stdio-l1-1-0.dll', 'api-ms-win-crt-string-l1-1-0.dll', 'api-ms-win-crt-math-l1-1-0.dll', 'api-ms-win-crt-utility-l1-1-0.dll']
+PE exports (117):
+    TTF_AddFallbackFont
+    TTF_AppendTextString
+    TTF_ClearFallbackFonts
+    TTF_CloseFont
+    TTF_CopyFont
+    TTF_CreateGPUTextEngine
+    TTF_CreateGPUTextEngineWithProperties
+    TTF_CreateRendererTextEngine
+    TTF_CreateRendererTextEngineWithProperties
+    TTF_CreateSurfaceTextEngine
+    TTF_CreateText
+    TTF_DeleteTextString
+    TTF_DestroyGPUTextEngine
+    TTF_DestroyRendererTextEngine
+    TTF_DestroySurfaceTextEngine
+    TTF_DestroyText
+    TTF_DrawRendererText
+    TTF_DrawSurfaceText
+    TTF_FontHasGlyph
+    TTF_FontIsFixedWidth
+    TTF_FontIsScalable
+    TTF_GetFontAscent
+    TTF_GetFontDPI
+    TTF_GetFontDescent
+    TTF_GetFontDirection
+    TTF_GetFontFamilyName
+    TTF_GetFontGeneration
+    TTF_GetFontHeight
+    TTF_GetFontHinting
+    TTF_GetFontKerning
+    TTF_GetFontLineSkip
+    TTF_GetFontOutline
+    TTF_GetFontProperties
+    TTF_GetFontSDF
+    TTF_GetFontScript
+    TTF_GetFontSize
+    TTF_GetFontStyle
+    TTF_GetFontStyleName
+    TTF_GetFontWeight
+    TTF_GetFontWrapAlignment
+    TTF_GetFreeTypeVersion
+    TTF_GetGPUTextDrawData
+    TTF_GetGPUTextEngineWinding
+    TTF_GetGlyphImage
+    TTF_GetGlyphImageForIndex
+    TTF_GetGlyphKerning
+    TTF_GetGlyphMetrics
+    TTF_GetGlyphScript
+    TTF_GetHarfBuzzVersion
+    TTF_GetNextTextSubString
+    TTF_GetNumFontFaces
+    TTF_GetPreviousTextSubString
+    TTF_GetStringSize
+    TTF_GetStringSizeWrapped
+    TTF_GetTextColor
+    TTF_GetTextColorFloat
+    TTF_GetTextDirection
+    TTF_GetTextEngine
+    TTF_GetTextFont
+    TTF_GetTextPosition
+    TTF_GetTextProperties
+    TTF_GetTextScript
+    TTF_GetTextSize
+    TTF_GetTextSubString
+    TTF_GetTextSubStringForLine
+    TTF_GetTextSubStringForPoint
+    TTF_GetTextSubStringsForRange
+    TTF_GetTextWrapWidth
+    TTF_Init
+    TTF_InsertTextString
+    TTF_MeasureString
+    TTF_OpenFont
+    TTF_OpenFontIO
+    TTF_OpenFontWithProperties
+    TTF_Quit
+    TTF_RemoveFallbackFont
+    TTF_RenderGlyph_Blended
+    TTF_RenderGlyph_LCD
+    TTF_RenderGlyph_Shaded
+    TTF_RenderGlyph_Solid
+    TTF_RenderText_Blended
+    TTF_RenderText_Blended_Wrapped
+    TTF_RenderText_LCD
+    TTF_RenderText_LCD_Wrapped
+    TTF_RenderText_Shaded
+    TTF_RenderText_Shaded_Wrapped
+    TTF_RenderText_Solid
+    TTF_RenderText_Solid_Wrapped
+    TTF_SetFontDirection
+    TTF_SetFontHinting
+    TTF_SetFontKerning
+    TTF_SetFontLanguage
+    TTF_SetFontLineSkip
+    TTF_SetFontOutline
+    TTF_SetFontSDF
+    TTF_SetFontScript
+    TTF_SetFontSize
+    TTF_SetFontSizeDPI
+    TTF_SetFontStyle
+    TTF_SetFontWrapAlignment
+    TTF_SetGPUTextEngineWinding
+    TTF_SetTextColor
+    TTF_SetTextColorFloat
+    TTF_SetTextDirection
+    TTF_SetTextEngine
+    TTF_SetTextFont
+    TTF_SetTextPosition
+    TTF_SetTextScript
+    TTF_SetTextString
+    TTF_SetTextWrapWhitespaceVisible
+    TTF_SetTextWrapWidth
+    TTF_StringToTag
+    TTF_TagToString
+    TTF_TextWrapWhitespaceVisible
+    TTF_UpdateText
+    TTF_Version
+    TTF_WasInit
+  keyword 'hb_shape': 4 distinct strings; sample: ['HB_SHAPER_LIST', 'bool __cdecl _hb_shape_plan_execute_internal(struct hb_shape_p', 'struct hb_shape_plan_t *__cdecl hb_shape_plan_create2(struct hb_face_t *,const s', 'struct hb_shape_plan_t *__cdecl hb_shape_plan_create_cached2(struct hb_face_t *,']
+  keyword 'hb_buffer': 1 distinct strings; sample: ['hape_plan_t *,struct hb_font_t *,struct hb_buffer_t *,const struct hb_feature_t *,unsigne']
+  keyword 'harfbuzz': 5 distinct strings; sample: ["Can't get harfbuzz unicode functions", 'Cannot create harfbuzz buffer', 'Cannot create harfbuzz font', 'TTF_GetHarfBuzzVersion', 'harfbuzz ']
+  keyword 'plutosvg': 0 distinct strings; sample: []
+  keyword 'FT_Init': 0 distinct strings; sample: []

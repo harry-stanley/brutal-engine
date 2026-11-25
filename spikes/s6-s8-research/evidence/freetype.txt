@@ -1,0 +1,738 @@
+## files in dl/ahwoo.brutal.freetype/ahwoo.brutal.freetype.2026.10.2.nupkg
+         511  _rels/.rels
+        1124  Ahwoo.BRUTAL.FreeType.nuspec
+       12652  lib/net10.0/Brutal.FreeType.pdb
+        5120  lib/net10.0/Brutal.FreeType.dll
+         546  buildTransitive/Ahwoo.BRUTAL.FreeType.targets
+        1614  build/natives/include/freetype/config/ftconfig.h
+       23919  build/natives/include/freetype/config/ftheader.h
+        1497  build/natives/include/freetype/config/ftmodule.h
+       42420  build/natives/include/freetype/config/ftoption.h
+        4576  build/natives/include/freetype/config/ftstdlib.h
+        7450  build/natives/include/freetype/config/integer-types.h
+        1645  build/natives/include/freetype/config/mac-support.h
+        4240  build/natives/include/freetype/config/public-macros.h
+      177129  build/natives/include/freetype/freetype.h
+        5470  build/natives/include/freetype/ftadvanc.h
+        2638  build/natives/include/freetype/ftbbox.h
+        5654  build/natives/include/freetype/ftbdf.h
+        9051  build/natives/include/freetype/ftbitmap.h
+        2786  build/natives/include/freetype/ftbzip2.h
+       34179  build/natives/include/freetype/ftcache.h
+        2933  build/natives/include/freetype/ftchapters.h
+        4022  build/natives/include/freetype/ftcid.h
+       50791  build/natives/include/freetype/ftcolor.h
+       50570  build/natives/include/freetype/ftdriver.h
+       12559  build/natives/include/freetype/fterrdef.h
+        9301  build/natives/include/freetype/fterrors.h
+        2213  build/natives/include/freetype/ftfntfmt.h
+        4138  build/natives/include/freetype/ftgasp.h
+       20912  build/natives/include/freetype/ftglyph.h
+       10625  build/natives/include/freetype/ftgxval.h
+        4211  build/natives/include/freetype/ftgzip.h
+       42337  build/natives/include/freetype/ftimage.h
+       10696  build/natives/include/freetype/ftincrem.h
+       11257  build/natives/include/freetype/ftlcdfil.h
+        7100  build/natives/include/freetype/ftlist.h
+        4130  build/natives/include/freetype/ftlogging.h
+        2768  build/natives/include/freetype/ftlzw.h
+        7771  build/natives/include/freetype/ftmac.h
+       27783  build/natives/include/freetype/ftmm.h
+       22544  build/natives/include/freetype/ftmodapi.h
+        6724  build/natives/include/freetype/ftmoderr.h
+        5346  build/natives/include/freetype/ftotval.h
+       17403  build/natives/include/freetype/ftoutln.h
+        5847  build/natives/include/freetype/ftparams.h
+        4908  build/natives/include/freetype/ftpfr.h
+        6625  build/natives/include/freetype/ftrender.h
+        4288  build/natives/include/freetype/ftsizes.h
+        7730  build/natives/include/freetype/ftsnames.h
+       21773  build/natives/include/freetype/ftstroke.h
+        4483  build/natives/include/freetype/ftsynth.h
+        8502  build/natives/include/freetype/ftsystem.h
+        7411  build/natives/include/freetype/fttrigon.h
+       14714  build/natives/include/freetype/fttypes.h
+        7949  build/natives/include/freetype/ftwinfnt.h
+        7498  build/natives/include/freetype/internal/autohint.h
+        2354  build/natives/include/freetype/internal/cffotypes.h
+       11866  build/natives/include/freetype/internal/cfftypes.h
+       11532  build/natives/include/freetype/internal/compiler-macros.h
+       12767  build/natives/include/freetype/internal/ftcalc.h
+       13332  build/natives/include/freetype/internal/ftdebug.h
+        9214  build/natives/include/freetype/internal/ftdrv.h
+        4504  build/natives/include/freetype/internal/ftgloadr.h
+        4055  build/natives/include/freetype/internal/fthash.h
+       16123  build/natives/include/freetype/internal/ftmemory.h
+        3003  build/natives/include/freetype/internal/ftmmtypes.h
+       41951  build/natives/include/freetype/internal/ftobjs.h
+        1130  build/natives/include/freetype/internal/ftpsprop.h
+        7651  build/natives/include/freetype/internal/ftrfork.h
+       24053  build/natives/include/freetype/internal/ftserv.h
+       23230  build/natives/include/freetype/internal/ftstream.h
+        6113  build/natives/include/freetype/internal/fttrace.h
+        5762  build/natives/include/freetype/internal/ftvalid.h
+       43936  build/natives/include/freetype/internal/psaux.h
+       20852  build/natives/include/freetype/internal/pshints.h
+        1731  build/natives/include/freetype/internal/services/svbdf.h
+        2832  build/natives/include/freetype/internal/services/svcfftl.h
+        2124  build/natives/include/freetype/internal/services/svcid.h
+        1387  build/natives/include/freetype/internal/services/svfntfmt.h
+        1865  build/natives/include/freetype/internal/services/svgldict.h
+        1730  build/natives/include/freetype/internal/services/svgxval.h
+        1080  build/natives/include/freetype/internal/services/svkern.h
+        3992  build/natives/include/freetype/internal/services/svmetric.h
+        8962  build/natives/include/freetype/internal/services/svmm.h
+        1253  build/natives/include/freetype/internal/services/svotval.h
+        1570  build/natives/include/freetype/internal/services/svpfr.h
+        1571  build/natives/include/freetype/internal/services/svpostnm.h
+        1677  build/natives/include/freetype/internal/services/svprop.h
+        4272  build/natives/include/freetype/internal/services/svpscmap.h
+        2469  build/natives/include/freetype/internal/services/svpsinfo.h
+        2079  build/natives/include/freetype/internal/services/svsfnt.h
+        2397  build/natives/include/freetype/internal/services/svttcmap.h
+        1007  build/natives/include/freetype/internal/services/svtteng.h
+        1251  build/natives/include/freetype/internal/services/svttglyf.h
+        1017  build/natives/include/freetype/internal/services/svwinfnt.h
+       32700  build/natives/include/freetype/internal/sfnt.h
+        1041  build/natives/include/freetype/internal/svginterface.h
+        9563  build/natives/include/freetype/internal/t1types.h
+       51663  build/natives/include/freetype/internal/tttypes.h
+        8010  build/natives/include/freetype/internal/wofftypes.h
+       10457  build/natives/include/freetype/otsvg.h
+       21529  build/natives/include/freetype/t1tables.h
+       58844  build/natives/include/freetype/ttnameid.h
+       25422  build/natives/include/freetype/tttables.h
+        5251  build/natives/include/freetype/tttags.h
+         990  build/natives/include/ft2build.h
+        1990  build/natives/cmake/FindFreetype.cmake
+        2233  brutal-icon-32px.png
+        3023  LICENSE.txt
+         212  NOTICE.txt
+         448  CONTRIBUTORS.md
+         974  README.md
+       15967  LICENSES/BRUTAL-FREETYPE-THIRD-PARTY-NOTICES.txt
+        6743  LICENSES/FTL.txt
+      943200  runtimes/linux-x64/native/libfreetype.so
+      943200  runtimes/linux-x64/native/libfreetype.so.6
+      943200  runtimes/linux-x64/native/libfreetype.so.6.20.6
+      311704  runtimes/linux-x64/native/libpng18.so
+      311704  runtimes/linux-x64/native/libpng18.so.18
+      311704  runtimes/linux-x64/native/libpng18.so.18.0.git
+      735000  runtimes/osx-arm64/native/libfreetype.6.20.6.dylib
+      735000  runtimes/osx-arm64/native/libfreetype.6.dylib
+      735000  runtimes/osx-arm64/native/libfreetype.dylib
+      244504  runtimes/osx-arm64/native/libpng18.18.0.git.dylib
+      244504  runtimes/osx-arm64/native/libpng18.18.dylib
+      244504  runtimes/osx-arm64/native/libpng18.dylib
+      684032  runtimes/win-x64/native/freetype.dll
+      209920  runtimes/win-x64/native/png18.dll
+       49620  build/natives/lib/win-x64/freetype.lib
+       60794  build/natives/lib/win-x64/png18.lib
+        1266  [Content_Types].xml
+         718  package/services/metadata/core-properties/f6c8f745eff04aa6accccbca336411b5.psmdcp
+       12979  .signature.p7s
+
+### runtimes/linux-x64/native/libfreetype.so (943200 bytes)
+linked libs (string scan): ['libc.so.6', 'libfreetype.so.6', 'libpng18.so.18', 'libzlib.so.1']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['FT_Load_Glyph']
+  keyword 'sdf': 33 distinct strings; sample: ['bsdf', 'bsdf_raster_done', 'bsdf_raster_new', 'bsdf_raster_render', 'bsdf_raster_reset', 'bsdf_raster_set_mode', 'ft_bitmap_sdf_raster', 'ft_bitmap_sdf_renderer_class', 'ft_bsdf_render', 'ft_sdf_done', 'ft_sdf_get_cbox', 'ft_sdf_init']
+
+### runtimes/linux-x64/native/libfreetype.so.6 (943200 bytes)
+linked libs (string scan): ['libc.so.6', 'libfreetype.so.6', 'libpng18.so.18', 'libzlib.so.1']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['FT_Load_Glyph']
+  keyword 'sdf': 33 distinct strings; sample: ['bsdf', 'bsdf_raster_done', 'bsdf_raster_new', 'bsdf_raster_render', 'bsdf_raster_reset', 'bsdf_raster_set_mode', 'ft_bitmap_sdf_raster', 'ft_bitmap_sdf_renderer_class', 'ft_bsdf_render', 'ft_sdf_done', 'ft_sdf_get_cbox', 'ft_sdf_init']
+
+### runtimes/linux-x64/native/libfreetype.so.6.20.6 (943200 bytes)
+linked libs (string scan): ['libc.so.6', 'libfreetype.so.6', 'libpng18.so.18', 'libzlib.so.1']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['FT_Load_Glyph']
+  keyword 'sdf': 33 distinct strings; sample: ['bsdf', 'bsdf_raster_done', 'bsdf_raster_new', 'bsdf_raster_render', 'bsdf_raster_reset', 'bsdf_raster_set_mode', 'ft_bitmap_sdf_raster', 'ft_bitmap_sdf_renderer_class', 'ft_bsdf_render', 'ft_sdf_done', 'ft_sdf_get_cbox', 'ft_sdf_init']
+
+### runtimes/linux-x64/native/libpng18.so (311704 bytes)
+linked libs (string scan): ['libc.so.6', 'libm.so.6', 'libpng18.so.18', 'libzlib.so.1']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
+
+### runtimes/linux-x64/native/libpng18.so.18 (311704 bytes)
+linked libs (string scan): ['libc.so.6', 'libm.so.6', 'libpng18.so.18', 'libzlib.so.1']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
+
+### runtimes/linux-x64/native/libpng18.so.18.0.git (311704 bytes)
+linked libs (string scan): ['libc.so.6', 'libm.so.6', 'libpng18.so.18', 'libzlib.so.1']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
+
+### runtimes/osx-arm64/native/libfreetype.6.20.6.dylib (735000 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libfreetype.6.dylib', '@rpath/libpng18.18.dylib', '@rpath/libzlib.1.dylib', 'libfreetype.6.20.6.dylib']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['_FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['_FT_Load_Glyph']
+  keyword 'sdf': 41 distinct strings; sample: ['_bsdf_approximate_edge', '_bsdf_init_distance_map', '_bsdf_raster_done', '_bsdf_raster_new', '_bsdf_raster_render', '_bsdf_raster_reset', '_bsdf_raster_set_mode', '_finalize_sdf', '_ft_bitmap_sdf_raster', '_ft_bitmap_sdf_renderer_class', '_ft_bsdf_render', '_ft_sdf_done']
+
+### runtimes/osx-arm64/native/libfreetype.6.dylib (735000 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libfreetype.6.dylib', '@rpath/libpng18.18.dylib', '@rpath/libzlib.1.dylib', 'libfreetype.6.20.6.dylib']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['_FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['_FT_Load_Glyph']
+  keyword 'sdf': 41 distinct strings; sample: ['_bsdf_approximate_edge', '_bsdf_init_distance_map', '_bsdf_raster_done', '_bsdf_raster_new', '_bsdf_raster_render', '_bsdf_raster_reset', '_bsdf_raster_set_mode', '_finalize_sdf', '_ft_bitmap_sdf_raster', '_ft_bitmap_sdf_renderer_class', '_ft_bsdf_render', '_ft_sdf_done']
+
+### runtimes/osx-arm64/native/libfreetype.dylib (735000 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libfreetype.6.dylib', '@rpath/libpng18.18.dylib', '@rpath/libzlib.1.dylib', 'libfreetype.6.20.6.dylib']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['_FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['_FT_Load_Glyph']
+  keyword 'sdf': 41 distinct strings; sample: ['_bsdf_approximate_edge', '_bsdf_init_distance_map', '_bsdf_raster_done', '_bsdf_raster_new', '_bsdf_raster_render', '_bsdf_raster_reset', '_bsdf_raster_set_mode', '_finalize_sdf', '_ft_bitmap_sdf_raster', '_ft_bitmap_sdf_renderer_class', '_ft_bsdf_render', '_ft_sdf_done']
+
+### runtimes/osx-arm64/native/libpng18.18.0.git.dylib (244504 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libpng18.18.dylib', '@rpath/libzlib.1.dylib', 'libpng18.18.0.git.dylib']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
+
+### runtimes/osx-arm64/native/libpng18.18.dylib (244504 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libpng18.18.dylib', '@rpath/libzlib.1.dylib', 'libpng18.18.0.git.dylib']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
+
+### runtimes/osx-arm64/native/libpng18.dylib (244504 bytes)
+linked libs (string scan): ['/usr/lib/libSystem.B.dylib', '@rpath/libpng18.18.dylib', '@rpath/libzlib.1.dylib', 'libpng18.18.0.git.dylib']
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
+
+### runtimes/win-x64/native/freetype.dll (684032 bytes)
+PE imports: ['zlib.dll', 'png18.dll', 'KERNEL32.dll', 'VCRUNTIME140.dll', 'api-ms-win-crt-convert-l1-1-0.dll', 'api-ms-win-crt-string-l1-1-0.dll', 'api-ms-win-crt-utility-l1-1-0.dll', 'api-ms-win-crt-environment-l1-1-0.dll', 'api-ms-win-crt-runtime-l1-1-0.dll']
+PE exports (220):
+    FTC_CMapCache_Lookup
+    FTC_CMapCache_New
+    FTC_ImageCache_Lookup
+    FTC_ImageCache_LookupScaler
+    FTC_ImageCache_New
+    FTC_Manager_Done
+    FTC_Manager_LookupFace
+    FTC_Manager_LookupSize
+    FTC_Manager_New
+    FTC_Manager_RemoveFaceID
+    FTC_Manager_Reset
+    FTC_Node_Unref
+    FTC_SBitCache_Lookup
+    FTC_SBitCache_LookupScaler
+    FTC_SBitCache_New
+    FT_Activate_Size
+    FT_Add_Default_Modules
+    FT_Add_Module
+    FT_Angle_Diff
+    FT_Atan2
+    FT_Attach_File
+    FT_Attach_Stream
+    FT_Bitmap_Blend
+    FT_Bitmap_Convert
+    FT_Bitmap_Copy
+    FT_Bitmap_Done
+    FT_Bitmap_Embolden
+    FT_Bitmap_Init
+    FT_Bitmap_New
+    FT_CeilFix
+    FT_ClassicKern_Free
+    FT_ClassicKern_Validate
+    FT_Cos
+    FT_DivFix
+    FT_Done_Face
+    FT_Done_FreeType
+    FT_Done_Glyph
+    FT_Done_Library
+    FT_Done_MM_Var
+    FT_Done_Size
+    FT_Error_String
+    FT_Face_CheckTrueTypePatents
+    FT_Face_GetCharVariantIndex
+    FT_Face_GetCharVariantIsDefault
+    FT_Face_GetCharsOfVariant
+    FT_Face_GetVariantSelectors
+    FT_Face_GetVariantsOfChar
+    FT_Face_Properties
+    FT_Face_SetUnpatentedHinting
+    FT_FloorFix
+    FT_Get_Advance
+    FT_Get_Advances
+    FT_Get_BDF_Charset_ID
+    FT_Get_BDF_Property
+    FT_Get_CID_From_Glyph_Index
+    FT_Get_CID_Is_Internally_CID_Keyed
+    FT_Get_CID_Registry_Ordering_Supplement
+    FT_Get_CMap_Format
+    FT_Get_CMap_Language_ID
+    FT_Get_Char_Index
+    FT_Get_Charmap_Index
+    FT_Get_Color_Glyph_ClipBox
+    FT_Get_Color_Glyph_Layer
+    FT_Get_Color_Glyph_Paint
+    FT_Get_Colorline_Stops
+    FT_Get_Default_Named_Instance
+    FT_Get_FSType_Flags
+    FT_Get_First_Char
+    FT_Get_Font_Format
+    FT_Get_Gasp
+    FT_Get_Glyph
+    FT_Get_Glyph_Name
+    FT_Get_Kerning
+    FT_Get_MM_Blend_Coordinates
+    FT_Get_MM_Var
+    FT_Get_MM_WeightVector
+    FT_Get_Module
+    FT_Get_Multi_Master
+    FT_Get_Name_Index
+    FT_Get_Next_Char
+    FT_Get_PFR_Advance
+    FT_Get_PFR_Kerning
+    FT_Get_PFR_Metrics
+    FT_Get_PS_Font_Info
+    FT_Get_PS_Font_Private
+    FT_Get_PS_Font_Value
+    FT_Get_Paint
+    FT_Get_Paint_Layers
+    FT_Get_Postscript_Name
+    FT_Get_Renderer
+    FT_Get_Sfnt_LangTag
+    FT_Get_Sfnt_Name
+    FT_Get_Sfnt_Name_Count
+    FT_Get_Sfnt_Table
+    FT_Get_SubGlyph_Info
+    FT_Get_Track_Kerning
+    FT_Get_Transform
+    FT_Get_TrueType_Engine_Type
+    FT_Get_Var_Axis_Flags
+    FT_Get_Var_Blend_Coordinates
+    FT_Get_Var_Design_Coordinates
+    FT_Get_WinFNT_Header
+    FT_Get_X11_Font_Format
+    FT_GlyphSlot_AdjustWeight
+    FT_GlyphSlot_Embolden
+    FT_GlyphSlot_Oblique
+    FT_GlyphSlot_Own_Bitmap
+    FT_GlyphSlot_Slant
+    FT_Glyph_Copy
+    FT_Glyph_Get_CBox
+    FT_Glyph_Stroke
+    FT_Glyph_StrokeBorder
+    FT_Glyph_To_Bitmap
+    FT_Glyph_Transform
+    FT_Gzip_Uncompress
+    FT_Has_PS_Glyph_Names
+    FT_Init_FreeType
+    FT_Library_SetLcdFilter
+    FT_Library_SetLcdFilterWeights
+    FT_Library_SetLcdGeometry
+    FT_Library_Version
+    FT_List_Add
+    FT_List_Finalize
+    FT_List_Find
+    FT_List_Insert
+    FT_List_Iterate
+    FT_List_Remove
+    FT_List_Up
+    FT_Load_Char
+    FT_Load_Glyph
+    FT_Load_Sfnt_Table
+    FT_Matrix_Invert
+    FT_Matrix_Multiply
+    FT_MulDiv
+    FT_MulFix
+    FT_New_Face
+    FT_New_Glyph
+    FT_New_Library
+    FT_New_Memory_Face
+    FT_New_Size
+    FT_OpenType_Free
+    FT_OpenType_Validate
+    FT_Open_Face
+    FT_Outline_Check
+    FT_Outline_Copy
+    FT_Outline_Decompose
+    FT_Outline_Done
+    FT_Outline_Embolden
+    FT_Outline_EmboldenXY
+    FT_Outline_GetInsideBorder
+    FT_Outline_GetOutsideBorder
+    FT_Outline_Get_BBox
+    FT_Outline_Get_Bitmap
+    FT_Outline_Get_CBox
+    FT_Outline_Get_Orientation
+    FT_Outline_New
+    FT_Outline_Render
+    FT_Outline_Reverse
+    FT_Outline_Transform
+    FT_Outline_Translate
+    FT_Palette_Data_Get
+    FT_Palette_Select
+    FT_Palette_Set_Foreground_Color
+    FT_Property_Get
+    FT_Property_Set
+    FT_Reference_Face
+    FT_Reference_Library
+    FT_Remove_Module
+    FT_Render_Glyph
+    FT_Request_Size
+    FT_RoundFix
+    FT_Select_Charmap
+    FT_Select_Size
+    FT_Set_Char_Size
+    FT_Set_Charmap
+    FT_Set_Debug_Hook
+    FT_Set_Default_Log_Handler
+    FT_Set_Default_Properties
+    FT_Set_Log_Handler
+    FT_Set_MM_Blend_Coordinates
+    FT_Set_MM_Design_Coordinates
+    FT_Set_MM_WeightVector
+    FT_Set_Named_Instance
+    FT_Set_Pixel_Sizes
+    FT_Set_Renderer
+    FT_Set_Transform
+    FT_Set_Var_Blend_Coordinates
+    FT_Set_Var_Design_Coordinates
+    FT_Sfnt_Table_Info
+    FT_Sin
+    FT_Stream_OpenBzip2
+    FT_Stream_OpenGzip
+    FT_Stream_OpenLZW
+    FT_Stroker_BeginSubPath
+    FT_Stroker_ConicTo
+    FT_Stroker_CubicTo
+    FT_Stroker_Done
+    FT_Stroker_EndSubPath
+    FT_Stroker_Export
+    FT_Stroker_ExportBorder
+    FT_Stroker_GetBorderCounts
+    FT_Stroker_GetCounts
+    FT_Stroker_LineTo
+    FT_Stroker_New
+    FT_Stroker_ParseOutline
+    FT_Stroker_Rewind
+    FT_Stroker_Set
+    FT_Tan
+    FT_Trace_Set_Default_Level
+    FT_Trace_Set_Level
+    FT_TrueTypeGX_Free
+    FT_TrueTypeGX_Validate
+    FT_Vector_From_Polar
+    FT_Vector_Length
+    FT_Vector_Polarize
+    FT_Vector_Rotate
+    FT_Vector_Transform
+    FT_Vector_Unit
+    TT_New_Context
+    TT_RunIns
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 1 distinct strings; sample: ['FT_Done_Library']
+  keyword 'FT_Load_Glyph': 1 distinct strings; sample: ['FT_Load_Glyph']
+  keyword 'sdf': 2 distinct strings; sample: ['bsdf', 'sdf']
+
+### runtimes/win-x64/native/png18.dll (209920 bytes)
+PE imports: ['zlib.dll', 'VCRUNTIME140.dll', 'api-ms-win-crt-heap-l1-1-0.dll', 'api-ms-win-crt-stdio-l1-1-0.dll', 'api-ms-win-crt-math-l1-1-0.dll', 'api-ms-win-crt-runtime-l1-1-0.dll', 'api-ms-win-crt-convert-l1-1-0.dll', 'api-ms-win-crt-filesystem-l1-1-0.dll', 'api-ms-win-crt-time-l1-1-0.dll', 'KERNEL32.dll']
+PE exports (271):
+    png_access_version_number
+    png_benign_error
+    png_build_grayscale_palette
+    png_calloc
+    png_chunk_benign_error
+    png_chunk_error
+    png_chunk_warning
+    png_convert_from_struct_tm
+    png_convert_from_time_t
+    png_convert_to_rfc1123_buffer
+    png_create_info_struct
+    png_create_read_struct
+    png_create_read_struct_2
+    png_create_write_struct
+    png_create_write_struct_2
+    png_data_freer
+    png_destroy_info_struct
+    png_destroy_read_struct
+    png_destroy_write_struct
+    png_error
+    png_free
+    png_free_data
+    png_free_default
+    png_get_IHDR
+    png_get_PLTE
+    png_get_acTL
+    png_get_bKGD
+    png_get_bit_depth
+    png_get_cHRM
+    png_get_cHRM_XYZ
+    png_get_cHRM_XYZ_fixed
+    png_get_cHRM_fixed
+    png_get_cICP
+    png_get_cLLI
+    png_get_cLLI_fixed
+    png_get_channels
+    png_get_chunk_cache_max
+    png_get_chunk_malloc_max
+    png_get_color_type
+    png_get_compression_buffer_size
+    png_get_compression_type
+    png_get_copyright
+    png_get_current_pass_number
+    png_get_current_row_number
+    png_get_eXIf_1
+    png_get_error_ptr
+    png_get_filter_type
+    png_get_first_frame_is_hidden
+    png_get_gAMA
+    png_get_gAMA_fixed
+    png_get_hIST
+    png_get_header_ver
+    png_get_header_version
+    png_get_iCCP
+    png_get_image_height
+    png_get_image_width
+    png_get_int_32
+    png_get_interlace_type
+    png_get_io_chunk_type
+    png_get_io_ptr
+    png_get_io_state
+    png_get_libpng_ver
+    png_get_mDCV
+    png_get_mDCV_fixed
+    png_get_mem_ptr
+    png_get_next_frame_blend_op
+    png_get_next_frame_delay_den
+    png_get_next_frame_delay_num
+    png_get_next_frame_dispose_op
+    png_get_next_frame_fcTL
+    png_get_next_frame_height
+    png_get_next_frame_width
+    png_get_next_frame_x_offset
+    png_get_next_frame_y_offset
+    png_get_num_frames
+    png_get_num_plays
+    png_get_oFFs
+    png_get_pCAL
+    png_get_pHYs
+    png_get_pHYs_dpi
+    png_get_palette_max
+    png_get_pixel_aspect_ratio
+    png_get_pixel_aspect_ratio_fixed
+    png_get_pixels_per_inch
+    png_get_pixels_per_meter
+    png_get_progressive_ptr
+    png_get_rgb_to_gray_status
+    png_get_rowbytes
+    png_get_rows
+    png_get_sBIT
+    png_get_sCAL
+    png_get_sCAL_fixed
+    png_get_sCAL_s
+    png_get_sPLT
+    png_get_sRGB
+    png_get_signature
+    png_get_tIME
+    png_get_tRNS
+    png_get_text
+    png_get_uint_16
+    png_get_uint_31
+    png_get_uint_32
+    png_get_unknown_chunks
+    png_get_user_chunk_ptr
+    png_get_user_height_max
+    png_get_user_transform_ptr
+    png_get_user_width_max
+    png_get_valid
+    png_get_x_offset_inches
+    png_get_x_offset_inches_fixed
+    png_get_x_offset_microns
+    png_get_x_offset_pixels
+    png_get_x_pixels_per_inch
+    png_get_x_pixels_per_meter
+    png_get_y_offset_inches
+    png_get_y_offset_inches_fixed
+    png_get_y_offset_microns
+    png_get_y_offset_pixels
+    png_get_y_pixels_per_inch
+    png_get_y_pixels_per_meter
+    png_handle_as_unknown
+    png_image_begin_read_from_file
+    png_image_begin_read_from_memory
+    png_image_begin_read_from_stdio
+    png_image_finish_read
+    png_image_free
+    png_image_write_to_file
+    png_image_write_to_memory
+    png_image_write_to_stdio
+    png_info_init_3
+    png_init_io
+    png_longjmp
+    png_malloc
+    png_malloc_default
+    png_malloc_warn
+    png_permit_mng_features
+    png_process_data
+    png_process_data_pause
+    png_process_data_skip
+    png_progressive_combine_row
+    png_read_end
+    png_read_frame_head
+    png_read_image
+    png_read_info
+    png_read_png
+    png_read_row
+    png_read_rows
+    png_read_update_info
+    png_reset_zstream
+    png_save_int_32
+    png_save_uint_16
+    png_save_uint_32
+    png_set_IHDR
+    png_set_PLTE
+    png_set_acTL
+    png_set_add_alpha
+    png_set_alpha_mode
+    png_set_alpha_mode_fixed
+    png_set_bKGD
+    png_set_background
+    png_set_background_fixed
+    png_set_benign_errors
+    png_set_bgr
+    png_set_cHRM
+    png_set_cHRM_XYZ
+    png_set_cHRM_XYZ_fixed
+    png_set_cHRM_fixed
+    png_set_cICP
+    png_set_cLLI
+    png_set_cLLI_fixed
+    png_set_check_for_invalid_index
+    png_set_chunk_cache_max
+    png_set_chunk_malloc_max
+    png_set_compression_buffer_size
+    png_set_compression_level
+    png_set_compression_mem_level
+    png_set_compression_method
+    png_set_compression_strategy
+    png_set_compression_window_bits
+    png_set_crc_action
+    png_set_eXIf_1
+    png_set_error_fn
+    png_set_expand
+    png_set_expand_16
+    png_set_expand_gray_1_2_4_to_8
+    png_set_filler
+    png_set_filter
+    png_set_first_frame_is_hidden
+    png_set_flush
+    png_set_gAMA
+    png_set_gAMA_fixed
+    png_set_gamma
+    png_set_gamma_fixed
+    png_set_gray_to_rgb
+    png_set_hIST
+    png_set_iCCP
+    png_set_interlace_handling
+    png_set_invalid
+    png_set_invert_alpha
+    png_set_invert_mono
+    png_set_keep_unknown_chunks
+    png_set_longjmp_fn
+    png_set_mDCV
+    png_set_mDCV_fixed
+    png_set_mem_fn
+    png_set_next_frame_fcTL
+    png_set_oFFs
+    png_set_option
+    png_set_pCAL
+    png_set_pHYs
+    png_set_packing
+    png_set_packswap
+    png_set_palette_to_rgb
+    png_set_progressive_frame_fn
+    png_set_progressive_read_fn
+    png_set_quantize
+    png_set_read_fn
+    png_set_read_status_fn
+    png_set_read_user_chunk_fn
+    png_set_read_user_transform_fn
+    png_set_rgb_to_gray
+    png_set_rgb_to_gray_fixed
+    png_set_rows
+    png_set_sBIT
+    png_set_sCAL
+    png_set_sCAL_fixed
+    png_set_sCAL_s
+    png_set_sPLT
+    png_set_sRGB
+    png_set_sRGB_gAMA_and_cHRM
+    png_set_scale_16
+    png_set_shift
+    png_set_sig_bytes
+    png_set_strip_16
+    png_set_strip_alpha
+    png_set_swap
+    png_set_swap_alpha
+    png_set_tIME
+    png_set_tRNS
+    png_set_tRNS_to_alpha
+    png_set_text
+    png_set_text_compression_level
+    png_set_text_compression_mem_level
+    png_set_text_compression_method
+    png_set_text_compression_strategy
+    png_set_text_compression_window_bits
+    png_set_unknown_chunk_location
+    png_set_unknown_chunks
+    png_set_user_limits
+    png_set_user_transform_info
+    png_set_write_fn
+    png_set_write_status_fn
+    png_set_write_user_transform_fn
+    png_sig_cmp
+    png_start_read_image
+    png_warning
+    png_write_chunk
+    png_write_chunk_data
+    png_write_chunk_end
+    png_write_chunk_start
+    png_write_end
+    png_write_flush
+    png_write_frame_head
+    png_write_frame_tail
+    png_write_image
+    png_write_info
+    png_write_info_before_PLTE
+    png_write_png
+    png_write_row
+    png_write_rows
+    png_write_sig
+  keyword 'hb_shape': 0 distinct strings; sample: []
+  keyword 'harfbuzz': 0 distinct strings; sample: []
+  keyword 'FT_Done_Library': 0 distinct strings; sample: []
+  keyword 'FT_Load_Glyph': 0 distinct strings; sample: []
+  keyword 'sdf': 0 distinct strings; sample: []
