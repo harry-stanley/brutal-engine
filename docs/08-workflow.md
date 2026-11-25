@@ -15,7 +15,7 @@
    - Push a branch once it's ready for review, and let the PR's own CI run. Don't dispatch extra CI runs per commit. A manual `workflow_dispatch` is for debugging workflow changes, or a failure that can't be reproduced locally.
    - Wait for CI with `gh pr checks <n> --watch` or `gh run watch <id>`, not fixed sleeps.
 6. **Open a PR** using the template: what changed, why, how it's tested, public API changes (diff of `PublicAPI.Unshipped.txt`), performance impact, platforms verified, follow-ups. Link the issue.
-7. **CI green on all three OSes.** No "fix CI later" merges. PRs get the fast or full tier depending on what they touch ([CI tiers](06-ci-cd-and-release.md#ci-tiers)); the full tier runs again on the merge to `main`.
+7. **CI green on Windows and Linux** (macOS isn't in CI, [ADR-0015](adr/0015-tested-platforms-windows-linux.md)). No "fix CI later" merges. PRs get the fast or full tier depending on what they touch ([CI tiers](06-ci-cd-and-release.md#ci-tiers)); the full tier runs again on the merge to `main`.
 8. **Review and merge.** The maintainer reviews, and changes are requested and addressed in follow-up commits on the same branch. Then the PR is merged with **squash and merge, always**: one commit on `main` per PR, titled with the PR's conventional-commit title. Merge commits and rebase merges are disabled in the repository settings. The branch is deleted after merge, and local branches are reset to the new `origin/main` (never merged locally).
 
 PR size: aim for under ~800 changed lines excluding generated files and test data. Because PRs are squash-merged, one PR becomes one commit on `main`, so a small PR is what makes a change easy to revert on `main`. Small commits within the PR make it easy to review. Larger features are split into stacked PRs (infrastructure → API → implementation → sample).
@@ -27,7 +27,7 @@ A PR is done when all of these are true:
 - [ ] Behaviour matches the design doc or ADR (or the doc is updated in this PR)
 - [ ] Unit/integration/GPU tests cover the change at the right layer, including failure paths
 - [ ] Zero build warnings, analyzers clean, formatting clean
-- [ ] CI green on Windows, Linux and macOS
+- [ ] CI green on Windows and Linux
 - [ ] No managed allocations added to steady-state frames (allocation tests pass)
 - [ ] No leaks (tracking allocators and GPU tracker clean)
 - [ ] Every native status code checked
@@ -38,7 +38,7 @@ A PR is done when all of these are true:
 ## Definition of done for a milestone
 
 - All milestone issues closed or explicitly moved, with a reason.
-- The milestone's sample game builds with NativeAOT, is published for all three RIDs by `release.yml`, and passes its scripted playthrough on all three OSes (on self-hosted real GPUs).
+- The milestone's sample game builds with NativeAOT, is published for all three RIDs by `release.yml`, and passes its scripted playthrough on Windows and Linux: on software Vulkan in CI, and on a real GPU on the reference machine until [self-hosted runners](06-ci-cd-and-release.md#self-hosted-runners) exist. macOS is best-effort and unverified ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
 - Benchmarks meet the milestone's budgets.
 - Manual QA checklist completed on real hardware.
 - Release tagged (`v0.N.0`), changelog finalised, docs site updated.

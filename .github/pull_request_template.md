@@ -42,7 +42,7 @@ Closes #<!-- issue number -->
 - [ ] Behaviour matches the design doc or ADR (or the doc is updated in this PR)
 - [ ] Unit/integration/GPU tests cover the change at the right layer, including failure paths
 - [ ] Zero build warnings, analyzers clean, formatting clean
-- [ ] CI green on Windows, Linux and macOS
+- [ ] CI green on Windows and Linux
 - [ ] No managed allocations added to steady-state frames (allocation tests pass)
 - [ ] No leaks (tracking allocators and GPU tracker clean)
 - [ ] Every native status code checked
