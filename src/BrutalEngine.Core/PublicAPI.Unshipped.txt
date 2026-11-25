@@ -1,4 +1,22 @@
 #nullable enable
+BrutalEngine.Core.EngineError
+BrutalEngine.Core.EngineError.EngineError() -> void
+BrutalEngine.Core.EngineError.EngineError(BrutalEngine.Core.ErrorKind kind, string! message, int nativeCode = 0) -> void
+BrutalEngine.Core.EngineError.Equals(BrutalEngine.Core.EngineError other) -> bool
+BrutalEngine.Core.EngineError.Kind.get -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.EngineError.Message.get -> string!
+BrutalEngine.Core.EngineError.NativeCode.get -> int
+BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Cancelled = 8 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.InvalidData = 2 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Io = 6 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Native = 9 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.NotFound = 1 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.OutOfMemory = 5 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Timeout = 7 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Unavailable = 4 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Unspecified = 0 -> BrutalEngine.Core.ErrorKind
+BrutalEngine.Core.ErrorKind.Unsupported = 3 -> BrutalEngine.Core.ErrorKind
 BrutalEngine.Core.Handle
 BrutalEngine.Core.Handle.Equals(BrutalEngine.Core.Handle other) -> bool
 BrutalEngine.Core.Handle.Generation.get -> uint
@@ -27,9 +45,15 @@ BrutalEngine.Core.StaleHandleException.StaleHandleException(BrutalEngine.Core.Ha
 BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message) -> void
 BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message, System.Exception! innerException) -> void
 const BrutalEngine.Core.HandleAllocator.MaxSlotLimit = 2147483591 -> int
+override BrutalEngine.Core.EngineError.Equals(object? obj) -> bool
+override BrutalEngine.Core.EngineError.GetHashCode() -> int
+override BrutalEngine.Core.EngineError.ToString() -> string!
 override BrutalEngine.Core.Handle.Equals(object? obj) -> bool
 override BrutalEngine.Core.Handle.GetHashCode() -> int
 override BrutalEngine.Core.Handle.ToString() -> string!
+static BrutalEngine.Core.EngineError.Native(int nativeCode, string! message) -> BrutalEngine.Core.EngineError
+static BrutalEngine.Core.EngineError.operator !=(BrutalEngine.Core.EngineError left, BrutalEngine.Core.EngineError right) -> bool
+static BrutalEngine.Core.EngineError.operator ==(BrutalEngine.Core.EngineError left, BrutalEngine.Core.EngineError right) -> bool
 static BrutalEngine.Core.Handle.FromRawValue(ulong rawValue) -> BrutalEngine.Core.Handle
 static BrutalEngine.Core.Handle.Null.get -> BrutalEngine.Core.Handle
 static BrutalEngine.Core.Handle.operator !=(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
