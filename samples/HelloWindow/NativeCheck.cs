@@ -1,3 +1,4 @@
+using System;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
 
@@ -15,7 +16,8 @@ internal static class NativeCheck
     {
         if (result != VkResult.Success)
         {
-            throw new VkResultError(result, $"{call} returned {result} ({(int)result}).");
+            // An unnamed value formats as its number, so print the number only once.
+            throw new VkResultError(result, Enum.IsDefined(result) ? $"{call} returned {result} ({(int)result})." : $"{call} returned {(int)result}.");
         }
     }
 
