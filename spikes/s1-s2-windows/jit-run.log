@@ -1,0 +1,11 @@
+Spike S1+S2: frames=300 resizeTest=True aot=False
+SDL instance extensions: VK_KHR_surface, VK_KHR_win32_surface
+GPU: NVIDIA GeForce RTX 2070 SUPER (DiscreteGpu), API 1.4.357, queue family 0
+Swapchain: 800x600 B8G8R8A8SRGB/SRGBNonlinearKHR images=3 present=FIFO
+  recreated swapchain at frame 0: 800x600, images=3
+  recreated swapchain at frame 100: 1024x720, images=3
+  recreated swapchain at frame 200: 640x480, images=3
+Rendered 302 frames, presented 300 in 4.90s (61.3 fps); recreations=3 outOfDate=2 suboptimal=0
+Teardown: device objects destroyed
+Validation messages: errors=0 warnings=0
+Exit code 0

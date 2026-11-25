@@ -1,0 +1,12 @@
+Spike S1+S2: frames=60 resizeTest=False aot=True
+SDL instance extensions: VK_KHR_surface, VK_KHR_win32_surface
+GPU: NVIDIA GeForce RTX 2070 SUPER (DiscreteGpu), API 1.4.357, queue family 0
+Swapchain: 800x600 B8G8R8A8SRGB/SRGBNonlinearKHR images=3 present=FIFO
+  recreated swapchain at frame 0: 800x600, images=3
+Rendered 60 frames, presented 60 in 0.93s (64.8 fps); recreations=1 outOfDate=0 suboptimal=0
+Teardown: device objects destroyed
+[VK ERROR/ValidationBitEXT] vkDestroyDevice(): VkDevice 0x289b80100d0 has 1 leaked objects that have not been destroyed.
+VkSemaphore 0x40000000004
+The Vulkan spec states: All child objects created on device that can be destroyed or freed must have been destroyed or freed prior to destroying device (https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html#VUID-vkDestroyDevice-device-05137)
+Validation messages: errors=1 warnings=0
+Exit code 1

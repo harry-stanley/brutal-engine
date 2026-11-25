@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Spike</RootNamespace>
+    <AssemblyName>Spike</AssemblyName>
+    <!-- Surface every trim/AOT analyzer warning at build time too, not only at publish. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Sdl" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan" Version="2026.10.3" />
+    <!-- Needed only for DeviceExtensions.AllocateCommandBuffers: core Brutal.Vulkan keeps
+         VkCommandBufferAllocateInfo.CommandBufferCount and AllocateCommandBuffersInternal internal. -->
+    <PackageReference Include="Ahwoo.Brutal.Vulkan.Abstractions" Version="2026.10.3" />
+  </ItemGroup>
+</Project>
