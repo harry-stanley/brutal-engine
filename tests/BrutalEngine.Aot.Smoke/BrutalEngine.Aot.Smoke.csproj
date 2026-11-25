@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Smoke harness for the native stack. CI runs it with the JIT and as a NativeAOT executable on each
+    runner (docs/05-testing-strategy.md, "AOT smoke"). Trim/AOT warnings are errors (TreatWarningsAsErrors),
+    and TrimmerSingleWarn=false reports them per call site instead of one summary warning per assembly.
+  -->
+  <PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- Listed so the lock file covers the NativeAOT compiler packages for every supported RID. -->
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Vulkan" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan.Abstractions" />
+  </ItemGroup>
+</Project>

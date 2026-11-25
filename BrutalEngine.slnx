@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BrutalEngine.Analyzers.Tests/BrutalEngine.Analyzers.Tests.csproj" />
+    <Project Path="tests/BrutalEngine.Aot.Smoke/BrutalEngine.Aot.Smoke.csproj" />
     <Project Path="tests/BrutalEngine.Core.Tests/BrutalEngine.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">

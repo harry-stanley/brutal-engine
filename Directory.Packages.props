@@ -20,6 +20,12 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
   </ItemGroup>
 
+  <!-- BRUTAL. All Ahwoo.Brutal.* packages move together in Dependabot's 'brutal' group. -->
+  <ItemGroup>
+    <PackageVersion Include="Ahwoo.Brutal.Vulkan" Version="2026.10.3" />
+    <PackageVersion Include="Ahwoo.Brutal.Vulkan.Abstractions" Version="2026.10.3" />
+  </ItemGroup>
+
   <!-- Testing (tests/) -->
   <ItemGroup>
     <PackageVersion Include="CsCheck" Version="5.0.1" />
