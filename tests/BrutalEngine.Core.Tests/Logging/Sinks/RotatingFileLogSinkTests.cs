@@ -29,13 +29,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
 
     public RotatingFileLogSinkTests() => Directory.CreateDirectory(_root);
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_root))
-        {
-            Directory.Delete(_root, recursive: true);
-        }
-    }
+    public void Dispose() => DeleteBestEffort(_root);
 
     [Fact]
     public void Options_Defaults_MatchTheSpec()
@@ -88,6 +82,24 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     }
 
     [Fact]
+    public void Construct_ExistingLogAndArchivesBeyondRetention_RotatesAndTrims()
+    {
+        // Left by a run with MaxFiles = 5 (or one that crashed mid-rotation), opened with MaxFiles = 3.
+        File.WriteAllText(PathOf("engine.log"), "current\n");
+        for (int n = 1; n <= 4; n++)
+        {
+            File.WriteAllText(PathOf($"engine.{n}.log"), $"archive {n}\n");
+        }
+
+        new RotatingFileLogSink(Options() with { MaxFiles = 3 }).Dispose();
+
+        Assert.Equal(["engine.1.log", "engine.2.log", "engine.log"], Files(_root));
+        Assert.Equal("current\n", Read("engine.1.log"));
+        Assert.Equal("archive 1\n", Read("engine.2.log"));
+        Assert.Equal(string.Empty, Read("engine.log"));
+    }
+
+    [Fact]
     public void Construct_FileNameWithoutExtension_ArchivesAsNameDotNumber()
     {
         File.WriteAllText(PathOf("game"), "previous run\n");
@@ -121,6 +133,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     [InlineData("directory-null", typeof(ArgumentNullException))]
     [InlineData("directory-empty", typeof(ArgumentException))]
     [InlineData("directory-relative", typeof(ArgumentException))]
+    [InlineData("directory-with-nul", typeof(ArgumentException))]
     [InlineData("file-name-null", typeof(ArgumentNullException))]
     [InlineData("file-name-empty", typeof(ArgumentException))]
     [InlineData("file-name-with-slash", typeof(ArgumentException))]
@@ -142,6 +155,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
             "directory-null" => valid with { Directory = null! },
             "directory-empty" => valid with { Directory = string.Empty },
             "directory-relative" => valid with { Directory = "logs" },
+            "directory-with-nul" => valid with { Directory = directory + "\0x" },
             "file-name-null" => valid with { FileName = null! },
             "file-name-empty" => valid with { FileName = string.Empty },
             "file-name-with-slash" => valid with { FileName = "logs/engine.log" },
@@ -191,6 +205,27 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         Assert.Equal(["engine.1.log", "engine.log"], Files(_root));
         Assert.Equal(string.Concat(lines[..4]), Read("engine.1.log"));
         Assert.Equal(lines[4] + lines[5], Read("engine.log"));
+    }
+
+    [Fact]
+    public void Write_PastMaxBytesByOne_Rotates()
+    {
+        // Three lines of a quarter of the maximum and one a byte longer total MaxFileBytes + 1 (newlines included),
+        // so the fourth line must start a new file.
+        const int LineBytes = SmallestMax / 4;
+        using (RotatingFileLogSink sink = new(Options() with { MaxFileBytes = SmallestMax }))
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                Write(sink, LogLevel.Information, Message(i, LineBytes));
+            }
+
+            Write(sink, LogLevel.Information, Message(3, LineBytes + 1));
+        }
+
+        Assert.Equal(["engine.1.log", "engine.log"], Files(_root));
+        Assert.Equal(string.Concat(Enumerable.Range(0, 3).Select(i => Line(Message(i, LineBytes)))), Read("engine.1.log"));
+        Assert.Equal(Line(Message(3, LineBytes + 1)), Read("engine.log"));
     }
 
     [Fact]
@@ -284,7 +319,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
             Assert.True(
                 Enumerable.Range(0, lines.Length + 1).Any(first => string.Concat(lines[first..]) == retained),
                 "The kept files aren't the newest whole lines in order.");
-            Directory.Delete(directory, recursive: true);
+            DeleteBestEffort(directory);
         });
     }
 
@@ -530,6 +565,25 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         Assert.Equal(Line(Message(1, LineBytes)), Read("engine.2.log"));
         Assert.Equal(Line(Message(0, LineBytes)), Read("engine.3.log"));
         Assert.Equal(Line("next"), Read("engine.log"));
+    }
+
+    /// <summary>
+    /// Deletes a test directory. Cleanup never fails a test: on Windows an antivirus scanner or the indexer can
+    /// briefly hold a file, and a leftover directory under the temp path is harmless.
+    /// </summary>
+    private static void DeleteBestEffort(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Best effort, see above.
+        }
     }
 
     private static void Capture(ConcurrentQueue<Exception> failures, Action action)
