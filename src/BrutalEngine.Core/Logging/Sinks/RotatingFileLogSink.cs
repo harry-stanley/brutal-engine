@@ -70,7 +70,7 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     private readonly Func<string, Stream> _openFile;
     private byte[] _line = new byte[InitialLineBufferBytes];
 
-    // Null exactly when the sink is faulted or disposed.
+    // Null when the sink is faulted or disposed, or after a non-I/O exception escaped a rotation (see Fault).
     private Stream? _stream;
     private long _fileBytes;
     private EngineError? _fault;
@@ -161,7 +161,16 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     /// The I/O failure that faulted the sink, with kind <see cref="ErrorKind.Io"/>, or <see langword="null"/> while
     /// it's healthy. Once set it never changes: the first failure is kept.
     /// </summary>
-    /// <remarks>Thread-safe; doesn't allocate.</remarks>
+    /// <remarks>
+    /// <para>
+    /// Only <see cref="IOException"/> and <see cref="UnauthorizedAccessException"/> fault the sink. Any other
+    /// exception from a rotation (in practice only <see cref="OutOfMemoryException"/>: options validation rules out
+    /// the file APIs' argument exceptions) propagates from <see cref="Write"/> after the old file was closed. The
+    /// sink then has no file but no fault either: later entries are dropped and counted in
+    /// <see cref="DroppedCount"/> while this stays <see langword="null"/>.
+    /// </para>
+    /// <para>Thread-safe; doesn't allocate.</para>
+    /// </remarks>
     public EngineError? Fault
     {
         get
@@ -177,7 +186,14 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     /// How many entries weren't written because the sink is faulted, including the one being written when it
     /// faulted. Zero while it's healthy.
     /// </summary>
-    /// <remarks>Thread-safe; doesn't allocate.</remarks>
+    /// <remarks>
+    /// <para>
+    /// A lower bound on lost entries: lines already accepted but still buffered when a <see cref="Flush"/>, a
+    /// flush-level write or the final flush in <see cref="Dispose"/> failed aren't counted, because they may or may
+    /// not have reached the operating system.
+    /// </para>
+    /// <para>Thread-safe; doesn't allocate.</para>
+    /// </remarks>
     public long DroppedCount
     {
         get
