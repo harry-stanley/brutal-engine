@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 
 namespace BrutalEngine.Core.Logging.Sinks;
@@ -83,7 +84,10 @@ public sealed class MemoryLogSink : ILogSink
     private static ReadOnlySpan<byte> Ellipsis => "\u2026"u8;
 
     /// <summary>Copies the entry in, overwriting the oldest entries if it doesn't fit.</summary>
-    /// <param name="entry">The entry. Its message is copied; nothing else of it is kept but its strings.</param>
+    /// <param name="entry">
+    /// The entry. Its fields and message bytes are copied. No reference to the entry is kept except its
+    /// <see cref="LogEntry.Category"/> and <see cref="LogEntry.CallerFilePath"/> strings.
+    /// </param>
     /// <remarks>Thread-safe; doesn't allocate.</remarks>
     /// <exception cref="ArgumentOutOfRangeException">The entry's level is outside Trace to Critical.</exception>
     public void Write(scoped in LogEntry entry)
@@ -113,6 +117,8 @@ public sealed class MemoryLogSink : ILogSink
             {
                 DropOldest();
             }
+
+            Debug.Assert(_count > 0 || _byteCount == 0, "An empty ring must hold no message bytes.");
 
             int start = Wrap(_byteStart + _byteCount, _bytes.Length);
             CopyIn(message, start);
@@ -151,7 +157,8 @@ public sealed class MemoryLogSink : ILogSink
     /// The number of records written to <paramref name="destination"/>. Every entry the sink holds is copied when
     /// <paramref name="destination"/> has at least <see cref="CapacityEntries"/> elements and
     /// <paramref name="messageBuffer"/> at least <see cref="CapacityBytes"/> bytes. Otherwise the copy stops at the
-    /// newest entry that doesn't fit, so the result is always the most recent entries without gaps.
+    /// first entry, going back from the newest, that doesn't fit, so the result is always the most recent entries
+    /// without gaps.
     /// </returns>
     /// <remarks>Thread-safe: the copy is taken under the sink's lock, so it is consistent. Doesn't allocate.</remarks>
     public int CopyTo(Span<MemoryLogRecord> destination, Memory<byte> messageBuffer)

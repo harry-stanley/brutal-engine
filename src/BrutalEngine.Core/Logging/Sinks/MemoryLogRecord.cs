@@ -11,6 +11,12 @@ namespace BrutalEngine.Core.Logging.Sinks;
 /// <para>
 /// Immutable. <c>default(MemoryLogRecord)</c> has empty strings and an empty message. No member allocates.
 /// </para>
+/// <para>
+/// Records have no value equality and aren't meant to be compared. The default <see cref="ValueType.Equals(object)"/>
+/// boxes them and compares <see cref="Message"/> by buffer, offset and length, not by content. Compare
+/// <c>Message.Span</c> with <see cref="MemoryExtensions.SequenceEqual{T}(ReadOnlySpan{T}, ReadOnlySpan{T})"/>
+/// instead.
+/// </para>
 /// </remarks>
 public readonly struct MemoryLogRecord
 {
