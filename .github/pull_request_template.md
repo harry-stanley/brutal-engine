@@ -27,7 +27,7 @@ Closes #<!-- issue number -->
 
 ## Platforms verified
 
-<!-- Tick only platforms you actually built and tested on. Say which GPU/driver for graphics changes. Unverified platforms rely on CI. -->
+<!-- Tick only platforms you actually built and tested on. Say which GPU/driver for graphics changes. CI covers Windows and Linux; macOS is best-effort, with no CI (ADR-0015). -->
 
 - [ ] Windows
 - [ ] Linux

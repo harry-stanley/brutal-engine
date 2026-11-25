@@ -29,8 +29,8 @@ Spikes (throwaway code in a `spikes/` branch, each ending in a written result ad
 
 Results for S1 to S5 are in [docs/spikes](spikes/README.md). Status at the close of M0 (2026-11-26):
 
-- **S2 is done on all 3 OSes.** The `vulkan-smoke` CI job publishes HelloWindow and the smoke harness with NativeAOT and runs them next to their JIT builds on Linux, Windows and macOS (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)).
-- **S1 is done on Windows and macOS:** windowed on Windows on the reference machine, and offscreen on GitHub's macOS runner. In CI, HelloWindow presents headless on Linux (lavapipe) and macOS (bundled MoltenVK), and windowed on Windows (lavapipe), because no Windows driver offers headless surfaces ([HelloWindow in CI](spikes/README.md#hellowindow-in-ci)).
+- **S2 is done on all 3 OSes.** The `vulkan-smoke` CI job published HelloWindow and the smoke harness with NativeAOT and ran them next to their JIT builds on Linux, Windows and macOS (#41, [CI run 45599521930](https://github.com/harry-stanley/brutal-engine/actions/runs/45599521930)).
+- **S1 is done on Windows and macOS:** windowed on Windows on the reference machine, and offscreen on GitHub's macOS runner. In CI, HelloWindow presented headless on Linux (lavapipe) and macOS (bundled MoltenVK), and windowed on Windows (lavapipe), because no Windows driver offers headless surfaces ([HelloWindow in CI](spikes/README.md#hellowindow-in-ci)).
 - **S1 windowed on Arch Linux on real hardware is deferred** to the backlog ([#27](https://github.com/harry-stanley/brutal-engine/issues/27), left open). Decision (maintainer, 2026-11-26): M0 closes without it. Consequence: the minimum glibc and macOS versions that S1's pass criteria ask for aren't recorded, so 0.1 states no minimum OS versions.
 
 **Exit criteria**, each with its close-out note:

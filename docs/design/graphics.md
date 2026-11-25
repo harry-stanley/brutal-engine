@@ -804,7 +804,7 @@ Test categories (C1 starts them; each later graphics issue adds its cases):
 | Passes and pipelines | clears with each load/store op, a triangle golden image, vertex formats, blending presets, depth, viewport and scissor, push constants (with the S4 RowMajor round trip), compute writes |
 | Frame graph | write-then-sample, copy-then-sample, storage write then read, transient targets reused across frames, swapchain images presented, under synchronization validation |
 | Bind groups | persistent and frame lifetimes, layout mismatch, stale-resource binding, offset alignment |
-| Swapchain | headless (Linux lavapipe, macOS MoltenVK) and windowed (Windows lavapipe); resize, minimise, out-of-date, suboptimal, surface lost (the last three forced through the fault seam: this is docs/05's "mock surface layer") |
+| Swapchain | headless (Linux lavapipe) and windowed (Windows lavapipe); macOS (MoltenVK) is best-effort and unverified, not run in CI ([ADR-0015](../adr/0015-tested-platforms-windows-linux.md)); resize, minimise, out-of-date, suboptimal, surface lost (the last three forced through the fault seam: this is docs/05's "mock surface layer") |
 | Timestamps | results arrive without waiting, or the unsupported path |
 | Device lost | loss forced at fence wait, submit, acquire, present and resource creation; event raised once; `Recover` recreates swapchains and calls owners; every old handle stale |
 | Misuse | every exception documented in this note |
@@ -1050,5 +1050,5 @@ The note is consistent with ADR-0002 (a WebGPU-level interface, Vulkan 1.3 first
 ## Not verified
 
 - The note is design only. Nothing in it has run. M0's proven behaviour (frames in flight, acquire, present, resize, minimise, headless and windowed surfaces) is cited where it is reused.
-- Timestamp support on lavapipe and MoltenVK is unknown until G11 runs there. So is MoltenVK's `FormatSupport` for some formats and usages (for example `Rgba16Float` as a storage texture, and linear filtering of `Depth32Float`), until C1 runs there.
+- Timestamp support on lavapipe is unknown until G11 runs there. On MoltenVK, timestamp support and `FormatSupport` for some formats and usages (for example `Rgba16Float` as a storage texture, and linear filtering of `Depth32Float`) stay unknown: macOS is best-effort and unverified, and CI doesn't run G11 or C1 there ([ADR-0015](../adr/0015-tested-platforms-windows-linux.md)).
 - The surface contract is reconciled with the [platform note](platform.md) as written, but neither has been implemented: P1/P3 and G2b/G5 prove it.

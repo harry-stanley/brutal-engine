@@ -38,7 +38,7 @@ A PR is done when all of these are true:
 ## Definition of done for a milestone
 
 - All milestone issues closed or explicitly moved, with a reason.
-- The milestone's sample game builds with NativeAOT, is published for all three RIDs by `release.yml`, and passes its scripted playthrough on Windows and Linux: on software Vulkan in CI, and on a real GPU on the reference machine until [self-hosted runners](06-ci-cd-and-release.md#self-hosted-runners) exist. macOS is best-effort and unverified ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
+- The milestone's sample game builds with NativeAOT, is published for win-x64 and linux-x64 by `release.yml`, and passes its scripted playthrough on Windows and Linux: on software Vulkan in CI, and on a real GPU on the reference machine until [self-hosted runners](06-ci-cd-and-release.md#self-hosted-runners) exist. macOS is best-effort and unverified ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)).
 - Benchmarks meet the milestone's budgets.
 - Manual QA checklist completed on real hardware.
 - Release tagged (`v0.N.0`), changelog finalised, docs site updated.
