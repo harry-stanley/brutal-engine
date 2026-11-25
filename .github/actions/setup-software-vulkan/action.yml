@@ -12,10 +12,38 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        sudo apt-get update -q
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
-          libvulkan1 mesa-vulkan-drivers vulkan-validationlayers
-        dpkg -l libvulkan1 mesa-vulkan-drivers vulkan-validationlayers | tail -n +6
+        packages="libvulkan1 mesa-vulkan-drivers vulkan-validationlayers"
+
+        has_candidates() {
+          for p in $packages; do
+            apt-cache policy "$p" | grep -q 'Candidate: [^(]' || return 1
+          done
+        }
+
+        # Hosted runners occasionally come up with no Ubuntu archive in their apt sources (only the
+        # Microsoft repo), so the packages have no install candidate. Retry, then fall back to the
+        # standard Ubuntu archive rather than failing on runner configuration.
+        for attempt in 1 2 3; do
+          sudo apt-get update -q || true
+          if has_candidates; then break; fi
+          echo "::warning::Vulkan packages have no apt candidate (attempt $attempt). Sources:"
+          ls -la /etc/apt/sources.list.d/ || true
+          if [ "$attempt" -eq 2 ]; then
+            echo "Adding the standard Ubuntu archive as a fallback apt source."
+            printf '%s\n' \
+              'Types: deb' \
+              'URIs: http://archive.ubuntu.com/ubuntu' \
+              "Suites: $(lsb_release -cs) $(lsb_release -cs)-updates $(lsb_release -cs)-security" \
+              'Components: main universe' \
+              'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+              | sudo tee /etc/apt/sources.list.d/brutalengine-ubuntu-fallback.sources > /dev/null
+          fi
+          sleep 5
+        done
+        has_candidates || { echo "::error::Vulkan packages are unavailable from apt."; exit 1; }
+
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends $packages
+        dpkg -l $packages | tail -n +6
         # The ICD file name differs between Mesa builds (lvp_icd.json vs lvp_icd.x86_64.json).
         icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
         test -n "$icd"
