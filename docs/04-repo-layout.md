@@ -5,7 +5,7 @@ The repository is a single monorepo for engine libraries, tools, tests, samples 
 ```
 brutal-engine/
 ├── BrutalEngine.slnx                 # solution (XML .slnx format)
-├── global.json                       # pins the .NET 10 SDK
+├── global.json                       # pins the .NET 10 SDK and selects the Microsoft.Testing.Platform test runner
 ├── Directory.Build.props             # shared MSBuild settings (see below)
 ├── Directory.Build.targets
 ├── Directory.Packages.props          # central package versions (all Ahwoo.Brutal.* pinned here)
@@ -81,30 +81,17 @@ brutal-engine/
 - macOS Vulkan natives are shipped in `BrutalEngine.Natives.MoltenVK` (osx-arm64 only), referenced by `BrutalEngine.Graphics.Vulkan` for that RID.
 - The `BrutalEngine` meta-package is what games normally reference. Advanced users can reference individual modules.
 
-## Shared build settings (`Directory.Build.props`)
+## Shared build settings
 
-```xml
-<TargetFramework>net10.0</TargetFramework>
-<LangVersion>latest</LangVersion>
-<Nullable>enable</Nullable>
-<ImplicitUsings>disable</ImplicitUsings>        <!-- explicit usings in public libraries -->
-<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-<AnalysisLevel>latest-recommended</AnalysisLevel>
-<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-<GenerateDocumentationFile>true</GenerateDocumentationFile>
-<IsAotCompatible>true</IsAotCompatible>         <!-- src/ projects only -->
-<Deterministic>true</Deterministic>
-<ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-<RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
-<EnablePackageValidation>true</EnablePackageValidation>
-<PackageLicenseExpression>MIT</PackageLicenseExpression>
-<PublishRepositoryUrl>true</PublishRepositoryUrl>   <!-- SourceLink; symbols as .snupkg -->
-<RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
-```
+Three layers of `Directory.Build.props`. Each one imports the one above it.
 
-Test projects relax only `IsAotCompatible` and the XML-documentation requirement. Analyzer and generator projects target `netstandard2.0`, as Roslyn requires.
+| File | Applies to | Sets |
+|------|------------|------|
+| `Directory.Build.props` | everything | `net10.0`, latest C#, nullable, explicit usings, unsafe allowed, **warnings as errors**, `AnalysisLevel=latest-recommended`, code style enforced in build, deterministic/CI builds, locked restores (`packages.lock.json`, locked mode on CI), NuGet audit of all (incl. transitive) packages, authors/copyright/repository, `IsPackable=false` |
+| `src/Directory.Build.props` | shipped libraries | `IsPackable`, `IsAotCompatible`, XML docs, package ID = root namespace = project name, MIT licence expression, README + `NOTICE.txt` packed, SourceLink + `.snupkg` symbols, package validation, MinVer versioning (`v` tag prefix, 0.1 minimum), public API tracking (`PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`), `InternalsVisibleTo` for the matching test project only |
+| `tests/Directory.Build.props` | test projects | xUnit v3 on Microsoft.Testing.Platform v2 (executable test apps), CsCheck, code coverage and TRX report extensions, not packable |
+
+`Directory.Packages.props` pins every package version centrally, with transitive pinning on. Runtime identifiers are set only by executables (samples, games, AOT smoke tests), not by libraries. Analyzer and generator projects will target `netstandard2.0`, as Roslyn requires.
 
 ## Large binary assets
 

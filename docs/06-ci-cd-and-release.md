@@ -37,9 +37,9 @@ Arch is a rolling release, so its runner also catches driver and Mesa regression
 3. **Test matrix** (3 OSes): unit, property, native-boundary, integration, allocation, leak, determinism, plus GPU conformance and golden tests on software Vulkan. Test results go to the job summary. Failed golden images upload their diff artifacts.
 4. **AOT smoke** (3 OSes): publish one sample with NativeAOT for the runner's RID and run it headless.
 5. **Pack:** `dotnet pack`, then package validation, public API check and SourceLink verification. Packages are uploaded as artifacts (never published from CI on PRs).
-6. **Security:** CodeQL (C#) and the dependency-review action (blocks new vulnerable or disallowed-licence dependencies).
+6. **Security** (separate workflows so they can also run on a schedule): `codeql.yml` (C# and Actions, `security-and-quality` queries, also weekly) and `dependency-review.yml` (blocks new dependencies with moderate or worse known vulnerabilities). Dependabot (`.github/dependabot.yml`) proposes weekly NuGet, .NET SDK and Actions updates.
 
-All jobs are required status checks on `main`. Branch protection: PRs required, 1 approving review (the maintainer), linear history, no force pushes, required checks up to date before merge.
+The aggregate `CI passed` job, `CodeQL (csharp)`, `CodeQL (actions)` and `Dependency review` are the required status checks on `main`. Branch protection: PRs required, 1 approving review (the maintainer), linear history, no force pushes, required checks up to date before merge.
 
 **Every merge into `main` is a squash merge**, so `main` has one commit per PR and its history stays clean. The repository allows only squash merging (merge commits and rebase merging are disabled), uses the PR title as the squash commit title, and deletes head branches after merge.
 

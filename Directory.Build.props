@@ -1,0 +1,35 @@
+<Project>
+  <!-- Settings shared by every project. src/ and tests/ add their own on top (see docs/04-repo-layout.md). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Zero warnings: every warning is an error, with the recommended analyzer set and code style enforced. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Reproducible builds. GitHub Actions sets CI=true. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Locked restores: packages.lock.json is committed, and CI refuses to restore anything else. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+
+    <Authors>Harry Stanley and BrutalEngine contributors</Authors>
+    <Copyright>Copyright (c) 2026 Harry Stanley and BrutalEngine contributors</Copyright>
+    <RepositoryUrl>https://github.com/harry-stanley/brutal-engine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Nothing is packable unless src/Directory.Build.props says so. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

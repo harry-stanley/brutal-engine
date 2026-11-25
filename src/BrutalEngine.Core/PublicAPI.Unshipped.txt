@@ -1,0 +1,36 @@
+#nullable enable
+BrutalEngine.Core.Handle
+BrutalEngine.Core.Handle.Equals(BrutalEngine.Core.Handle other) -> bool
+BrutalEngine.Core.Handle.Generation.get -> uint
+BrutalEngine.Core.Handle.Handle() -> void
+BrutalEngine.Core.Handle.Handle(uint index, uint generation) -> void
+BrutalEngine.Core.Handle.Index.get -> uint
+BrutalEngine.Core.Handle.IsNull.get -> bool
+BrutalEngine.Core.Handle.RawValue.get -> ulong
+BrutalEngine.Core.HandleAllocator
+BrutalEngine.Core.HandleAllocator.Allocate() -> BrutalEngine.Core.Handle
+BrutalEngine.Core.HandleAllocator.Capacity.get -> int
+BrutalEngine.Core.HandleAllocator.Clear() -> void
+BrutalEngine.Core.HandleAllocator.Count.get -> int
+BrutalEngine.Core.HandleAllocator.EnsureCapacity(int capacity) -> void
+BrutalEngine.Core.HandleAllocator.Free(BrutalEngine.Core.Handle handle) -> void
+BrutalEngine.Core.HandleAllocator.HandleAllocator(int initialCapacity = 0, int maxSlots = 2147483591) -> void
+BrutalEngine.Core.HandleAllocator.IsValid(BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.HandleAllocator.MaxSlots.get -> int
+BrutalEngine.Core.HandleAllocator.RetiredCount.get -> int
+BrutalEngine.Core.HandleAllocator.TryAllocate(out BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.HandleAllocator.TryFree(BrutalEngine.Core.Handle handle) -> bool
+BrutalEngine.Core.StaleHandleException
+BrutalEngine.Core.StaleHandleException.Handle.get -> BrutalEngine.Core.Handle
+BrutalEngine.Core.StaleHandleException.StaleHandleException() -> void
+BrutalEngine.Core.StaleHandleException.StaleHandleException(BrutalEngine.Core.Handle handle) -> void
+BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message) -> void
+BrutalEngine.Core.StaleHandleException.StaleHandleException(string! message, System.Exception! innerException) -> void
+const BrutalEngine.Core.HandleAllocator.MaxSlotLimit = 2147483591 -> int
+override BrutalEngine.Core.Handle.Equals(object? obj) -> bool
+override BrutalEngine.Core.Handle.GetHashCode() -> int
+override BrutalEngine.Core.Handle.ToString() -> string!
+static BrutalEngine.Core.Handle.FromRawValue(ulong rawValue) -> BrutalEngine.Core.Handle
+static BrutalEngine.Core.Handle.Null.get -> BrutalEngine.Core.Handle
+static BrutalEngine.Core.Handle.operator !=(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
+static BrutalEngine.Core.Handle.operator ==(BrutalEngine.Core.Handle left, BrutalEngine.Core.Handle right) -> bool
