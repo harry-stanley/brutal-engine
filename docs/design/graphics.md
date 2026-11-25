@@ -182,7 +182,7 @@ Each limit is read from the backend; for Vulkan they are `VkPhysicalDeviceLimits
 
 ## 3. Swapchains
 
-By the window-to-swapchain decision above, a swapchain is created from a Platform window:
+A swapchain is created from a Platform window, through the capability the [platform note](platform.md#4-vulkan-surface-source) defines:
 
 ```csharp
 public sealed class GraphicsDevice
@@ -205,8 +205,27 @@ public readonly record struct SwapchainInfo(
     int Width, int Height, TextureFormat Format, PresentMode PresentMode, int ImageCount, bool SupportsCopyDestination);
 ```
 
-- **The surface comes from the window.** The backend obtains the window's `IVulkanSurfaceSource` as specified in `docs/design/platform.md` (#53): required instance extensions, then `CreateVulkanSurface(nint instance)`, which returns the `VkSurfaceKHR` as `nint` through `Result<T>`. A window that can't present (for example headless on Windows, where no driver offers `VK_EXT_headless_surface`, `samples/HelloWindow/VulkanContext.cs:107-112`) reports that through the same contract, and `CreateSwapchain` returns its error unchanged. Nothing Vulkan-typed crosses this API: `IWindow` in, a handle out.
-- **Instance extensions are known at device creation.** A Vulkan instance must enable surface extensions when it is created, and adapter selection must check present support for a real surface (`VulkanContext.cs:57-58`, `:262`). So `GraphicsDeviceOptions.CompatibleWindow` names the window the device will present to (WebGPU's "compatible surface"). The surface created for selection is kept and reused by the first `CreateSwapchain` for that window. A device created with no compatible window is offscreen-only: `CreateSwapchain` returns `Unsupported`. Another window works if its required extensions were enabled and the device's queue can present to it; otherwise `Unsupported`.
+- **The surface comes from the window.** `IWindow.VulkanSurface` (an `IVulkanSurfaceSource?`, [platform note section 4](platform.md#4-vulkan-surface-source)) gives the required instance extensions (`RequiredInstanceExtensionCount`, `GetRequiredInstanceExtension(int)`: UTF-8 spans) and `CreateVulkanSurface(nint instance)`, which returns the `VkSurfaceKHR` as `nint` through `Result<nint>`. Nothing Vulkan-typed crosses this API: `IWindow` in, a handle out.
+- **A window without a surface is an expected failure.** `VulkanSurface` is `null` for a window created with `WindowSurface.None` (which the `dummy` driver requires). `CreateSwapchain` for such a window returns a failed `Result` with `ErrorKind.Unsupported` ("window was created with WindowSurface.None"), and so does `GraphicsDevice.Create` when it is the `CompatibleWindow`. They are `Result`s, not exceptions ([errors](errors.md)), because a surfaceless window is a legitimate configuration (`NoSurface` headless hosts, servers) that a caller may probe. A failed `CreateVulkanSurface` is returned unchanged (`ErrorKind.Native`, SDL's message). A headless window that could never present (`Offscreen` without `VK_EXT_headless_surface`, as on Windows) already fails at `IPlatform.CreateWindow` ([platform note section 3](platform.md#3-headless-mode)), so Graphics never receives one.
+- **The backend never sees the window.** The layer map allows a backend exactly one same-layer edge, to the abstraction it implements (`tests/BrutalEngine.Architecture.Tests/LayerMap.cs:108-115`), and the layering rule checks direct references (`tests/BrutalEngine.Architecture.Tests/LayeringRule.cs:65`). So Graphics.Vulkan never names `IWindow` or `IVulkanSurfaceSource`. `GraphicsDevice` wraps the window's capability in a Graphics-owned type with only `int`, `bool`, `nint`, spans and `Result` in its public surface, and passes that to the backend (in the device request for the `CompatibleWindow`, and in each swapchain request):
+
+```csharp
+namespace BrutalEngine.Graphics.Backend;
+
+public sealed class WindowSurfaceSource
+{
+    internal WindowSurfaceSource(IWindow window, IVulkanSurfaceSource source); // only GraphicsDevice creates one
+    public int RequiredInstanceExtensionCount { get; }                       // forwards to the window's source
+    public ReadOnlySpan<byte> GetRequiredInstanceExtension(int index);       // UTF-8, no NUL; any thread
+    public Result<nint> CreateVulkanSurface(nint instance);                  // main thread; the backend owns the surface
+    public int PixelWidth { get; }                                           // IWindow.PixelSize, refreshed by the front end
+    public int PixelHeight { get; }                                          //   before every backend call that uses it
+    public bool IsMinimised { get; }                                         // WindowState.Minimized, or a zero side
+}
+```
+
+  The front end creates one per window it presents to, keeps it while that window's swapchain lives, and refreshes the size fields from `IWindow.PixelSize` and `IWindow.State` (snapshots that cost no native call, platform note section 1) before each acquire. The forwarding members follow the platform note's rules (thread, disposal, argument checks), so a disposed window still surfaces as `ObjectDisposedException`.
+- **Instance extensions are known at device creation.** A Vulkan instance must enable surface extensions when it is created, and adapter selection must check present support for a real surface (`VulkanContext.cs:57-58`, `:262`). So `GraphicsDeviceOptions.CompatibleWindow` names the window the device will present to (WebGPU's "compatible surface"). The backend reads the instance extensions from its `WindowSurfaceSource` before creating the instance; the platform note guarantees they are the same for every window of one platform. The surface created for selection is kept and reused by the first `CreateSwapchain` for that window. A device created with no compatible window is offscreen-only: `CreateSwapchain` returns `Unsupported`. Another window works if its required extensions were enabled and the device's queue can present to it; otherwise `Unsupported`.
 - **Ownership and order.** The device owns the swapchain and the surface. `Destroy(SwapchainHandle)` waits for the swapchain's presents, then destroys it and the surface (`vkDestroySurfaceKHR`, which the platform contract assigns to the graphics backend). The owner must destroy the swapchain before the window; the Runtime host does it in reverse creation order. `GraphicsDevice.Dispose` destroys any swapchain still alive, logged as a leak.
 - **Present mode:** `Fifo` by default, the only mode every implementation must support (`samples/HelloWindow/SwapchainPlanner.cs:9-10`; BRUTAL binds all four, `Brutal.Vulkan/Generated/Enums/VkPresentModeKHR.gen.cs:35`, `:40`, `:45`, `:50`). An unsupported request falls back to `Fifo`, is logged once, and `SwapchainInfo.PresentMode` reports the mode in use.
 - **Format, image count, extent, composite alpha** follow the M0 planner: sRGB BGRA if offered, otherwise the first format; one image more than the minimum; the window's pixel size when the surface's current extent is undefined (headless, Wayland), checked for zero before clamping; opaque alpha (`SwapchainPlanner.cs:17-37`, `:43-48`, `:54-70`, `:76-86`).
@@ -234,7 +253,7 @@ public readonly record struct SwapchainImage(TextureHandle Texture, TextureViewH
 
 Rules, all from the M0 frame loop:
 
-- Each acquire compares the window's pixel size (from `IWindow`, as platform.md defines it) with the swapchain's extent and recreates only when it really changed: SDL reports a resize right after window creation (`HelloWindowApp.cs:137-138`). A zero size or a minimised window returns `Minimised` without recreating (`HelloWindowApp.cs:125-135`; `SwapchainPlanner.cs:26-30`).
+- Each acquire compares `IWindow.PixelSize` with the swapchain's extent and recreates only when it really changed: SDL reports a resize right after window creation (`HelloWindowApp.cs:137-138`). A zero side or `WindowState.Minimized` returns `Minimised` without recreating (`HelloWindowApp.cs:125-135`; `SwapchainPlanner.cs:26-30`).
 - An out-of-date acquire recreates and retries once. Suboptimal or out-of-date presents mark the swapchain for recreation at the next acquire (`samples/HelloWindow/FrameResultPolicy.cs:14-24`).
 - The acquired image's view is valid only in this frame. It may be a color target or, if `SupportsCopyDestination`, a copy destination. The frame planner moves it to the present state at submit and presents it then (section 10). An acquired image that no pass wrote is cleared to black before present, so the presentation engine never shows uninitialised memory.
 - Recreation waits for the device to go idle in M1, as M0 does (`HelloWindowApp.cs:141`). Present fences with `VK_EXT_swapchain_maintenance1` are a backend optimisation (#55) and don't change this API.
@@ -647,7 +666,8 @@ public interface IGpuResourceOwner
 - **Recovery is the owner's call:** the host (Runtime) calls `Recover()` outside a frame. It calls every owner's `OnDeviceLost` in reverse registration order, destroys all native objects, invalidates **every** resource handle (each handle allocator is cleared, so all old handles are stale), creates a new backend device on the same adapter selection, recreates every swapchain for its window, then calls `OnDeviceRecreated` in registration order. If the adapter is gone, or an owner's recreation fails, `Recover` returns the failure and the host treats it as fatal (docs/03 3.2: graphics failures are fatal).
 - **What survives:** the `GraphicsDevice` object, its options, logger and statistics, registered owners, `SwapchainHandle`s (recreated in place, so their next acquire reports `Recreated`) and `DebugLabel`s. Everything else is gone: buffers, textures, views, samplers, shader modules, layouts, bind groups, pipelines and their contents.
 - **Owners in M1** are the engine's own: the overlay's font atlas and pipelines, the sprite renderer, the splash. M2's asset database registers as one owner and reloads what it loaded, which is how docs/03 3.5's "recreates GPU resources from the asset database" is reached through the same contract.
-- **Fault injection** is internal: the front end wraps every backend status in one place, so a test can make the N-th call of a chosen operation report loss (and make the backend really tear down its device). It isn't public API. The conformance project needs it, but docs/07 allows `InternalsVisibleTo` only for the matching test project. Recommended: also grant it to `BrutalEngine.Graphics.Conformance`, the Graphics test suite by role, with a comment saying why. The alternative is a public, test-only backend wrapper, which adds public API for tests. **Open question for the maintainer.**
+- **Fault injection** is internal: the front end wraps every backend status in one place, so a test can make the N-th call of a chosen operation report loss (and make the backend really tear down its device). It isn't public API.
+- **Who may use the seam.** Decision (maintainer, 2026-11-26): `BrutalEngine.Graphics` grants `InternalsVisibleTo` to `BrutalEngine.Graphics.Tests` and also to `BrutalEngine.Graphics.Conformance`. This is one named exception to docs/07's "matching test project only" rule. The conformance suite has to force device loss on every backend, and the seam belongs in the backend-neutral front end. The attribute carries a comment giving that reason, and no other assembly gets the exception.
 
 ## 13. Errors and diagnostics
 
@@ -670,7 +690,7 @@ public readonly record struct GraphicsStatistics(
 
 ## 14. Threading and allocation
 
-- **One owner thread.** The thread that calls `GraphicsDevice.Create` owns the device: the main thread in the Runtime host (docs/03 3.2). Every `GraphicsDevice`, `CommandList` and encoder member checks it and throws `WrongThreadException` with the API name (docs/03 3.2). The check is always on, not just in debug builds: it is one integer compare. `WrongThreadException` doesn't exist yet; it belongs in Core, added by whichever of P1 and G1 lands first.
+- **One owner thread.** The thread that calls `GraphicsDevice.Create` owns the device: the main thread in the Runtime host (docs/03 3.2). Every `GraphicsDevice`, `CommandList` and encoder member checks it and throws `WrongThreadException` with the API name (docs/03 3.2). The device captures Core's `ThreadAffinity.CurrentThread()` at creation and calls `ThrowIfNotCurrentThread(apiName)`; both `ThreadAffinity` and `WrongThreadException` are Core types added by P1 ([platform note section 9](platform.md#9-threading)). The check is always on, not just in debug builds, as in Platform: it is one integer compare.
 - **Any thread:** descriptions (immutable values), `Capabilities` and `Adapter` (immutable after `Create`). Everything else, including `GetDebugLabelName` and `Statistics`, is owner-thread only. Handles are plain values and can be passed between threads, but only used on the owner thread.
 - **Job workers** (render prepare, docs/03 3.2) don't call the device in M1. They write into memory the main thread got from `AllocateTransient` before scheduling them, and the main thread submits after the jobs complete.
 - **Zero managed allocation in steady-state frames.** These calls allocate nothing (a test measures each across 1,000 frames): `BeginFrame`, `SubmitFrame`, `AcquireSwapchainImage`, every encoder method, `AllocateTransient`, frame bind groups, `WriteBuffer`, `WriteTexture`, `TryReadBuffer`, copies, `CreateTransientTexture` once the pool is warm, `Destroy`, `TryGetPassTimings`, `Statistics`. Creating persistent objects (buffers, textures, pipelines, persistent bind groups, labels the first time) may allocate and belongs to load time; doing it in a frame is allowed but makes that frame non-steady. Swapchain recreation and device recovery allocate.
@@ -709,9 +729,9 @@ The planned issues G1, G2, G10 and C1 hold, with the front end split out of G2 b
 
 | Issue | Scope from this note | Est. |
 |-------|----------------------|------|
-| G1 feat(graphics): add the render interface's resource descriptions | Creates `src/BrutalEngine.Graphics`: typed handles, formats, usages, `FormatSupport`, buffer/texture/view/sampler descriptions and their validation rules (section 5), `AdapterSelection` and its parser, `GraphicsDeviceOptions`, capabilities, limits and features (section 2); `WrongThreadException` in Core if P1 hasn't added it | ~650 |
+| G1 feat(graphics): add the render interface's resource descriptions | Creates `src/BrutalEngine.Graphics`: typed handles, formats, usages, `FormatSupport`, buffer/texture/view/sampler descriptions and their validation rules (section 5), `AdapterSelection` and its parser, `GraphicsDeviceOptions`, capabilities, limits and features (section 2) | ~650 |
 | G2 feat(graphics): add pipeline, bind group and pass descriptions | Shader module, layout, pipeline and bind group descriptions with validation (sections 7-8), pass descriptions, `CommandList`/encoder command stream encoding and its rules (section 9) | ~650 |
-| G2b feat(graphics): add the device front end, the backend interface and a fake backend | `GraphicsDevice`, `IGraphicsBackend` and the backend device interface, handle tables, frame state machine, deletion queues, upload ring bookkeeping, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1, 4, 6, 11-14); an in-memory fake backend for unit tests | ~700 |
+| G2b feat(graphics): add the device front end, the backend interface and a fake backend | `GraphicsDevice`, `IGraphicsBackend` and the backend device interface, handle tables, frame state machine, deletion queues, upload ring bookkeeping, readback, debug labels, statistics, leak report, device-lost state and the fault seam (sections 1, 4, 6, 11-14), `WindowSurfaceSource` (section 3); an in-memory fake backend for unit tests. Blocked by P1 (`IWindow`, `IVulkanSurfaceSource`, `ThreadAffinity`) | ~700 |
 | G10 feat(graphics): order passes and insert barriers with a minimal frame graph | The planner (section 10): usage derivation, cross-frame state tracking, transitions, transient texture pool; pure unit and property tests, GPU cases in the conformance suite | ~650 |
 | C1 test(graphics): add the conformance suite and run it in CI | Section 15's rules and harness (validation fixture, canary, leak checks, image diff) and the first device, resource and upload cases | ~700 |
 
@@ -732,7 +752,8 @@ public interface IBackendDevice : IDisposable
     // Called only with validated descriptions, on the owner thread. Native objects are opaque ulong ids that the
     // front end maps to typed handles; statuses come back as Result so the front end sees every device loss.
     Result<ulong> CreateBuffer(in BufferDescription description);
-    // ... one Create/Destroy pair per object kind, surfaces and swapchains, WaitForFrame(slot), Execute(plan), Present.
+    // ... one Create/Destroy pair per object kind, swapchains (from a WindowSurfaceSource), WaitForFrame(slot),
+    // Execute(plan), Present. BackendDeviceRequest carries the compatible window's WindowSurfaceSource, or null.
 }
 ```
 
@@ -770,4 +791,4 @@ The note is consistent with ADR-0002 (a WebGPU-level interface, Vulkan 1.3 first
 
 - The note is design only. Nothing in it has run. M0's proven behaviour (frames in flight, acquire, present, resize, minimise, headless and windowed surfaces) is cited where it is reused.
 - Timestamp support on lavapipe and MoltenVK, and the `Depth32Float` and `Rgba16Float` storage support on MoltenVK, are unknown until G11 and C1 run there.
-- How `IWindow` exposes its `IVulkanSurfaceSource` and pixel size is defined by the platform note (#53), written in parallel.
+- The surface contract is reconciled with the [platform note](platform.md) as written, but neither has been implemented: P1/P3 and G2b/G5 prove it.
