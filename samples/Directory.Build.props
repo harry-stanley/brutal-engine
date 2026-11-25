@@ -1,0 +1,14 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    Samples are runnable programs that ship with each milestone (docs/04-repo-layout.md). They are never packed, have
+    no tracked public API, and keep every type internal.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Needed so IDE0005 (unnecessary usings) runs in the build. Internal types need no XML docs (CS1591 is public-only). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

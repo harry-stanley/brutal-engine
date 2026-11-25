@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unit tests for the HelloWindow sample's pure decision logic (no GPU or window needed). -->
+  <ItemGroup>
+    <ProjectReference Include="../../samples/HelloWindow/HelloWindow.csproj" />
+  </ItemGroup>
+</Project>

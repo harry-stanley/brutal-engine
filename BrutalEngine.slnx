@@ -3,11 +3,15 @@
     <Project Path="src/BrutalEngine.Analyzers/BrutalEngine.Analyzers.csproj" />
     <Project Path="src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/HelloWindow/HelloWindow.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BrutalEngine.Analyzers.Tests/BrutalEngine.Analyzers.Tests.csproj" />
     <Project Path="tests/BrutalEngine.Aot.Smoke/BrutalEngine.Aot.Smoke.csproj" />
     <Project Path="tests/BrutalEngine.Architecture.Tests/BrutalEngine.Architecture.Tests.csproj" />
     <Project Path="tests/BrutalEngine.Core.Tests/BrutalEngine.Core.Tests.csproj" />
+    <Project Path="tests/HelloWindow.Tests/HelloWindow.Tests.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
