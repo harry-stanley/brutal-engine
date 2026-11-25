@@ -8,7 +8,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-26
+## [0.1.0-alpha] - 2026-11-26
 
 ### Added
 
@@ -27,5 +27,5 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - `BrutalEngine.Core.Logging.Sinks.RotatingFileLogSink`: writes log lines to `engine.log` in a directory the host provides. Each run starts a fresh file, files rotate by size (default 10 MiB), at most `MaxFiles` are kept (default 5), and entries at or above `FlushLevel` (default `Warning`) are flushed as soon as they're written. It's thread-safe and never throws on I/O failure: it faults permanently, reports the error in `Fault` and counts dropped entries in `DroppedCount`. Steady-state writes allocate nothing.
 - `samples/HelloWindow` shows the official BRUTAL logo for at least 2.0 s (the first 120 frames when headless) before the scene, as BRUTAL's licence requires. The logo is drawn unaltered except for scaling, with no shaders: it is composited on the CPU and blitted, or copied at 1:1. A surface that can't show it is a setup failure, never a silent skip. The published output ships BRUTAL's `LICENSE.txt` and `NOTICE.txt`, each BRUTAL package's third-party licences in `LICENSES/`, and a generated `CREDITS.txt` with BRUTAL's and BrutalEngine's copyright lines. CI checks them, plus that the scene ran after the splash.
 
-[Unreleased]: https://github.com/harry-stanley/brutal-engine/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/harry-stanley/brutal-engine/releases/tag/v0.1.0
+[Unreleased]: https://github.com/harry-stanley/brutal-engine/compare/v0.1.0-alpha...HEAD
+[0.1.0-alpha]: https://github.com/harry-stanley/brutal-engine/releases/tag/v0.1.0-alpha
