@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/harry-stanley/brutal-engine/blob/main/SECURITY.md
+    about: Please report security issues privately as described in the security policy, not in a public issue.
+  - name: BRUTAL framework issues
+    url: https://github.com/ahwootech/BRUTAL/issues
+    about: Bugs in the BRUTAL framework itself go to the BRUTAL repository.
