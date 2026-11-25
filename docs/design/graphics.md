@@ -88,7 +88,7 @@ public sealed class GraphicsDevice
     public GraphicsAdapterInfo Adapter { get; }
     public GraphicsCapabilities Capabilities { get; }
     public FormatSupport GetFormatSupport(TextureFormat format);
-    public static IReadOnlyList<GraphicsAdapterInfo> EnumerateAdapters(IGraphicsBackend backend, GraphicsDeviceOptions options);
+    public static Result<IReadOnlyList<GraphicsAdapterInfo>> EnumerateAdapters(IGraphicsBackend backend, GraphicsDeviceOptions options);
 }
 
 public sealed record GraphicsDeviceOptions
@@ -108,6 +108,8 @@ public sealed record GraphicsDeviceOptions
 ```
 
 - `Create` returns a failed `Result` for expected failures: no backend runtime (`ErrorKind.Unavailable`, "Vulkan loader missing"), no suitable adapter (`Unsupported`, "No Vulkan 1.3 GPU found", with every rejection reason in the message), validation requested but the layer missing (`Unavailable`), out of memory. Invalid options (`FramesInFlight` outside 1..3, a null logger, required and optional features overlapping) throw `ArgumentException`.
+- `EnumerateAdapters` fails the same way as `Create` when there is no backend runtime. A suitable-or-not list, with `RejectionReasons`, is a success.
+- **The backend object belongs to the host.** `IGraphicsBackend` is stateless (section "The backend interface"): `Create` neither takes ownership of it nor disposes it, whether it succeeds or fails. Every native object lives in the `IBackendDevice` the device creates and disposes.
 - `GpuTimeout` bounds every internal fence wait; the M0 sample uses the same 10 s rule, so a hung GPU fails a CI job instead of hanging it (`samples/HelloWindow/FrameRenderer.cs:30-32`). A timeout is treated as device loss (section 12).
 
 **Adapter selection** ports the M0 `DeviceSelector` rules: required capabilities first (for Vulkan: 1.3, swapchain, dynamic rendering, synchronization2, a graphics queue that can present to the compatible window), then preference discrete > integrated > virtual > CPU, ties to the first enumerated, and every rejected candidate logged with its reasons (`samples/HelloWindow/DeviceSelector.cs:15-54`, `:69-76`; docs/03 3.8 "Device selection").
@@ -170,6 +172,8 @@ public readonly record struct GraphicsLimits
     public double TimestampPeriodNanoseconds { get; init; }         // 0 without TimestampQueries
 }
 
+[Flags] public enum SampleCounts { None = 0, X1 = 1, X2 = 2, X4 = 4, X8 = 8, X16 = 16 }
+
 [Flags]
 public enum FormatSupport
 {
@@ -225,7 +229,8 @@ public sealed class WindowSurfaceSource
 ```
 
   The front end creates one per window it presents to, keeps it while that window's swapchain lives, and refreshes the size fields from `IWindow.PixelSize` and `IWindow.State` (snapshots that cost no native call, platform note section 1) before each acquire. The forwarding members follow the platform note's rules (thread, disposal, argument checks), so a disposed window still surfaces as `ObjectDisposedException`.
-- **Instance extensions are known at device creation.** A Vulkan instance must enable surface extensions when it is created, and adapter selection must check present support for a real surface (`VulkanContext.cs:57-58`, `:262`). So `GraphicsDeviceOptions.CompatibleWindow` names the window the device will present to (WebGPU's "compatible surface"). The backend reads the instance extensions from its `WindowSurfaceSource` before creating the instance; the platform note guarantees they are the same for every window of one platform. The surface created for selection is kept and reused by the first `CreateSwapchain` for that window. A device created with no compatible window is offscreen-only: `CreateSwapchain` returns `Unsupported`. Another window works if its required extensions were enabled and the device's queue can present to it; otherwise `Unsupported`.
+- **Instance extensions are known at device creation.** A Vulkan instance must enable surface extensions when it is created, and adapter selection must check present support for a real surface (`VulkanContext.cs:57-58`, `:262`). So `GraphicsDeviceOptions.CompatibleWindow` names the window the device will present to (WebGPU's "compatible surface"). The backend reads the instance extensions from its `WindowSurfaceSource` before creating the instance; the platform note guarantees they are the same for every window of one platform. The surface created for selection is kept and reused by the first `CreateSwapchain` for that window. Until then the device owns it, so the `CompatibleWindow` must outlive the device: the host disposes the device first, the reverse of creation order (platform note section 4, "Ownership"). A device created with no compatible window is offscreen-only: `CreateSwapchain` returns `Unsupported`. Another window works if its required extensions were enabled and the device's queue can present to it; otherwise `Unsupported`.
+- **One swapchain per window.** The platform note allows one live surface per window, so `CreateSwapchain` for a window that already has a live swapchain throws `InvalidOperationException` (misuse: the caller holds that swapchain's handle).
 - **Ownership and order.** The device owns the swapchain and the surface. `Destroy(SwapchainHandle)` waits for the swapchain's presents, then destroys it and the surface (`vkDestroySurfaceKHR`, which the platform contract assigns to the graphics backend). The owner must destroy the swapchain before the window; the Runtime host does it in reverse creation order. `GraphicsDevice.Dispose` destroys any swapchain still alive, logged as a leak.
 - **Present mode:** `Fifo` by default, the only mode every implementation must support (`samples/HelloWindow/SwapchainPlanner.cs:9-10`; BRUTAL binds all four, `Brutal.Vulkan/Generated/Enums/VkPresentModeKHR.gen.cs:35`, `:40`, `:45`, `:50`). An unsupported request falls back to `Fifo`, is logged once, and `SwapchainInfo.PresentMode` reports the mode in use.
 - **Format, image count, extent, composite alpha** follow the M0 planner: sRGB BGRA if offered, otherwise the first format; one image more than the minimum; the window's pixel size when the surface's current extent is undefined (headless, Wayland), checked for zero before clamping; opaque alpha (`SwapchainPlanner.cs:17-37`, `:43-48`, `:54-70`, `:76-86`).
@@ -336,7 +341,7 @@ public enum TextureFormat
 public readonly record struct TextureViewDescription
 {
     public required TextureHandle Texture { get; init; }
-    public TextureViewDimension Dimension { get; init; }         // Texture2D, Texture2DArray
+    public TextureViewDimension Dimension { get; init; }
     public int BaseMipLevel { get; init; }
     public int MipLevelCount { get; init; } = 1;
     public int BaseArrayLayer { get; init; }
@@ -346,16 +351,21 @@ public readonly record struct TextureViewDescription
 
 public readonly record struct SamplerDescription
 {
-    public Filter MinFilter { get; init; }                       // Nearest (default), Linear
+    public Filter MinFilter { get; init; }                       // Nearest by default: pixel art
     public Filter MagFilter { get; init; }
     public Filter MipmapFilter { get; init; }
-    public AddressMode AddressU { get; init; }                   // ClampToEdge (default), Repeat, MirrorRepeat, ClampToBorder
+    public AddressMode AddressU { get; init; }
     public AddressMode AddressV { get; init; }
-    public BorderColor BorderColor { get; init; }                // TransparentBlack, OpaqueBlack, OpaqueWhite
+    public BorderColor BorderColor { get; init; }                // with ClampToBorder
     public float MaxAnisotropy { get; init; } = 1;               // > 1 needs GraphicsFeatures.SamplerAnisotropy
     public CompareFunction? Compare { get; init; }               // depth-compare samplers
     public string? DebugName { get; init; }
 }
+
+public enum TextureViewDimension { Texture2D, Texture2DArray }
+public enum Filter { Nearest, Linear }
+public enum AddressMode { ClampToEdge, Repeat, MirrorRepeat, ClampToBorder }
+public enum BorderColor { TransparentBlack, OpaqueBlack, OpaqueWhite }
 ```
 
 The texture formats are the set every M1 consumer needs (sprites, render targets, the overlay, conformance), plus the two depth formats. `Depth16Unorm` is guaranteed as a depth attachment by the Vulkan specification; `Depth32Float` is near-universal but checked like any other format. Depth-stencil formats (stencil masking for UI, M3), 3D and cube textures are added when a consumer needs them. Nearest filtering is the default because pixel-art is the common 2D case.
@@ -382,18 +392,49 @@ public sealed class GraphicsDevice
     public bool TryReadBuffer(BufferHandle buffer, long offset, Span<byte> destination);
 }
 
+public readonly record struct TextureRegion(int X, int Y, int Width, int Height);   // texels; Width, Height > 0
+
+public readonly record struct TextureLocation(TextureHandle Texture, int MipLevel = 0, int ArrayLayer = 0, TextureAspect Aspect = TextureAspect.Color);
+public enum TextureAspect { Color, Depth }
+
 public readonly record struct TextureWrite
 {
-    public required TextureHandle Texture { get; init; }
-    public int MipLevel { get; init; }
-    public int ArrayLayer { get; init; }
-    public required TextureRegion Region { get; init; }          // X, Y, Width, Height in texels
-    public int BytesPerRow { get; init; }                        // 0 = tightly packed
+    public required TextureLocation Target { get; init; }       // Color aspect only
+    public required TextureRegion Region { get; init; }
+    public int BytesPerRow { get; init; }                        // of data; 0 = Width * texel size
+}
+
+public readonly record struct BufferCopy
+{
+    public required BufferHandle Source { get; init; }
+    public long SourceOffset { get; init; }
+    public required BufferHandle Destination { get; init; }
+    public long DestinationOffset { get; init; }
+    public required long Size { get; init; }
+}
+
+public readonly record struct TextureBufferCopy        // both directions
+{
+    public required TextureLocation Texture { get; init; }
+    public required TextureRegion Region { get; init; }
+    public required BufferHandle Buffer { get; init; }
+    public long BufferOffset { get; init; }
+    public required int BytesPerRow { get; init; }               // multiple of RowPitchAlignment
+    public const int RowPitchAlignment = 256;
+}
+
+public readonly record struct TextureCopy
+{
+    public required TextureLocation Source { get; init; }
+    public required TextureRegion SourceRegion { get; init; }
+    public required TextureLocation Destination { get; init; }
+    public int DestinationX { get; init; }
+    public int DestinationY { get; init; }
 }
 
 public readonly struct CommandList
 {
-    public TransientAllocation AllocateTransient(long byteCount, TransientUsage usage);
+    public Result AllocateTransient(long byteCount, TransientUsage usage, out TransientAllocation allocation);
     public void CopyBufferToBuffer(in BufferCopy copy);
     public void CopyTextureToBuffer(in TextureBufferCopy copy);
     public void CopyBufferToTexture(in TextureBufferCopy copy);
@@ -402,7 +443,7 @@ public readonly struct CommandList
 
 public readonly ref struct TransientAllocation
 {
-    public BufferHandle Buffer { get; }      // owned by the device; valid in this frame only
+    public BufferHandle Buffer { get; }      // a per-frame alias of the slot's ring buffer: stale after the frame
     public long Offset { get; }              // aligned for the usage (uniform: MinUniformBufferOffsetAlignment)
     public Span<byte> Data { get; }          // CPU-writable until SubmitFrame
 }
@@ -414,7 +455,19 @@ public readonly ref struct TransientAllocation
 - **Transient allocations** are for data rebuilt every frame (sprite instances, overlay vertices, per-frame uniforms): the CPU writes straight into ring memory that the GPU reads in the same frame, without a copy. They can be bound with an offset as vertex, index or indirect buffers, or in a frame bind group (section 8). Using one after its frame was submitted is a stale handle.
 - **Overflow:** the ring holds `UploadRingBytesPerFrame` per slot. A write or allocation that doesn't fit gets a dedicated block for that frame only, freed with the frame's deletion queue, counted in `GraphicsStatistics.UploadOverflowBytes` and logged at most once per frame at `Warning`. If that block can't be allocated the call returns `ErrorKind.OutOfMemory` and nothing was written. Overflow costs one GPU allocation; it never stalls or drops data.
 - **Readback** (needed by conformance): copy into a `Readback` buffer in a frame, then `TryReadBuffer` returns `false` until `CompletedFrameNumber` reaches the frame that last wrote it, and copies the bytes once it has. It never waits. Tests that need the result now call `WaitIdle()` first. Out-of-range reads or a non-`Readback` buffer throw `ArgumentException`.
-- **Validation:** offsets and sizes must lie inside the destination, `TextureWrite` regions inside the mip level, `data` must be at least `BytesPerRow * Height` bytes, and the destination must have `CopyDestination` usage; otherwise `ArgumentException`.
+- **Copy rules** (each violation throws `ArgumentException`; `ArgumentOutOfRangeException` for ranges):
+
+| Rule | Applies to |
+|------|-----------|
+| The source has `CopySource` usage and the destination `CopyDestination` | every copy and write |
+| Buffer ranges lie inside the buffer; `BufferCopy` offsets and `Size` are multiples of 4; a buffer can't copy onto an overlapping range of itself | `BufferCopy`, `WriteBuffer` |
+| `MipLevel < MipLevels`, `ArrayLayer < ArrayLayers`; the region lies inside the mip level's extent, `max(1, size >> mip)`; one layer per copy | every texture location |
+| `Aspect` is `Color` for color formats and `Depth` for `Depth16Unorm`/`Depth32Float`; `WriteTexture` takes color formats only | every texture location |
+| `BytesPerRow` is at least `Width * texelSize`; for buffer-texture copies it is a multiple of 256 and `BufferOffset` a multiple of the texel size and of 4. The buffer holds `BufferOffset + BytesPerRow * (Height - 1) + Width * texelSize` bytes | `TextureBufferCopy` |
+| `data` holds `BytesPerRow * (Height - 1) + Width * texelSize` bytes, any row pitch; the front end repacks it into the ring | `WriteTexture` |
+| Same format, sample count 1, the destination region `(DestinationX, DestinationY, Width, Height)` inside its mip level, no overlap when the source and destination are the same subresource | `TextureCopy` |
+
+The 256-byte row pitch is WebGPU's rule, adopted so a D3D12 backend (whose copies need 256-byte pitches) needs no repacking; Vulkan accepts it. It costs nothing for `WriteTexture`, which repacks. Rows per image are always `Height`, because a copy covers one layer.
 
 ## 7. Shaders and pipelines
 
@@ -461,10 +514,10 @@ public sealed record GraphicsPipelineDescription
     public required ShaderStage Vertex { get; init; }
     public ShaderStage? Fragment { get; init; }
     public ReadOnlyMemory<VertexBufferLayout> VertexBuffers { get; init; }
-    public PrimitiveTopology Topology { get; init; }                 // TriangleList (default), TriangleStrip, LineList, LineStrip
-    public RasterState Raster { get; init; }                         // CullMode None (default), FrontFace CounterClockwise
-    public DepthState? Depth { get; init; }                          // Format, Write, Compare; no stencil in M1
-    public required ReadOnlyMemory<ColorTargetState> ColorTargets { get; init; } // Format, Blend?, WriteMask
+    public PrimitiveTopology Topology { get; init; }                 // TriangleList by default
+    public RasterState Raster { get; init; }
+    public DepthState? Depth { get; init; }                          // no stencil in M1
+    public required ReadOnlyMemory<ColorTargetState> ColorTargets { get; init; }
     public int SampleCount { get; init; } = 1;
     public string? DebugName { get; init; }
 }
@@ -486,7 +539,18 @@ public readonly record struct BlendState(BlendComponent Color, BlendComponent Al
     public static BlendState PremultipliedAlpha { get; }
     public static BlendState Additive { get; }
 }
-// VertexFormat: Float32, Float32x2, Float32x3, Float32x4, Float16x2, Float16x4, Unorm8x4, Uint8x4, Uint32, Uint32x2, Sint32.
+public readonly record struct BlendComponent(BlendFactor Source, BlendFactor Destination, BlendOperation Operation = BlendOperation.Add);
+public enum BlendFactor { Zero, One, SourceColor, OneMinusSourceColor, SourceAlpha, OneMinusSourceAlpha, DestinationColor, OneMinusDestinationColor, DestinationAlpha, OneMinusDestinationAlpha }
+public enum BlendOperation { Add, Subtract, ReverseSubtract, Min, Max }
+[Flags] public enum ColorWriteMask { None = 0, Red = 1, Green = 2, Blue = 4, Alpha = 8, All = 15 }
+public readonly record struct RasterState(CullMode CullMode = CullMode.None, FrontFace FrontFace = FrontFace.CounterClockwise);
+public enum CullMode { None, Front, Back }
+public enum FrontFace { CounterClockwise, Clockwise }
+public readonly record struct DepthState(TextureFormat Format, bool Write, CompareFunction Compare = CompareFunction.LessOrEqual);
+public enum CompareFunction { Never, Less, Equal, LessOrEqual, Greater, NotEqual, GreaterOrEqual, Always }
+public enum PrimitiveTopology { TriangleList, TriangleStrip, LineList, LineStrip }
+public enum VertexStepMode { Vertex, Instance }
+public enum VertexFormat { Float32, Float32x2, Float32x3, Float32x4, Float16x2, Float16x4, Unorm8x4, Uint8x4, Uint32, Uint32x2, Sint32 }
 ```
 
 - **Render target formats are part of the pipeline** (`ColorTargets`, `Depth.Format`, `SampleCount`), because dynamic rendering has no render pass objects: the backend passes them as `VkPipelineRenderingCreateInfo` (#55). A pass whose attachments don't match the bound pipeline's formats throws `InvalidOperationException` at `SetPipeline`.
@@ -520,12 +584,13 @@ public readonly ref struct BindGroupDescription
 
 public readonly record struct BindGroupEntry          // created through the factories, one per binding (and array element)
 {
-    public static BindGroupEntry Buffer(int binding, BufferHandle buffer, long offset = 0, long size = 0); // 0 = to the end
+    public static BindGroupEntry Buffer(int binding, in BufferBinding buffer);
     public static BindGroupEntry Transient(int binding, in TransientAllocation allocation, long size);
     public static BindGroupEntry Texture(int binding, TextureViewHandle view, int arrayElement = 0);
     public static BindGroupEntry Sampler(int binding, SamplerHandle sampler, int arrayElement = 0);
 }
 
+public readonly record struct BufferBinding(BufferHandle Buffer, long Offset = 0, long Size = 0);   // Size 0 = to the end
 public enum BindGroupLifetime { Persistent, Frame }
 ```
 
@@ -543,7 +608,7 @@ public readonly struct CommandList
 {
     public RenderPassEncoder BeginRenderPass(in RenderPassDescription description);
     public ComputePassEncoder BeginComputePass(DebugLabel label = default);
-    public TextureHandle CreateTransientTexture(in TextureDescription description); // section 10
+    public Result<TextureHandle> CreateTransientTexture(in TextureDescription description); // section 10
     public void PushDebugGroup(DebugLabel label);
     public void PopDebugGroup();
     // AcquireSwapchainImage (section 3), AllocateTransient and copies (section 6)
@@ -567,7 +632,7 @@ public readonly struct RenderPassEncoder
     public void SetPipeline(GraphicsPipelineHandle pipeline);
     public void SetBindGroup(int index, BindGroupHandle group);
     public void SetVertexBuffer(int slot, BufferHandle buffer, long offset = 0);
-    public void SetIndexBuffer(BufferHandle buffer, IndexFormat format, long offset = 0);    // Uint16, Uint32
+    public void SetIndexBuffer(BufferHandle buffer, IndexFormat format, long offset = 0);
     public void SetViewport(in Viewport viewport);             // defaults to the full attachment at BeginRenderPass
     public void SetScissor(in ScissorRect scissor);            // defaults to the full attachment
     public void PushConstants<T>(in T data, int offset = 0) where T : unmanaged;
@@ -587,6 +652,9 @@ public readonly struct ComputePassEncoder
     public void End();
 }
 
+public readonly record struct Viewport(float X, float Y, float Width, float Height, float MinDepth = 0, float MaxDepth = 1); // pixels
+public readonly record struct ScissorRect(int X, int Y, int Width, int Height);   // pixels, inside the attachments
+public enum IndexFormat { Uint16, Uint32 }
 public readonly record struct DrawArguments(int VertexCount, int InstanceCount = 1, int FirstVertex = 0, int FirstInstance = 0);
 public readonly record struct DrawIndexedArguments(int IndexCount, int InstanceCount = 1, int FirstIndex = 0, int BaseVertex = 0, int FirstInstance = 0);
 ```
@@ -611,7 +679,7 @@ docs/03 3.8 asks for a small frame graph that orders passes, inserts `synchroniz
 
 - **Ordering is declaration order.** Passes run in the order they were recorded, which is a valid topological order of their dependencies by construction (a pass can only read what was written before it, in this frame or an earlier one). The planner doesn't reorder or cull passes in M1.
 - **Barrier insertion is hidden.** The planner tracks each resource's last access (and, for textures, its layout) across passes and across frames. Before each pass, it emits backend-neutral transitions (`ResourceTransition { Resource, Before, After }`, internal), and the backend turns them into `vkCmdPipelineBarrier2` (BRUTAL `VkDevice.gen.cs:193`). The M0 sample shows the two transitions every presented frame needs: undefined to color attachment at the acquire semaphore's stage, and color attachment to present (`FrameRenderer.cs:179-196`, `:220-235`). Ring uploads become one copy batch at the frame's start, ordered after all earlier work (section 6). A compute pass is one sync scope: to read what a dispatch wrote, start another pass.
-- **Transient render targets.** `CommandList.CreateTransientTexture` returns a texture valid for this frame only (for lighting and post-processing targets, docs/03 3.8). The device keeps a pool keyed by description and reuses targets across frames. A transient texture's content is undefined at its first use in a frame, so that use must be `Clear` or `DontCare`; a `Load` throws `InvalidOperationException`.
+- **Transient render targets.** `CommandList.CreateTransientTexture` returns a texture valid for this frame only (for lighting and post-processing targets, docs/03 3.8). The device keeps a pool keyed by description and reuses targets across frames. Creating one can fail like `CreateTexture` (`Unsupported`, `OutOfMemory`) the first time a description is seen; a warm pool can't fail. A transient texture's content is undefined at its first use in a frame, so that use must be `Clear` or `DontCare`; a `Load` throws `InvalidOperationException`.
 - **Out of scope for M1:** reordering, pass culling, memory aliasing between transient targets, async compute and multiple queues (the transfer-queue path in docs/03 3.8 is the backend's concern, #55), split barriers, explicit resource declarations, and graph persistence across frames. All can be added behind the same recording API.
 - The planner is pure (command stream in, transitions out) and unit-tested without a GPU; its GPU behaviour is proven by the conformance suite's barrier cases under synchronization validation.
 
@@ -655,6 +723,11 @@ public sealed class DeviceLostEventArgs : EventArgs
     public bool TimedOut { get; }       // GpuTimeout expired (a hung GPU), rather than a reported loss
 }
 
+public sealed class GpuOwnerRegistration : IDisposable   // returned by RegisterOwner; owned by the caller
+{
+    public void Dispose();                                 // unregisters; idempotent; owner thread only
+}
+
 public interface IGpuResourceOwner
 {
     void OnDeviceLost(GraphicsDevice device);        // drop every handle; don't call the device
@@ -681,6 +754,11 @@ public sealed class GraphicsDevice
 {
     public GraphicsStatistics Statistics { get; }   // a readonly struct snapshot: no allocation
     public void ThrowIfLeaks();                      // throws GpuResourceLeakException
+}
+
+public sealed class GpuResourceLeakException : Exception
+{
+    public IReadOnlyList<string> LeakedObjects { get; }    // one "Kind 'DebugName'" line per live object
 }
 
 public readonly record struct GraphicsStatistics(
