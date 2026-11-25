@@ -22,10 +22,11 @@ namespace BrutalEngine.Core.Logging.Sinks;
 /// archives are <c>engine.1.log</c> (the newest) to <c>engine.&lt;MaxFiles - 1&gt;.log</c>. Construction rotates
 /// an existing current file away, so each run starts a fresh one, and deletes archives beyond the limit left by an
 /// earlier run. When a line would take a non-empty file past
-/// <see cref="RotatingFileLogSinkOptions.MaxFileBytes"/>, the sink closes it, shifts each archive <c>n</c> to
-/// <c>n + 1</c>, deletes the one now beyond the limit, renames the current file to <c>engine.1.log</c> (or deletes
-/// it when <see cref="RotatingFileLogSinkOptions.MaxFiles"/> is 1) and opens a new one. A line longer than the
-/// maximum is written whole, alone in a fresh file.
+/// <see cref="RotatingFileLogSinkOptions.MaxFileBytes"/>, the sink closes it, frees <c>engine.1.log</c> by moving
+/// the run of archives that starts there up by one (oldest first; archives after the first free slot stay put),
+/// deletes the one now beyond the limit, renames the current file to <c>engine.1.log</c> (or deletes it when
+/// <see cref="RotatingFileLogSinkOptions.MaxFiles"/> is 1) and opens a new one. A line longer than the maximum is
+/// written whole, alone in a fresh file.
 /// </para>
 /// <para>
 /// Writing goes through one buffered file stream, opened with <see cref="FileShare.Read"/> so the log can be read
@@ -225,7 +226,8 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
     /// hold the line.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
-    /// Growing the line buffer for an extremely long line failed. Unlike other sink exceptions, a logger doesn't
+    /// Growing the line buffer for an extremely long line failed, or a rotation inside this call ran out of memory
+    /// (after the old file was closed: see <see cref="Fault"/>). Unlike other sink exceptions, a logger doesn't
     /// isolate this one: it reaches the code that logged.
     /// </exception>
     public void Write(scoped in LogEntry entry)

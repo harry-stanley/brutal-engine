@@ -105,8 +105,10 @@ public sealed class ConsoleLogSink : ILogSink, IDisposable
     /// <exception cref="ObjectDisposedException">The sink is disposed.</exception>
     /// <exception cref="IOException">The stream failed; exceptions from the stream propagate.</exception>
     /// <exception cref="OverflowException">
-    /// The entry's category or caller file is so long (hundreds of millions of characters) that no line buffer can
-    /// hold the line.
+    /// No line buffer can hold the line: its worst-case length (the message's bytes, 3 bytes per character of the
+    /// category and caller file, and the fixed parts) is more than <see cref="int.MaxValue"/>. That takes an
+    /// oversized message (close to 2 GB), or a category or caller file hundreds of millions of characters long. A
+    /// logger never passes such a message: it caps messages at <see cref="LoggerOptions.MaxMessageBytes"/>.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// Growing the line buffer for an extremely long line failed. Unlike other sink exceptions, a logger doesn't
