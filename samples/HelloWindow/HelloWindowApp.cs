@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.VulkanApi;
 
@@ -55,10 +54,16 @@ internal sealed unsafe class HelloWindowApp
     private void RunWithSdl()
     {
         // BRUTAL resolves the Vulkan loader once, on first use of its Vulkan class. Do that before SDL loads Vulkan for
-        // the window, so both use the same library.
+        // the window, so both use the same library. A published macOS build brings its own loader and MoltenVK; an
+        // explicit --vulkan-loader wins over the bundled loader.
+        if (BundledVulkan.TryConfigure(AppContext.BaseDirectory, _options.VulkanLoader, new BundledVulkan.ProcessHost()))
+        {
+            SampleConsole.Info($"Using the Vulkan natives bundled in {AppContext.BaseDirectory}");
+        }
+
         if (_options.VulkanLoader is { } loader)
         {
-            PreloadVulkanLoader(loader);
+            BundledVulkan.PreloadLoader(loader, "--vulkan-loader");
         }
         else
         {
@@ -248,22 +253,5 @@ internal sealed unsafe class HelloWindowApp
             default:
                 return true;
         }
-    }
-
-    private static void PreloadVulkanLoader(string path)
-    {
-        // BRUTAL looks the loader up by bare name, which binds to a library of that name already in the process
-        // (spike S1, docs/spikes/README.md). Check it really did, rather than silently using another loader.
-        nint library = NativeLibrary.Load(path);
-        nint entryPoint = NativeLibrary.GetExport(library, "vkGetInstanceProcAddr");
-
-        // Sound: only the function pointer's address is compared; it is never called through this cast.
-        if ((nint)Vulkan.GetInstanceProcAddr.Invoke != entryPoint)
-        {
-            throw new SampleFailureException($"BRUTAL resolved a different Vulkan loader than {path}.");
-        }
-
-        NativeCheck.Sdl(Sdl.PInvoke.SetHint(Sdl.Constants.HintVulkanLibrary, path) != 0, "SDL_SetHint(SDL_VULKAN_LIBRARY)");
-        SampleConsole.Info($"Vulkan loader: {path} (preloaded, used by BRUTAL and SDL)");
     }
 }
