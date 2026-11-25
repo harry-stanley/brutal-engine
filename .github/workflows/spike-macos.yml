@@ -1,0 +1,105 @@
+# Spike S1/S3 (macOS): throwaway. Can a GitHub-hosted Apple-silicon runner run Vulkan through a
+# BUNDLED loader + MoltenVK (no Vulkan SDK / Homebrew) via BRUTAL's bindings? See spikes/smac/REPORT.md.
+name: spike-macos
+
+on:
+  push:
+    branches: [spike/s1-macos-moltenvk]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      WORK: ${{ github.workspace }}/../smac-work
+      APP: ${{ github.workspace }}/../smac-work/app
+      RESULTS: ${{ github.workspace }}/../smac-work/results.md
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Runner and Metal info
+        run: |
+          mkdir -p "$WORK"
+          {
+            echo "## smoke job"
+            echo "- runner image: ${ImageOS:-?} ${ImageVersion:-?}; $(sw_vers -productName) $(sw_vers -productVersion) ($(sw_vers -buildVersion)); $(uname -m); model $(sysctl -n hw.model); $(sysctl -n hw.ncpu) cpus; $(( $(sysctl -n hw.memsize) / 1073741824 )) GiB"
+            echo "- dotnet: $(dotnet --version); xcode: $(xcodebuild -version | head -1); swift: $(swift --version 2>&1 | head -1)"
+          } >> "$RESULTS"
+          system_profiler SPDisplaysDataType | tee "$WORK/spdisplays.txt"
+          t=$SECONDS
+          if swift spikes/smac/metal_probe.swift | tee "$WORK/metal.txt"; then
+            echo "- Metal probe: OK ($((SECONDS - t)) s): $(grep -E '^name:' "$WORK/metal.txt")" >> "$RESULTS"
+          else
+            echo "- Metal probe: FAILED" >> "$RESULTS"
+          fi
+
+      - name: Ensure no system Vulkan
+        run: |
+          set -x
+          brew list --formula | grep -iE 'vulkan|molten|spirv|glslang' || true
+          for f in $(brew list --formula | grep -iE 'vulkan|molten' || true); do brew uninstall --ignore-dependencies --force "$f"; done
+          ls -la /opt/homebrew/lib/libvulkan* /usr/local/lib/libvulkan* /usr/local/lib/libMoltenVK* /opt/homebrew/lib/libMoltenVK* 2>&1 || true
+          ls -laR /usr/local/share/vulkan /opt/homebrew/share/vulkan /etc/vulkan "$HOME/.local/share/vulkan" "$HOME/.config/vulkan" /Library/Frameworks/vulkan.framework 2>&1 || true
+          echo "VULKAN_SDK=${VULKAN_SDK:-}"
+          left=$(ls /opt/homebrew/lib/libvulkan* /usr/local/lib/libvulkan* 2>/dev/null | wc -l | tr -d ' ')
+          echo "- system Vulkan loader copies after cleanup: $left; VULKAN_SDK='${VULKAN_SDK:-}'" >> "$RESULTS"
+          [ "$left" = 0 ]
+
+      - name: Prepare bundle (MoltenVK release + loader build + app)
+        run: bash spikes/smac/ci/prepare.sh
+
+      - name: Run scenarios
+        run: bash spikes/smac/ci/scenarios.sh
+
+      - name: Summary
+        if: always()
+        run: cat "$RESULTS" >> "$GITHUB_STEP_SUMMARY"; cp "$RESULTS" "$WORK/logs/" 2>/dev/null || true; cp "$WORK"/*.txt "$WORK/logs/" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: smoke-logs
+          path: ${{ github.workspace }}/../smac-work/logs
+          if-no-files-found: warn
+
+  validation:
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      WORK: ${{ github.workspace }}/../smac-work
+      APP: ${{ github.workspace }}/../smac-work/app
+      RESULTS: ${{ github.workspace }}/../smac-work/results.md
+      VVL_DIR: ${{ github.workspace }}/../smac-work/app/layers
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Runner info
+        run: |
+          mkdir -p "$WORK"
+          echo "## validation job" >> "$RESULTS"
+          echo "- runner image: ${ImageOS:-?} ${ImageVersion:-?}; macOS $(sw_vers -productVersion); $(sysctl -n hw.ncpu) cpus" >> "$RESULTS"
+          for f in $(brew list --formula | grep -iE 'vulkan|molten' || true); do brew uninstall --ignore-dependencies --force "$f"; done
+      - name: Prepare bundle (MoltenVK release + loader build + app)
+        run: bash spikes/smac/ci/prepare.sh
+      - name: Build validation layers
+        run: bash spikes/smac/ci/build-vvl.sh
+      - name: Run scenarios (incl. validation)
+        run: bash spikes/smac/ci/scenarios.sh
+      - name: Summary
+        if: always()
+        run: cat "$RESULTS" >> "$GITHUB_STEP_SUMMARY"; cp "$RESULTS" "$WORK/logs/" 2>/dev/null || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: validation-logs
+          path: ${{ github.workspace }}/../smac-work/logs
+          if-no-files-found: warn
