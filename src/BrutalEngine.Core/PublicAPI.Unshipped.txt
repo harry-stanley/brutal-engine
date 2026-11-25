@@ -141,6 +141,23 @@ BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.IncludeCallerInfo.get -> b
 BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.IncludeCallerInfo.init -> void
 BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Output.get -> System.IO.Stream?
 BrutalEngine.Core.Logging.Sinks.ConsoleLogSinkOptions.Output.init -> void
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.CallerFilePath.get -> string!
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.CallerLineNumber.get -> int
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.Category.get -> string!
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.Level.get -> BrutalEngine.Core.Logging.LogLevel
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.MemoryLogRecord() -> void
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.Message.get -> System.ReadOnlyMemory<byte>
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.ThreadId.get -> int
+BrutalEngine.Core.Logging.Sinks.MemoryLogRecord.Timestamp.get -> System.DateTimeOffset
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.CapacityBytes.get -> int
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.CapacityEntries.get -> int
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.CopyTo(System.Span<BrutalEngine.Core.Logging.Sinks.MemoryLogRecord> destination, System.Memory<byte> messageBuffer) -> int
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.DroppedCount.get -> long
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.Flush() -> void
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.MemoryLogSink(int capacityEntries, int capacityBytes) -> void
+BrutalEngine.Core.Logging.Sinks.MemoryLogSink.Write(scoped in BrutalEngine.Core.Logging.LogEntry entry) -> void
 BrutalEngine.Core.Logging.TraceLevel
 BrutalEngine.Core.Logging.TraceLevel.TraceLevel() -> void
 BrutalEngine.Core.Logging.WarningLevel
