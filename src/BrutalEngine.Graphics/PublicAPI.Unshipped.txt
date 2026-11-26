@@ -19,6 +19,12 @@ BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.DebugLabel.DebugLabel() -> void
 BrutalEngine.Graphics.DebugLabel.Equals(BrutalEngine.Graphics.DebugLabel other) -> bool
 BrutalEngine.Graphics.DebugLabel.IsNull.get -> bool
+BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.None = 0 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.SamplerAnisotropy = 1 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.TextureCompressionAstc = 8 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.TextureCompressionBC = 4 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.TimestampQueries = 2 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsPipelineHandle
 BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
 BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
