@@ -570,6 +570,15 @@ BrutalEngine.Platform.TextEventData.Offset.get -> int
 BrutalEngine.Platform.TextEventData.Offset.init -> void
 BrutalEngine.Platform.TextEventData.TextEventData() -> void
 BrutalEngine.Platform.TextEventData.TextEventData(int Offset, int Length) -> void
+BrutalEngine.Platform.Vfs.IFileSystem
+BrutalEngine.Platform.Vfs.IFileSystem.CreateDirectory(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.IFileSystem.Delete(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.IFileSystem.GetEntryKind(string! relativePath) -> BrutalEngine.Core.Result<BrutalEngine.Platform.Vfs.VfsEntryKind>
+BrutalEngine.Platform.Vfs.IFileSystem.IsReadOnly.get -> bool
+BrutalEngine.Platform.Vfs.IFileSystem.List(string! relativePath) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.Vfs.VfsEntry>!>
+BrutalEngine.Platform.Vfs.IFileSystem.OpenRead(string! relativePath) -> BrutalEngine.Core.Result<System.IO.Stream!>
+BrutalEngine.Platform.Vfs.IFileSystem.ReadAllBytes(string! relativePath) -> BrutalEngine.Core.Result<byte[]!>
+BrutalEngine.Platform.Vfs.IFileSystem.WriteAllBytes(string! relativePath, System.ReadOnlySpan<byte> contents) -> BrutalEngine.Core.Result
 BrutalEngine.Platform.Vfs.VfsEntry
 BrutalEngine.Platform.Vfs.VfsEntry.Deconstruct(out string! Name, out BrutalEngine.Platform.Vfs.VfsEntryKind Kind, out long Length) -> void
 BrutalEngine.Platform.Vfs.VfsEntry.Equals(BrutalEngine.Platform.Vfs.VfsEntry other) -> bool
