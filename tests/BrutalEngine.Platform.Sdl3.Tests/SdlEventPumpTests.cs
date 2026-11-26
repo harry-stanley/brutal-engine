@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using Brutal.SdlApi;
 using CsCheck;
 using Xunit;
@@ -24,6 +26,7 @@ public sealed unsafe class SdlEventPumpTests
 
     // "héllo" and its NUL, on the pinned heap so pushed SDL events can point at it for the test run.
     private static readonly byte[] _hello = Pinned("h\u00E9llo\0"u8);
+    private static readonly byte[] _world = Pinned("w\u00F6rld\0"u8);
 
     [Fact]
     public void Pump_PushedEvents_InOrder()
@@ -296,6 +299,327 @@ public sealed unsafe class SdlEventPumpTests
         Assert.Equal("textCapacityBytes", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity, TextCapacity - 1, new ScriptedClock())).ParamName);
     }
 
+    [Fact]
+    public void WaitForEvents_PushedText_HandedOutFirstWithText()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        ScriptedClock clock = new();
+        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        byte[] source = Pinned("h\u00E9llo\0"u8);
+        Push(Text(source));
+        Push(Motion(1f));
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+
+        // SDL keeps a pushed text pointer as given, so overwriting the source shows whether the wait copied the text.
+        source.AsSpan(0, source.Length - 1).Fill((byte)'X');
+        Assert.Equal(1, clock.Reads);
+        PlatformEventBatch batch = pump.Pump();
+
+        // The held event comes first, with the wait's timestamp; the queued motion follows with the pump's.
+        WindowId window = new(WindowIdValue);
+        PlatformEvent[] expected =
+        [
+            PlatformEvent.CreateText(new(PlatformEventKind.TextInput, window, 1), new TextEventData(0, 6)),
+            PlatformEvent.CreateMouseMotion(new(PlatformEventKind.MouseMotion, window, 2), new MouseMotionData(1f, 0f, 0f, 0f, MouseButtons.None)),
+        ];
+        Assert.Equal(expected, batch.Events.ToArray());
+        Assert.Equal("h\u00E9llo"u8.ToArray(), batch.GetText(batch.Events[0]).ToArray());
+        Assert.Empty(pump.Pump().Events.ToArray());
+    }
+
+    [Fact]
+    public void WaitForEvents_Timeout_ReturnsFalse()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        ScriptedClock clock = new();
+        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+
+        // Zero only checks; one tick rounds up to a 1 ms wait. Nothing is queued, so each times out.
+        Assert.False(pump.WaitForEvents(TimeSpan.Zero));
+        Assert.False(pump.WaitForEvents(TimeSpan.FromTicks(1)));
+        Assert.False(pump.WaitForEvents(TimeSpan.FromMilliseconds(1)));
+
+        Assert.Equal(0, clock.Reads);
+        Assert.Empty(pump.Pump().Events.ToArray());
+    }
+
+    [Fact]
+    public void WaitForEvents_ZeroTimeout_TakesEventBehindSentinel()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+
+        // SDL's poll sentinel at the front, an event behind it: SDL_WaitEventTimeout(0) would stop at the sentinel.
+        PushMotions(0, 1);
+        SdlEvent polled;
+
+        // Sound: polled is a local of this frame, which outlives the call.
+        Assert.NotEqual(0, Sdl.PInvoke.PollEvent(&polled));
+        Assert.NotEqual(0, Sdl.PInvoke.HasEvent((uint)SdlEventType.PollSentinel));
+        PushMotions(5, 1);
+
+        Assert.True(pump.WaitForEvents(TimeSpan.Zero));
+
+        int[] expected = [5];
+        Assert.Equal(expected, Positions(pump.Pump()));
+    }
+
+    [Fact]
+    public void WaitForEvents_CurrentBatchUnchanged()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        Push(Text(_hello));
+        Push(Motion(1f));
+        PlatformEventBatch batch = pump.Pump();
+        PlatformEvent[] events = batch.Events.ToArray();
+        byte[] text = batch.GetText(batch.Events[0]).ToArray();
+        Push(Text(_world));
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+
+        // The batch the host holds, and the buffer behind it, are as the pump left them.
+        Assert.Equal(events, batch.Events.ToArray());
+        Assert.Equal(text, batch.GetText(batch.Events[0]).ToArray());
+        Assert.Equal(2, pump.Buffer.Count);
+        Assert.Equal(events, pump.Buffer.AsBatch().Events.ToArray());
+        Assert.Equal(text, pump.Buffer.AsBatch().GetText(events[0]).ToArray());
+
+        PlatformEventBatch next = pump.Pump();
+        Assert.Equal("w\u00F6rld"u8.ToArray(), next.GetText(Assert.Single(next.Events.ToArray())).ToArray());
+    }
+
+    // Rows: a text cut inside 3-byte code points; exactly the capacity (kept whole); one byte over (cut and counted,
+    // so the held copy kept more than the capacity); 4-byte code points ending on the capacity.
+    [Theory]
+    [InlineData("\u20AC", 1000, 2046, 1)]
+    [InlineData("a", 2048, 2048, 0)]
+    [InlineData("a", 2049, 2048, 1)]
+    [InlineData("\U0001F600", 600, 2048, 1)]
+    public void WaitForEvents_LongText_CutAndCountedInMainBuffer(string unit, int repeat, int expectedLength, int expectedCut)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        byte[] source = PinnedText(string.Concat(Enumerable.Repeat(unit, repeat)));
+        byte[] original = source.AsSpan(0, source.Length - 1).ToArray();
+        Push(Text(source));
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        source.AsSpan(0, source.Length - 1).Fill((byte)'X');
+        PlatformEventBatch batch = pump.Pump();
+
+        PlatformEvent textEvent = Assert.Single(batch.Events.ToArray());
+        Assert.Equal(original.AsSpan(0, expectedLength).ToArray(), batch.GetText(textEvent).ToArray());
+        Assert.Equal(expectedCut, pump.Buffer.TruncatedTextCount);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0xC3, 0x28, 0 }, false)]
+    [InlineData(new byte[] { (byte)'a', 0xFF, 0 }, false)]
+    [InlineData(new byte[] { 0 }, true)]
+    public void WaitForEvents_InvalidOrNullText_IgnoredLikePumped(byte[] bytes, bool isNull)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        byte[] source = Pinned(bytes);
+        SdlEvent textEvent = isNull ? new SdlEvent { text = new SdlTextInputEvent { type = SdlEventType.TextInput, windowID = WindowIdValue } } : Text(source);
+        Push(textEvent);
+        Push(textEvent);
+
+        // The first is waited for and held, the second pumped: both are ignored, neither throws.
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        PlatformEventBatch batch = pump.Pump();
+
+        Assert.Empty(batch.Events.ToArray());
+        Assert.Equal(0, pump.Buffer.TruncatedTextCount);
+        Assert.Equal(0, Sdl.PInvoke.HasEvents(FirstType, LastType));
+    }
+
+    [Fact]
+    public void WaitForEvents_InvalidByteBeyondCopiedText_Ignored()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+
+        // Valid up to well past the capacity plus 4 bytes the wait keeps, then a byte that is never valid UTF-8: the
+        // whole text is checked, as the translator checks a pumped one, not only the copied part.
+        byte[] source = GC.AllocateArray<byte>(TextCapacity + 101, pinned: true);
+        source.AsSpan(0, TextCapacity + 99).Fill((byte)'a');
+        source[TextCapacity + 99] = 0xFF;
+        Push(Text(source));
+        Push(Text(source));
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        PlatformEventBatch batch = pump.Pump();
+
+        Assert.Empty(batch.Events.ToArray());
+        Assert.Equal(0, pump.Buffer.TruncatedTextCount);
+        Assert.Equal(0, Sdl.PInvoke.HasEvents(FirstType, LastType));
+    }
+
+    [Fact]
+    public void WaitForEvents_EventAlreadyHeld_ReturnsTrueAndKeepsIt()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        ScriptedClock clock = new();
+        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        PushMotions(1, 2);
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+
+        // The second call took nothing from SDL and didn't replace the held event.
+        Assert.Equal(1, clock.Reads);
+        int[] expected = [1, 2];
+        Assert.Equal(expected, Positions(pump.Pump()));
+    }
+
+    [Fact]
+    public void WaitForEvents_HeldEventFillsSlot_RestDeferredInOrder()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PushMotions(0, Capacity + 1);
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+
+        // The held event takes the first slot, so one queued event is left for the next pump.
+        PlatformEventBatch first = pump.Pump();
+        Assert.Equal(Range(0, Capacity), Positions(first));
+        Assert.True(first.HasDeferredEvents);
+        PlatformEventBatch second = pump.Pump();
+        int[] rest = [Capacity];
+        Assert.Equal(rest, Positions(second));
+        Assert.False(second.HasDeferredEvents);
+        Assert.Equal(1, pump.Buffer.DeferredPumpCount);
+    }
+
+    // Each is negative other than Timeout.InfiniteTimeSpan (-1 ms), or above int.MaxValue milliseconds.
+    [Theory]
+    [InlineData(-1L)]
+    [InlineData(-20_000L)]
+    [InlineData(long.MinValue)]
+    [InlineData((int.MaxValue * TimeSpan.TicksPerMillisecond) + 1)]
+    [InlineData(long.MaxValue)]
+    public void WaitForEvents_OutOfRangeTimeout_ThrowsBeforeAnyEffect(long ticks)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        ScriptedClock clock = new();
+        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        PushMotions(1, 1);
+
+        ArgumentOutOfRangeException thrown = Assert.Throws<ArgumentOutOfRangeException>(() => pump.WaitForEvents(TimeSpan.FromTicks(ticks)));
+
+        Assert.Equal("timeout", thrown.ParamName);
+        Assert.Equal(0, clock.Reads);
+        Assert.NotEqual(0, Sdl.PInvoke.HasEvents(FirstType, LastType));
+        int[] expected = [1];
+        Assert.Equal(expected, Positions(pump.Pump()));
+    }
+
+    // The ends of the range: zero, one tick, int.MaxValue milliseconds and Timeout.InfiniteTimeSpan. An event is queued,
+    // so every wait returns at once.
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(1L)]
+    [InlineData(int.MaxValue * TimeSpan.TicksPerMillisecond)]
+    [InlineData(-TimeSpan.TicksPerMillisecond)]
+    public void WaitForEvents_TimeoutInRange_ReceivesQueuedEvent(long ticks)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PushMotions(3, 1);
+
+        Assert.True(pump.WaitForEvents(TimeSpan.FromTicks(ticks)));
+
+        int[] expected = [3];
+        Assert.Equal(expected, Positions(pump.Pump()));
+    }
+
+    // Rounded up to whole milliseconds, so a wait never ends early: each side of every millisecond boundary.
+    [Theory]
+    [InlineData(0L, 0)]
+    [InlineData(1L, 1)]
+    [InlineData(TimeSpan.TicksPerMillisecond - 1, 1)]
+    [InlineData(TimeSpan.TicksPerMillisecond, 1)]
+    [InlineData(TimeSpan.TicksPerMillisecond + 1, 2)]
+    [InlineData((int.MaxValue - 1) * TimeSpan.TicksPerMillisecond + 1, int.MaxValue)]
+    [InlineData(int.MaxValue * TimeSpan.TicksPerMillisecond, int.MaxValue)]
+    [InlineData(-TimeSpan.TicksPerMillisecond, -1)]
+    public void ToMilliseconds_RoundsUpToWholeMilliseconds(long ticks, int expected)
+    {
+        Assert.Equal(expected, SdlEventPump.ToMilliseconds(TimeSpan.FromTicks(ticks)));
+    }
+
+    [Fact]
+    public void WaitForEvents_AfterVideoStopped_Throws()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        session.Dispose();
+
+        // A stopped queue makes SDL_WaitEventTimeout return false, like a timeout; the pump must say why instead. SDL
+        // sets no error text for the failed check, so an earlier failure's text (here a bad display) isn't carried.
+        const string Expected = "SDL_PeepEvents failed: SDL's event queue isn't running: wait only while the video session is live.";
+        Assert.Null(Sdl.PInvoke.GetDisplayName(12345));
+        InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(() => pump.WaitForEvents(TimeSpan.FromMilliseconds(1)));
+
+        Assert.Equal(Expected, thrown.Message);
+        Assert.Equal(Expected, Assert.Throws<InvalidOperationException>(() => pump.WaitForEvents(TimeSpan.Zero)).Message);
+        Assert.Equal(0, pump.Buffer.Count);
+    }
+
+    [Fact]
+    public void WaitForEvents_DoesNotAllocate()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        SdlEventPump pump = new(1024, 8192, new ScriptedClock());
+        SdlEvent text = Text(_hello);
+        int handed = WaitEach(pump, text, 1); // warm-up: JIT and first-call costs
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        handed += WaitEach(pump, text, 1000);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.Equal(1001, handed);
+    }
+
+    // Per round: a zero wait that times out, a wait that receives a pushed text event, and the pump that hands it out.
+    private static int WaitEach(SdlEventPump pump, SdlEvent text, int rounds)
+    {
+        int handed = 0;
+        for (int round = 0; round < rounds; round++)
+        {
+            bool timedOut = !pump.WaitForEvents(TimeSpan.Zero);
+
+            // Sound: text is a parameter of this frame; SDL copies the event into its queue.
+            bool pushed = Sdl.PInvoke.PushEvent(&text) != 0;
+            bool received = pump.WaitForEvents(TimeSpan.FromSeconds(30));
+            PlatformEventBatch batch = pump.Pump();
+            if (timedOut && pushed && received && batch.Events.Length == 1 && batch.GetText(batch.Events[0]).Length == 6)
+            {
+                handed++;
+            }
+        }
+
+        return handed;
+    }
+
     // Pushes every type of the round, pumps, and folds each event's payload, read through its own view, into a
     // checksum: 1,000 times the round's number plus one per event, so a dropped or misread event changes it.
     private static long PumpEach(SdlEventPump pump, SdlEvent[] events, int rounds)
@@ -445,6 +769,14 @@ public sealed unsafe class SdlEventPumpTests
         }
 
         return values;
+    }
+
+    // The text's UTF-8 and a NUL, on the pinned heap.
+    private static byte[] PinnedText(string text)
+    {
+        byte[] pinned = GC.AllocateArray<byte>(Encoding.UTF8.GetByteCount(text) + 1, pinned: true);
+        _ = Encoding.UTF8.GetBytes(text, pinned);
+        return pinned;
     }
 
     // A copy of the bytes on the pinned heap, which the garbage collector never moves.
