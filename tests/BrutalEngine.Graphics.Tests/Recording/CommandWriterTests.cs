@@ -59,6 +59,29 @@ public sealed unsafe class CommandWriterTests
         allocator.ThrowIfLeaks();
     }
 
+    public static TheoryData<CommandKind> DefinedKinds() => new(Enum.GetValues<CommandKind>());
+
+    [Theory]
+    [MemberData(nameof(DefinedKinds))]
+    public void Append_EveryDefinedKind_WritesItsKind(CommandKind kind)
+    {
+        var allocator = new TrackingAllocator(new HeapAllocator(), "writer");
+        using (var writer = new CommandWriter(allocator, initialCapacity: 8))
+        {
+            // The kind's own payload struct, so the record has the size the device will encode for it.
+            int payloadSize = AppendDefaultPayload(writer, kind);
+            int size = 8 + ((payloadSize + 7) / 8 * 8);
+
+            ReadOnlySpan<byte> written = writer.Written;
+            Assert.Equal(size, written.Length);
+            Assert.Equal((ushort)kind, MemoryMarshal.Read<ushort>(written));
+            Assert.Equal(0, MemoryMarshal.Read<ushort>(written[2..]));
+            Assert.Equal(size, MemoryMarshal.Read<int>(written[4..]));
+        }
+
+        allocator.ThrowIfLeaks();
+    }
+
     [Fact]
     public void Growth_UsesAllocatorAndFreesOnDispose()
     {
@@ -202,6 +225,42 @@ public sealed unsafe class CommandWriterTests
         Assert.Throws<ObjectDisposedException>(writer.Reset);
         Assert.Throws<ObjectDisposedException>(() => writer.Written.Length);
         tracking.ThrowIfLeaks();
+    }
+
+    // Appends a default payload of kind's payload struct (graphics.md's payload table) and returns its size. A kind
+    // with no row here fails the test, so a kind added later must be added here too.
+    private static int AppendDefaultPayload(CommandWriter writer, CommandKind kind) => kind switch
+    {
+        CommandKind.Barrier => AppendDefault<BarrierCommand>(writer, kind),
+        CommandKind.CopyBufferToBuffer => AppendDefault<CopyBufferToBufferCommand>(writer, kind),
+        CommandKind.CopyBufferToTexture => AppendDefault<CopyBufferTextureCommand>(writer, kind),
+        CommandKind.CopyTextureToBuffer => AppendDefault<CopyBufferTextureCommand>(writer, kind),
+        CommandKind.CopyTextureToTexture => AppendDefault<CopyTextureToTextureCommand>(writer, kind),
+        CommandKind.BeginRenderPass => AppendDefault<BeginRenderPassCommand>(writer, kind),
+        CommandKind.EndRenderPass => AppendDefault<EndPassCommand>(writer, kind),
+        CommandKind.BeginComputePass => AppendDefault<BeginComputePassCommand>(writer, kind),
+        CommandKind.EndComputePass => AppendDefault<EndPassCommand>(writer, kind),
+        CommandKind.SetPipeline => AppendDefault<SetPipelineCommand>(writer, kind),
+        CommandKind.SetBindGroup => AppendDefault<SetBindGroupCommand>(writer, kind),
+        CommandKind.SetVertexBuffer => AppendDefault<SetVertexBufferCommand>(writer, kind),
+        CommandKind.SetIndexBuffer => AppendDefault<SetIndexBufferCommand>(writer, kind),
+        CommandKind.SetViewport => AppendDefault<SetViewportCommand>(writer, kind),
+        CommandKind.SetScissor => AppendDefault<SetScissorCommand>(writer, kind),
+        CommandKind.PushConstants => AppendDefault<PushConstantsCommand>(writer, kind),
+        CommandKind.Draw => AppendDefault<DrawCommand>(writer, kind),
+        CommandKind.DrawIndexed => AppendDefault<DrawIndexedCommand>(writer, kind),
+        CommandKind.Dispatch => AppendDefault<DispatchCommand>(writer, kind),
+        CommandKind.PushDebugGroup => AppendDefault<DebugGroupCommand>(writer, kind),
+        CommandKind.PopDebugGroup => AppendDefault<DebugGroupCommand>(writer, kind),
+        CommandKind.ClearSwapchainImage => AppendDefault<ClearSwapchainImageCommand>(writer, kind),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "No payload struct for this kind in the test."),
+    };
+
+    private static int AppendDefault<T>(CommandWriter writer, CommandKind kind)
+        where T : unmanaged
+    {
+        writer.Append(kind, default(T));
+        return Unsafe.SizeOf<T>();
     }
 
     private static void WriteFrame(CommandWriter writer, ReadOnlySpan<Sized3> trailing)
