@@ -14,6 +14,12 @@ internal static class VfsPathParser
     /// <summary>The longest scheme, in characters (all ASCII).</summary>
     public const int MaxSchemeLength = 32;
 
+    /// <summary>The longest segment in UTF-8 bytes: Linux's <c>NAME_MAX</c>, never looser than Windows' 255 UTF-16 code units.</summary>
+    public const int MaxSegmentBytes = 255;
+
+    /// <summary>The longest normalised path, scheme and <c>://</c> included, in UTF-8 bytes.</summary>
+    public const int MaxPathBytes = 1024;
+
     /// <summary>The scheme separator.</summary>
     public const string SchemeSeparator = "://";
 
@@ -42,10 +48,16 @@ internal static class VfsPathParser
 
         int relativeStart = colon + SchemeSeparator.Length;
         ReadOnlySpan<char> relative = path.AsSpan(relativeStart);
-        VfsPathError error = Measure(relative, out int keptChars);
+        VfsPathError error = Measure(relative, out int keptChars, out int keptBytes);
         if (error != VfsPathError.None)
         {
             return error;
+        }
+
+        // The scheme and separator are ASCII: one byte per character.
+        if (relativeStart + keptBytes > MaxPathBytes)
+        {
+            return VfsPathError.PathTooLong;
         }
 
         // Normalising only removes characters, so an unchanged length means the input is already normalised.
@@ -64,7 +76,7 @@ internal static class VfsPathParser
     /// <param name="basePath">The path to extend. Not <c>default</c>.</param>
     /// <param name="relative">The relative path, such as <c>ui/button.png</c>.</param>
     /// <param name="result">The combined, normalised path; <c>default</c> unless the method returns <see cref="VfsPathError.None"/>.</param>
-    /// <returns>The first rule the relative path breaks, or <see cref="VfsPathError.None"/>.</returns>
+    /// <returns>The first rule the relative path, or the combined path, breaks, or <see cref="VfsPathError.None"/>.</returns>
     public static VfsPathError Combine(VfsPath basePath, string relative, out VfsPath result)
     {
         result = default;
@@ -78,7 +90,7 @@ internal static class VfsPathParser
             return VfsPathError.SchemeQualifiedRelativePath;
         }
 
-        VfsPathError error = Measure(relative, out int keptChars);
+        VfsPathError error = Measure(relative, out int keptChars, out int keptBytes);
         if (error != VfsPathError.None)
         {
             return error;
@@ -93,6 +105,10 @@ internal static class VfsPathParser
         string baseText = basePath.ToString();
         bool joiner = basePath.RelativePath.Length > 0;
         int separatorLength = joiner ? 1 : 0;
+        if (Encoding.UTF8.GetByteCount(baseText) + separatorLength + keptBytes > MaxPathBytes)
+        {
+            return VfsPathError.PathTooLong;
+        }
 
         string text = string.Create(baseText.Length + separatorLength + keptChars, (baseText, relative, joiner), static (destination, state) =>
         {
@@ -119,6 +135,9 @@ internal static class VfsPathParser
             VfsPathError.ReservedCharacter => "the characters : * ? \" < > | are not allowed in a segment",
             VfsPathError.LoneSurrogate => "a lone UTF-16 surrogate is not a Unicode scalar value",
             VfsPathError.TrailingDotOrSpace => "a segment may not end in '.' or a space",
+            VfsPathError.DeviceName => "a segment may not be a Windows device name (CON, PRN, AUX, NUL, COM1 to COM9, LPT1 to LPT9, in any case, with or without an extension)",
+            VfsPathError.SegmentTooLong => "a segment may be at most 255 bytes in UTF-8",
+            VfsPathError.PathTooLong => "the path may be at most 1,024 bytes in UTF-8",
             VfsPathError.AbsoluteRelativePath => "a relative path must not start with '/'",
             VfsPathError.SchemeQualifiedRelativePath => "a relative path must not have a scheme",
             _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a path rule."),
@@ -146,17 +165,18 @@ internal static class VfsPathParser
     }
 
     // Validates every segment, and measures what normalisation keeps: the segments other than empty and "." ones,
-    // joined by single '/'.
-    private static VfsPathError Measure(ReadOnlySpan<char> relative, out int keptChars)
+    // joined by single '/'. The byte count stops growing once it passes the path limit, so it can't overflow.
+    private static VfsPathError Measure(ReadOnlySpan<char> relative, out int keptChars, out int keptBytes)
     {
         keptChars = 0;
+        keptBytes = 0;
         while (true)
         {
             int slash = relative.IndexOf('/');
             ReadOnlySpan<char> segment = slash < 0 ? relative : relative[..slash];
             if (!IsDropped(segment))
             {
-                VfsPathError error = ValidateSegment(segment);
+                VfsPathError error = ValidateSegment(segment, out int segmentBytes);
                 if (error != VfsPathError.None)
                 {
                     return error;
@@ -164,6 +184,7 @@ internal static class VfsPathParser
 
                 int separator = keptChars > 0 ? 1 : 0;
                 keptChars += separator + segment.Length;
+                keptBytes = Math.Min(keptBytes + separator + segmentBytes, MaxPathBytes + 1);
             }
 
             if (slash < 0)
@@ -178,8 +199,9 @@ internal static class VfsPathParser
     // Empty segments (repeated, leading or trailing '/') and "." are removed by normalisation.
     private static bool IsDropped(ReadOnlySpan<char> segment) => segment.IsEmpty || segment is ".";
 
-    private static VfsPathError ValidateSegment(ReadOnlySpan<char> segment)
+    private static VfsPathError ValidateSegment(ReadOnlySpan<char> segment, out int bytes)
     {
+        bytes = 0;
         if (segment is "..")
         {
             return VfsPathError.Traversal;
@@ -205,15 +227,44 @@ internal static class VfsPathParser
             }
 
             // Done only for a scalar value: a lone surrogate is InvalidData, a trailing high surrogate NeedMoreData.
-            if (Rune.DecodeFromUtf16(segment[i..], out _, out int consumed) != OperationStatus.Done)
+            if (Rune.DecodeFromUtf16(segment[i..], out Rune rune, out int consumed) != OperationStatus.Done)
             {
                 return VfsPathError.LoneSurrogate;
+            }
+
+            bytes += rune.Utf8SequenceLength;
+            if (bytes > MaxSegmentBytes)
+            {
+                return VfsPathError.SegmentTooLong;
             }
 
             i += consumed;
         }
 
-        return segment[^1] is '.' or ' ' ? VfsPathError.TrailingDotOrSpace : VfsPathError.None;
+        if (segment[^1] is '.' or ' ')
+        {
+            return VfsPathError.TrailingDotOrSpace;
+        }
+
+        return IsDeviceName(segment) ? VfsPathError.DeviceName : VfsPathError.None;
+    }
+
+    // CON, PRN, AUX, NUL, COM1-COM9 and LPT1-LPT9 in any case, alone or before the first '.' ("nul.tar.gz").
+    private static bool IsDeviceName(ReadOnlySpan<char> segment)
+    {
+        int dot = segment.IndexOf('.');
+        ReadOnlySpan<char> stem = dot < 0 ? segment : segment[..dot];
+        if (stem.Length == 3)
+        {
+            return stem.Equals("CON", StringComparison.OrdinalIgnoreCase)
+                || stem.Equals("PRN", StringComparison.OrdinalIgnoreCase)
+                || stem.Equals("AUX", StringComparison.OrdinalIgnoreCase)
+                || stem.Equals("NUL", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return stem.Length == 4
+            && stem[3] is >= '1' and <= '9'
+            && (stem[..3].Equals("COM", StringComparison.OrdinalIgnoreCase) || stem[..3].Equals("LPT", StringComparison.OrdinalIgnoreCase));
     }
 
     // Writes the kept segments of an already validated relative path, joined by '/', with a '/' before the first

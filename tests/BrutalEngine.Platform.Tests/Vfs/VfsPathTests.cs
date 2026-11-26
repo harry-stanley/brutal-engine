@@ -18,8 +18,17 @@ public sealed class VfsPathTests
     private const string ReservedRule = "are not allowed in a segment";
     private const string SurrogateRule = "lone UTF-16 surrogate";
     private const string TrailingRule = "may not end in '.' or a space";
+    private const string DeviceRule = "Windows device name";
+    private const string SegmentLengthRule = "at most 255 bytes in UTF-8";
+    private const string PathLengthRule = "at most 1,024 bytes in UTF-8";
     private const string AbsoluteRule = "must not start with '/'";
     private const string SchemeQualifiedRule = "must not have a scheme";
+
+    // CJK ideograph U+65E5: 3 bytes in UTF-8, one UTF-16 code unit.
+    private const char Cjk = '\u65E5';
+
+    // U+1F600 as a surrogate pair: 4 bytes in UTF-8, two UTF-16 code units.
+    private const string Emoji = "\U0001F600";
 
     [Theory]
     [InlineData("res://textures/hero.png", "res://textures/hero.png", "res", "textures/hero.png", "hero.png")]
@@ -125,7 +134,14 @@ public sealed class VfsPathTests
             { "res://a{DE00}b", SurrogateRule },
             { "res://a{D83D}", SurrogateRule },
             { "res://{DE00}{D83D}", SurrogateRule },
+            { "res://" + new string('a', 256), SegmentLengthRule },
+            { "res://" + LongPath(1025 - 6), PathLengthRule },
         };
+        foreach (string device in (string[])["CON", "prn", "Aux", "nUl", "COM1", "com9", "LPT1", "lpt9", "CON.txt", "nul.tar.gz", "a/com5.log"])
+        {
+            data.Add("res://" + device, DeviceRule);
+        }
+
         return data;
     }
 
@@ -213,6 +229,55 @@ public sealed class VfsPathTests
         Assert.DoesNotContain('\uDE00', exception.Message);
     }
 
+    [Fact]
+    public void SegmentLimit_CountsUtf8Bytes()
+    {
+        // 200 CJK characters are 200 UTF-16 code units but 600 bytes in UTF-8: rejected on every OS.
+        string segment = new(Cjk, 200);
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => VfsPath.Parse("res://" + segment));
+
+        Assert.Contains(SegmentLengthRule, exception.Message, StringComparison.Ordinal);
+        Assert.False(VfsPath.TryParse("res://" + segment, out _));
+    }
+
+    [Theory]
+    [InlineData(255, true)]
+    [InlineData(256, false)]
+    public void SegmentLimit_AtBoundary_CountsEveryEncodingWidth(int bytes, bool valid)
+    {
+        // 255 bytes: 63 emoji (252 bytes) + one CJK character (3); 256: one more byte as 'a'.
+        StringBuilder segment = new();
+        for (int i = 0; i < 63; i++)
+        {
+            segment.Append(Emoji);
+        }
+
+        segment.Append(Cjk);
+        if (bytes == 256)
+        {
+            segment.Append('a');
+        }
+
+        Assert.Equal(bytes, Encoding.UTF8.GetByteCount(segment.ToString()));
+        Assert.Equal(valid, VfsPath.TryParse("res://" + segment, out _));
+        Assert.Equal(valid, VfsPath.TryParse("res://" + new string('\u00E9', bytes / 2) + new string('a', bytes % 2), out _));
+    }
+
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void PathLimit_AtBoundary_CountsNormalisedUtf8Bytes(int bytes, bool valid)
+    {
+        string path = "res://" + LongPath(bytes - 6);
+
+        Assert.Equal(bytes, Encoding.UTF8.GetByteCount(path));
+        Assert.Equal(valid, VfsPath.TryParse(path, out _));
+
+        // Removed "." segments and repeated '/' don't count: the limit applies to the normalised path.
+        Assert.Equal(valid, VfsPath.TryParse("res://./" + LongPath(bytes - 6).Replace("/", "//", StringComparison.Ordinal), out _));
+    }
+
     [Theory]
     [InlineData("res://", "a", "res://a")]
     [InlineData("res://", "a/b", "res://a/b")]
@@ -253,6 +318,7 @@ public sealed class VfsPathTests
     [InlineData("c:a", ReservedRule)]
     [InlineData("a\\b", BackslashRule)]
     [InlineData("a.", TrailingRule)]
+    [InlineData("nul.txt", DeviceRule)]
     [InlineData("{D800}", SurrogateRule)]
     public void Combine_InvalidRelativePath_ThrowsNamingTheRule(string relative, string rule)
     {
@@ -262,6 +328,36 @@ public sealed class VfsPathTests
 
         Assert.Equal("relative", exception.ParamName);
         Assert.Contains(rule, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Combine_SegmentTooLong_Throws()
+    {
+        var path = VfsPath.Parse("res://a");
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => path.Combine(new string(Cjk, 86)));
+
+        Assert.Contains(SegmentLengthRule, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void Combine_PathLimit_CountsTheCombinedPath(int bytes, bool valid)
+    {
+        // "res://ab" + "/" + relative: the base's bytes and the joining '/' count.
+        var path = VfsPath.Parse("res://ab");
+        string relative = LongPath(bytes - "res://ab/".Length);
+
+        if (valid)
+        {
+            Assert.Equal(bytes, Encoding.UTF8.GetByteCount(path.Combine(relative).ToString()));
+        }
+        else
+        {
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => path.Combine(relative));
+            Assert.Contains(PathLengthRule, exception.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -400,5 +496,31 @@ public sealed class VfsPathTests
         }
 
         return decoded.ToString();
+    }
+
+    // A relative path of exactly `bytes` bytes: segments of at most 200 'a's joined by '/'.
+    private static string LongPath(int bytes)
+    {
+        int remaining = bytes;
+        StringBuilder path = new();
+        while (remaining > 0)
+        {
+            if (path.Length > 0)
+            {
+                path.Append('/');
+                remaining--;
+            }
+
+            int length = Math.Min(200, remaining);
+            if (remaining - length == 1)
+            {
+                length--;
+            }
+
+            path.Append('a', length);
+            remaining -= length;
+        }
+
+        return path.ToString();
     }
 }

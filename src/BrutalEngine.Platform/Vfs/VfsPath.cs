@@ -11,8 +11,11 @@ namespace BrutalEngine.Platform.Vfs;
 /// <para>
 /// The grammar is <c>scheme "://" [ segment *( "/" segment ) ]</c>. A scheme is 1 to 32 characters: a lowercase ASCII
 /// letter, then lowercase ASCII letters, digits or <c>-</c>. A segment is one or more Unicode scalar values except
-/// U+0000 to U+001F, U+007F and <c>\ / : * ? " &lt; &gt; |</c>, and it may not end in <c>.</c> or a space. Each rule
-/// is the strictest supported OS's, so a path that is valid on one OS is valid on all of them.
+/// U+0000 to U+001F, U+007F and <c>\ / : * ? " &lt; &gt; |</c>; it may not end in <c>.</c> or a space, or be a
+/// Windows device name (<c>CON</c>, <c>PRN</c>, <c>AUX</c>, <c>NUL</c>, <c>COM1</c> to <c>COM9</c>, <c>LPT1</c> to
+/// <c>LPT9</c>, in any case, alone or before an extension such as <c>nul.txt</c>). A segment is at most 255 bytes in
+/// UTF-8 and the normalised path at most 1,024. Each limit is the strictest supported OS's, so a path that is valid
+/// on one OS is valid on all of them.
 /// </para>
 /// <para>
 /// Normalisation removes <c>.</c> segments, collapses repeated <c>/</c> and drops a trailing <c>/</c>. Nothing else
@@ -118,7 +121,8 @@ public readonly struct VfsPath : IEquatable<VfsPath>
     /// <exception cref="InvalidOperationException">This is <c>default(VfsPath)</c>.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="relative"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="relative"/> breaks a rule; the message names the rule.
+    /// <paramref name="relative"/> breaks a rule, or the combined path is longer than 1,024 bytes in UTF-8; the message
+    /// names the rule.
     /// </exception>
     public VfsPath Combine(string relative)
     {
