@@ -39,7 +39,7 @@ public enum FormatSupport
 
     /// <summary>
     /// Targets of the format can be multisampled; for a color format, at the counts in
-    /// <see cref="GraphicsLimits.ColorSampleCounts"/>. Depth and stencil sample counts are reported separately.
+    /// <see cref="GraphicsLimits.ColorSampleCounts"/>. Depth and stencil sample counts are not reported yet.
     /// </summary>
     Multisample = 256,
 }
