@@ -71,6 +71,17 @@ public sealed class VulkanCallGateTests
     }
 
     [Fact]
+    public void Check_DeviceLostWithUndefinedCall_ThrowsWithoutMarkingLost()
+    {
+        VulkanCallGate gate = new();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => gate.Check(VkResult.ErrorDeviceLost, (VulkanCall)(-1)));
+
+        // The error is built before the flag is set, so misuse never marks a healthy device lost.
+        Assert.False(gate.IsLost);
+    }
+
+    [Fact]
     public void Check_DoesNotAllocate()
     {
         VulkanFaultInjector faults = new();
