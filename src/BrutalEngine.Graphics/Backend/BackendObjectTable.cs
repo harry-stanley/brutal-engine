@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Text;
 using BrutalEngine.Core;
 
@@ -64,70 +65,100 @@ public sealed class BackendObjectTable
     /// <param name="handle">A live buffer handle of the device that owns this table.</param>
     /// <returns>The buffer's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no buffer entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no buffer entry: never recorded, removed, or from a previous generation of a
+    /// reused slot.
+    /// </exception>
     public ulong GetId(BufferHandle handle) => Find(BackendObjectKind.Buffer, handle.Value);
 
     /// <summary>Resolves a texture handle to the id its backend returned.</summary>
     /// <param name="handle">A live texture handle of the device that owns this table.</param>
     /// <returns>The texture's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no texture entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no texture entry: never recorded, removed, or from a previous generation of a
+    /// reused slot.
+    /// </exception>
     public ulong GetId(TextureHandle handle) => Find(BackendObjectKind.Texture, handle.Value);
 
     /// <summary>Resolves a texture view handle to the id its backend returned.</summary>
     /// <param name="handle">A live texture view handle of the device that owns this table.</param>
     /// <returns>The view's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no texture view entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no texture view entry: never recorded, removed, or from a previous generation of a
+    /// reused slot.
+    /// </exception>
     public ulong GetId(TextureViewHandle handle) => Find(BackendObjectKind.TextureView, handle.Value);
 
     /// <summary>Resolves a sampler handle to the id its backend returned.</summary>
     /// <param name="handle">A live sampler handle of the device that owns this table.</param>
     /// <returns>The sampler's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no sampler entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no sampler entry: never recorded, removed, or from a previous generation of a
+    /// reused slot.
+    /// </exception>
     public ulong GetId(SamplerHandle handle) => Find(BackendObjectKind.Sampler, handle.Value);
 
     /// <summary>Resolves a shader module handle to the id its backend returned.</summary>
     /// <param name="handle">A live shader module handle of the device that owns this table.</param>
     /// <returns>The shader module's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no shader module entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no shader module entry: never recorded, removed, or from a previous generation of
+    /// a reused slot.
+    /// </exception>
     public ulong GetId(ShaderModuleHandle handle) => Find(BackendObjectKind.ShaderModule, handle.Value);
 
     /// <summary>Resolves a bind group layout handle to the id its backend returned.</summary>
     /// <param name="handle">A live bind group layout handle of the device that owns this table.</param>
     /// <returns>The layout's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no bind group layout entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no bind group layout entry: never recorded, removed, or from a previous generation
+    /// of a reused slot.
+    /// </exception>
     public ulong GetId(BindGroupLayoutHandle handle) => Find(BackendObjectKind.BindGroupLayout, handle.Value);
 
     /// <summary>Resolves a pipeline layout handle to the id its backend returned.</summary>
     /// <param name="handle">A live pipeline layout handle of the device that owns this table.</param>
     /// <returns>The layout's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no pipeline layout entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no pipeline layout entry: never recorded, removed, or from a previous generation
+    /// of a reused slot.
+    /// </exception>
     public ulong GetId(PipelineLayoutHandle handle) => Find(BackendObjectKind.PipelineLayout, handle.Value);
 
     /// <summary>Resolves a bind group handle, persistent or frame-lifetime, to the id its backend returned.</summary>
     /// <param name="handle">A live bind group handle of the device that owns this table.</param>
     /// <returns>The bind group's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no bind group entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no bind group entry: never recorded, removed, or from a previous generation of a
+    /// reused slot.
+    /// </exception>
     public ulong GetId(BindGroupHandle handle) => Find(BackendObjectKind.BindGroup, handle.Value);
 
     /// <summary>Resolves a graphics pipeline handle to the id its backend returned.</summary>
     /// <param name="handle">A live graphics pipeline handle of the device that owns this table.</param>
     /// <returns>The pipeline's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no graphics pipeline entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no graphics pipeline entry: never recorded, removed, or from a previous generation
+    /// of a reused slot.
+    /// </exception>
     public ulong GetId(GraphicsPipelineHandle handle) => Find(BackendObjectKind.GraphicsPipeline, handle.Value);
 
     /// <summary>Resolves a compute pipeline handle to the id its backend returned.</summary>
     /// <param name="handle">A live compute pipeline handle of the device that owns this table.</param>
     /// <returns>The pipeline's backend id; never 0.</returns>
     /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="handle"/> has no compute pipeline entry: never recorded, or removed.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="handle"/> has no compute pipeline entry: never recorded, removed, or from a previous generation
+    /// of a reused slot.
+    /// </exception>
     public ulong GetId(ComputePipelineHandle handle) => Find(BackendObjectKind.ComputePipeline, handle.Value);
 
     /// <summary>Returns the name of an interned debug label, as UTF-8.</summary>
@@ -239,6 +270,9 @@ public sealed class BackendObjectTable
 
         public bool TryGet(Handle handle, out TValue value)
         {
+            // A free slot stores raw 0, the null handle's value, so the compare below would match null; every caller
+            // (GetLabel, Remove, Find) rejects the null handle first.
+            Debug.Assert(!handle.IsNull, "Slots.TryGet must never see the null handle.");
             uint index = handle.Index;
             if (index < (uint)_handles.Length && _handles[index] == handle.RawValue)
             {

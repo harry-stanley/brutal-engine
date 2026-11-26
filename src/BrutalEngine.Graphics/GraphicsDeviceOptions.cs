@@ -19,10 +19,12 @@ namespace BrutalEngine.Graphics;
 /// is <c>options</c>.
 /// </para>
 /// <para>
-/// Equality compares every property; <see cref="Logger"/>, <see cref="Allocator"/> and <see cref="CompatibleWindow"/>
-/// compare by reference, <see cref="ApplicationName"/> ordinally. An immutable record: the device copies the values it
-/// needs when it is created, so a later <c>with</c> copy has no effect on it. Safe to share between threads. Creating
-/// one allocates (the default <see cref="Allocator"/> is a new <see cref="HeapAllocator"/>); reading it doesn't.
+/// Equality compares every property with its type's default equality: <see cref="Logger"/> by reference,
+/// <see cref="Allocator"/> and <see cref="CompatibleWindow"/> by reference unless their implementations override
+/// <see cref="object.Equals(object)"/>, and <see cref="ApplicationName"/> ordinally. An immutable record: the device
+/// copies the values it needs when it is created, so a later <c>with</c> copy has no effect on it. Safe to share
+/// between threads. Creating one allocates (the default <see cref="Allocator"/> is a new <see cref="HeapAllocator"/>);
+/// reading it doesn't.
 /// </para>
 /// </remarks>
 public sealed record GraphicsDeviceOptions

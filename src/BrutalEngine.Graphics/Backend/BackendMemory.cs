@@ -29,8 +29,9 @@ public enum BackendMemory
     DeviceLocalHostVisiblePreferred = 1,
 
     /// <summary>
-    /// Host-visible, coherent memory the CPU writes sequentially and the GPU reads: the front end's upload ring and
-    /// dedicated upload blocks. Mapped persistently.
+    /// Host-visible memory the CPU writes sequentially and the GPU reads: the front end's upload ring and dedicated
+    /// upload blocks. Mapped persistently; the backend makes the writes visible as the remarks say (coherent memory in
+    /// the Vulkan backend).
     /// </summary>
     HostUpload = 2,
 
