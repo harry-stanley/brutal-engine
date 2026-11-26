@@ -145,6 +145,30 @@ public sealed unsafe class SdlPlatformWindowModeTests
         Assert.Equal(new WindowSize(width, height), window.ContentSize);
     }
 
+    // The pending content size is applied once. After that the window's windowed size is SDL's own: here the OS
+    // resizes the window (a raw SDL_SetWindowSize, as a user dragging its edge would), and a second round trip through
+    // fullscreen must come back at that size, not at the size the window was created with.
+    [Theory]
+    [InlineData(HeadlessMode.NoSurface)]
+    [InlineData(HeadlessMode.Offscreen)]
+    public void SetMode_WindowedAgainAfterOsResize_KeepsSdlSize(HeadlessMode headless)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = Start(headless);
+        using SdlPlatformWindow window = SdlPlatformWindow.Create(NoSurface with { Mode = WindowMode.BorderlessFullscreen }, session.VideoDriver, session.Headless, estimateScale: 2f).Value;
+        SdlWindow handle = Sdl.PInvoke.GetWindowFromID(window.Id.Value);
+        AssertSuccess(window.SetMode(WindowMode.Windowed));
+        Assert.Equal(NoSurface.ContentSize, NativeSize(handle));
+
+        Assert.NotEqual(0, Sdl.PInvoke.SetWindowSize(handle, 500, 400));
+        Assert.NotEqual(0, Sdl.PInvoke.SyncWindow(handle));
+        AssertSuccess(window.SetMode(WindowMode.BorderlessFullscreen));
+        AssertSuccess(window.SetMode(WindowMode.Windowed));
+
+        Assert.False(IsNativeFullscreen(window));
+        Assert.Equal(new WindowSize(500, 400), NativeSize(handle));
+    }
+
     [Theory]
     [InlineData("SetMode", "disposed", typeof(ObjectDisposedException))]
     [InlineData("SetMode", "wrong thread", typeof(WrongThreadException))]
