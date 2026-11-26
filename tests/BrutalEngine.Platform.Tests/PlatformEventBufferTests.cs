@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using Xunit;
 
 namespace BrutalEngine.Platform.Tests;
@@ -12,7 +13,7 @@ public sealed class PlatformEventBufferTests
 
     private static readonly WindowId _window = new(7);
 
-    // One event of every kind except TextInput, whose text the buffer stores with it.
+    // One event of every kind except TextInput, which only AddText makes.
     private static readonly PlatformEvent[] _nonTextEvents = MakeNonTextEvents();
 
     [Theory]
@@ -43,6 +44,7 @@ public sealed class PlatformEventBufferTests
         Assert.Equal(eventCapacity, buffer.Capacity);
         Assert.Equal(0, buffer.Count);
         Assert.True(buffer.HasRoom);
+        Assert.Equal(0, buffer.TruncatedTextCount);
         Assert.True(buffer.AsBatch().Events.IsEmpty);
     }
 
@@ -88,6 +90,21 @@ public sealed class PlatformEventBufferTests
     }
 
     [Fact]
+    public void HasRoom_ReservesTextBytes()
+    {
+        // 3000 bytes, not the minimum, so a reserve computed from the capacity (half of it) fails here.
+        PlatformEventBuffer buffer = new(MinEvents, 3000);
+
+        buffer.AddText(_window, 1, Ascii(3000 - PlatformEventBuffer.TextReserveBytes));
+        bool atReserve = buffer.HasRoom;
+        buffer.AddText(_window, 2, Ascii(1));
+
+        Assert.True(atReserve);
+        Assert.False(buffer.HasRoom);
+        Assert.Equal(1024, PlatformEventBuffer.TextReserveBytes);
+    }
+
+    [Fact]
     public void HasRoom_LastEventSlot_FalseOnceFilled()
     {
         PlatformEventBuffer buffer = new(MinEvents, MinText);
@@ -101,6 +118,150 @@ public sealed class PlatformEventBufferTests
 
         Assert.True(beforeLast);
         Assert.False(buffer.HasRoom);
+    }
+
+    [Fact]
+    public void AddText_StoresTextInOrder()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        byte[] first = Encoding.UTF8.GetBytes("héllo");
+        byte[] second = Encoding.UTF8.GetBytes("€😀");
+
+        buffer.AddText(_window, 10, first);
+        buffer.Add(Key(11));
+        buffer.AddText(default, 12, second);
+        buffer.AddText(_window, 13, []);
+        PlatformEventBatch batch = buffer.AsBatch();
+
+        Assert.Equal(4, batch.Events.Length);
+        Assert.Equal(new PlatformEventHeader(PlatformEventKind.TextInput, _window, 10), batch.Events[0].Header);
+        Assert.Equal(new PlatformEventHeader(PlatformEventKind.TextInput, default, 12), batch.Events[2].Header);
+        Assert.Equal(first, batch.GetText(batch.Events[0]).ToArray());
+        Assert.Equal(11, batch.Events[1].Timestamp);
+        Assert.Equal(second, batch.GetText(batch.Events[2]).ToArray());
+        Assert.True(batch.GetText(batch.Events[3]).IsEmpty);
+        Assert.Equal(0, buffer.TruncatedTextCount);
+    }
+
+    [Theory]
+    [InlineData("é", 1)]
+    [InlineData("€", 1)]
+    [InlineData("€", 2)]
+    [InlineData("😀", 1)]
+    [InlineData("😀", 2)]
+    [InlineData("😀", 3)]
+    public void AddText_TooLong_TruncatesAtCodePoint(string sequence, int bytesThatFit)
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        buffer.AddText(_window, 1, Ascii(1000));
+        int free = MinText - 1000;
+        byte[] text = [.. Ascii(free - bytesThatFit), .. Encoding.UTF8.GetBytes(sequence), .. Ascii(10)];
+
+        buffer.AddText(_window, 2, text);
+        PlatformEventBatch batch = buffer.AsBatch();
+
+        Assert.Equal(text[..(free - bytesThatFit)], batch.GetText(batch.Events[1]).ToArray());
+        Assert.Equal(1, buffer.TruncatedTextCount);
+    }
+
+    [Theory]
+    [InlineData("é")]
+    [InlineData("€")]
+    [InlineData("😀")]
+    public void AddText_TooLong_KeepsSequenceThatEndsAtTheLimit(string sequence)
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        byte[] encoded = Encoding.UTF8.GetBytes(sequence);
+        byte[] text = [.. Ascii(MinText - encoded.Length), .. encoded, .. encoded];
+
+        buffer.AddText(_window, 1, text);
+        PlatformEventBatch batch = buffer.AsBatch();
+
+        Assert.Equal(text[..MinText], batch.GetText(batch.Events[0]).ToArray());
+        Assert.Equal(1, buffer.TruncatedTextCount);
+    }
+
+    [Fact]
+    public void AddText_NothingFits_AddsEmptyTextAndCounts()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        buffer.AddText(_window, 1, Ascii(MinText - 1));
+
+        buffer.AddText(_window, 2, Encoding.UTF8.GetBytes("€"));
+        PlatformEventBatch batch = buffer.AsBatch();
+
+        Assert.Equal(2, batch.Events.Length);
+        Assert.True(batch.GetText(batch.Events[1]).IsEmpty);
+        Assert.Equal(1, buffer.TruncatedTextCount);
+    }
+
+    [Theory]
+    [InlineData(new byte[] { 0x80 })]                    // a continuation byte without a lead byte
+    [InlineData(new byte[] { 0x61, 0xC3 })]              // a 2-byte sequence cut short
+    [InlineData(new byte[] { 0xE2, 0x82 })]              // a 3-byte sequence cut short
+    [InlineData(new byte[] { 0xF0, 0x9F, 0x98 })]        // a 4-byte sequence cut short
+    [InlineData(new byte[] { 0xC0, 0x80 })]              // an overlong encoding of U+0000
+    [InlineData(new byte[] { 0xED, 0xA0, 0x80 })]        // a UTF-16 surrogate, U+D800
+    [InlineData(new byte[] { 0xF4, 0x90, 0x80, 0x80 })]  // above U+10FFFF
+    [InlineData(new byte[] { 0xFF })]                    // never valid in UTF-8
+    public void AddText_InvalidUtf8_Throws(byte[] utf8)
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => buffer.AddText(_window, 1, utf8));
+
+        Assert.Equal("utf8", ex.ParamName);
+        Assert.Equal(0, buffer.Count);
+        Assert.Equal(MinText, FreeText(buffer));
+    }
+
+    [Fact]
+    public void AddText_WhenFull_Throws()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        for (int i = 0; i < MinEvents; i++)
+        {
+            buffer.Add(Key(i));
+        }
+
+        Assert.Throws<InvalidOperationException>(() => buffer.AddText(_window, 1, Ascii(1)));
+
+        Assert.Equal(MinEvents, buffer.Count);
+        buffer.Clear();
+        Assert.Equal(MinText, FreeText(buffer));
+    }
+
+    [Fact]
+    public void GetText_NonTextEvent_Throws()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        buffer.AddText(_window, 1, Ascii(5));
+        PlatformEvent[] events = [.. _nonTextEvents, default];
+
+        foreach (PlatformEvent e in events)
+        {
+            Assert.Throws<InvalidOperationException>(() => buffer.AsBatch().GetText(e));
+        }
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(0, -1)]
+    [InlineData(0, 6)]
+    [InlineData(5, 1)]
+    [InlineData(6, 0)]
+    [InlineData(int.MaxValue, 1)]
+    [InlineData(1, int.MaxValue)]
+    public void GetText_TextOutsideTheBatch_Throws(int offset, int length)
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        buffer.AddText(_window, 1, Ascii(5));
+        var foreign = PlatformEvent.CreateText(
+            Header(PlatformEventKind.TextInput, 2), new TextEventData(offset, length));
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => buffer.AsBatch().GetText(foreign));
+
+        Assert.Equal("textEvent", ex.ParamName);
     }
 
     [Fact]
@@ -121,6 +282,22 @@ public sealed class PlatformEventBufferTests
     }
 
     [Fact]
+    public void Clear_EmptiesEventsAndText_KeepsCounters()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        buffer.Add(Key(1));
+        buffer.AddText(_window, 2, Ascii(MinText + 1));
+
+        buffer.Clear();
+
+        Assert.Equal(0, buffer.Count);
+        Assert.True(buffer.AsBatch().Events.IsEmpty);
+        Assert.True(buffer.HasRoom);
+        Assert.Equal(1, buffer.TruncatedTextCount);
+        Assert.Equal(MinText, FreeText(buffer));
+    }
+
+    [Fact]
     public void AsBatch_IsTheBufferWhenTaken()
     {
         PlatformEventBuffer buffer = new(MinEvents, MinText);
@@ -137,8 +314,10 @@ public sealed class PlatformEventBufferTests
     public void DefaultBatch_IsEmpty()
     {
         PlatformEventBatch batch = default;
+        var empty = PlatformEvent.CreateText(Header(PlatformEventKind.TextInput, 1), new TextEventData(0, 0));
 
         Assert.True(batch.Events.IsEmpty);
+        Assert.True(batch.GetText(empty).IsEmpty);
     }
 
     private static PlatformEvent[] MakeNonTextEvents()
@@ -186,6 +365,24 @@ public sealed class PlatformEventBufferTests
     private static PlatformEventHeader Header(PlatformEventKind kind, long timestamp) => new(kind, _window, timestamp);
 
     private static PlatformEvent Key(long timestamp) => MakeEvent(PlatformEventKind.KeyDown, timestamp);
+
+    private static byte[] Ascii(int length)
+    {
+        byte[] bytes = new byte[length];
+        bytes.AsSpan().Fill((byte)'a');
+        return bytes;
+    }
+
+    // The free text space, measured by adding ASCII text one byte past it and reading back what was stored.
+    private static int FreeText(PlatformEventBuffer buffer)
+    {
+        long truncated = buffer.TruncatedTextCount;
+        buffer.AddText(_window, 0, Ascii(MinText + 1));
+        PlatformEventBatch batch = buffer.AsBatch();
+        int free = batch.GetText(batch.Events[^1]).Length;
+        Assert.Equal(truncated + 1, buffer.TruncatedTextCount);
+        return free;
+    }
 
     private static void AssertSameEvents(ReadOnlySpan<PlatformEvent> expected, ReadOnlySpan<PlatformEvent> actual)
     {

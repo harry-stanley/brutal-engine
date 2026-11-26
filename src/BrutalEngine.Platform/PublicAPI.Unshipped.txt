@@ -205,15 +205,18 @@ BrutalEngine.Platform.PlatformEvent.Timestamp.get -> long
 BrutalEngine.Platform.PlatformEvent.Window.get -> BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.PlatformEventBatch
 BrutalEngine.Platform.PlatformEventBatch.Events.get -> System.ReadOnlySpan<BrutalEngine.Platform.PlatformEvent>
+BrutalEngine.Platform.PlatformEventBatch.GetText(in BrutalEngine.Platform.PlatformEvent textEvent) -> System.ReadOnlySpan<byte>
 BrutalEngine.Platform.PlatformEventBatch.PlatformEventBatch() -> void
 BrutalEngine.Platform.PlatformEventBuffer
 BrutalEngine.Platform.PlatformEventBuffer.Add(in BrutalEngine.Platform.PlatformEvent platformEvent) -> void
+BrutalEngine.Platform.PlatformEventBuffer.AddText(BrutalEngine.Platform.WindowId window, long timestamp, System.ReadOnlySpan<byte> utf8) -> void
 BrutalEngine.Platform.PlatformEventBuffer.AsBatch() -> BrutalEngine.Platform.PlatformEventBatch
 BrutalEngine.Platform.PlatformEventBuffer.Capacity.get -> int
 BrutalEngine.Platform.PlatformEventBuffer.Clear() -> void
 BrutalEngine.Platform.PlatformEventBuffer.Count.get -> int
 BrutalEngine.Platform.PlatformEventBuffer.HasRoom.get -> bool
 BrutalEngine.Platform.PlatformEventBuffer.PlatformEventBuffer(int eventCapacity, int textCapacityBytes) -> void
+BrutalEngine.Platform.PlatformEventBuffer.TruncatedTextCount.get -> long
 BrutalEngine.Platform.PlatformEventHeader
 BrutalEngine.Platform.PlatformEventHeader.Deconstruct(out BrutalEngine.Platform.PlatformEventKind Kind, out BrutalEngine.Platform.WindowId Window, out long Timestamp) -> void
 BrutalEngine.Platform.PlatformEventHeader.Equals(BrutalEngine.Platform.PlatformEventHeader other) -> bool

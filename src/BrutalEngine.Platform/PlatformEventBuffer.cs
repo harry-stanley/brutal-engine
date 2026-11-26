@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.Unicode;
 
 namespace BrutalEngine.Platform;
 
@@ -11,8 +12,10 @@ namespace BrutalEngine.Platform;
 /// <para>
 /// The backend clears the buffer at the start of each pump, then translates OS events into it one at a time while
 /// <see cref="HasRoom"/> holds. When the buffer fills up with events still queued in the OS, the backend leaves
-/// them there, in order, for the next pump: events are deferred, never dropped (docs/design/platform.md, "One
-/// buffer per pump").
+/// them there, in order, for the next pump: events are deferred, never dropped.
+/// The one lossy case is a single text event longer than the remaining text space, which <see cref="AddText"/> cuts
+/// at a code-point boundary and counts in <see cref="TruncatedTextCount"/> (docs/design/platform.md, "One buffer
+/// per pump").
 /// </para>
 /// <para>
 /// The event array and the text storage are allocated once, by the constructor; no other member allocates, except
@@ -71,7 +74,14 @@ public sealed class PlatformEventBuffer
     /// </value>
     public bool HasRoom => _count < _events.Length && _text.Length - _textLength >= TextReserveBytes;
 
-    /// <summary>Empties the buffer for the next pump: removes every event and all text.</summary>
+    /// <summary>Gets how many text events <see cref="AddText"/> has cut to fit the remaining text space.</summary>
+    /// <value>A count over the buffer's lifetime; <see cref="Clear"/> keeps it.</value>
+    public long TruncatedTextCount { get; private set; }
+
+    /// <summary>
+    /// Empties the buffer for the next pump: removes every event and all text. <see cref="TruncatedTextCount"/> keeps
+    /// counting.
+    /// </summary>
     /// <remarks>Ends the lifetime of every batch, span and text the buffer handed out before.</remarks>
     public void Clear()
     {
@@ -87,8 +97,8 @@ public sealed class PlatformEventBuffer
     /// The backend checks <see cref="HasRoom"/> before dequeuing an OS event, so a full buffer here is a bug.
     /// </remarks>
     /// <exception cref="ArgumentException">
-    /// <paramref name="platformEvent"/> is a <see cref="PlatformEventKind.TextInput"/> event, whose text must be stored
-    /// in the buffer's text storage with it.
+    /// <paramref name="platformEvent"/> is a <see cref="PlatformEventKind.TextInput"/> event: add text through
+    /// <see cref="AddText"/>, which stores the bytes the event refers to.
     /// </exception>
     /// <exception cref="InvalidOperationException">The buffer already holds <see cref="Capacity"/> events.</exception>
     public void Add(in PlatformEvent platformEvent)
@@ -96,12 +106,58 @@ public sealed class PlatformEventBuffer
         if (platformEvent.Kind == PlatformEventKind.TextInput)
         {
             throw new ArgumentException(
-                "A TextInput event refers to text in the buffer's text storage, so it can't be added on its own.",
+                "A TextInput event refers to text in the buffer's text storage: add it with AddText.",
                 nameof(platformEvent));
         }
 
         ThrowIfFull();
         _events[_count++] = platformEvent;
+    }
+
+    /// <summary>
+    /// Adds a <see cref="PlatformEventKind.TextInput"/> event: copies its UTF-8 text into the text storage and adds
+    /// an event whose <see cref="PlatformEvent.Text"/> says where the copy is.
+    /// </summary>
+    /// <param name="window">The window the text is for; default when the OS reported none.</param>
+    /// <param name="timestamp">When the pump translated the event, from the platform clock.</param>
+    /// <param name="utf8">The committed text, as UTF-8 without a NUL terminator. May be empty.</param>
+    /// <remarks>
+    /// If the text is longer than the free text space, only its longest prefix of complete UTF-8 sequences that fits
+    /// is stored (never part of a 2-, 3- or 4-byte sequence, possibly nothing), and
+    /// <see cref="TruncatedTextCount"/> goes up by one. While the backend respects <see cref="HasRoom"/>, at least
+    /// <see cref="TextReserveBytes"/> are free.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The buffer already holds <see cref="Capacity"/> events. Nothing is stored.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="utf8"/> isn't valid UTF-8. Nothing is stored.</exception>
+    public void AddText(WindowId window, long timestamp, ReadOnlySpan<byte> utf8)
+    {
+        ThrowIfFull();
+        if (!Utf8.IsValid(utf8))
+        {
+            throw new ArgumentException("The text isn't valid UTF-8.", nameof(utf8));
+        }
+
+        int length = utf8.Length;
+        int free = _text.Length - _textLength;
+        if (length > free)
+        {
+            // The input is valid UTF-8, so the byte after the cut starts a sequence unless it is a continuation byte
+            // (10xxxxxx). Stepping back over continuation bytes ends the stored prefix on a complete sequence.
+            length = free;
+            while (length > 0 && (utf8[length] & 0xC0) == 0x80)
+            {
+                length--;
+            }
+
+            TruncatedTextCount++;
+        }
+
+        utf8[..length].CopyTo(_text.AsSpan(_textLength));
+        PlatformEventHeader header = new(PlatformEventKind.TextInput, window, timestamp);
+        _events[_count++] = PlatformEvent.CreateText(header, new TextEventData(_textLength, length));
+        _textLength += length;
     }
 
     /// <summary>Gets the events and text the buffer holds now, for the host and input to read.</summary>
@@ -110,7 +166,7 @@ public sealed class PlatformEventBuffer
     /// the next batch taken, not this one.
     /// </returns>
     public PlatformEventBatch AsBatch() =>
-        new(_events.AsSpan(0, _count));
+        new(_events.AsSpan(0, _count), _text.AsSpan(0, _textLength));
 
     private static void CheckRange(int value, int min, int max, string paramName)
     {
