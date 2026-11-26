@@ -122,6 +122,29 @@ BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.get -> BrutalEngine
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.init -> void
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.get -> ulong
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.init -> void
+BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.Barrier = 0 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.BeginComputePass = 7 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.BeginRenderPass = 5 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.ClearSwapchainImage = 21 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyBufferToBuffer = 1 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyBufferToTexture = 2 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyTextureToBuffer = 3 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyTextureToTexture = 4 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.Dispatch = 18 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.Draw = 16 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.DrawIndexed = 17 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.EndComputePass = 8 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.EndRenderPass = 6 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.PopDebugGroup = 20 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.PushConstants = 15 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.PushDebugGroup = 19 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetBindGroup = 10 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetIndexBuffer = 12 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetPipeline = 9 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetScissor = 14 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetVertexBuffer = 11 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetViewport = 13 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.FramePlan
 BrutalEngine.Graphics.Backend.FramePlan.Acquired.get -> System.ReadOnlySpan<BrutalEngine.Graphics.Backend.SwapchainImageUse>
 BrutalEngine.Graphics.Backend.FramePlan.Commands.get -> System.ReadOnlySpan<byte>
@@ -266,6 +289,19 @@ BrutalEngine.Graphics.BufferUsage.None = 0 -> BrutalEngine.Graphics.BufferUsage
 BrutalEngine.Graphics.BufferUsage.Storage = 8 -> BrutalEngine.Graphics.BufferUsage
 BrutalEngine.Graphics.BufferUsage.Uniform = 4 -> BrutalEngine.Graphics.BufferUsage
 BrutalEngine.Graphics.BufferUsage.Vertex = 1 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.ColorValue
+BrutalEngine.Graphics.ColorValue.A.get -> float
+BrutalEngine.Graphics.ColorValue.A.init -> void
+BrutalEngine.Graphics.ColorValue.B.get -> float
+BrutalEngine.Graphics.ColorValue.B.init -> void
+BrutalEngine.Graphics.ColorValue.ColorValue() -> void
+BrutalEngine.Graphics.ColorValue.ColorValue(float R, float G, float B, float A) -> void
+BrutalEngine.Graphics.ColorValue.Deconstruct(out float R, out float G, out float B, out float A) -> void
+BrutalEngine.Graphics.ColorValue.Equals(BrutalEngine.Graphics.ColorValue other) -> bool
+BrutalEngine.Graphics.ColorValue.G.get -> float
+BrutalEngine.Graphics.ColorValue.G.init -> void
+BrutalEngine.Graphics.ColorValue.R.get -> float
+BrutalEngine.Graphics.ColorValue.R.init -> void
 BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Always = 7 -> BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Equal = 2 -> BrutalEngine.Graphics.CompareFunction
@@ -283,6 +319,34 @@ BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.DebugLabel.DebugLabel() -> void
 BrutalEngine.Graphics.DebugLabel.Equals(BrutalEngine.Graphics.DebugLabel other) -> bool
 BrutalEngine.Graphics.DebugLabel.IsNull.get -> bool
+BrutalEngine.Graphics.DrawArguments
+BrutalEngine.Graphics.DrawArguments.Deconstruct(out int VertexCount, out int InstanceCount, out int FirstVertex, out int FirstInstance) -> void
+BrutalEngine.Graphics.DrawArguments.DrawArguments() -> void
+BrutalEngine.Graphics.DrawArguments.DrawArguments(int VertexCount, int InstanceCount = 1, int FirstVertex = 0, int FirstInstance = 0) -> void
+BrutalEngine.Graphics.DrawArguments.Equals(BrutalEngine.Graphics.DrawArguments other) -> bool
+BrutalEngine.Graphics.DrawArguments.FirstInstance.get -> int
+BrutalEngine.Graphics.DrawArguments.FirstInstance.init -> void
+BrutalEngine.Graphics.DrawArguments.FirstVertex.get -> int
+BrutalEngine.Graphics.DrawArguments.FirstVertex.init -> void
+BrutalEngine.Graphics.DrawArguments.InstanceCount.get -> int
+BrutalEngine.Graphics.DrawArguments.InstanceCount.init -> void
+BrutalEngine.Graphics.DrawArguments.VertexCount.get -> int
+BrutalEngine.Graphics.DrawArguments.VertexCount.init -> void
+BrutalEngine.Graphics.DrawIndexedArguments
+BrutalEngine.Graphics.DrawIndexedArguments.BaseVertex.get -> int
+BrutalEngine.Graphics.DrawIndexedArguments.BaseVertex.init -> void
+BrutalEngine.Graphics.DrawIndexedArguments.Deconstruct(out int IndexCount, out int InstanceCount, out int FirstIndex, out int BaseVertex, out int FirstInstance) -> void
+BrutalEngine.Graphics.DrawIndexedArguments.DrawIndexedArguments() -> void
+BrutalEngine.Graphics.DrawIndexedArguments.DrawIndexedArguments(int IndexCount, int InstanceCount = 1, int FirstIndex = 0, int BaseVertex = 0, int FirstInstance = 0) -> void
+BrutalEngine.Graphics.DrawIndexedArguments.Equals(BrutalEngine.Graphics.DrawIndexedArguments other) -> bool
+BrutalEngine.Graphics.DrawIndexedArguments.FirstIndex.get -> int
+BrutalEngine.Graphics.DrawIndexedArguments.FirstIndex.init -> void
+BrutalEngine.Graphics.DrawIndexedArguments.FirstInstance.get -> int
+BrutalEngine.Graphics.DrawIndexedArguments.FirstInstance.init -> void
+BrutalEngine.Graphics.DrawIndexedArguments.IndexCount.get -> int
+BrutalEngine.Graphics.DrawIndexedArguments.IndexCount.init -> void
+BrutalEngine.Graphics.DrawIndexedArguments.InstanceCount.get -> int
+BrutalEngine.Graphics.DrawIndexedArguments.InstanceCount.init -> void
 BrutalEngine.Graphics.Filter
 BrutalEngine.Graphics.Filter.Linear = 1 -> BrutalEngine.Graphics.Filter
 BrutalEngine.Graphics.Filter.Nearest = 0 -> BrutalEngine.Graphics.Filter
@@ -383,6 +447,13 @@ BrutalEngine.Graphics.GraphicsPipelineHandle
 BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
 BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
 BrutalEngine.Graphics.GraphicsPipelineHandle.IsNull.get -> bool
+BrutalEngine.Graphics.IndexFormat
+BrutalEngine.Graphics.IndexFormat.Uint16 = 0 -> BrutalEngine.Graphics.IndexFormat
+BrutalEngine.Graphics.IndexFormat.Uint32 = 1 -> BrutalEngine.Graphics.IndexFormat
+BrutalEngine.Graphics.LoadOp
+BrutalEngine.Graphics.LoadOp.Clear = 1 -> BrutalEngine.Graphics.LoadOp
+BrutalEngine.Graphics.LoadOp.DontCare = 2 -> BrutalEngine.Graphics.LoadOp
+BrutalEngine.Graphics.LoadOp.Load = 0 -> BrutalEngine.Graphics.LoadOp
 BrutalEngine.Graphics.MemoryIntent
 BrutalEngine.Graphics.MemoryIntent.GpuOnly = 0 -> BrutalEngine.Graphics.MemoryIntent
 BrutalEngine.Graphics.MemoryIntent.Readback = 2 -> BrutalEngine.Graphics.MemoryIntent
@@ -428,6 +499,19 @@ BrutalEngine.Graphics.SamplerHandle
 BrutalEngine.Graphics.SamplerHandle.Equals(BrutalEngine.Graphics.SamplerHandle other) -> bool
 BrutalEngine.Graphics.SamplerHandle.IsNull.get -> bool
 BrutalEngine.Graphics.SamplerHandle.SamplerHandle() -> void
+BrutalEngine.Graphics.ScissorRect
+BrutalEngine.Graphics.ScissorRect.Deconstruct(out int X, out int Y, out int Width, out int Height) -> void
+BrutalEngine.Graphics.ScissorRect.Equals(BrutalEngine.Graphics.ScissorRect other) -> bool
+BrutalEngine.Graphics.ScissorRect.Height.get -> int
+BrutalEngine.Graphics.ScissorRect.Height.init -> void
+BrutalEngine.Graphics.ScissorRect.ScissorRect() -> void
+BrutalEngine.Graphics.ScissorRect.ScissorRect(int X, int Y, int Width, int Height) -> void
+BrutalEngine.Graphics.ScissorRect.Width.get -> int
+BrutalEngine.Graphics.ScissorRect.Width.init -> void
+BrutalEngine.Graphics.ScissorRect.X.get -> int
+BrutalEngine.Graphics.ScissorRect.X.init -> void
+BrutalEngine.Graphics.ScissorRect.Y.get -> int
+BrutalEngine.Graphics.ScissorRect.Y.init -> void
 BrutalEngine.Graphics.ShaderModuleHandle
 BrutalEngine.Graphics.ShaderModuleHandle.Equals(BrutalEngine.Graphics.ShaderModuleHandle other) -> bool
 BrutalEngine.Graphics.ShaderModuleHandle.IsNull.get -> bool
@@ -437,6 +521,9 @@ BrutalEngine.Graphics.ShaderStages.Compute = 4 -> BrutalEngine.Graphics.ShaderSt
 BrutalEngine.Graphics.ShaderStages.Fragment = 2 -> BrutalEngine.Graphics.ShaderStages
 BrutalEngine.Graphics.ShaderStages.None = 0 -> BrutalEngine.Graphics.ShaderStages
 BrutalEngine.Graphics.ShaderStages.Vertex = 1 -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.StoreOp
+BrutalEngine.Graphics.StoreOp.DontCare = 1 -> BrutalEngine.Graphics.StoreOp
+BrutalEngine.Graphics.StoreOp.Store = 0 -> BrutalEngine.Graphics.StoreOp
 BrutalEngine.Graphics.SwapchainFormat
 BrutalEngine.Graphics.SwapchainFormat.Srgb = 0 -> BrutalEngine.Graphics.SwapchainFormat
 BrutalEngine.Graphics.SwapchainFormat.Unorm = 1 -> BrutalEngine.Graphics.SwapchainFormat
@@ -629,6 +716,23 @@ BrutalEngine.Graphics.TransientUsage.Indirect = 16 -> BrutalEngine.Graphics.Tran
 BrutalEngine.Graphics.TransientUsage.Storage = 8 -> BrutalEngine.Graphics.TransientUsage
 BrutalEngine.Graphics.TransientUsage.Uniform = 4 -> BrutalEngine.Graphics.TransientUsage
 BrutalEngine.Graphics.TransientUsage.Vertex = 1 -> BrutalEngine.Graphics.TransientUsage
+BrutalEngine.Graphics.Viewport
+BrutalEngine.Graphics.Viewport.Deconstruct(out float X, out float Y, out float Width, out float Height, out float MinDepth, out float MaxDepth) -> void
+BrutalEngine.Graphics.Viewport.Equals(BrutalEngine.Graphics.Viewport other) -> bool
+BrutalEngine.Graphics.Viewport.Height.get -> float
+BrutalEngine.Graphics.Viewport.Height.init -> void
+BrutalEngine.Graphics.Viewport.MaxDepth.get -> float
+BrutalEngine.Graphics.Viewport.MaxDepth.init -> void
+BrutalEngine.Graphics.Viewport.MinDepth.get -> float
+BrutalEngine.Graphics.Viewport.MinDepth.init -> void
+BrutalEngine.Graphics.Viewport.Viewport() -> void
+BrutalEngine.Graphics.Viewport.Viewport(float X, float Y, float Width, float Height, float MinDepth = 0, float MaxDepth = 1) -> void
+BrutalEngine.Graphics.Viewport.Width.get -> float
+BrutalEngine.Graphics.Viewport.Width.init -> void
+BrutalEngine.Graphics.Viewport.X.get -> float
+BrutalEngine.Graphics.Viewport.X.init -> void
+BrutalEngine.Graphics.Viewport.Y.get -> float
+BrutalEngine.Graphics.Viewport.Y.init -> void
 const BrutalEngine.Graphics.TextureBufferCopy.RowPitchAlignment = 256 -> int
 override BrutalEngine.Graphics.AdapterSelection.GetHashCode() -> int
 override BrutalEngine.Graphics.AdapterSelection.ToString() -> string!
@@ -660,12 +764,18 @@ override BrutalEngine.Graphics.BufferDescription.ToString() -> string!
 override BrutalEngine.Graphics.BufferHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BufferHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BufferHandle.ToString() -> string!
+override BrutalEngine.Graphics.ColorValue.GetHashCode() -> int
+override BrutalEngine.Graphics.ColorValue.ToString() -> string!
 override BrutalEngine.Graphics.ComputePipelineHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.ComputePipelineHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.ComputePipelineHandle.ToString() -> string!
 override BrutalEngine.Graphics.DebugLabel.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.DebugLabel.GetHashCode() -> int
 override BrutalEngine.Graphics.DebugLabel.ToString() -> string!
+override BrutalEngine.Graphics.DrawArguments.GetHashCode() -> int
+override BrutalEngine.Graphics.DrawArguments.ToString() -> string!
+override BrutalEngine.Graphics.DrawIndexedArguments.GetHashCode() -> int
+override BrutalEngine.Graphics.DrawIndexedArguments.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsAdapterInfo.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.GraphicsAdapterInfo.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsAdapterInfo.ToString() -> string!
@@ -688,6 +798,8 @@ override BrutalEngine.Graphics.SamplerDescription.ToString() -> string!
 override BrutalEngine.Graphics.SamplerHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.SamplerHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.SamplerHandle.ToString() -> string!
+override BrutalEngine.Graphics.ScissorRect.GetHashCode() -> int
+override BrutalEngine.Graphics.ScissorRect.ToString() -> string!
 override BrutalEngine.Graphics.ShaderModuleHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.ShaderModuleHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.ShaderModuleHandle.ToString() -> string!
@@ -721,6 +833,8 @@ override BrutalEngine.Graphics.TextureViewHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureViewHandle.ToString() -> string!
 override BrutalEngine.Graphics.TextureWrite.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureWrite.ToString() -> string!
+override BrutalEngine.Graphics.Viewport.GetHashCode() -> int
+override BrutalEngine.Graphics.Viewport.ToString() -> string!
 static BrutalEngine.Graphics.AdapterSelection.Auto.get -> BrutalEngine.Graphics.AdapterSelection
 static BrutalEngine.Graphics.AdapterSelection.ByIndex(int index) -> BrutalEngine.Graphics.AdapterSelection
 static BrutalEngine.Graphics.AdapterSelection.ByName(string! nameSubstring) -> BrutalEngine.Graphics.AdapterSelection
@@ -752,10 +866,16 @@ static BrutalEngine.Graphics.BufferDescription.operator !=(BrutalEngine.Graphics
 static BrutalEngine.Graphics.BufferDescription.operator ==(BrutalEngine.Graphics.BufferDescription left, BrutalEngine.Graphics.BufferDescription right) -> bool
 static BrutalEngine.Graphics.BufferHandle.operator !=(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
 static BrutalEngine.Graphics.BufferHandle.operator ==(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
+static BrutalEngine.Graphics.ColorValue.operator !=(BrutalEngine.Graphics.ColorValue left, BrutalEngine.Graphics.ColorValue right) -> bool
+static BrutalEngine.Graphics.ColorValue.operator ==(BrutalEngine.Graphics.ColorValue left, BrutalEngine.Graphics.ColorValue right) -> bool
 static BrutalEngine.Graphics.ComputePipelineHandle.operator !=(BrutalEngine.Graphics.ComputePipelineHandle left, BrutalEngine.Graphics.ComputePipelineHandle right) -> bool
 static BrutalEngine.Graphics.ComputePipelineHandle.operator ==(BrutalEngine.Graphics.ComputePipelineHandle left, BrutalEngine.Graphics.ComputePipelineHandle right) -> bool
 static BrutalEngine.Graphics.DebugLabel.operator !=(BrutalEngine.Graphics.DebugLabel left, BrutalEngine.Graphics.DebugLabel right) -> bool
 static BrutalEngine.Graphics.DebugLabel.operator ==(BrutalEngine.Graphics.DebugLabel left, BrutalEngine.Graphics.DebugLabel right) -> bool
+static BrutalEngine.Graphics.DrawArguments.operator !=(BrutalEngine.Graphics.DrawArguments left, BrutalEngine.Graphics.DrawArguments right) -> bool
+static BrutalEngine.Graphics.DrawArguments.operator ==(BrutalEngine.Graphics.DrawArguments left, BrutalEngine.Graphics.DrawArguments right) -> bool
+static BrutalEngine.Graphics.DrawIndexedArguments.operator !=(BrutalEngine.Graphics.DrawIndexedArguments left, BrutalEngine.Graphics.DrawIndexedArguments right) -> bool
+static BrutalEngine.Graphics.DrawIndexedArguments.operator ==(BrutalEngine.Graphics.DrawIndexedArguments left, BrutalEngine.Graphics.DrawIndexedArguments right) -> bool
 static BrutalEngine.Graphics.GraphicsAdapterInfo.operator !=(BrutalEngine.Graphics.GraphicsAdapterInfo? left, BrutalEngine.Graphics.GraphicsAdapterInfo? right) -> bool
 static BrutalEngine.Graphics.GraphicsAdapterInfo.operator ==(BrutalEngine.Graphics.GraphicsAdapterInfo? left, BrutalEngine.Graphics.GraphicsAdapterInfo? right) -> bool
 static BrutalEngine.Graphics.GraphicsCapabilities.operator !=(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
@@ -772,6 +892,8 @@ static BrutalEngine.Graphics.SamplerDescription.operator !=(BrutalEngine.Graphic
 static BrutalEngine.Graphics.SamplerDescription.operator ==(BrutalEngine.Graphics.SamplerDescription left, BrutalEngine.Graphics.SamplerDescription right) -> bool
 static BrutalEngine.Graphics.SamplerHandle.operator !=(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
 static BrutalEngine.Graphics.SamplerHandle.operator ==(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
+static BrutalEngine.Graphics.ScissorRect.operator !=(BrutalEngine.Graphics.ScissorRect left, BrutalEngine.Graphics.ScissorRect right) -> bool
+static BrutalEngine.Graphics.ScissorRect.operator ==(BrutalEngine.Graphics.ScissorRect left, BrutalEngine.Graphics.ScissorRect right) -> bool
 static BrutalEngine.Graphics.ShaderModuleHandle.operator !=(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
 static BrutalEngine.Graphics.ShaderModuleHandle.operator ==(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
 static BrutalEngine.Graphics.SwapchainHandle.operator !=(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
@@ -800,6 +922,8 @@ static BrutalEngine.Graphics.TextureViewHandle.operator !=(BrutalEngine.Graphics
 static BrutalEngine.Graphics.TextureViewHandle.operator ==(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
 static BrutalEngine.Graphics.TextureWrite.operator !=(BrutalEngine.Graphics.TextureWrite left, BrutalEngine.Graphics.TextureWrite right) -> bool
 static BrutalEngine.Graphics.TextureWrite.operator ==(BrutalEngine.Graphics.TextureWrite left, BrutalEngine.Graphics.TextureWrite right) -> bool
+static BrutalEngine.Graphics.Viewport.operator !=(BrutalEngine.Graphics.Viewport left, BrutalEngine.Graphics.Viewport right) -> bool
+static BrutalEngine.Graphics.Viewport.operator ==(BrutalEngine.Graphics.Viewport left, BrutalEngine.Graphics.Viewport right) -> bool
 ~override BrutalEngine.Graphics.AdapterSelection.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.Backend.BackendAcquire.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.Backend.BackendBuffer.Equals(object obj) -> bool
@@ -809,8 +933,12 @@ static BrutalEngine.Graphics.TextureWrite.operator ==(BrutalEngine.Graphics.Text
 ~override BrutalEngine.Graphics.Backend.SwapchainImageUse.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.ColorValue.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.DrawArguments.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.DrawIndexedArguments.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SamplerDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.ScissorRect.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SwapchainImage.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SwapchainInfo.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureBufferCopy.Equals(object obj) -> bool
@@ -820,3 +948,4 @@ static BrutalEngine.Graphics.TextureWrite.operator ==(BrutalEngine.Graphics.Text
 ~override BrutalEngine.Graphics.TextureRegion.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureViewDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureWrite.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Viewport.Equals(object obj) -> bool
