@@ -179,6 +179,14 @@
         "dependencies": {
           "BrutalEngine.Core": "[1.0.0, )"
         }
+      },
+      "BrutalEngine.TestUtilities": {
+        "type": "Project",
+        "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )",
+          "BrutalEngine.Graphics": "[1.0.0, )",
+          "BrutalEngine.Platform": "[1.0.0, )"
+        }
       }
     }
   }

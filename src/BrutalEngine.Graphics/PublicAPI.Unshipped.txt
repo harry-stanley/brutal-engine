@@ -553,6 +553,11 @@ BrutalEngine.Graphics.GraphicsCapabilities.Features.init -> void
 BrutalEngine.Graphics.GraphicsCapabilities.GraphicsCapabilities() -> void
 BrutalEngine.Graphics.GraphicsCapabilities.Limits.get -> BrutalEngine.Graphics.GraphicsLimits
 BrutalEngine.Graphics.GraphicsCapabilities.Limits.init -> void
+BrutalEngine.Graphics.GraphicsDevice
+BrutalEngine.Graphics.GraphicsDevice.Adapter.get -> BrutalEngine.Graphics.GraphicsAdapterInfo!
+BrutalEngine.Graphics.GraphicsDevice.Capabilities.get -> BrutalEngine.Graphics.GraphicsCapabilities!
+BrutalEngine.Graphics.GraphicsDevice.Dispose() -> void
+BrutalEngine.Graphics.GraphicsDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
 BrutalEngine.Graphics.GraphicsDeviceOptions
 BrutalEngine.Graphics.GraphicsDeviceOptions.<Clone>$() -> BrutalEngine.Graphics.GraphicsDeviceOptions!
 BrutalEngine.Graphics.GraphicsDeviceOptions.Adapter.get -> BrutalEngine.Graphics.AdapterSelection
@@ -1045,6 +1050,8 @@ static BrutalEngine.Graphics.GraphicsAdapterInfo.operator !=(BrutalEngine.Graphi
 static BrutalEngine.Graphics.GraphicsAdapterInfo.operator ==(BrutalEngine.Graphics.GraphicsAdapterInfo? left, BrutalEngine.Graphics.GraphicsAdapterInfo? right) -> bool
 static BrutalEngine.Graphics.GraphicsCapabilities.operator !=(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
 static BrutalEngine.Graphics.GraphicsCapabilities.operator ==(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
+static BrutalEngine.Graphics.GraphicsDevice.Create(BrutalEngine.Graphics.Backend.IGraphicsBackend! backend, BrutalEngine.Graphics.GraphicsDeviceOptions! options) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.GraphicsDevice!>
+static BrutalEngine.Graphics.GraphicsDevice.EnumerateAdapters(BrutalEngine.Graphics.Backend.IGraphicsBackend! backend, BrutalEngine.Graphics.GraphicsDeviceOptions! options) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Graphics.GraphicsAdapterInfo!>!>
 static BrutalEngine.Graphics.GraphicsDeviceOptions.operator !=(BrutalEngine.Graphics.GraphicsDeviceOptions? left, BrutalEngine.Graphics.GraphicsDeviceOptions? right) -> bool
 static BrutalEngine.Graphics.GraphicsDeviceOptions.operator ==(BrutalEngine.Graphics.GraphicsDeviceOptions? left, BrutalEngine.Graphics.GraphicsDeviceOptions? right) -> bool
 static BrutalEngine.Graphics.GraphicsLimits.operator !=(BrutalEngine.Graphics.GraphicsLimits left, BrutalEngine.Graphics.GraphicsLimits right) -> bool

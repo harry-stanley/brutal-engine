@@ -15,5 +15,7 @@
     <ProjectReference Include="../../src/BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
     <!-- Direct, not only through Graphics: the tests implement IWindow and IVulkanSurfaceSource (Backend/FakeWindow.cs). -->
     <ProjectReference Include="../../src/BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
+    <!-- The in-memory fake backend the device tests (Device/) create graphics devices on. -->
+    <ProjectReference Include="../TestUtilities/TestUtilities.csproj" />
   </ItemGroup>
 </Project>
