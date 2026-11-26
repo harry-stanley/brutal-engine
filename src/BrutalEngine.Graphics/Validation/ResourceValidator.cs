@@ -107,9 +107,16 @@ internal static class ResourceValidator
         CheckAtLeastOne(nameof(description), Type, nameof(TextureDescription.Height), description.Height, name);
         CheckAtLeastOne(nameof(description), Type, nameof(TextureDescription.ArrayLayers), description.ArrayLayers, name);
         CheckAtLeastOne(nameof(description), Type, nameof(TextureDescription.MipLevels), description.MipLevels, name);
-        if (description.MipLevels > MaxMipLevels(description.Width, description.Height))
+        int maxMipLevels = MaxMipLevels(description.Width, description.Height);
+        if (description.MipLevels > maxMipLevels)
         {
-            ThrowOutOfRange(nameof(description), Type, nameof(TextureDescription.MipLevels), "must be at most floor(log2(max(Width, Height))) + 1", description.MipLevels, name);
+            ThrowOutOfRange(
+                nameof(description),
+                Type,
+                nameof(TextureDescription.MipLevels),
+                string.Create(CultureInfo.InvariantCulture, $"must be at most floor(log2(max(Width, Height))) + 1 ({maxMipLevels})"),
+                description.MipLevels,
+                name);
         }
 
         int samples = description.SampleCount;

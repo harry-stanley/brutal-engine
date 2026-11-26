@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Validation;
 using CsCheck;
@@ -84,9 +85,9 @@ public sealed class ResourceValidatorTests
     public static TheoryData<string> InvalidTextures() =>
     [
         "FormatUndefined", "FormatAboveLast", "FormatNegative", "WidthZero", "WidthNegative", "HeightZero", "HeightMinValue",
-        "ArrayLayersZero", "MipLevelsZero", "MipLevelsNegative", "MipLevelsAboveChainWide", "MipLevelsAboveChainTall",
+        "ArrayLayersZero", "ArrayLayersNegative", "MipLevelsZero", "MipLevelsNegative", "MipLevelsAboveChainWide", "MipLevelsAboveChainTall",
         "SampleCountZero", "SampleCountThree", "SampleCountSix", "SampleCountThirtyTwo", "SampleCountMinValue",
-        "SampleCountWithMips", "SampleCountWithLayers", "UsageNone", "UsageUndefinedFlag", "WidthAboveLimit",
+        "SampleCountWithMips", "SampleCountWithLayers", "UsageNone", "UsageUndefinedFlag", "UsageSignBit", "WidthAboveLimit",
         "HeightAboveLimit", "ArrayLayersAboveLimit",
     ];
 
@@ -106,6 +107,7 @@ public sealed class ResourceValidatorTests
             "HeightZero" => (_texture with { Height = 0 }, outOfRange, "Height"),
             "HeightMinValue" => (_texture with { Height = int.MinValue }, outOfRange, "Height"),
             "ArrayLayersZero" => (_texture with { ArrayLayers = 0 }, outOfRange, "ArrayLayers"),
+            "ArrayLayersNegative" => (_texture with { ArrayLayers = -1 }, outOfRange, "ArrayLayers"),
             "MipLevelsZero" => (_texture with { MipLevels = 0 }, outOfRange, "MipLevels"),
             "MipLevelsNegative" => (_texture with { MipLevels = -1 }, outOfRange, "MipLevels"),
             "MipLevelsAboveChainWide" => (_texture with { MipLevels = 10 }, outOfRange, "MipLevels"),
@@ -119,6 +121,7 @@ public sealed class ResourceValidatorTests
             "SampleCountWithLayers" => (_texture with { SampleCount = 4, ArrayLayers = 2 }, invalid, "SampleCount"),
             "UsageNone" => (_texture with { Usage = TextureUsage.None }, invalid, "Usage"),
             "UsageUndefinedFlag" => (_texture with { Usage = TextureUsage.Sampled | (TextureUsage)64 }, outOfRange, "Usage"),
+            "UsageSignBit" => (_texture with { Usage = (TextureUsage)int.MinValue }, outOfRange, "Usage"),
             "WidthAboveLimit" => (_texture with { Width = 4097 }, outOfRange, "Width"),
             "HeightAboveLimit" => (_texture with { Height = 4097 }, outOfRange, "Height"),
             "ArrayLayersAboveLimit" => (_texture with { ArrayLayers = 257 }, outOfRange, "ArrayLayers"),
@@ -434,6 +437,11 @@ public sealed class ResourceValidatorTests
         ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(
             () => ResourceValidator.Validate(over, _unlimited, GraphicsFeatures.None));
         Assert.Contains("TextureDescription.MipLevels", exception.Message, StringComparison.Ordinal);
+        // The message gives this texture's maximum, as the limit messages give their bound.
+        Assert.Contains(
+            string.Create(CultureInfo.InvariantCulture, $"+ 1 ({expected}), but is {expected + 1} "),
+            exception.Message,
+            StringComparison.Ordinal);
     }
 
     // Halves the larger side down to 1, counting levels: independent of the validator's Log2.
