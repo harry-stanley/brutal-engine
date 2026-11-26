@@ -20,11 +20,15 @@ internal static unsafe class GpuValidation
     }
 
     /// <summary>Creates a validated instance that logs to <paramref name="category"/>.</summary>
-    public static VulkanInstance Create(LogCategory category, ReadOnlyMemory<ValidationAllowance> allowList = default, ValidationSink.HandleTracker? handles = null)
+    public static VulkanInstance Create(
+        LogCategory category,
+        ReadOnlyMemory<ValidationAllowance> allowList = default,
+        ValidationSink.HandleTracker? handles = null,
+        InstanceFactory.DestroyTracker? destroys = null)
     {
         BindLoader();
         Result<VulkanInstance> result = InstanceFactory.Create(
-            new InstanceFactory.Options { ApplicationName = "ValidationTests", Validation = true, ValidationLog = category, ValidationAllowList = allowList, ValidationHandles = handles },
+            new InstanceFactory.Options { ApplicationName = "ValidationTests", Validation = true, ValidationLog = category, ValidationAllowList = allowList, ValidationHandles = handles, InstanceDestroys = destroys },
             new VulkanCallGate());
         Assert.True(result.IsSuccess, result.ToString());
         return result.Value;

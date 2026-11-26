@@ -26,6 +26,7 @@ internal sealed class VulkanInstance : IDisposable
     private readonly InstanceExtensions.Selection _selection;
     private readonly VkDebugUtilsMessengerEXT _messenger;
     private readonly ValidationSink? _sink;
+    private readonly InstanceFactory.DestroyTracker? _destroys;
     private bool _disposed;
 
     /// <summary>Takes ownership of a created instance and, with validation, its messenger and sink.</summary>
@@ -33,12 +34,14 @@ internal sealed class VulkanInstance : IDisposable
     /// <param name="selection">What it was created with.</param>
     /// <param name="messenger">The persistent messenger, or the null handle without validation; destroyed first.</param>
     /// <param name="sink">The messenger's sink, or <see langword="null"/> without validation; released last.</param>
-    internal VulkanInstance(Instance instance, InstanceExtensions.Selection selection, VkDebugUtilsMessengerEXT messenger, ValidationSink? sink)
+    /// <param name="destroys">A test's counter of destroyed instances, or <see langword="null"/>.</param>
+    internal VulkanInstance(Instance instance, InstanceExtensions.Selection selection, VkDebugUtilsMessengerEXT messenger, ValidationSink? sink, InstanceFactory.DestroyTracker? destroys)
     {
         _instance = instance;
         _selection = selection;
         _messenger = messenger;
         _sink = sink;
+        _destroys = destroys;
     }
 
     /// <summary>Gets BRUTAL's wrapper, for its function table and the physical devices it enumerated.</summary>
@@ -104,7 +107,7 @@ internal sealed class VulkanInstance : IDisposable
             _instance.PInvoke.vkDestroyDebugUtilsMessengerEXT.Invoke(_instance.Handle, _messenger, null);
         }
 
-        _instance.Dispose();
+        InstanceFactory.Destroy(_instance, _destroys);
 
         // Only now: vkDestroyInstance may call the chained messenger, which reaches the sink through its handle. If the
         // destroy threw, the instance may still exist, so the handle is kept.

@@ -182,24 +182,55 @@ public sealed class ValidationSinkTests
         using (logger)
         {
             ValidationSink.HandleTracker tracker = new();
-            VulkanInstance instance = GpuValidation.Create(category, handles: tracker);
+            InstanceFactory.DestroyTracker destroys = new();
+            VulkanInstance instance = GpuValidation.Create(category, handles: tracker, destroys: destroys);
             ValidationSink sink = instance.Sink!;
             Assert.Equal(1, tracker.Live);
 
-            // A messenger left alive is reported by vkDestroyInstance (VUID-vkDestroyInstance-instance-00629), through the
-            // chained messenger: counted only if the sink's handle is still valid while the instance is destroyed.
-            VkDebugUtilsMessengerCreateInfoEXT info = ValidationCallback.CreateInfo(sink);
-            VkDebugUtilsMessengerEXT leaked = default;
-            Assert.Equal(VkResult.Success, instance.Brutal.PInvoke.vkCreateDebugUtilsMessengerEXT.Invoke(instance.Handle, &info, null, &leaked));
-            Assert.Equal(0, instance.ValidationErrors);
+            // A messenger left alive is reported by vkDestroyInstance (VUID-vkDestroyInstance-instance-00629). The leaked
+            // messenger reports to a sink of its own, and the persistent messenger is destroyed first, so the instance's
+            // sink can only hear it through the messenger chained into creation, and only while its handle is valid.
+            ValidationSink other = new(category, ReadOnlyMemory<ValidationAllowance>.Empty);
+            try
+            {
+                VkDebugUtilsMessengerCreateInfoEXT info = ValidationCallback.CreateInfo(other);
+                VkDebugUtilsMessengerEXT leaked = default;
+                Assert.Equal(VkResult.Success, instance.Brutal.PInvoke.vkCreateDebugUtilsMessengerEXT.Invoke(instance.Handle, &info, null, &leaked));
+                Assert.Equal(0, instance.ValidationErrors);
 
-            instance.Dispose();
-            instance.Dispose();
+                instance.Dispose();
+                instance.Dispose();
+            }
+            finally
+            {
+                other.Release();
+            }
 
-            Assert.True(instance.ValidationErrors > 0, "vkDestroyInstance's leak report didn't reach the sink.");
+            Assert.True(instance.ValidationErrors > 0, "vkDestroyInstance's leak report didn't reach the instance's sink.");
             Assert.Contains(log.Entries, e => e.Message.Contains("VUID-vkDestroyInstance-instance-00629", StringComparison.Ordinal));
             Assert.True(sink.IsReleased);
             Assert.Equal(0, tracker.Live);
+            Assert.Equal(1, destroys.Destroyed);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Dispose_DestroysTheMessenger()
+    {
+        ValidationLog log = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(log);
+        using (logger)
+        {
+            InstanceFactory.DestroyTracker destroys = new();
+            VulkanInstance instance = GpuValidation.Create(category, destroys: destroys);
+
+            instance.Dispose();
+
+            // A persistent messenger still alive at vkDestroyInstance would be reported through the chained one.
+            Assert.Equal(0, instance.ValidationErrors);
+            Assert.DoesNotContain(log.Entries, e => e.Message.Contains("VUID-vkDestroyInstance-instance-00629", StringComparison.Ordinal));
+            Assert.Equal(1, destroys.Destroyed);
         }
     }
 }

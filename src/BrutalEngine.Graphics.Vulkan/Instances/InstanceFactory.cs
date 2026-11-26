@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
@@ -144,7 +145,7 @@ internal static class InstanceFactory
 
         if (sink is null)
         {
-            return new VulkanInstance(instance, selection, default, null);
+            return new VulkanInstance(instance, selection, default, null, options.InstanceDestroys);
         }
 
         // Sound: the description is a stack local that outlives the call, and the handle is written to a local. The table
@@ -158,12 +159,21 @@ internal static class InstanceFactory
         {
             // The instance exists and nothing else holds it: destroy it, then free the handle that its chained messenger
             // may still call back with during vkDestroyInstance.
-            instance.Dispose();
+            Destroy(instance, options.InstanceDestroys);
             sink.Release();
             return created.Error;
         }
 
-        return new VulkanInstance(instance, selection, messenger, sink);
+        return new VulkanInstance(instance, selection, messenger, sink, options.InstanceDestroys);
+    }
+
+    /// <summary>Destroys a BRUTAL instance and records it in a test's tracker: the one place instances are destroyed.</summary>
+    /// <param name="instance">The instance; destroyed once by the caller's own guard.</param>
+    /// <param name="tracker">A test's counter, or <see langword="null"/>.</param>
+    internal static void Destroy(Instance instance, DestroyTracker? tracker)
+    {
+        instance.Dispose();
+        tracker?.OnDestroyed();
     }
 
     /// <summary>
@@ -204,5 +214,24 @@ internal static class InstanceFactory
 
         /// <summary>Gets a test's counter of the sink's handle, or <see langword="null"/>.</summary>
         public ValidationSink.HandleTracker? ValidationHandles { get; init; }
+
+        /// <summary>Gets a test's counter of destroyed instances, or <see langword="null"/>.</summary>
+        public DestroyTracker? InstanceDestroys { get; init; }
+    }
+
+    /// <summary>
+    /// Counts the instances <see cref="Destroy"/> destroyed, so a test proves a failure path or a disposal destroyed its
+    /// instance. A debug seam owned by the test, never static, like <see cref="ValidationSink.HandleTracker"/>.
+    /// </summary>
+    /// <remarks>Thread-safe; allocates nothing.</remarks>
+    internal sealed class DestroyTracker
+    {
+        private int _destroyed;
+
+        /// <summary>Gets the number of instances destroyed.</summary>
+        public int Destroyed => Volatile.Read(ref _destroyed);
+
+        /// <summary>Records a destroyed instance.</summary>
+        internal void OnDestroyed() => Interlocked.Increment(ref _destroyed);
     }
 }

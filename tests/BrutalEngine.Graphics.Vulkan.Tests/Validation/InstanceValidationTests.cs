@@ -45,11 +45,12 @@ public sealed class InstanceValidationTests
     {
         GpuValidation.BindLoader();
         ValidationSink.HandleTracker tracker = new();
+        InstanceFactory.DestroyTracker destroys = new();
         VulkanFaultInjector faults = new();
         faults.FailNth(VulkanCall.CreateDebugUtilsMessenger, 1, VkResult.ErrorOutOfHostMemory);
         VulkanCallGate gate = new() { Faults = faults };
 
-        Result<VulkanInstance> result = InstanceFactory.Create(new InstanceFactory.Options { Validation = true, ValidationHandles = tracker }, gate);
+        Result<VulkanInstance> result = InstanceFactory.Create(new InstanceFactory.Options { Validation = true, ValidationHandles = tracker, InstanceDestroys = destroys }, gate);
 
         if (result.TryGetValue(out VulkanInstance? created))
         {
@@ -59,6 +60,7 @@ public sealed class InstanceValidationTests
         Assert.Equal(new EngineError(ErrorKind.OutOfMemory, "vkCreateDebugUtilsMessengerEXT failed", (int)VkResult.ErrorOutOfHostMemory), result.Error);
         Assert.False(faults.TryTake(VulkanCall.CreateDebugUtilsMessenger, out _));
         Assert.Equal(0, tracker.Live);
+        Assert.Equal(1, destroys.Destroyed);
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public sealed class InstanceValidationTests
     {
         GpuValidation.BindLoader();
         ValidationSink.HandleTracker tracker = new();
-        InstanceExtensions.Selection selection = new(["VK_BE_not_an_extension"], [], VkInstanceCreateFlags.None, Validation: true);
+        InstanceExtensions.Selection selection = new(["VK_BE_not_an_extension", VK.EXT_DEBUG_UTILS_EXTENSION_NAME], [], VkInstanceCreateFlags.None, Validation: true);
 
         Result<VulkanInstance> result = InstanceFactory.Create(selection, new InstanceFactory.Options { ValidationHandles = tracker }, new VulkanCallGate());
 
@@ -85,7 +87,7 @@ public sealed class InstanceValidationTests
     {
         VulkanFaultInjector faults = new();
         faults.FailNth(VulkanCall.CreateDebugUtilsMessenger, 1, VkResult.ErrorOutOfHostMemory);
-        InstanceExtensions.Selection selection = new([], [], VkInstanceCreateFlags.None, Validation: true);
+        InstanceExtensions.Selection selection = new([VK.EXT_DEBUG_UTILS_EXTENSION_NAME], [], VkInstanceCreateFlags.None, Validation: true);
         InstanceFactory.Options options = new() { ValidationAllowList = new[] { new ValidationAllowance(1, " ") } };
 
         _ = Assert.Throws<ArgumentException>("allowList", () => InstanceFactory.Create(selection, options, new VulkanCallGate { Faults = faults }));
