@@ -55,7 +55,7 @@ public sealed class EcsWorld : IDisposable
 }
 ```
 
-- **Validation.** The constructor throws `ArgumentNullException` for null options and `ArgumentOutOfRangeException` naming the option for any value outside the ranges above.
+- **Validation.** The constructor throws `ArgumentNullException` for null options, `ArgumentOutOfRangeException` naming the option for a numeric value outside the ranges above, and `ArgumentException` naming the option for a null `Clock` or a null or empty `Name` (the failure table in section 11).
 - **Ownership.** The world owns every unmanaged block it allocates: the entity table, chunks and the chunk pool, archetype tables, query caches and the children slab. All of it comes from `Allocator`, which the world does not own (the caller keeps it alive and disposes it, as in [memory](memory.md#rules)). The Runtime host owns the game's world and disposes it in reverse creation order ([Architecture 3.3](../03-architecture.md#33-memory)).
 - **Chunk size.** 64 KiB by default, as S5 measured (`DESIGN-NOTES.md:8`, `:36`). One chunk size per world keeps column offsets a per-archetype constant. There is no "small first chunk" in M1 (S5 table): the cost is at most one partly filled chunk per archetype, and a world expected to hold many tiny archetypes can choose 16 KiB.
 - **Dispose** frees everything the world allocated and is idempotent. Afterwards every member, and every member of its queries and schedules, throws `ObjectDisposedException`. A `CommandBuffer` owns its own stream (section 6) and must be disposed too; its stream came from the world's allocator, so a leak check sees it.

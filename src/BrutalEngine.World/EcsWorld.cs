@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
+using BrutalEngine.World.Storage;
 
 namespace BrutalEngine.World;
 
@@ -22,8 +23,10 @@ namespace BrutalEngine.World;
 /// <see cref="HeapAllocator"/> of its own.
 /// </para>
 /// <para>
-/// <b>Allocation.</b> Constructing a world allocates; it is setup work, not frame work. Reading <see cref="Name"/>
-/// allocates nothing.
+/// <b>Allocation.</b> Constructing a world allocates; it is setup work, not frame work. It reserves
+/// <see cref="WorldOptions.InitialEntityCapacity"/> entity slots from the allocator up front, and the entity table
+/// grows by doubling through the same allocator, up to <see cref="WorldOptions.MaxEntities"/>. Reading
+/// <see cref="Name"/> allocates nothing.
 /// </para>
 /// </remarks>
 public sealed class EcsWorld : IDisposable
@@ -31,6 +34,7 @@ public sealed class EcsWorld : IDisposable
     private readonly ThreadAffinity _owner;
     private readonly string _name;
     private readonly INativeAllocator _allocator;
+    private readonly EntityTable _entities;
     private bool _disposed;
 
     /// <summary>Creates an empty world owned by the calling thread.</summary>
@@ -43,6 +47,7 @@ public sealed class EcsWorld : IDisposable
     /// <exception cref="ArgumentOutOfRangeException">
     /// A numeric option is outside the range documented on <see cref="WorldOptions"/>. The message names the option.
     /// </exception>
+    /// <exception cref="OutOfMemoryException">The allocator can't provide the initial entity table.</exception>
     public EcsWorld(WorldOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -53,6 +58,10 @@ public sealed class EcsWorld : IDisposable
 
         // HeapAllocator is stateless and holds nothing to release, so the world's own one needs no disposal.
         _allocator = options.Allocator ?? new HeapAllocator();
+
+        // Last, so nothing allocated here needs releasing if an earlier step throws; the table frees its own partial
+        // allocation if it throws.
+        _entities = new EntityTable(_allocator, options.InitialEntityCapacity, options.MaxEntities);
     }
 
     /// <summary>The world's name, from <see cref="WorldOptions.Name"/>, for diagnostics and leak reports.</summary>
@@ -71,7 +80,10 @@ public sealed class EcsWorld : IDisposable
     /// <summary>The allocator every unmanaged block of this world comes from. Not owned by the world.</summary>
     internal INativeAllocator Allocator => _allocator;
 
-    /// <summary>Frees everything the world allocated. Idempotent: later calls do nothing.</summary>
+    /// <summary>The world's entity table, which the world owns and frees in <see cref="Dispose"/>.</summary>
+    internal EntityTable Entities => _entities;
+
+    /// <summary>Frees everything the world allocated, the entity table included. Idempotent: later calls do nothing.</summary>
     /// <remarks>
     /// Afterwards every other member throws <see cref="ObjectDisposedException"/>. The allocator from
     /// <see cref="WorldOptions.Allocator"/> is not disposed. Allocates nothing.
@@ -80,7 +92,13 @@ public sealed class EcsWorld : IDisposable
     public void Dispose()
     {
         _owner.ThrowIfNotCurrentThread("EcsWorld.Dispose");
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
+        _entities.Dispose();
     }
 
     private void ThrowIfUnusable(string apiName)
