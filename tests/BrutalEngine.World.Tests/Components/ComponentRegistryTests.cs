@@ -15,6 +15,7 @@ public sealed class ComponentRegistryTests
 {
     private const int RacerCount = 8;
     private const int RacingThreads = 8;
+    private const int ReservesPerThread = 256;
 
     public static TheoryData<string> Members =>
     [
@@ -371,11 +372,22 @@ public sealed class ComponentRegistryTests
 
         RunRacing((slot, waitForStart) =>
         {
-            int[] mine = new int[10_000];
+            // Ordinals are process-wide and never reused, and a registry's ordinal map is as long as the largest ordinal
+            // it holds. Every type first used after this test gets a larger ordinal, so the race takes a few hundred
+            // per thread rather than thousands.
+            int[] mine = new int[ReservesPerThread];
+
+            // One reserve before the start, so the first call's compilation doesn't hold up one thread in the race.
+            _ = ComponentOrdinal.Reserve();
             waitForStart();
             for (int i = 0; i < mine.Length; i++)
             {
                 mine[i] = ComponentOrdinal.Reserve();
+
+                // A short pause spreads the reserves over far longer than the threads' start skew, so on a machine
+                // with several cores they overlap without using more ordinals, and a non-atomic increment hands out
+                // duplicates.
+                Thread.SpinWait(20);
             }
 
             reserved[slot] = mine;
