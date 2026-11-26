@@ -200,8 +200,8 @@ public readonly struct PlatformEvent
     public DisplayId Display { get; }
     public float Scale { get; }
 
-    // Factories, for backends and tests. Each throws ArgumentException if header.Kind isn't one of its kinds,
-    // or if a window kind has a default Window.
+    // Factories, for backends and tests. Each throws ArgumentException if header.Kind isn't one of its kinds, if a
+    // Window* kind has a default Window, or if QuitRequested or a Display* kind has a non-default one.
     public static PlatformEvent Create(PlatformEventHeader header);                                   // kinds without a payload
     public static PlatformEvent CreateKey(PlatformEventHeader header, KeyEventData key);
     public static PlatformEvent CreateText(PlatformEventHeader header, TextEventData text);
@@ -247,7 +247,7 @@ Payloads, by kind (offsets are within the 40-byte event):
 
 - `Scancode` (`enum : ushort`) is the physical key. Values 4-231 are USB HID keyboard usage IDs; the rest are SDL's own values. Every value is SDL's (`SdlScancode.A = 4`, `Brutal.Sdl/Generated/Enums/SdlScancode.gen.cs:10`), so translation is a range check plus a cast. A Platform.Sdl3 test asserts every member's value equals the SDL member of the same name.
 - `Keycode` (`readonly record struct` over `uint`) is the key in the current layout: a Unicode code point for keys that produce one, otherwise the scancode with bit 30 set. That is SDL's encoding (`SdlKeycode.A = 97`, `F1 = 1073741882`, `Brutal.Sdl/Generated/Enums/SdlKeycode.gen.cs:19,75`; mask `Sdl.Constants.KeycodeScancodeMask = 0x40000000`, `Brutal.Sdl/Generated/Sdl.Constants.gen.cs:788`), documented as ours. Members: `IsCharacter`, `Character` (a `Rune`), `FromScancode(Scancode)`.
-- `KeyModifiers` (`[Flags] enum : ushort`) uses SDL's bit values (`Brutal.Sdl/Generated/Sdl.Constants.gen.cs:388-402`: `LeftShift = 1` ... `Scroll = 0x8000`), with `Shift`, `Control`, `Alt` and `Gui` as both-sides combinations.
+- `KeyModifiers` (`[Flags] enum : ushort`) uses SDL's bit values (`Brutal.Sdl/Generated/Sdl.Constants.gen.cs:386-403`: `LeftShift = 1` ... `Scroll = 0x8000`), with `Shift`, `Control`, `Alt` and `Gui` as both-sides combinations.
 - `MouseButton` (`enum : byte`, `None = 0, Left = 1, Middle, Right, X1, X2`) and `MouseButtons` (`[Flags] enum : byte`, `None = 0, Left = 1 ... X2 = 16`) match SDL's numbering (`SDL_BUTTON_*`, `Brutal.Sdl/Generated/Sdl.Constants.gen.cs:27-31`; `SdlMouseButtonFlags`, `Brutal.Sdl/Generated/Enums/SdlMouseButtonFlags.gen.cs:10-14`). Both are byte-backed so that `MouseButtonData` is 12 bytes and `MouseMotionData` 20, as the payload table needs.
 
 ### One buffer per pump
