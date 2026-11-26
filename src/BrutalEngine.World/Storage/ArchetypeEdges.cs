@@ -152,13 +152,21 @@ internal sealed unsafe class ArchetypeEdges : IDisposable
     {
         int slot = Home(component, mask);
 
-        // Sound: slot is masked to the array's capacity, and the load limit keeps an empty entry, so the probe ends.
-        while (entries[slot].Component != EmptyKey)
+        // The load limit keeps an entry empty, so the probe ends there; the bound only makes a broken table fail an
+        // insert instead of spinning.
+        for (int probes = 0; probes <= mask; probes++, slot = (slot + 1) & mask)
         {
-            slot = (slot + 1) & mask;
+            // Sound: slot is masked to the array's capacity, mask + 1 entries.
+            if (entries[slot].Component == EmptyKey)
+            {
+                entries[slot] = new Entry(component, archetype);
+                return;
+            }
         }
 
-        entries[slot] = new Entry(component, archetype);
+        // An internal invariant is broken: the load limit should always leave an empty entry.
+        throw new InvalidOperationException(
+            $"The edge table has no empty entry for component {component}; its load limit is broken.");
     }
 
     private void Grow()
