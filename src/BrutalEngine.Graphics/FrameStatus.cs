@@ -3,7 +3,9 @@ namespace BrutalEngine.Graphics;
 /// <summary>The outcome of beginning or submitting a frame.</summary>
 /// <remarks>
 /// Device loss is a value, not an exception (docs/design/graphics.md sections 4 and 12): after <see cref="DeviceLost"/>,
-/// recording calls in the frame do nothing and the device recreates itself. The numeric values are fixed.
+/// recording calls in the frame do nothing. Nothing recovers automatically: the device stays lost until the host recovers
+/// it with <c>GraphicsDevice.Recover()</c> outside a frame, which can fail, and the host then treats the failure as
+/// fatal. The numeric values are fixed.
 /// </remarks>
 public enum FrameStatus
 {

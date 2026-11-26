@@ -15,8 +15,9 @@ public enum AcquireStatus
     Acquired = 0,
 
     /// <summary>
-    /// An image was acquired after recreating the swapchain because its size or format changed: resize the targets that
-    /// depend on it.
+    /// An image was acquired after recreating the swapchain (after a resize, an out-of-date or suboptimal present, or
+    /// device recovery), so its size or format may have changed: check <see cref="SwapchainInfo"/> and resize the targets
+    /// that depend on it.
     /// </summary>
     Recreated = 1,
 
