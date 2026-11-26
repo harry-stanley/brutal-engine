@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 
@@ -14,6 +15,9 @@ internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevi
     public int DisposeCalls { get; private set; }
 
     public BackendMemory? LastBufferMemory { get; private set; }
+
+    /// <summary>Every <see cref="SetDebugName"/> call the fake accepted, in order, with a copy of its name bytes.</summary>
+    public List<(BackendObjectKind Kind, ulong Id, byte[] Utf8Name)> Names { get; } = [];
 
     public GraphicsAdapterInfo Adapter => inner.Adapter;
 
@@ -37,7 +41,11 @@ internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevi
 
     public Result<ulong> CreateSampler(in SamplerDescription description) => inner.CreateSampler(description);
 
-    public void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name) => inner.SetDebugName(kind, id, utf8Name);
+    public void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name)
+    {
+        inner.SetDebugName(kind, id, utf8Name);
+        Names.Add((kind, id, utf8Name.ToArray()));
+    }
 
     public void Destroy(BackendObjectKind kind, ulong id) => inner.Destroy(kind, id);
 
