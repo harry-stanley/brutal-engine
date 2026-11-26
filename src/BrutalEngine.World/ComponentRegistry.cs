@@ -126,9 +126,9 @@ public sealed class ComponentRegistry
     /// <exception cref="InvalidOperationException">
     /// <typeparamref name="T"/> is new and another registered type has its stable id: a different name (a hash
     /// collision), or the same name with another schema version or tag-ness, or the same name, schema version and
-    /// tag-ness (two types can't share one id, because they could disagree on layout). The message names both. Or the
-    /// registry already holds <see cref="Capacity"/> types; the message names the type and
-    /// <see cref="WorldOptions.MaxComponentTypes"/>. The registry is unchanged.
+    /// tag-ness (two types can't share one id, because they could disagree on layout). The message names both, and
+    /// <typeparamref name="T"/>'s CLR type and assembly. Or the registry already holds <see cref="Capacity"/> types; the
+    /// message names the type and <see cref="WorldOptions.MaxComponentTypes"/>. The registry is unchanged.
     /// </exception>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
@@ -151,7 +151,7 @@ public sealed class ComponentRegistry
         int size = Unsafe.SizeOf<T>();
         int alignment = AlignmentOf<T>();
         Validate(typeof(T), in info, size, alignment);
-        return Add(ordinal, in info, size, alignment);
+        return Add(typeof(T), ordinal, in info, size, alignment);
     }
 
     /// <summary>Looks up the id of <typeparamref name="T"/>, without registering it.</summary>
@@ -218,6 +218,9 @@ public sealed class ComponentRegistry
     /// capacity checks; the registry is unchanged when it throws. <see cref="Register{T}"/> calls it; tests also call
     /// it directly, to fill a registry with more types than they declare and to forge a stable-id collision.
     /// </summary>
+    /// <param name="type">
+    /// The CLR type, named in conflict messages; <see langword="null"/> for a made-up type that has none.
+    /// </param>
     /// <param name="ordinal">The type's process-wide ordinal, not yet registered here.</param>
     /// <param name="info">The type's info.</param>
     /// <param name="size">The type's size in bytes.</param>
@@ -227,11 +230,11 @@ public sealed class ComponentRegistry
     /// Another registered type has <paramref name="info"/>'s stable id, or the registry already holds
     /// <see cref="Capacity"/> types.
     /// </exception>
-    internal ComponentId Add(int ordinal, in ComponentInfo info, int size, int alignment)
+    internal ComponentId Add(Type? type, int ordinal, in ComponentInfo info, int size, int alignment)
     {
         if (_idsByStableId.TryGetValue(info.StableId.Value, out int registered))
         {
-            throw Conflict(_types[registered].Info, in info);
+            throw Conflict(_types[registered].Info, in info, type);
         }
 
         if (_count == _capacity)
@@ -322,8 +325,11 @@ public sealed class ComponentRegistry
     private static ArgumentException Invalid(Type type, string reason) =>
         new($"Can't register component type {type.FullName}: {reason}.");
 
-    /// <summary>The exception for a new type whose stable id <paramref name="registered"/> already has.</summary>
-    private static InvalidOperationException Conflict(in ComponentInfo registered, in ComponentInfo info)
+    /// <summary>
+    /// The exception for a new type whose stable id <paramref name="registered"/> already has. It names the new type's
+    /// CLR type and assembly when <paramref name="type"/> isn't <see langword="null"/>.
+    /// </summary>
+    private static InvalidOperationException Conflict(in ComponentInfo registered, in ComponentInfo info, Type? type)
     {
         string reason = !string.Equals(registered.FullName, info.FullName, StringComparison.Ordinal)
             ? $"its stable id {info.StableId.Value:X16} collides with registered component {registered.FullName}; rename one of them"
@@ -332,8 +338,11 @@ public sealed class ComponentRegistry
                 : registered.IsTag != info.IsTag
                     ? $"component {registered.FullName} is already registered as {TagNess(registered.IsTag)}"
                     : $"a different type named {registered.FullName} is already registered, and two types can't share a stable id";
+        // Two types with one name normally come from different assemblies, so the CLR type and its assembly say which
+        // one is new.
+        string clrType = type is null ? string.Empty : $"type {type.FullName} in assembly {type.Assembly.GetName().Name}, ";
         return new InvalidOperationException(
-            $"Can't register component {info.FullName} (schema version {info.SchemaVersion}, {TagNess(info.IsTag)}): {reason}.");
+            $"Can't register component {info.FullName} ({clrType}schema version {info.SchemaVersion}, {TagNess(info.IsTag)}): {reason}.");
     }
 
     private static string TagNess(bool isTag) => isTag ? "a tag" : "a data component";

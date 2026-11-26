@@ -182,7 +182,7 @@ public sealed class ComponentRegistryTests
             for (int i = 1; i < registry.Capacity; i++)
             {
                 ComponentInfo info = InfoFor($"Tests.Filler{i}");
-                _ = registry.Add(ComponentOrdinal.Reserve(), in info, 4, 4);
+                _ = registry.Add(null, ComponentOrdinal.Reserve(), in info, 4, 4);
             }
 
             Assert.Equal(64, registry.Count);
@@ -227,7 +227,7 @@ public sealed class ComponentRegistryTests
             for (int i = 0; i < ordinals.Length; i++)
             {
                 ComponentInfo filler = InfoFor($"Tests.Grown{i}");
-                before[i] = registry.GetComponentType(registry.Add(ordinals[i], in filler, 4, 4));
+                before[i] = registry.GetComponentType(registry.Add(null, ordinals[i], in filler, 4, 4));
             }
 
             int ordinal = ComponentOrdinal.Reserve();
@@ -242,7 +242,7 @@ public sealed class ComponentRegistryTests
                 }
             };
 
-            _ = Assert.Throws<InsufficientMemoryException>(() => registry.Add(ordinal, in info, 8, 8));
+            _ = Assert.Throws<InsufficientMemoryException>(() => registry.Add(null, ordinal, in info, 8, 8));
 
             // The type table grows first, so when the ordinal map fails, the grown type table must be invisible.
             ComponentRegistry.Table[] expectedGrowths = failing == ComponentRegistry.Table.Types
@@ -266,7 +266,7 @@ public sealed class ComponentRegistryTests
 
             // Once memory is back, the same type registers as the next id, and so does a real one after it.
             registry.BeforeGrowth = null;
-            ComponentId added = registry.Add(ordinal, in info, 8, 8);
+            ComponentId added = registry.Add(null, ordinal, in info, 8, 8);
             Assert.Equal(ordinals.Length, added.Index);
             Assert.True(registry.TryGetId(info.StableId, out ComponentId addedByStableId));
             Assert.Equal(added, addedByStableId);

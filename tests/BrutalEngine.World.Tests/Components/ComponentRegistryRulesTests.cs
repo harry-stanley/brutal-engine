@@ -49,7 +49,7 @@ public sealed class ComponentRegistryRulesTests
                 "collision" => Assert.Throws<InvalidOperationException>(() =>
                 {
                     _ = registry.Register<Position>();
-                    _ = registry.Add(ComponentOrdinal.Reserve(), Forged, 4, 4);
+                    _ = registry.Add(null, ComponentOrdinal.Reserve(), Forged, 4, 4);
                 }),
                 "schema" => Assert.Throws<InvalidOperationException>(() =>
                 {
@@ -88,6 +88,37 @@ public sealed class ComponentRegistryRulesTests
             {
                 Assert.Contains(text, exception.Message, StringComparison.Ordinal);
             }
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Theory]
+    [InlineData("schema")]
+    [InlineData("tag-ness")]
+    [InlineData("same-name")]
+    public void SameNameConflict_MessageNamesNewType(string rule)
+    {
+        TrackingAllocator tracking = NewTracking();
+        using (EcsWorld world = NewWorld(tracking))
+        {
+            ComponentRegistry registry = world.Components;
+            (Type first, Type second) = rule switch
+            {
+                "schema" => (typeof(HealthV1), typeof(HealthV2)),
+                "tag-ness" => (typeof(Marker), typeof(MarkerData)),
+                "same-name" => (typeof(Alias), typeof(OtherAlias)),
+                _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+            };
+            _ = Register(registry, first);
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => Register(registry, second));
+
+            // Both types have the same full name, so only the CLR type and its assembly tell them apart.
+            Assert.Contains(
+                $"type {second.FullName} in assembly {second.Assembly.GetName().Name}",
+                exception.Message,
+                StringComparison.Ordinal);
         }
 
         tracking.ThrowIfLeaks();
@@ -142,7 +173,7 @@ public sealed class ComponentRegistryRulesTests
                 _ = Assert.Throws<InvalidOperationException>(() => registry.Register<HealthV2>());
                 _ = Assert.Throws<InvalidOperationException>(() => registry.Register<MarkerData>());
                 _ = Assert.Throws<InvalidOperationException>(() => registry.Register<OtherAlias>());
-                _ = Assert.Throws<InvalidOperationException>(() => registry.Add(ComponentOrdinal.Reserve(), Forged, 4, 4));
+                _ = Assert.Throws<InvalidOperationException>(() => registry.Add(null, ComponentOrdinal.Reserve(), Forged, 4, 4));
             }
 
             Assert.Equal(4, registry.Count);
@@ -180,6 +211,17 @@ public sealed class ComponentRegistryRulesTests
     private static ComponentInfo Forged => InfoFor("Tests.Forged") with { StableId = Position.Info.StableId };
 
     private static string NameOf<T>() => typeof(T).FullName!;
+
+    private static ComponentId Register(ComponentRegistry registry, Type type) => type switch
+    {
+        _ when type == typeof(HealthV1) => registry.Register<HealthV1>(),
+        _ when type == typeof(HealthV2) => registry.Register<HealthV2>(),
+        _ when type == typeof(Marker) => registry.Register<Marker>(),
+        _ when type == typeof(MarkerData) => registry.Register<MarkerData>(),
+        _ when type == typeof(Alias) => registry.Register<Alias>(),
+        _ when type == typeof(OtherAlias) => registry.Register<OtherAlias>(),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown fixture type."),
+    };
 
     /// <summary>A valid info for a component named <paramref name="fullName"/>, as the generator would emit it.</summary>
     private static ComponentInfo InfoFor(string fullName, bool isTag = false, uint schemaVersion = 1) => new()
