@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics;
 using BrutalEngine.Graphics.Backend;
+using BrutalEngine.Platform;
 
 namespace BrutalEngine.TestUtilities.Tests;
 
@@ -16,6 +17,10 @@ internal static class GraphicsInternals
     /// <summary><c>TextureHandle(Handle value)</c>.</summary>
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
     public static extern TextureHandle NewTextureHandle(Handle value);
+
+    /// <summary><c>WindowSurfaceSource(IWindow window, IVulkanSurfaceSource source)</c>.</summary>
+    [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+    public static extern WindowSurfaceSource NewSurfaceSource(IWindow window, IVulkanSurfaceSource source);
 
     /// <summary><c>BackendObjectTable.Set(BackendObjectKind kind, Handle handle, ulong id)</c>.</summary>
     [UnsafeAccessor(UnsafeAccessorKind.Method, Name = "Set")]
