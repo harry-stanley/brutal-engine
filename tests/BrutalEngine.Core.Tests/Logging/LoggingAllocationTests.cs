@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Reflection;
 using BrutalEngine.Core.Logging;
 using Xunit;
 
@@ -8,6 +10,10 @@ public sealed class LoggingAllocationTests
 {
     private const int Iterations = 1000;
     private const int WarmUpIterations = 3;
+
+    // Bounds the loop that empties the shared pool of one array size, so a pool that never runs dry fails the test
+    // instead of hanging it. The pool keeps at most 32 arrays per size per processor, by default.
+    private const int MaxDrainedArrays = 100_000;
 
     [Fact]
     public void Log_EnabledCommonTypes_DoesNotAllocate()
@@ -145,6 +151,109 @@ public sealed class LoggingAllocationTests
         Assert.False(category.IsEnabled(LogLevel.Information));
     }
 
+    [Fact]
+    public void Log_AfterSharedPoolTrim_DoesNotAllocate()
+    {
+        CountingSink sink = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [sink], MinimumLevel = LogLevel.Trace });
+        LogCategory category = logger.CreateCategory("Allocation");
+        string longText = new('a', 5000);
+        for (int i = 1; i <= WarmUpIterations; i++)
+        {
+            LogCommonTypes(category, i, longText);
+            LogCustom(category, i);
+        }
+
+        // A gen2 collection under high memory pressure trims ArrayPool<byte>.Shared between warm-up and the window.
+        // Logging must not depend on the pool still holding a message buffer.
+        byte[][] drained = TrimSharedPool(LoggerOptions.DefaultMaxMessageBytes);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 1; i <= Iterations; i++)
+        {
+            LogCommonTypes(category, i, longText);
+            LogCustom(category, i);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        ReturnToSharedPool(drained);
+
+        Assert.Equal(0, allocated);
+        Assert.Equal((WarmUpIterations + Iterations) * 6, sink.WriteCount);
+    }
+
+    [Fact]
+    public void Log_AfterFormattingThrows_DoesNotAllocate()
+    {
+        CountingSink sink = new();
+        using Logger logger = new(new LoggerOptions { Sinks = [sink] });
+        LogCategory category = logger.CreateCategory("Allocation");
+        for (int i = 1; i <= WarmUpIterations; i++)
+        {
+            LogCustom(category, i);
+        }
+
+        // More failed messages than the logger keeps buffers, through each formatting path: each one must give its
+        // buffer back, or the logger runs out of its own buffers and falls back to the shared pool, which a trim
+        // then empties.
+        ThrowingObject throwingObject = new();
+        for (int i = 0; i < 2 * MessageBufferCache.DefaultSlotCount; i++)
+        {
+            _ = Assert.Throws<FormatException>(() => category.Information($"value {new ThrowingValue()}"));
+            _ = Assert.Throws<FormatException>(() => category.Information($"object {throwingObject}"));
+        }
+
+        byte[][] drained = TrimSharedPool(LoggerOptions.DefaultMaxMessageBytes);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 1; i <= Iterations; i++)
+        {
+            LogCustom(category, i);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        ReturnToSharedPool(drained);
+
+        Assert.Equal(0, allocated);
+        Assert.Equal((WarmUpIterations + Iterations) * 2, sink.WriteCount);
+    }
+
+    // Does to this thread what a trim of ArrayPool<byte>.Shared under high memory pressure does to every thread:
+    // SharedArrayPool<T>.Trim, which runs after each gen2 collection, clears every thread's cached arrays when the
+    // memory load is at least 90% of the GC's high-load threshold. Then it rents every array of this length the pool
+    // still holds, until a rent has to allocate, so no other thread's returned array can stand in for the dropped one.
+    // The caller keeps the arrays until its window closes. Reflection on the runtime's private field is for this test
+    // only; the field's absence fails the test rather than letting it pass without a trim.
+    private static byte[][] TrimSharedPool(int length)
+    {
+        FieldInfo? threadArrays = ArrayPool<byte>.Shared.GetType().GetField("t_tlsBuckets", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.True(threadArrays is not null, "ArrayPool<byte>.Shared has no thread-local array field to clear.");
+        if (threadArrays.GetValue(null) is Array cached)
+        {
+            Array.Clear(cached);
+        }
+
+        byte[][] drained = new byte[MaxDrainedArrays][];
+        for (int i = 0; i < drained.Length; i++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            drained[i] = ArrayPool<byte>.Shared.Rent(length);
+            if (GC.GetAllocatedBytesForCurrentThread() != before)
+            {
+                return drained[..(i + 1)];
+            }
+        }
+
+        Assert.Fail($"ArrayPool<byte>.Shared still had arrays of {length} bytes after {MaxDrainedArrays} rents.");
+        return [];
+    }
+
+    private static void ReturnToSharedPool(byte[][] arrays)
+    {
+        foreach (byte[] array in arrays)
+        {
+            ArrayPool<byte>.Shared.Return(array);
+        }
+    }
+
     private static void LogCustom(LogCategory category, int i)
     {
         Vector2Value position = new(i, i * 0.5f);
@@ -206,6 +315,19 @@ public sealed class LoggingAllocationTests
             position += text.Length;
             return true;
         }
+    }
+
+    /// <summary>A value whose formatting always fails, like a buggy custom formatter.</summary>
+    private readonly struct ThrowingValue : IUtf8SpanFormattable
+    {
+        public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider) =>
+            throw new FormatException("This value can't be formatted.");
+    }
+
+    /// <summary>A reference type without a UTF-8 formatter, so it takes the fallback path, whose ToString fails.</summary>
+    private sealed class ThrowingObject
+    {
+        public override string ToString() => throw new FormatException("This object can't be formatted.");
     }
 
     /// <summary>Counts writes and touches the message, without allocating.</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -24,6 +25,12 @@ namespace BrutalEngine.Core.Logging;
 /// After <see cref="Dispose"/>, every member throws <see cref="ObjectDisposedException"/>, except
 /// <see cref="Dispose"/> itself and logging through a category, which silently does nothing. That way, shutdown
 /// order can't crash code that logs late.
+/// </para>
+/// <para>
+/// Messages are formatted into buffers the logger keeps for its whole life: up to eight, of
+/// <see cref="LoggerOptions.MaxMessageBytes"/> bytes each, created as concurrent log calls first need them. They are
+/// managed arrays, so <see cref="Dispose"/> has nothing to free; they are collected with the logger. A log call that
+/// races <see cref="Dispose"/> still returns its buffer safely.
 /// </para>
 /// </remarks>
 public sealed class Logger : IDisposable
@@ -88,6 +95,7 @@ public sealed class Logger : IDisposable
         _minimumLevel = options.MinimumLevel;
         TimeProvider = options.TimeProvider;
         MaxMessageBytes = options.MaxMessageBytes;
+        MessageBuffers = new MessageBufferCache(options.MaxMessageBytes, MessageBufferCache.DefaultSlotCount, ArrayPool<byte>.Shared);
     }
 
     /// <summary>
@@ -111,6 +119,9 @@ public sealed class Logger : IDisposable
     internal TimeProvider TimeProvider { get; }
 
     internal int MaxMessageBytes { get; }
+
+    /// <summary>The buffers enabled messages are formatted into. Used by <see cref="LogMessageHandler{TLevel}"/>.</summary>
+    internal MessageBufferCache MessageBuffers { get; }
 
     /// <summary>Returns the category with this name, creating it at the minimum level the first time.</summary>
     /// <param name="name">1 to 64 characters from <c>A-Z</c>, <c>a-z</c>, <c>0-9</c>, <c>.</c>, <c>_</c> and <c>-</c>. Case-sensitive.</param>
