@@ -56,6 +56,19 @@ BrutalEngine.Graphics.Backend.BackendObjectKind.Sampler = 3 -> BrutalEngine.Grap
 BrutalEngine.Graphics.Backend.BackendObjectKind.ShaderModule = 4 -> BrutalEngine.Graphics.Backend.BackendObjectKind
 BrutalEngine.Graphics.Backend.BackendObjectKind.Texture = 1 -> BrutalEngine.Graphics.Backend.BackendObjectKind
 BrutalEngine.Graphics.Backend.BackendObjectKind.TextureView = 2 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectTable
+BrutalEngine.Graphics.Backend.BackendObjectTable.BackendObjectTable() -> void
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.BindGroupHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.BindGroupLayoutHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.BufferHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.ComputePipelineHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.GraphicsPipelineHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.PipelineLayoutHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.SamplerHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.ShaderModuleHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.TextureHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetId(BrutalEngine.Graphics.TextureViewHandle handle) -> ulong
+BrutalEngine.Graphics.Backend.BackendObjectTable.GetLabel(BrutalEngine.Graphics.DebugLabel label) -> System.ReadOnlySpan<byte>
 BrutalEngine.Graphics.Backend.BackendPresent
 BrutalEngine.Graphics.Backend.BackendPresent.BackendPresent() -> void
 BrutalEngine.Graphics.Backend.BackendPresent.BackendPresent(BrutalEngine.Graphics.Backend.SwapchainStatus Status, int NativeCode) -> void
