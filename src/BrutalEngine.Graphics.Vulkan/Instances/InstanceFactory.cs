@@ -91,12 +91,23 @@ internal static class InstanceFactory
     /// (<see cref="IsCreateInstanceFailure"/>).
     /// </returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">An allow-list entry has no reason; thrown before any native call.</exception>
+    /// <exception cref="ArgumentException">
+    /// A validated <paramref name="selection"/> doesn't enable <c>VK_EXT_debug_utils</c> (<see cref="InstanceExtensions.Plan"/>
+    /// always does), or an allow-list entry has no reason; both thrown before any native call.
+    /// </exception>
     internal static unsafe Result<VulkanInstance> Create(InstanceExtensions.Selection selection, Options options, VulkanCallGate gate)
     {
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(gate);
+
+        // Without the extension the instance table's messenger entry points are null, and calling one is an access
+        // violation, not an error.
+        if (selection.Validation && !selection.Extensions.Contains(VK.EXT_DEBUG_UTILS_EXTENSION_NAME))
+        {
+            throw new ArgumentException("A validated selection must enable " + VK.EXT_DEBUG_UTILS_EXTENSION_NAME + " for the messenger.", nameof(selection));
+        }
+
         if (gate.TryTakeFault(VulkanCall.CreateInstance, out VkResult injected))
         {
             return gate.Check(injected, VulkanCall.CreateInstance).Error;

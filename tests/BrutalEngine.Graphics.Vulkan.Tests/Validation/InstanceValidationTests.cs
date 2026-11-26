@@ -96,6 +96,25 @@ public sealed class InstanceValidationTests
         Assert.True(faults.TryTake(VulkanCall.CreateDebugUtilsMessenger, out _));
     }
 
+    [Fact]
+    public void Create_ValidatedSelectionWithoutDebugUtils_ThrowsBeforeNativeCalls()
+    {
+        VulkanFaultInjector faults = new();
+        faults.FailNth(VulkanCall.CreateInstance, 1, VkResult.ErrorOutOfHostMemory);
+        ValidationSink.HandleTracker tracker = new();
+        InstanceExtensions.Selection selection = new(["VK_EXT_validation_features"], [], VkInstanceCreateFlags.None, Validation: true);
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(
+            "selection",
+            () => InstanceFactory.Create(selection, new InstanceFactory.Options { ValidationHandles = tracker }, new VulkanCallGate { Faults = faults }));
+
+        Assert.Contains(VK.EXT_DEBUG_UTILS_EXTENSION_NAME, exception.Message, StringComparison.Ordinal);
+
+        // Thrown before the gate's first check and before the sink: the fault is still armed and no handle exists.
+        Assert.True(faults.TryTake(VulkanCall.CreateInstance, out _));
+        Assert.Equal(0, tracker.Live);
+    }
+
     [Theory]
     [InlineData("Vulkan call to vkCreateInstance failed with error: VK_ERROR_EXTENSION_NOT_PRESENT", true)]
     [InlineData("Vulkan call to vkCreateInstance failed with error: VK_ERROR_INITIALIZATION_FAILED", true)]
