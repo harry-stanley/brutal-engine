@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using BrutalEngine.Platform.Vfs;
 using Xunit;
@@ -334,8 +335,51 @@ public sealed class VfsPathTests
         Assert.Equal(string.Empty, path.ToString());
     }
 
+    [Fact]
+    public void FailedTryParse_GettersAndEquality_AllocateNothing()
+    {
+        // One input per rule a parse checks, each rejected before anything is built.
+        string[] invalid = ["textures/hero.png", "Res://a", "res://a/../b", "res://a\\b", "res://a\nb", "res://a*b", "res://a\uD800", "res://a."];
+        var path = VfsPath.Parse("res://textures/hero.png");
+
+        // Equal but parsed from other text, so equality compares two string instances.
+        var same = VfsPath.Parse("res://textures//hero.png");
+        object boxed = same;
+        long checksum = Exercise(invalid, path, same, boxed, 1);
+
+        // A collection between warm-up and the window rebuilds any cache that only a weak handle keeps.
+        GC.Collect();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        checksum += Exercise(invalid, path, same, boxed, 100);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.Equal(101 * 54, checksum);
+    }
+
     // The given number of copies of "abcdefghi/": valid segments, none near a length limit.
     private static string Segments(int count) => new StringBuilder().Insert(0, "abcdefghi/", count).ToString();
+
+    // Per round: 0 for the rejected inputs, 51 for the lengths of the parts and the text, 3 for the comparisons.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static long Exercise(string[] invalid, VfsPath path, VfsPath same, object boxed, int rounds)
+    {
+        long sum = 0;
+        for (int round = 0; round < rounds; round++)
+        {
+            foreach (string input in invalid)
+            {
+                sum += VfsPath.TryParse(input, out VfsPath result) || !result.IsDefault ? 1000 : 0;
+            }
+
+            sum += path.Scheme.Length + path.RelativePath.Length + path.Name.Length + path.ToString().Length;
+            sum += path.Equals(same) && path == same && !(path != same) && path.Equals(boxed) ? 1 : 0;
+            sum += path.GetHashCode() == same.GetHashCode() ? 1 : 0;
+            sum += path.Combine(".") == path ? 1 : 0;
+        }
+
+        return sum;
+    }
 
     // Replaces each "{XXXX}" with the UTF-16 code unit U+XXXX, so test data stays printable in test names.
     private static string Decode(string encoded)
