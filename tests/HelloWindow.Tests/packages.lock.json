@@ -196,11 +196,6 @@
           "Microsoft.Extensions.Logging.Configuration": "10.0.0"
         }
       },
-      "Microsoft.Extensions.ObjectPool": {
-        "type": "Transitive",
-        "resolved": "11.0.0-preview.5.26302.115",
-        "contentHash": "CQvL+zywyWbD5bmS3Fr7f6ObcYII7xizBz2GJGqnsgRDTZM42+CG4FkiJ2PnBJIHn0aEV6Sk5DyDv2WEOoKeTw=="
-      },
       "Microsoft.Extensions.Options.ConfigurationExtensions": {
         "type": "Transitive",
         "resolved": "10.0.0",
@@ -363,6 +358,12 @@
           "Ahwoo.BRUTAL.Strings": "2026.10.2",
           "Ahwoo.BRUTAL.Vulkan": "2026.10.3"
         }
+      },
+      "Microsoft.Extensions.ObjectPool": {
+        "type": "CentralTransitive",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "RdBrj+XP4290tK/fegTdMQQkHLflX6ir2NagnjOGbi8T4QF+Vsz8To11xp2zy6sjp7eQVv/XXYGH2hZ43FED/w=="
       }
     }
   }

@@ -30,6 +30,14 @@ internal static class Program
         Console.WriteLine($"BrutalEngine.Aot.Smoke on {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture})");
         Console.WriteLine($".NET {Environment.Version}");
 
+        // ADR-0011: BRUTAL's string-builder pool must run on the pinned ObjectPool 11.0.0 GA release in every run.
+        int probe = ObjectPoolProbe.Run(Console.Out);
+        if (probe != (int)ExitCode.Pass)
+        {
+            Console.WriteLine($"FAIL ({(ExitCode)probe})");
+            return probe;
+        }
+
         if (!TryParse(args, out SmokeOptions? options, out string error))
         {
             Console.Error.WriteLine(error);
