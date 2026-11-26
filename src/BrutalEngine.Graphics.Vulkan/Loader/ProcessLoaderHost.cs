@@ -17,9 +17,9 @@ namespace BrutalEngine.Graphics.Vulkan.Loader;
 /// <para>
 /// A library that <see cref="Preload"/> loaded stays loaded for the process lifetime, whether or not BRUTAL bound it:
 /// on success BRUTAL binds it for the process lifetime, and after a failed check (BRUTAL bound another loader, or its
-/// type initialisation had already failed) it is still kept. Freeing isn't attempted, because BRUTAL may hold the same
-/// handle (its bare-name lookup reuses a library already in the process) or take it on a later touch, and the
-/// interface returns no handle to free; the cost is one loader kept loaded at setup. Only a library without the
+/// type initialisation had already failed) it is still kept. Freeing isn't attempted, because BRUTAL may take the
+/// library on a later touch (its bare-name lookup binds to a library already in the process), and the interface
+/// returns no handle to free; the cost is one loader kept loaded at setup. Only a library without the
 /// <c>vkGetInstanceProcAddr</c> export is freed, inside <see cref="Preload"/>.
 /// </para>
 /// <para>

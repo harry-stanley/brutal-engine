@@ -8,6 +8,9 @@ BrutalEngine.Graphics.Vulkan.ValidationAllowance.Reason.get -> string!
 BrutalEngine.Graphics.Vulkan.ValidationAllowance.Reason.init -> void
 BrutalEngine.Graphics.Vulkan.ValidationAllowance.ValidationAllowance() -> void
 BrutalEngine.Graphics.Vulkan.ValidationAllowance.ValidationAllowance(int MessageIdNumber, string! Reason) -> void
+BrutalEngine.Graphics.Vulkan.VulkanBackend
+BrutalEngine.Graphics.Vulkan.VulkanBackend.LoaderPath.get -> string?
+BrutalEngine.Graphics.Vulkan.VulkanBackend.Name.get -> string!
 BrutalEngine.Graphics.Vulkan.VulkanBackendOptions
 BrutalEngine.Graphics.Vulkan.VulkanBackendOptions.<Clone>$() -> BrutalEngine.Graphics.Vulkan.VulkanBackendOptions!
 BrutalEngine.Graphics.Vulkan.VulkanBackendOptions.AppDirectory.get -> string!
@@ -26,6 +29,7 @@ override BrutalEngine.Graphics.Vulkan.VulkanBackendOptions.GetHashCode() -> int
 override BrutalEngine.Graphics.Vulkan.VulkanBackendOptions.ToString() -> string!
 static BrutalEngine.Graphics.Vulkan.ValidationAllowance.operator !=(BrutalEngine.Graphics.Vulkan.ValidationAllowance left, BrutalEngine.Graphics.Vulkan.ValidationAllowance right) -> bool
 static BrutalEngine.Graphics.Vulkan.ValidationAllowance.operator ==(BrutalEngine.Graphics.Vulkan.ValidationAllowance left, BrutalEngine.Graphics.Vulkan.ValidationAllowance right) -> bool
+static BrutalEngine.Graphics.Vulkan.VulkanBackend.Create(BrutalEngine.Graphics.Vulkan.VulkanBackendOptions! options) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.Vulkan.VulkanBackend!>
 static BrutalEngine.Graphics.Vulkan.VulkanBackendOptions.operator !=(BrutalEngine.Graphics.Vulkan.VulkanBackendOptions? left, BrutalEngine.Graphics.Vulkan.VulkanBackendOptions? right) -> bool
 static BrutalEngine.Graphics.Vulkan.VulkanBackendOptions.operator ==(BrutalEngine.Graphics.Vulkan.VulkanBackendOptions? left, BrutalEngine.Graphics.Vulkan.VulkanBackendOptions? right) -> bool
 ~override BrutalEngine.Graphics.Vulkan.ValidationAllowance.Equals(object obj) -> bool
