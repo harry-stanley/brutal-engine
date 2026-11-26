@@ -256,6 +256,9 @@ jobs:
       # SMOKE_ARGS is split into words on purpose.
       - name: Run (JIT)
         run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- vulkan-offscreen $SMOKE_ARGS
+      # The engine's VulkanBackend.Create and its loader setup, with the system loader (no options).
+      - name: Run graphics-vulkan (JIT)
+        run: dotnet run --project tests/BrutalEngine.Aot.Smoke -c Release --no-build -- graphics-vulkan
       - name: Negative test (JIT, injected validation error must exit 2)
         run: |
           set +e
@@ -310,6 +313,8 @@ jobs:
           ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
       - name: Run (NativeAOT)
         run: ./artifacts/aot/BrutalEngine.Aot.Smoke vulkan-offscreen $SMOKE_ARGS
+      - name: Run graphics-vulkan (NativeAOT)
+        run: ./artifacts/aot/BrutalEngine.Aot.Smoke graphics-vulkan
       - name: Negative test (NativeAOT, injected validation error must exit 2)
         run: |
           set +e
