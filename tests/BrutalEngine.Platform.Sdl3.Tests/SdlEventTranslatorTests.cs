@@ -53,6 +53,11 @@ public sealed class SdlEventTranslatorTests
         PlatformEvent actual = Assert.Single(buffer.AsBatch().Events.ToArray());
         Assert.Equal(Expected(kind), actual);
         Assert.Equal(Expected(kind).ToString(), actual.ToString()); // names the payload when a row fails
+
+        // The source is asked once for the two scale kinds and never for any other, so every other kind stays pure
+        // (no SDL call) and is never dropped by a failed query for a window SDL has already destroyed.
+        bool scaleKind = kind is PlatformEventKind.WindowDisplayScaleChanged or PlatformEventKind.DisplayContentScaleChanged;
+        Assert.Equal(scaleKind ? 1 : 0, scales.Queries);
     }
 
     [Theory]
@@ -162,6 +167,7 @@ public sealed class SdlEventTranslatorTests
         Assert.False(added);
         Assert.Equal(0, buffer.Count);
         Assert.Equal(0, buffer.AsBatch().Events.Length);
+        Assert.Equal(0, scales.Queries);
     }
 
     [Fact]
