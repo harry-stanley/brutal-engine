@@ -208,7 +208,7 @@ internal sealed unsafe class HelloWindowApp
                         _setupComplete = true;
                     }
 
-                    checkExtent = recreate = false;
+                    checkExtent = false;
                 }
 
                 long decided = Stopwatch.GetTimestamp();
