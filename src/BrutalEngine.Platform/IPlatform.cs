@@ -246,6 +246,9 @@ public interface IPlatform : IDisposable
     /// </returns>
     /// <remarks>Main thread only. Allocates.</remarks>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> or its title or message is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="request"/>'s kind isn't a <see cref="MessageBoxKind"/> value.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The platform has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the main thread.</exception>
     public Result ShowMessageBox(MessageBoxRequest request);
