@@ -101,8 +101,14 @@ public sealed class KeycodeTests
     public void IsCharacter_MatchesRuneIsValid()
     {
         // Most samples are around the surrogate block or within the Unicode range, so both outcomes and both kinds
-        // of invalid value below 0x110000 are well covered. The zero range keeps the unknown key in every run.
-        var value = Gen.OneOf(Gen.UInt[0xD700, 0xE100], Gen.UInt[0, 0x11_0100], Gen.UInt[0, 2], Gen.UInt);
+        // of invalid value below 0x110000 are well covered. The bit-30 range puts a valid scalar in the low bits, so
+        // a check that ignores bit 30 fails here; the zero range keeps the unknown key in every run.
+        var value = Gen.OneOf(
+            Gen.UInt[0xD700, 0xE100],
+            Gen.UInt[0, 0x11_0100],
+            Gen.UInt[0, 0x10_FFFF].Select(low => low | ScancodeMask),
+            Gen.UInt[0, 2],
+            Gen.UInt);
 
         value.Sample(raw =>
         {
