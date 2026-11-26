@@ -6,7 +6,9 @@ namespace BrutalEngine.Core.Logging;
 
 /// <summary>
 /// The message buffers of one <see cref="Logger"/>: a few buffers of exactly the logger's maximum message size,
-/// kept by the logger itself so that logging never depends on <see cref="ArrayPool{T}.Shared"/> keeping an array.
+/// kept by the logger itself so that a message buffer doesn't depend on <see cref="ArrayPool{T}.Shared"/> keeping an
+/// array. The handler's other temporary buffers (a value too long for the message, a copy of invalid UTF-8) are rare
+/// and still come from the shared pool.
 /// </summary>
 /// <remarks>
 /// <para>

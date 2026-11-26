@@ -18,8 +18,10 @@ namespace BrutalEngine.Core.Logging;
 /// no part of the message is formatted and nothing is rented. When enabled, the message is formatted into a
 /// buffer of <see cref="LoggerOptions.MaxMessageBytes"/> bytes rented from the logger's own buffers, and the buffer
 /// is returned once the entry has been dispatched. The logger keeps those buffers itself, so logging stays
-/// allocation-free after <see cref="ArrayPool{T}.Shared"/> trims its arrays; only when more threads are inside a
-/// logging call at once than the logger has buffers (eight) does a call rent from the shared pool instead.
+/// allocation-free after <see cref="ArrayPool{T}.Shared"/> trims its arrays. Three rare paths still rent from the
+/// shared pool, and so can allocate after a trim: more threads inside a logging call at once than the logger has
+/// buffers (eight), a value too long for the space left in the message, and a custom formatter that writes invalid
+/// UTF-8 (its output is copied before the invalid bytes are replaced).
 /// </para>
 /// <para>
 /// Formatting uses the invariant culture. The output is always valid UTF-8: invalid UTF-16 or UTF-8 input is
