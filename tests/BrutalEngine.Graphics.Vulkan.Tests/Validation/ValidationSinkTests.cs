@@ -1,5 +1,7 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using Brutal.VulkanApi;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Vulkan.Instances;
 using Xunit;
@@ -119,5 +121,116 @@ public sealed class ValidationSinkTests
 
         // Rejected before the handle exists, so nothing leaks.
         Assert.Equal(0, tracker.Live);
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void TwoInstances_CountSeparately()
+    {
+        ValidationLog log = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(log);
+        using (logger)
+        {
+            using VulkanInstance first = GpuValidation.Create(category);
+            using VulkanInstance second = GpuValidation.Create(category);
+            Assert.Equal((0, 0), (first.ValidationErrors, second.ValidationErrors));
+
+            GpuValidation.CreateMessengerWithoutSeverity(first);
+
+            Assert.Equal(1, first.ValidationErrors);
+            Assert.Equal(0, second.ValidationErrors);
+            Assert.Equal(0, second.ValidationWarnings);
+            Assert.Contains(log.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("VUID-VkDebugUtilsMessengerCreateInfoEXT-messageSeverity-", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void AllowList_SuppressesCount()
+    {
+        ValidationLog log = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(log);
+        using (logger)
+        {
+            // The layer's id for the message, read from a first instance, so no layer version's hash is hard-coded.
+            int id;
+            using (VulkanInstance probe = GpuValidation.Create(category))
+            {
+                GpuValidation.CreateMessengerWithoutSeverity(probe);
+                string message = Assert.Single(log.Entries, e => e.Level == LogLevel.Error).Message;
+                int open = message.IndexOf(" (", StringComparison.Ordinal) + 2;
+                id = int.Parse(message.AsSpan(open, message.IndexOf("): ", open, StringComparison.Ordinal) - open), CultureInfo.InvariantCulture);
+            }
+
+            using VulkanInstance allowed = GpuValidation.Create(category, new[] { new ValidationAllowance(id, "Deliberate in this test.") });
+            GpuValidation.CreateMessengerWithoutSeverity(allowed);
+
+            Assert.Equal(0, allowed.ValidationErrors);
+            Assert.Equal(0, allowed.ValidationWarnings);
+            Assert.Equal(1, allowed.ValidationAllowed);
+            (LogLevel Level, string Message) entry = Assert.Single(log.Entries, e => e.Level == LogLevel.Debug);
+            Assert.EndsWith(" Reason: Deliberate in this test.", entry.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public unsafe void Release_AfterInstance()
+    {
+        ValidationLog log = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(log);
+        using (logger)
+        {
+            ValidationSink.HandleTracker tracker = new();
+            InstanceFactory.DestroyTracker destroys = new();
+            VulkanInstance instance = GpuValidation.Create(category, handles: tracker, destroys: destroys);
+            ValidationSink sink = instance.Sink!;
+            Assert.Equal(1, tracker.Live);
+
+            // A messenger left alive is reported by vkDestroyInstance (VUID-vkDestroyInstance-instance-00629). The leaked
+            // messenger reports to a sink of its own, and the persistent messenger is destroyed first, so the instance's
+            // sink can only hear it through the messenger chained into creation, and only while its handle is valid.
+            ValidationSink other = new(category, ReadOnlyMemory<ValidationAllowance>.Empty);
+            try
+            {
+                VkDebugUtilsMessengerCreateInfoEXT info = ValidationCallback.CreateInfo(other);
+                VkDebugUtilsMessengerEXT leaked = default;
+                Assert.Equal(VkResult.Success, instance.Brutal.PInvoke.vkCreateDebugUtilsMessengerEXT.Invoke(instance.Handle, &info, null, &leaked));
+                Assert.Equal(0, instance.ValidationErrors);
+
+                instance.Dispose();
+                instance.Dispose();
+            }
+            finally
+            {
+                other.Release();
+            }
+
+            Assert.True(instance.ValidationErrors > 0, "vkDestroyInstance's leak report didn't reach the instance's sink.");
+            Assert.Contains(log.Entries, e => e.Message.Contains("VUID-vkDestroyInstance-instance-00629", StringComparison.Ordinal));
+            Assert.True(sink.IsReleased);
+            Assert.Equal(0, tracker.Live);
+            Assert.Equal(1, destroys.Destroyed);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Dispose_DestroysTheMessenger()
+    {
+        ValidationLog log = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(log);
+        using (logger)
+        {
+            InstanceFactory.DestroyTracker destroys = new();
+            VulkanInstance instance = GpuValidation.Create(category, destroys: destroys);
+
+            instance.Dispose();
+
+            // A persistent messenger still alive at vkDestroyInstance would be reported through the chained one.
+            Assert.Equal(0, instance.ValidationErrors);
+            Assert.DoesNotContain(log.Entries, e => e.Message.Contains("VUID-vkDestroyInstance-instance-00629", StringComparison.Ordinal));
+            Assert.Equal(1, destroys.Destroyed);
+        }
     }
 }

@@ -59,7 +59,25 @@ internal static unsafe class VulkanOffscreenScenario
             return ExitCode.SetupFailure;
         }
 
-        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = ValidationMessenger.CreateInfo();
+        // The messenger's state outlives the instance: the chained messenger may call back until vkDestroyInstance
+        // returns, so its handle is freed only after RunWithInstance has destroyed the instance.
+        ExitCode result;
+        using (ValidationMessenger validation = new())
+        {
+            result = RunWithInstance(options, validation);
+            Console.WriteLine($"Validation: {validation.Errors} error(s), {validation.Warnings} warning(s). Total {total.ElapsedMilliseconds} ms.");
+            if (result == ExitCode.Pass && validation.Errors + validation.Warnings > 0)
+            {
+                result = ExitCode.ValidationMessages;
+            }
+        }
+
+        return result;
+    }
+
+    private static ExitCode RunWithInstance(SmokeOptions options, ValidationMessenger validation)
+    {
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = validation.CreateInfo();
         VkValidationFeatureEnableEXT* enables = stackalloc VkValidationFeatureEnableEXT[] { VkValidationFeatureEnableEXT.SynchronizationValidationEXT };
 
         // The messenger is also chained into instance creation, so messages from vkCreateInstance and
@@ -93,23 +111,14 @@ internal static unsafe class VulkanOffscreenScenario
         });
 
         VkDebugUtilsMessengerEXT messenger = instance.CreateDebugUtilsMessengerEXT(messengerInfo, null);
-        ExitCode result;
         try
         {
-            result = RunOnDevice(instance, options);
+            return RunOnDevice(instance, options);
         }
         finally
         {
             instance.DestroyDebugUtilsMessengerEXT(messenger, null);
         }
-
-        Console.WriteLine($"Validation: {ValidationMessenger.Errors} error(s), {ValidationMessenger.Warnings} warning(s). Total {total.ElapsedMilliseconds} ms.");
-        if (result != ExitCode.Pass)
-        {
-            return result;
-        }
-
-        return ValidationMessenger.Errors + ValidationMessenger.Warnings > 0 ? ExitCode.ValidationMessages : ExitCode.Pass;
     }
 
     private static bool HasValidationLayer()
