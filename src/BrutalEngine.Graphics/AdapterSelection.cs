@@ -94,7 +94,9 @@ public readonly record struct AdapterSelection
     /// <summary>Parses a selection from its text form, as the host reads it from the command line or config.</summary>
     /// <remarks>
     /// The accepted forms are exact and case-sensitive, with no surrounding whitespace: <c>auto</c>; <c>index:</c>
-    /// followed by a non-negative decimal integer written in ASCII digits with no sign or whitespace;
+    /// followed by a non-negative decimal integer written in ASCII digits with no sign or whitespace (leading zeros
+    /// are accepted, so <c>index:007</c> is index 7 and <see cref="ToString"/> gives <c>index:7</c>; a value above
+    /// <see cref="int.MaxValue"/> returns <see langword="false"/>);
     /// <c>name:</c> followed by non-empty text, taken verbatim (spaces, colons and commas included); and
     /// <c>type:</c> followed by exactly one of <c>other</c>, <c>discrete</c>, <c>integrated</c>, <c>virtual</c>
     /// or <c>cpu</c>. Type names are matched against that list, so numeric values, other casings and comma lists
@@ -161,6 +163,8 @@ public readonly record struct AdapterSelection
         _ => AutoText,
     };
 
+    // Defence in depth beside NumberStyles.None (which already rejects signs, whitespace and non-ASCII digits): it
+    // states the documented contract here, so a later change to the number style can't widen what TryParse accepts.
     private static bool IsAsciiDigits(ReadOnlySpan<char> text)
     {
         foreach (char c in text)

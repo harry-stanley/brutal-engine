@@ -17,7 +17,7 @@ public enum GraphicsFeatures : long
     /// <summary>Anisotropic texture filtering, up to the adapter's maximum sampler anisotropy.</summary>
     SamplerAnisotropy = 1 << 0,
 
-    /// <summary>GPU timestamp queries: the queue reports valid timestamp bits and a non-zero timestamp period.</summary>
+    /// <summary>GPU timestamp queries: the queue reports valid timestamp bits.</summary>
     TimestampQueries = 1 << 1,
 
     /// <summary>BC (block compression) texture formats. Declared now; the formats arrive with the texture importer.</summary>
