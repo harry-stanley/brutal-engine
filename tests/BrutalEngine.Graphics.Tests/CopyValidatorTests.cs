@@ -187,24 +187,28 @@ public sealed class CopyValidatorTests
     [Fact]
     public void BufferRange_MatchesReference()
     {
-        // Each part is drawn around the places the rules change, not uniformly: the buffer is small or long.MaxValue
-        // bytes; the source starts at 0, at the end minus the size (ending exactly at the end), one aligned step past
-        // that, or anywhere; the destination is adjacent to the source on either side, overlaps it by 4 bytes (the
-        // smallest aligned overlap) or 1, starts with it, or ends at the end. An occasional 1-3 byte jitter reaches the
-        // alignment rule, and plain values cover the rest. The arithmetic wraps freely: these are only inputs.
+        // Each part is drawn around the places the rules change, not uniformly: each buffer is small or long.MaxValue
+        // bytes, and a copy between two buffers draws their sizes independently (a self-copy has one); the source
+        // starts at 0, at its buffer's end minus the size (ending exactly at the end), one aligned step past that, or
+        // anywhere; the destination is adjacent to the source on either side, overlaps it by 4 bytes (the smallest
+        // aligned overlap) or 1, starts with it, ends at its own buffer's end or at the source buffer's end. An
+        // occasional 1-3 byte jitter reaches the alignment rule, and plain values cover the rest. The arithmetic wraps
+        // freely: these are only inputs.
         var bufferSize = Gen.OneOf(Gen.Long[1, 256].Select(n => n * 4), Gen.Long[1, 300], Gen.Const(long.MaxValue));
         var length = Gen.OneOf(Gen.Long[1, 64].Select(n => n * 4), Gen.Long[-8, 8], Gen.Long);
         var jitter = Gen.Frequency((8, Gen.Const(0L)), (1, Gen.Long[-3, 3]));
-        Gen<(long Size, long Source, long Destination, long Length, bool Same)> cases =
-            Gen.Select(bufferSize, length, Gen.Int[0, 3], Gen.Int[0, 7], Gen.Long, jitter, jitter, Gen.Bool)
+        var shapes = Gen.Select(Gen.Int[0, 3], Gen.Int[0, 8], Gen.Bool);
+        Gen<(long SourceSize, long DestinationSize, long Source, long Destination, long Length, bool Same)> cases =
+            Gen.Select(bufferSize, bufferSize, length, shapes, Gen.Long, jitter, jitter)
                 .Select(c =>
                 {
-                    (long size, long len, int sourceShape, int destinationShape, long any, long j1, long j2, bool same) = c;
+                    (long sourceSize, long otherSize, long len, (int sourceShape, int destinationShape, bool same), long any, long j1, long j2) = c;
+                    long destinationSize = same ? sourceSize : otherSize;
                     long src = unchecked(sourceShape switch
                     {
                         0 => 0,
-                        1 => size - len,
-                        2 => size - len + 4,
+                        1 => sourceSize - len,
+                        2 => sourceSize - len + 4,
                         _ => any,
                     } + j1);
                     long dst = unchecked(destinationShape switch
@@ -215,23 +219,83 @@ public sealed class CopyValidatorTests
                         3 => src - len + 4,
                         4 => src + len - 1,
                         5 => src,
-                        6 => size - len,
+                        6 => destinationSize - len,
+                        7 => sourceSize - len,
                         _ => any / 3,
                     } + j2);
-                    return (size, src, dst, len, same);
+                    return (sourceSize, destinationSize, src, dst, len, same);
                 });
 
         cases.Sample(
             c =>
             {
-                BufferDescription buffer = _buffer with { Size = c.Size };
+                BufferDescription source = _buffer with { Size = c.SourceSize };
+                BufferDescription destination = _buffer with { Size = c.DestinationSize };
                 BufferCopy copy = _copy with { Destination = c.Same ? _bufferA : _bufferB, SourceOffset = c.Source, DestinationOffset = c.Destination, Size = c.Length };
-                AssertMatches(ReferenceCopyIsValid(c.Size, c.Same, c.Source, c.Destination, c.Length), () => CopyValidator.Validate(copy, buffer, buffer));
+                AssertMatches(
+                    ReferenceCopyIsValid(c.SourceSize, c.DestinationSize, c.Same, c.Source, c.Destination, c.Length),
+                    () => CopyValidator.Validate(copy, source, destination));
 
                 int dataLength = (int)Math.Clamp(c.Length, int.MinValue, int.MaxValue);
-                AssertMatches(ReferenceWriteIsValid(c.Size, c.Source, dataLength), () => CopyValidator.ValidateWriteBuffer(buffer, c.Source, dataLength));
+                AssertMatches(ReferenceWriteIsValid(c.DestinationSize, c.Destination, dataLength), () => CopyValidator.ValidateWriteBuffer(destination, c.Destination, dataLength));
             },
             iter: 20_000);
+    }
+
+    public static TheoryData<string> BuffersOfDifferentSizes() =>
+    [
+        "SourceRangePastSmallSource", "DestinationRangePastSmallDestination", "SourceOffsetPastSmallSource",
+        "DestinationOffsetPastSmallDestination", "SourceOffsetUnaligned", "DestinationOffsetUnaligned",
+    ];
+
+    // A 16-byte buffer and a 1,024-byte one, named apart, so a range checked against the other buffer's size, or a
+    // message naming the other buffer, fails. Each row's passing case puts the same range where only its own buffer
+    // holds it.
+    [Theory]
+    [MemberData(nameof(BuffersOfDifferentSizes))]
+    public void BufferCopy_BuffersOfDifferentSizes_CheckEachRangeAgainstItsOwnBuffer(string row)
+    {
+        BufferDescription small = _buffer with { Size = 16, DebugName = "small" };
+        BufferDescription big = _buffer with { Size = 1024, DebugName = "big" };
+        Type outOfRange = typeof(ArgumentOutOfRangeException);
+        Type invalid = typeof(ArgumentException);
+        (Action pass, Action fail, Type expected, string field, string bound, string name) = row switch
+        {
+            // 512 bytes from offset 0 fit the big source, not the small one; the destination is big either way.
+            "SourceRangePastSmallSource" => (
+                Copy(_copy with { DestinationOffset = 0 }, big, small with { Size = 512 }),
+                Copy(_copy with { DestinationOffset = 0 }, small, big),
+                outOfRange, "BufferCopy.Size", "source buffer's size minus SourceOffset (16)", "small"),
+            "DestinationRangePastSmallDestination" => (
+                Copy(_copy with { DestinationOffset = 0 }, small with { Size = 512 }, big),
+                Copy(_copy with { DestinationOffset = 0 }, big, small),
+                outOfRange, "BufferCopy.Size", "destination buffer's size minus DestinationOffset (16)", "small"),
+            // Offset 1,000 lies in the big buffer only: as the source here, and as the destination below.
+            "SourceOffsetPastSmallSource" => (
+                Copy(_copy with { SourceOffset = 1000, DestinationOffset = 0, Size = 8 }, big, small),
+                Copy(_copy with { SourceOffset = 1000, DestinationOffset = 0, Size = 8 }, small, big),
+                outOfRange, "BufferCopy.SourceOffset", "source buffer's size (16)", "small"),
+            "DestinationOffsetPastSmallDestination" => (
+                Copy(_copy with { SourceOffset = 0, DestinationOffset = 1000, Size = 8 }, small, big),
+                Copy(_copy with { SourceOffset = 0, DestinationOffset = 1000, Size = 8 }, big, small),
+                outOfRange, "BufferCopy.DestinationOffset", "destination buffer's size (16)", "small"),
+            "SourceOffsetUnaligned" => (
+                Copy(_copy with { SourceOffset = 4, DestinationOffset = 0, Size = 8 }, small, big),
+                Copy(_copy with { SourceOffset = 2, DestinationOffset = 0, Size = 8 }, small, big),
+                invalid, "BufferCopy.SourceOffset", "must be a multiple of 4, but is 2", "small"),
+            "DestinationOffsetUnaligned" => (
+                Copy(_copy with { SourceOffset = 0, DestinationOffset = 4, Size = 8 }, big, small),
+                Copy(_copy with { SourceOffset = 0, DestinationOffset = 6, Size = 8 }, big, small),
+                invalid, "BufferCopy.DestinationOffset", "must be a multiple of 4, but is 6", "small"),
+            _ => throw new ArgumentOutOfRangeException(nameof(row), row, "Unknown row."),
+        };
+
+        pass();
+        var exception = (ArgumentException)Assert.Throws(expected, fail);
+        Assert.Equal("copy", exception.ParamName);
+        Assert.Contains(field, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(bound, exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"debug name '{name}'", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -261,12 +325,12 @@ public sealed class CopyValidatorTests
 
     // The rules in exact integer arithmetic (Int128 holds every sum of two longs), written from the table rather than
     // from the validator's code.
-    private static bool ReferenceCopyIsValid(long size, bool same, long src, long dst, long len)
+    private static bool ReferenceCopyIsValid(long sourceSize, long destinationSize, bool same, long src, long dst, long len)
     {
-        bool Inside(long offset) => offset >= 0 && (Int128)offset + len <= size;
+        bool Inside(long offset, long size) => offset >= 0 && (Int128)offset + len <= size;
         bool aligned = len % 4 == 0 && src % 4 == 0 && dst % 4 == 0;
         bool overlap = same && (Int128)src < (Int128)dst + len && (Int128)dst < (Int128)src + len;
-        return len > 0 && aligned && Inside(src) && Inside(dst) && !overlap;
+        return len > 0 && aligned && Inside(src, sourceSize) && Inside(dst, destinationSize) && !overlap;
     }
 
     private static bool ReferenceWriteIsValid(long size, long offset, int length) =>
