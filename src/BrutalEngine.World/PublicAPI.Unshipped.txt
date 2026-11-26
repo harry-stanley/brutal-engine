@@ -14,6 +14,13 @@ BrutalEngine.World.ComponentInfo.SchemaVersion.get -> uint
 BrutalEngine.World.ComponentInfo.SchemaVersion.init -> void
 BrutalEngine.World.ComponentInfo.StableId.get -> BrutalEngine.World.StableComponentId
 BrutalEngine.World.ComponentInfo.StableId.init -> void
+BrutalEngine.World.ComponentRegistry
+BrutalEngine.World.ComponentRegistry.Capacity.get -> int
+BrutalEngine.World.ComponentRegistry.Count.get -> int
+BrutalEngine.World.ComponentRegistry.GetComponentType(BrutalEngine.World.ComponentId id) -> BrutalEngine.World.ComponentType
+BrutalEngine.World.ComponentRegistry.Register<T>() -> BrutalEngine.World.ComponentId
+BrutalEngine.World.ComponentRegistry.TryGetId(BrutalEngine.World.StableComponentId stableId, out BrutalEngine.World.ComponentId id) -> bool
+BrutalEngine.World.ComponentRegistry.TryGetId<T>(out BrutalEngine.World.ComponentId id) -> bool
 BrutalEngine.World.ComponentType
 BrutalEngine.World.ComponentType.Alignment.get -> int
 BrutalEngine.World.ComponentType.Alignment.init -> void
@@ -28,6 +35,7 @@ BrutalEngine.World.ComponentType.Info.init -> void
 BrutalEngine.World.ComponentType.Size.get -> int
 BrutalEngine.World.ComponentType.Size.init -> void
 BrutalEngine.World.EcsWorld
+BrutalEngine.World.EcsWorld.Components.get -> BrutalEngine.World.ComponentRegistry!
 BrutalEngine.World.EcsWorld.Dispose() -> void
 BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -> void
 BrutalEngine.World.EcsWorld.IsAlive(BrutalEngine.World.Entity entity) -> bool

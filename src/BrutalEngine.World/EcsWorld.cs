@@ -25,8 +25,8 @@ namespace BrutalEngine.World;
 /// <para>
 /// <b>Allocation.</b> Constructing a world allocates; it is setup work, not frame work. It reserves
 /// <see cref="WorldOptions.InitialEntityCapacity"/> entity slots from the allocator up front, and the entity table
-/// grows by doubling through the same allocator, up to <see cref="WorldOptions.MaxEntities"/>. Reading
-/// <see cref="Name"/> allocates nothing.
+/// grows by doubling through the same allocator, up to <see cref="WorldOptions.MaxEntities"/>. Its component
+/// registry is managed, and grows as types are registered. Reading <see cref="Name"/> allocates nothing.
 /// </para>
 /// </remarks>
 public sealed class EcsWorld : IDisposable
@@ -35,6 +35,7 @@ public sealed class EcsWorld : IDisposable
     private readonly string _name;
     private readonly INativeAllocator _allocator;
     private readonly EntityTable _entities;
+    private readonly ComponentRegistry _components;
     private bool _disposed;
 
     /// <summary>Creates an empty world owned by the calling thread.</summary>
@@ -59,6 +60,9 @@ public sealed class EcsWorld : IDisposable
         // HeapAllocator is stateless and holds nothing to release, so the world's own one needs no disposal.
         _allocator = options.Allocator ?? new HeapAllocator();
 
+        // Managed only, so it needs no release if the entity table below throws.
+        _components = new ComponentRegistry(_owner, options.MaxComponentTypes);
+
         // Last, so nothing allocated here needs releasing if an earlier step throws; the table frees its own partial
         // allocation if it throws.
         _entities = new EntityTable(_allocator, options.InitialEntityCapacity, options.MaxEntities);
@@ -74,6 +78,23 @@ public sealed class EcsWorld : IDisposable
         {
             ThrowIfUnusable("EcsWorld.Name");
             return _name;
+        }
+    }
+
+    /// <summary>The world's component types: registration and the type and stable-id lookups.</summary>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// The registry belongs to the world: it has the world's owner thread, holds at most
+    /// <see cref="WorldOptions.MaxComponentTypes"/> types, and becomes unusable when the world is disposed. Allocates
+    /// nothing.
+    /// </remarks>
+    public ComponentRegistry Components
+    {
+        get
+        {
+            ThrowIfUnusable("EcsWorld.Components");
+            return _components;
         }
     }
 
@@ -137,6 +158,7 @@ public sealed class EcsWorld : IDisposable
         }
 
         _disposed = true;
+        _components.MarkDisposed();
         _entities.Dispose();
     }
 
