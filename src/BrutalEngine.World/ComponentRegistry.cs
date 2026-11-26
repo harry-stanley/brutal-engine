@@ -44,7 +44,8 @@ public sealed class ComponentRegistry
     /// <summary>The largest component alignment, in bytes: the chunk alignment.</summary>
     internal const int MaxComponentAlignment = 64;
 
-    private const int InitialTypeCapacity = 16;
+    /// <summary>The length of a new registry's type table, when its capacity allows.</summary>
+    internal const int InitialTypeCapacity = 16;
 
     private readonly ThreadAffinity _owner;
     private readonly int _capacity;
@@ -65,6 +66,23 @@ public sealed class ComponentRegistry
         _capacity = capacity;
         _types = new ComponentType[Math.Min(InitialTypeCapacity, capacity)];
     }
+
+    /// <summary>The registry tables that grow as types are registered, named to <see cref="BeforeGrowth"/>.</summary>
+    internal enum Table
+    {
+        /// <summary>The type descriptions, indexed by dense id.</summary>
+        Types,
+
+        /// <summary>The dense ids, indexed by process-wide ordinal.</summary>
+        IdsByOrdinal,
+    }
+
+    /// <summary>
+    /// Test seam: when set, called with the table's name just before a table grows, so a test can throw there to
+    /// stand in for running out of memory. The engine never sets it. It costs one field read and a null check per
+    /// growth, and a table grows only while registering a new type, so lookups and repeat registrations never read it.
+    /// </summary>
+    internal Action<Table>? BeforeGrowth { get; set; }
 
     /// <summary>The number of registered types. Registered types have ids <c>0</c> to <c>Count - 1</c>.</summary>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
@@ -108,9 +126,11 @@ public sealed class ComponentRegistry
     /// <exception cref="InvalidOperationException">
     /// <typeparamref name="T"/> is new and another registered type has its stable id: a different name (a hash
     /// collision), or the same name with another schema version or tag-ness, or the same name, schema version and
-    /// tag-ness (two types can't share one id, because they could disagree on layout). The message names both. Or the
-    /// registry already holds <see cref="Capacity"/> types; the message names the type and
-    /// <see cref="WorldOptions.MaxComponentTypes"/>. The registry is unchanged.
+    /// tag-ness (two types can't share one id, because they could disagree on layout). The message names both, and
+    /// <typeparamref name="T"/>'s CLR type and assembly. Or the registry already holds <see cref="Capacity"/> types; the
+    /// message names the type and <see cref="WorldOptions.MaxComponentTypes"/>. Or <typeparamref name="T"/> is used for
+    /// the first time and the process has handed out every component ordinal (about 2 billion: one per type, plus one
+    /// per lost first-use race between threads), which can't happen in practice. The registry is unchanged.
     /// </exception>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
@@ -133,7 +153,7 @@ public sealed class ComponentRegistry
         int size = Unsafe.SizeOf<T>();
         int alignment = AlignmentOf<T>();
         Validate(typeof(T), in info, size, alignment);
-        return Add(ordinal, in info, size, alignment);
+        return Add(typeof(T), ordinal, in info, size, alignment);
     }
 
     /// <summary>Looks up the id of <typeparamref name="T"/>, without registering it.</summary>
@@ -200,6 +220,9 @@ public sealed class ComponentRegistry
     /// capacity checks; the registry is unchanged when it throws. <see cref="Register{T}"/> calls it; tests also call
     /// it directly, to fill a registry with more types than they declare and to forge a stable-id collision.
     /// </summary>
+    /// <param name="type">
+    /// The CLR type, named in conflict messages; <see langword="null"/> for a made-up type that has none.
+    /// </param>
     /// <param name="ordinal">The type's process-wide ordinal, not yet registered here.</param>
     /// <param name="info">The type's info.</param>
     /// <param name="size">The type's size in bytes.</param>
@@ -209,11 +232,11 @@ public sealed class ComponentRegistry
     /// Another registered type has <paramref name="info"/>'s stable id, or the registry already holds
     /// <see cref="Capacity"/> types.
     /// </exception>
-    internal ComponentId Add(int ordinal, in ComponentInfo info, int size, int alignment)
+    internal ComponentId Add(Type? type, int ordinal, in ComponentInfo info, int size, int alignment)
     {
         if (_idsByStableId.TryGetValue(info.StableId.Value, out int registered))
         {
-            throw Conflict(_types[registered].Info, in info);
+            throw Conflict(_types[registered].Info, in info, type);
         }
 
         if (_count == _capacity)
@@ -222,20 +245,22 @@ public sealed class ComponentRegistry
                 $"Can't register component {info.FullName}: the registry is full (WorldOptions.MaxComponentTypes is {_capacity}).");
         }
 
-        // First of the changes: the stable id is known to be free, so only running out of memory can throw here.
+        // Grow the tables first: a longer table with nothing new in it changes nothing visible, so running out of
+        // memory here leaves the registry unchanged.
         int index = _count;
-        _idsByStableId.Add(info.StableId.Value, index);
-
         if (index == _types.Length)
         {
-            Array.Resize(ref _types, Math.Min(_types.Length * 2, _capacity));
+            Grow(ref _types, Math.Min(_types.Length * 2, _capacity), Table.Types);
         }
 
         if (ordinal >= _idsByOrdinal.Length)
         {
-            Array.Resize(ref _idsByOrdinal, Math.Max(ordinal + 1, _idsByOrdinal.Length * 2));
+            Grow(ref _idsByOrdinal, Math.Max(ordinal + 1, _idsByOrdinal.Length * 2), Table.IdsByOrdinal);
         }
 
+        // The first visible change. The stable id is known to be free, so only running out of memory can throw, and the
+        // dictionary is unchanged when it does. The writes after it can't throw.
+        _idsByStableId.Add(info.StableId.Value, index);
         var id = new ComponentId(index);
         _types[index] = new ComponentType(id, info, size, alignment);
         _idsByOrdinal[ordinal] = index + 1;
@@ -302,8 +327,11 @@ public sealed class ComponentRegistry
     private static ArgumentException Invalid(Type type, string reason) =>
         new($"Can't register component type {type.FullName}: {reason}.");
 
-    /// <summary>The exception for a new type whose stable id <paramref name="registered"/> already has.</summary>
-    private static InvalidOperationException Conflict(in ComponentInfo registered, in ComponentInfo info)
+    /// <summary>
+    /// The exception for a new type whose stable id <paramref name="registered"/> already has. It names the new type's
+    /// CLR type and assembly when <paramref name="type"/> isn't <see langword="null"/>.
+    /// </summary>
+    private static InvalidOperationException Conflict(in ComponentInfo registered, in ComponentInfo info, Type? type)
     {
         string reason = !string.Equals(registered.FullName, info.FullName, StringComparison.Ordinal)
             ? $"its stable id {info.StableId.Value:X16} collides with registered component {registered.FullName}; rename one of them"
@@ -312,13 +340,20 @@ public sealed class ComponentRegistry
                 : registered.IsTag != info.IsTag
                     ? $"component {registered.FullName} is already registered as {TagNess(registered.IsTag)}"
                     : $"a different type named {registered.FullName} is already registered, and two types can't share a stable id";
+        // Two types with one name normally come from different assemblies, so the CLR type and its assembly say which
+        // one is new.
+        string clrType = type is null ? string.Empty : $"type {type.FullName} in assembly {type.Assembly.GetName().Name}, ";
         return new InvalidOperationException(
-            $"Can't register component {info.FullName} (schema version {info.SchemaVersion}, {TagNess(info.IsTag)}): {reason}.");
+            $"Can't register component {info.FullName} ({clrType}schema version {info.SchemaVersion}, {TagNess(info.IsTag)}): {reason}.");
     }
 
     private static string TagNess(bool isTag) => isTag ? "a tag" : "a data component";
 
-    private bool TryGetId(int ordinal, out ComponentId id)
+    /// <summary>Looks up the dense id of the type with a process-wide ordinal; tests read the ordinal map with it.</summary>
+    /// <param name="ordinal">The ordinal; one that is unassigned or out of the map's range isn't registered.</param>
+    /// <param name="id">The type's id when it is registered here; otherwise <c>default</c>.</param>
+    /// <returns><see langword="true"/> if the type with <paramref name="ordinal"/> is registered in this registry.</returns>
+    internal bool TryGetId(int ordinal, out ComponentId id)
     {
         int[] idsByOrdinal = _idsByOrdinal;
         if ((uint)ordinal < (uint)idsByOrdinal.Length && idsByOrdinal[ordinal] != 0)
@@ -329,6 +364,16 @@ public sealed class ComponentRegistry
 
         id = default;
         return false;
+    }
+
+    /// <summary>
+    /// Grows <paramref name="table"/> to <paramref name="length"/> elements, keeping its contents. When it throws,
+    /// <paramref name="table"/> is unchanged.
+    /// </summary>
+    private void Grow<TElement>(ref TElement[] table, int length, Table name)
+    {
+        BeforeGrowth?.Invoke(name);
+        Array.Resize(ref table, length);
     }
 
     private void ThrowIfUnusable(string apiName)

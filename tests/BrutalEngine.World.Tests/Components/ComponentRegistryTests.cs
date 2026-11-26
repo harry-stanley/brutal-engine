@@ -15,6 +15,7 @@ public sealed class ComponentRegistryTests
 {
     private const int RacerCount = 8;
     private const int RacingThreads = 8;
+    private const int ReservesPerThread = 256;
 
     public static TheoryData<string> Members =>
     [
@@ -182,7 +183,7 @@ public sealed class ComponentRegistryTests
             for (int i = 1; i < registry.Capacity; i++)
             {
                 ComponentInfo info = InfoFor($"Tests.Filler{i}");
-                _ = registry.Add(ComponentOrdinal.Reserve(), in info, 4, 4);
+                _ = registry.Add(null, ComponentOrdinal.Reserve(), in info, 4, 4);
             }
 
             Assert.Equal(64, registry.Count);
@@ -198,6 +199,112 @@ public sealed class ComponentRegistryTests
             Assert.False(registry.TryGetId<Position>(out _));
             Assert.False(registry.TryGetId(Position.Info.StableId, out _));
             Assert.Equal(velocity, registry.Register<Velocity>());
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Theory]
+    [InlineData(nameof(ComponentRegistry.Table.Types), true)]
+    [InlineData(nameof(ComponentRegistry.Table.IdsByOrdinal), true)]
+    [InlineData(nameof(ComponentRegistry.Table.Types), false)]
+    public void Register_GrowthThrows_LeavesRegistryUnchanged(string table, bool ordinalMapGrows)
+    {
+        ComponentRegistry.Table failing = Enum.Parse<ComponentRegistry.Table>(table);
+        TrackingAllocator tracking = NewTracking();
+        using (EcsWorld world = NewWorld(tracking))
+        {
+            ComponentRegistry registry = world.Components;
+
+            // Fill the type table exactly, so the next new type grows it. The first filler added sets the ordinal map's
+            // length to its ordinal + 1 exactly, and the later ones are smaller, so the map doesn't grow again. When
+            // the map must grow, the fillers take the 16 smallest of 17 fresh ordinals, largest first, and the new
+            // type the largest. When it mustn't, the largest goes first, then the 15 smallest, and the new type takes
+            // the one left, inside the map.
+            int[] reserved = new int[ComponentRegistry.InitialTypeCapacity + 1];
+            for (int i = 0; i < reserved.Length; i++)
+            {
+                reserved[i] = ComponentOrdinal.Reserve();
+            }
+
+            int last = reserved.Length - 1;
+            int[] ordinals = new int[ComponentRegistry.InitialTypeCapacity];
+            int ordinal;
+            if (ordinalMapGrows)
+            {
+                Array.Copy(reserved, ordinals, ordinals.Length);
+                Array.Reverse(ordinals);
+                ordinal = reserved[last];
+            }
+            else
+            {
+                ordinals[0] = reserved[last];
+                Array.Copy(reserved, 0, ordinals, 1, ordinals.Length - 1);
+                ordinal = reserved[last - 1];
+            }
+
+            var before = new ComponentType[ordinals.Length];
+            for (int i = 0; i < ordinals.Length; i++)
+            {
+                ComponentInfo filler = InfoFor($"Tests.Grown{i}");
+                before[i] = registry.GetComponentType(registry.Add(null, ordinals[i], in filler, 4, 4));
+            }
+
+            ComponentInfo info = InfoFor("Tests.GrowthFails");
+            List<ComponentRegistry.Table> grown = [];
+            registry.BeforeGrowth = growing =>
+            {
+                grown.Add(growing);
+                if (growing == failing)
+                {
+                    throw new InsufficientMemoryException("Simulated: the table can't grow.");
+                }
+            };
+
+            _ = Assert.Throws<InsufficientMemoryException>(() => registry.Add(null, ordinal, in info, 8, 8));
+
+            // The type table grows first, so when the ordinal map fails, the grown type table must be invisible.
+            ComponentRegistry.Table[] expectedGrowths = failing == ComponentRegistry.Table.Types
+                ? [ComponentRegistry.Table.Types]
+                : [ComponentRegistry.Table.Types, ComponentRegistry.Table.IdsByOrdinal];
+            Assert.Equal(expectedGrowths, grown);
+
+            // Nothing changed: the count, the stable-id map, the type table and the ordinal map.
+            Assert.Equal(ordinals.Length, registry.Count);
+            Assert.False(registry.TryGetId(info.StableId, out _));
+            Assert.False(registry.TryGetId(ordinal, out _));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => registry.GetComponentType(new ComponentId(ordinals.Length)));
+            for (int i = 0; i < ordinals.Length; i++)
+            {
+                Assert.Equal(before[i], registry.GetComponentType(new ComponentId(i)));
+                Assert.True(registry.TryGetId(ordinals[i], out ComponentId byOrdinal));
+                Assert.Equal(i, byOrdinal.Index);
+                Assert.True(registry.TryGetId(before[i].Info.StableId, out ComponentId byStableId));
+                Assert.Equal(i, byStableId.Index);
+            }
+
+            // Once memory is back, the same type registers as the next id, and so does a real one after it. The retry
+            // grows what is still short, which shows each row took its path: a type table grown before the failure is
+            // kept, and with the ordinal inside the map only the type table grows.
+            grown.Clear();
+            registry.BeforeGrowth = grown.Add;
+            ComponentId added = registry.Add(null, ordinal, in info, 8, 8);
+            ComponentRegistry.Table[] expectedRetryGrowths = (failing, ordinalMapGrows) switch
+            {
+                (ComponentRegistry.Table.Types, true) => [ComponentRegistry.Table.Types, ComponentRegistry.Table.IdsByOrdinal],
+                (ComponentRegistry.Table.Types, false) => [ComponentRegistry.Table.Types],
+                _ => [ComponentRegistry.Table.IdsByOrdinal],
+            };
+            Assert.Equal(expectedRetryGrowths, grown);
+            registry.BeforeGrowth = null;
+            Assert.Equal(ordinals.Length, added.Index);
+            Assert.True(registry.TryGetId(info.StableId, out ComponentId addedByStableId));
+            Assert.Equal(added, addedByStableId);
+            Assert.True(registry.TryGetId(ordinal, out ComponentId addedByOrdinal));
+            Assert.Equal(added, addedByOrdinal);
+            Assert.Equal(new ComponentType(added, info, 8, 8), registry.GetComponentType(added));
+            Assert.Equal(ordinals.Length + 1, registry.Register<Position>().Index);
+            Assert.Equal(ordinals.Length + 2, registry.Count);
         }
 
         tracking.ThrowIfLeaks();
@@ -294,11 +401,22 @@ public sealed class ComponentRegistryTests
 
         RunRacing((slot, waitForStart) =>
         {
-            int[] mine = new int[10_000];
+            // Ordinals are process-wide and never reused, and a registry's ordinal map is as long as the largest ordinal
+            // it holds. Every type first used after this test gets a larger ordinal, so the race takes a few hundred
+            // per thread rather than thousands.
+            int[] mine = new int[ReservesPerThread];
+
+            // One reserve before the start, so the first call's compilation doesn't hold up one thread in the race.
+            _ = ComponentOrdinal.Reserve();
             waitForStart();
             for (int i = 0; i < mine.Length; i++)
             {
                 mine[i] = ComponentOrdinal.Reserve();
+
+                // A short pause spreads the reserves over far longer than the threads' start skew, so on a machine
+                // with several cores they overlap without using more ordinals, and a non-atomic increment hands out
+                // duplicates.
+                Thread.SpinWait(20);
             }
 
             reserved[slot] = mine;
