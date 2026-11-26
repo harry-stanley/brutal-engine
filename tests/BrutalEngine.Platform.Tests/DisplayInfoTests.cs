@@ -78,6 +78,18 @@ public sealed class DisplayInfoTests
     }
 
     [Fact]
+    public void ToString_NamesEveryPublicProperty()
+    {
+        string text = _display.ToString();
+
+        Assert.All(typeof(DisplayInfo).GetProperties(), property =>
+            Assert.True(
+                text.Contains("{ " + property.Name + " = ", StringComparison.Ordinal)
+                    || text.Contains(", " + property.Name + " = ", StringComparison.Ordinal),
+                $"ToString leaves out {property.Name}: {text}"));
+    }
+
+    [Fact]
     public void ToString_ListsEveryPropertyInInvariantCulture()
     {
         CultureInfo previous = CultureInfo.CurrentCulture;
