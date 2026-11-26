@@ -610,6 +610,19 @@ BrutalEngine.Platform.Vfs.VfsPath.Name.get -> string!
 BrutalEngine.Platform.Vfs.VfsPath.RelativePath.get -> string!
 BrutalEngine.Platform.Vfs.VfsPath.Scheme.get -> string!
 BrutalEngine.Platform.Vfs.VfsPath.VfsPath() -> void
+BrutalEngine.Platform.Vfs.VirtualFileSystem
+BrutalEngine.Platform.Vfs.VirtualFileSystem.CreateDirectory(BrutalEngine.Platform.Vfs.VfsPath path) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.VirtualFileSystem.Delete(BrutalEngine.Platform.Vfs.VfsPath path) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.VirtualFileSystem.Exists(BrutalEngine.Platform.Vfs.VfsPath path) -> BrutalEngine.Core.Result<bool>
+BrutalEngine.Platform.Vfs.VirtualFileSystem.GetEntryKind(BrutalEngine.Platform.Vfs.VfsPath path) -> BrutalEngine.Core.Result<BrutalEngine.Platform.Vfs.VfsEntryKind>
+BrutalEngine.Platform.Vfs.VirtualFileSystem.IsMounted(string! scheme) -> bool
+BrutalEngine.Platform.Vfs.VirtualFileSystem.List(BrutalEngine.Platform.Vfs.VfsPath directory) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.Vfs.VfsEntry>!>
+BrutalEngine.Platform.Vfs.VirtualFileSystem.Mount(string! scheme, BrutalEngine.Platform.Vfs.IFileSystem! fileSystem) -> void
+BrutalEngine.Platform.Vfs.VirtualFileSystem.OpenRead(BrutalEngine.Platform.Vfs.VfsPath path) -> BrutalEngine.Core.Result<System.IO.Stream!>
+BrutalEngine.Platform.Vfs.VirtualFileSystem.ReadAllBytes(BrutalEngine.Platform.Vfs.VfsPath path) -> BrutalEngine.Core.Result<byte[]!>
+BrutalEngine.Platform.Vfs.VirtualFileSystem.Unmount(string! scheme) -> bool
+BrutalEngine.Platform.Vfs.VirtualFileSystem.VirtualFileSystem() -> void
+BrutalEngine.Platform.Vfs.VirtualFileSystem.WriteAllBytes(BrutalEngine.Platform.Vfs.VfsPath path, System.ReadOnlySpan<byte> contents) -> BrutalEngine.Core.Result
 BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.WindowId.Deconstruct(out uint Value) -> void
 BrutalEngine.Platform.WindowId.Equals(BrutalEngine.Platform.WindowId other) -> bool
