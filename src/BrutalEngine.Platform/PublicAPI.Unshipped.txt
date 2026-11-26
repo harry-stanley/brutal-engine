@@ -189,6 +189,20 @@ BrutalEngine.Platform.MouseWheelData.X.get -> float
 BrutalEngine.Platform.MouseWheelData.X.init -> void
 BrutalEngine.Platform.MouseWheelData.Y.get -> float
 BrutalEngine.Platform.MouseWheelData.Y.init -> void
+BrutalEngine.Platform.PlatformEvent
+BrutalEngine.Platform.PlatformEvent.Display.get -> BrutalEngine.Platform.DisplayId
+BrutalEngine.Platform.PlatformEvent.Header.get -> BrutalEngine.Platform.PlatformEventHeader
+BrutalEngine.Platform.PlatformEvent.Key.get -> BrutalEngine.Platform.KeyEventData
+BrutalEngine.Platform.PlatformEvent.Kind.get -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEvent.MouseButton.get -> BrutalEngine.Platform.MouseButtonData
+BrutalEngine.Platform.PlatformEvent.MouseMotion.get -> BrutalEngine.Platform.MouseMotionData
+BrutalEngine.Platform.PlatformEvent.MouseWheel.get -> BrutalEngine.Platform.MouseWheelData
+BrutalEngine.Platform.PlatformEvent.PlatformEvent() -> void
+BrutalEngine.Platform.PlatformEvent.Scale.get -> float
+BrutalEngine.Platform.PlatformEvent.Size.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.PlatformEvent.Text.get -> BrutalEngine.Platform.TextEventData
+BrutalEngine.Platform.PlatformEvent.Timestamp.get -> long
+BrutalEngine.Platform.PlatformEvent.Window.get -> BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.PlatformEventHeader
 BrutalEngine.Platform.PlatformEventHeader.Deconstruct(out BrutalEngine.Platform.PlatformEventKind Kind, out BrutalEngine.Platform.WindowId Window, out long Timestamp) -> void
 BrutalEngine.Platform.PlatformEventHeader.Equals(BrutalEngine.Platform.PlatformEventHeader other) -> bool
@@ -622,6 +636,16 @@ static BrutalEngine.Platform.MouseMotionData.operator !=(BrutalEngine.Platform.M
 static BrutalEngine.Platform.MouseMotionData.operator ==(BrutalEngine.Platform.MouseMotionData left, BrutalEngine.Platform.MouseMotionData right) -> bool
 static BrutalEngine.Platform.MouseWheelData.operator !=(BrutalEngine.Platform.MouseWheelData left, BrutalEngine.Platform.MouseWheelData right) -> bool
 static BrutalEngine.Platform.MouseWheelData.operator ==(BrutalEngine.Platform.MouseWheelData left, BrutalEngine.Platform.MouseWheelData right) -> bool
+static BrutalEngine.Platform.PlatformEvent.Create(BrutalEngine.Platform.PlatformEventHeader header) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateDisplay(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.DisplayId display) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateDisplayScale(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.DisplayId display, float scale) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateKey(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.KeyEventData key) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateMouseButton(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.MouseButtonData button) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateMouseMotion(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.MouseMotionData motion) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateMouseWheel(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.MouseWheelData wheel) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateScale(BrutalEngine.Platform.PlatformEventHeader header, float scale) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateSize(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.WindowSize size) -> BrutalEngine.Platform.PlatformEvent
+static BrutalEngine.Platform.PlatformEvent.CreateText(BrutalEngine.Platform.PlatformEventHeader header, BrutalEngine.Platform.TextEventData text) -> BrutalEngine.Platform.PlatformEvent
 static BrutalEngine.Platform.PlatformEventHeader.operator !=(BrutalEngine.Platform.PlatformEventHeader left, BrutalEngine.Platform.PlatformEventHeader right) -> bool
 static BrutalEngine.Platform.PlatformEventHeader.operator ==(BrutalEngine.Platform.PlatformEventHeader left, BrutalEngine.Platform.PlatformEventHeader right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
