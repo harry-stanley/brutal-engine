@@ -129,11 +129,15 @@ public sealed unsafe class ArchetypeRowTests
         tracking.ThrowIfLeaks();
     }
 
-    /// <summary>Fails the new chunk's allocation: the first chunk of an empty archetype, or the second of a full first chunk.</summary>
+    /// <summary>
+    /// Fails the new chunk's first allocation: the block for the first chunk of an empty archetype or the second of a
+    /// full first chunk, or, with the chunk arrays full and a block in the pool, the grown chunk arrays.
+    /// </summary>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void AppendRow_AllocationFails_LeavesArchetypeUnchanged(bool firstChunkFull)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(ChunkTable.InitialCapacity)]
+    public void AppendRow_AllocationFails_LeavesArchetypeUnchanged(int fullChunks)
     {
         TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
         FailingAllocator allocator = new(tracking);
@@ -141,7 +145,7 @@ public sealed unsafe class ArchetypeRowTests
         {
             Archetype archetype = TwoColumns(world);
             List<Entity> model = [];
-            int rows = firstChunkFull ? archetype.Layout.Capacity : 0;
+            int rows = fullChunks * archetype.Layout.Capacity;
             for (uint i = 0; i < rows; i++)
             {
                 var entity = new Entity(i, 1);
@@ -150,12 +154,21 @@ public sealed unsafe class ArchetypeRowTests
                 model.Add(entity);
             }
 
+            bool arraysFull = fullChunks == ChunkTable.InitialCapacity;
+            if (arraysFull)
+            {
+                // A block in the pool, so the next append rents it and its only allocation is the grown chunk arrays.
+                world.ChunkPool.Return(world.ChunkPool.Rent());
+                Assert.Equal(archetype.Chunks.ChunkCount, archetype.Chunks.Capacity);
+            }
+
             allocator.FailNext = true;
             _ = Assert.Throws<InsufficientMemoryException>(() => archetype.AppendRow(new Entity(500, 1), tick: 2));
 
-            // The injected failure fired, and nothing changed.
+            // The injected failure fired, and nothing changed: a rented block went back to the pool.
             Assert.False(allocator.FailNext);
-            Assert.Equal(rows / archetype.Layout.Capacity, archetype.Chunks.ChunkCount);
+            Assert.Equal(fullChunks, archetype.Chunks.ChunkCount);
+            Assert.Equal(arraysFull ? 1 : 0, world.ChunkPool.PooledCount);
             AssertDense(world, archetype, model);
 
             // Still usable: the next append opens the chunk.
