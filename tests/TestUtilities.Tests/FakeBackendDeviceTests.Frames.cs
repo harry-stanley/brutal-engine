@@ -164,6 +164,47 @@ public sealed partial class FakeBackendDeviceTests
     }
 
     [Fact]
+    public void TryReadTimestamps_AfterTheSlotBeginsAgain_ReturnsFalse()
+    {
+        _fixture.Script.Capabilities = FakeBackendScript.DefaultCapabilities with { Features = GraphicsFeatures.TimestampQueries };
+        FakeBackendDevice device = _fixture.CreateDevice();
+        Span<ulong> ticks = stackalloc ulong[2];
+        FakeBackendFixture.OpenFrame(device, 0);
+        Assert.True(device.Execute(Plan(0, 4)).IsSuccess);
+
+        // The wait leaves the completed frame's ticks readable; BeginFrame resets the slot's queries.
+        Assert.True(device.WaitForFrame(0).IsSuccess);
+        Assert.True(device.TryReadTimestamps(0, ticks));
+        Assert.True(device.BeginFrame(0).IsSuccess);
+
+        Assert.False(device.TryReadTimestamps(0, ticks));
+    }
+
+    [Fact]
+    public void TryReadTimestamps_AfterAFailedExecute_ReturnsFalse()
+    {
+        _fixture.Script.Capabilities = FakeBackendScript.DefaultCapabilities with { Features = GraphicsFeatures.TimestampQueries };
+        _fixture.Script.TimestampTicks = (frame, query) => (ulong)((frame * 100) + query);
+        FakeBackendDevice device = _fixture.CreateDevice();
+        Span<ulong> ticks = stackalloc ulong[2];
+        FakeBackendFixture.OpenFrame(device, 0);
+        Assert.True(device.Execute(Plan(0, 4)).IsSuccess);
+        FakeBackendFixture.OpenFrame(device, 0);
+        _fixture.Script.FailNext(FakeBackendOperation.Execute, new EngineError(ErrorKind.Unavailable, "lost"));
+
+        Assert.True(device.Execute(Plan(0, 5)).IsFailure);
+        Assert.True(device.WaitForFrame(0).IsSuccess);
+        Assert.False(device.TryReadTimestamps(0, ticks));
+
+        // The slot's next submitted frame reports its own ticks.
+        Assert.True(device.BeginFrame(0).IsSuccess);
+        Assert.True(device.Execute(Plan(0, 6)).IsSuccess);
+        device.CompleteFrame(0);
+        Assert.True(device.TryReadTimestamps(0, ticks));
+        Assert.Equal([600UL, 601], ticks.ToArray());
+    }
+
+    [Fact]
     public void TryReadTimestamps_WithoutTheFeature_ReturnsFalse()
     {
         FakeBackendDevice device = _fixture.CreateDevice();

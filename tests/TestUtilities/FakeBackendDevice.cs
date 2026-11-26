@@ -587,7 +587,11 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// Contract violation: a slot out of range, a slot whose last call wasn't a successful <see cref="WaitForFrame"/>, or a
     /// call after disposal.
     /// </exception>
-    /// <remarks>Takes a pending <see cref="FakeBackendOperation.BeginFrame"/> failure, which leaves the slot closed. Allocates nothing.</remarks>
+    /// <remarks>
+    /// Takes a pending <see cref="FakeBackendOperation.BeginFrame"/> failure, which leaves the slot closed. Otherwise opens the
+    /// slot and resets its queries, as a real backend resets the slot's query pool: <see cref="TryReadTimestamps"/> returns
+    /// <see langword="false"/> until the slot's next frame completes. Allocates nothing.
+    /// </remarks>
     public Result BeginFrame(int frameSlot)
     {
         ThrowIfDisposed();
@@ -606,6 +610,7 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
 
         _slots[frameSlot] = SlotState.Open;
         _acquiredCount[frameSlot] = 0;
+        _executed[frameSlot] = -1;
         return Result.Success;
     }
 
@@ -671,8 +676,9 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <inheritdoc/>
     /// <exception cref="InvalidOperationException">Contract violation: a slot out of range, or a call after disposal.</exception>
     /// <remarks>
-    /// When the slot's last submitted frame completed and <see cref="GraphicsFeatures.TimestampQueries"/> is enabled, writes
-    /// <see cref="FakeBackendScript.TimestampTicks"/> for that frame's number and each index. Allocates nothing.
+    /// When the slot's last submitted frame completed, no <see cref="BeginFrame"/> of the slot came after it, and
+    /// <see cref="GraphicsFeatures.TimestampQueries"/> is enabled, writes <see cref="FakeBackendScript.TimestampTicks"/> for that
+    /// frame's number and each index. Allocates nothing.
     /// </remarks>
     public bool TryReadTimestamps(int frameSlot, Span<ulong> ticks)
     {
