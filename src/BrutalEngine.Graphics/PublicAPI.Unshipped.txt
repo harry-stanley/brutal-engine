@@ -181,6 +181,13 @@ BrutalEngine.Graphics.Backend.CommandKind.SetPipeline = 9 -> BrutalEngine.Graphi
 BrutalEngine.Graphics.Backend.CommandKind.SetScissor = 14 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.CommandKind.SetVertexBuffer = 11 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.CommandKind.SetViewport = 13 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandReader
+BrutalEngine.Graphics.Backend.CommandReader.CommandReader() -> void
+BrutalEngine.Graphics.Backend.CommandReader.CommandReader(System.ReadOnlySpan<byte> commands) -> void
+BrutalEngine.Graphics.Backend.CommandReader.Kind.get -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandReader.MoveNext() -> bool
+BrutalEngine.Graphics.Backend.CommandReader.Payload<T>() -> T
+BrutalEngine.Graphics.Backend.CommandReader.Trailing<T>() -> System.ReadOnlySpan<T>
 BrutalEngine.Graphics.Backend.CopyBufferTextureCommand
 BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.ArrayLayer.get -> int
 BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.ArrayLayer.init -> void
