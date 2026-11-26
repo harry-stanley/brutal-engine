@@ -134,6 +134,32 @@ BrutalEngine.Graphics.GraphicsCapabilities.Features.init -> void
 BrutalEngine.Graphics.GraphicsCapabilities.GraphicsCapabilities() -> void
 BrutalEngine.Graphics.GraphicsCapabilities.Limits.get -> BrutalEngine.Graphics.GraphicsLimits
 BrutalEngine.Graphics.GraphicsCapabilities.Limits.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions
+BrutalEngine.Graphics.GraphicsDeviceOptions.<Clone>$() -> BrutalEngine.Graphics.GraphicsDeviceOptions!
+BrutalEngine.Graphics.GraphicsDeviceOptions.Adapter.get -> BrutalEngine.Graphics.AdapterSelection
+BrutalEngine.Graphics.GraphicsDeviceOptions.Adapter.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.Allocator.get -> BrutalEngine.Core.Memory.INativeAllocator!
+BrutalEngine.Graphics.GraphicsDeviceOptions.Allocator.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.ApplicationName.get -> string!
+BrutalEngine.Graphics.GraphicsDeviceOptions.ApplicationName.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.CompatibleWindow.get -> BrutalEngine.Platform.IWindow?
+BrutalEngine.Graphics.GraphicsDeviceOptions.CompatibleWindow.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.Equals(BrutalEngine.Graphics.GraphicsDeviceOptions? other) -> bool
+BrutalEngine.Graphics.GraphicsDeviceOptions.FramesInFlight.get -> int
+BrutalEngine.Graphics.GraphicsDeviceOptions.FramesInFlight.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.GpuTimeout.get -> System.TimeSpan
+BrutalEngine.Graphics.GraphicsDeviceOptions.GpuTimeout.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.GraphicsDeviceOptions() -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.Logger.get -> BrutalEngine.Core.Logging.Logger!
+BrutalEngine.Graphics.GraphicsDeviceOptions.Logger.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.OptionalFeatures.get -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsDeviceOptions.OptionalFeatures.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.RequiredFeatures.get -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsDeviceOptions.RequiredFeatures.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.UploadRingBytesPerFrame.get -> long
+BrutalEngine.Graphics.GraphicsDeviceOptions.UploadRingBytesPerFrame.init -> void
+BrutalEngine.Graphics.GraphicsDeviceOptions.Validation.get -> bool
+BrutalEngine.Graphics.GraphicsDeviceOptions.Validation.init -> void
 BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.None = 0 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.SamplerAnisotropy = 1 -> BrutalEngine.Graphics.GraphicsFeatures
@@ -441,6 +467,9 @@ override BrutalEngine.Graphics.GraphicsAdapterInfo.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsCapabilities.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.GraphicsCapabilities.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsCapabilities.ToString() -> string!
+override BrutalEngine.Graphics.GraphicsDeviceOptions.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.GraphicsDeviceOptions.GetHashCode() -> int
+override BrutalEngine.Graphics.GraphicsDeviceOptions.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsLimits.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsLimits.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(object? obj) -> bool
@@ -512,6 +541,8 @@ static BrutalEngine.Graphics.GraphicsAdapterInfo.operator !=(BrutalEngine.Graphi
 static BrutalEngine.Graphics.GraphicsAdapterInfo.operator ==(BrutalEngine.Graphics.GraphicsAdapterInfo? left, BrutalEngine.Graphics.GraphicsAdapterInfo? right) -> bool
 static BrutalEngine.Graphics.GraphicsCapabilities.operator !=(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
 static BrutalEngine.Graphics.GraphicsCapabilities.operator ==(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
+static BrutalEngine.Graphics.GraphicsDeviceOptions.operator !=(BrutalEngine.Graphics.GraphicsDeviceOptions? left, BrutalEngine.Graphics.GraphicsDeviceOptions? right) -> bool
+static BrutalEngine.Graphics.GraphicsDeviceOptions.operator ==(BrutalEngine.Graphics.GraphicsDeviceOptions? left, BrutalEngine.Graphics.GraphicsDeviceOptions? right) -> bool
 static BrutalEngine.Graphics.GraphicsLimits.operator !=(BrutalEngine.Graphics.GraphicsLimits left, BrutalEngine.Graphics.GraphicsLimits right) -> bool
 static BrutalEngine.Graphics.GraphicsLimits.operator ==(BrutalEngine.Graphics.GraphicsLimits left, BrutalEngine.Graphics.GraphicsLimits right) -> bool
 static BrutalEngine.Graphics.GraphicsPipelineHandle.operator !=(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
