@@ -5,7 +5,7 @@ using System.Globalization;
 namespace BrutalEngine.Graphics.Validation;
 
 /// <summary>
-/// The front end's pure checks of copies and writes against the descriptions of the resources
+/// The front end's pure checks of copies, writes and transient allocations against the descriptions of the resources
 /// they touch: the copy rules of docs/design/graphics.md section 6, which the device runs before it records a copy or
 /// accepts a write.
 /// </summary>
@@ -13,18 +13,23 @@ namespace BrutalEngine.Graphics.Validation;
 /// <para>
 /// A violation throws <see cref="ArgumentException"/>, or <see cref="ArgumentOutOfRangeException"/> for a value out of
 /// its range (including a flag outside its enum's members). Each exception's <see cref="ArgumentException.ParamName"/>
-/// is the device method's parameter that holds the value (<c>copy</c>, <c>buffer</c>, <c>offset</c> or <c>data</c>), and its message names the type or method, the field, the value, any computed
+/// is the device method's parameter that holds the value (<c>copy</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
+/// <c>byteCount</c> or <c>usage</c>), and its message names the type or method, the field, the value, any computed
 /// bound, and the debug name of the buffer the field refers to.
 /// </para>
 /// <para>
 /// The descriptions are inputs: the device resolves the handles (and throws for stale ones) before calling, so each
 /// check depends only on its arguments. Range checks never form <c>offset + size</c>: they compare the size with
 /// <c>Size - offset</c> once the offset is known to lie in the buffer, which can't overflow, so a huge offset or size is
-/// rejected instead of wrapping. Stateless and safe to call from any thread. A valid copy or write allocates nothing; only the failure paths build messages.
+/// rejected instead of wrapping. Stateless and safe to call from any thread. A valid copy, write or allocation allocates
+/// nothing; only the failure paths build messages.
 /// </para>
 /// </remarks>
 internal static class CopyValidator
 {
+    private const TransientUsage AllTransientUsages = TransientUsage.Vertex | TransientUsage.Index | TransientUsage.Uniform
+        | TransientUsage.Storage | TransientUsage.Indirect;
+
     // BufferCopy offsets and sizes are multiples of 4 (WebGPU's rule; Vulkan's vkCmdCopyBuffer has none).
     private const long BufferCopyAlignment = 4;
 
@@ -93,6 +98,37 @@ internal static class CopyValidator
         }
 
         CheckRange(nameof(offset), Type, nameof(offset), "data", Length, offset, dataLength, target, "target");
+    }
+
+    /// <summary>Checks a transient allocation request's size and usage.</summary>
+    /// <param name="byteCount">The bytes requested.</param>
+    /// <param name="usage">What the allocation will be bound as.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="byteCount"/> isn't positive, or <paramref name="usage"/> has a flag that isn't a
+    /// <see cref="TransientUsage"/> member.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="usage"/> has no flag.</exception>
+    public static void ValidateTransientAllocation(long byteCount, TransientUsage usage)
+    {
+        const string Type = "AllocateTransient";
+        if (byteCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(byteCount),
+                string.Create(CultureInfo.InvariantCulture, $"{Type}.{nameof(byteCount)} must be greater than 0, but is {byteCount}."));
+        }
+
+        if ((usage & ~AllTransientUsages) != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(usage),
+                string.Create(CultureInfo.InvariantCulture, $"{Type}.{nameof(usage)} has flags that aren't TransientUsage members, but is {(long)usage}."));
+        }
+
+        if (usage == 0)
+        {
+            throw new ArgumentException($"{Type}.{nameof(usage)} must have at least one flag.", nameof(usage));
+        }
     }
 
     private static void CheckUsage(string paramName, string type, string field, in BufferDescription buffer, BufferUsage required)

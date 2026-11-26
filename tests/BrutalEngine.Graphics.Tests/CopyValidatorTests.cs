@@ -38,6 +38,8 @@ public sealed class CopyValidatorTests
         "BufferCopy.SelfOverlapInside",
         "WriteBuffer.Usage", "WriteBuffer.DataEmpty", "WriteBuffer.DataNegative", "WriteBuffer.OffsetNegative", "WriteBuffer.OffsetMinValue",
         "WriteBuffer.OffsetAtEnd", "WriteBuffer.OffsetPastEnd", "WriteBuffer.OffsetMaxValue", "WriteBuffer.RangeInside", "WriteBuffer.Unaligned",
+        "Transient.ByteCountZero", "Transient.ByteCountNegative", "Transient.ByteCountMinValue", "Transient.UsageNone",
+        "Transient.UsageUndefinedFlag", "Transient.UsageSignBit",
     ];
 
     [Theory]
@@ -120,6 +122,16 @@ public sealed class CopyValidatorTests
             // Writes need no alignment: an odd offset and length pass, and the same range fails only for its usage.
             "WriteBuffer.Unaligned" => (Write(_buffer, 3, 5), Write(noCopyDestination, 3, 5), invalid, "buffer", "WriteBuffer.buffer"),
 
+            "Transient.ByteCountZero" => (Transient(1, TransientUsage.Vertex), Transient(0, TransientUsage.Vertex), outOfRange, "byteCount", "AllocateTransient.byteCount"),
+            "Transient.ByteCountNegative" => (Transient(long.MaxValue, TransientUsage.Index), Transient(-1, TransientUsage.Index), outOfRange, "byteCount", "AllocateTransient.byteCount"),
+            "Transient.ByteCountMinValue" => (Transient(1, TransientUsage.Uniform), Transient(long.MinValue, TransientUsage.Uniform), outOfRange, "byteCount", "AllocateTransient.byteCount"),
+            "Transient.UsageNone" => (Transient(1, TransientUsage.Indirect), Transient(1, 0), invalid, "usage", "AllocateTransient.usage"),
+            // 31 is every member; 32 is the next bit.
+            "Transient.UsageUndefinedFlag" => (
+                Transient(1, (TransientUsage)31),
+                Transient(1, TransientUsage.Vertex | (TransientUsage)32),
+                outOfRange, "usage", "AllocateTransient.usage"),
+            "Transient.UsageSignBit" => (Transient(1, TransientUsage.Storage), Transient(1, (TransientUsage)int.MinValue), outOfRange, "usage", "AllocateTransient.usage"),
             _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
         };
 
@@ -244,6 +256,7 @@ public sealed class CopyValidatorTests
     {
         CopyValidator.Validate(copy, buffer, buffer);
         CopyValidator.ValidateWriteBuffer(buffer, 3, 1021);
+        CopyValidator.ValidateTransientAllocation(256, TransientUsage.Vertex | TransientUsage.Uniform);
     }
 
     // The rules in exact integer arithmetic (Int128 holds every sum of two longs), written from the table rather than
@@ -280,6 +293,8 @@ public sealed class CopyValidatorTests
 
     private static Action Write(BufferDescription target, long offset, int length) => () => CopyValidator.ValidateWriteBuffer(target, offset, length);
 
+    private static Action Transient(long byteCount, TransientUsage usage) => () => CopyValidator.ValidateTransientAllocation(byteCount, usage);
+
     private static void AssertRejected(Type exceptionType, string paramName, string field, Action validate)
     {
         // Exact type: an ArgumentOutOfRangeException where an ArgumentException is documented fails, and vice versa.
@@ -287,6 +302,9 @@ public sealed class CopyValidatorTests
 
         Assert.Equal(paramName, exception.ParamName);
         Assert.Contains(field, exception.Message, StringComparison.Ordinal);
-        Assert.Contains("debug name 'probe'", exception.Message, StringComparison.Ordinal);
+        if (!field.StartsWith("AllocateTransient.", StringComparison.Ordinal))
+        {
+            Assert.Contains("debug name 'probe'", exception.Message, StringComparison.Ordinal);
+        }
     }
 }
