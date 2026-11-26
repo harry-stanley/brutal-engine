@@ -193,6 +193,20 @@ jobs:
       - name: Check the packed set
         if: runner.os == 'Linux'
         run: bash .github/scripts/check-packages.sh artifacts/packages .
+      # The gate's other branch: no library is above the release milestone yet, so force one and check it doesn't pack.
+      - name: Check the ship gate excludes a later milestone
+        if: runner.os == 'Linux'
+        run: |
+          for pair in 1:true 2:false; do
+            milestone=${pair%%:*}
+            want=${pair#*:}
+            got=$(dotnet msbuild src/BrutalEngine.Core/BrutalEngine.Core.csproj -getProperty:IsPackable -p:BrutalEngineMilestone="$milestone")
+            echo "BrutalEngineMilestone=$milestone: IsPackable=$got (expected $want)"
+            if [ "$got" != "$want" ]; then
+              echo "::error::With BrutalEngineMilestone=$milestone, IsPackable is '$got', not '$want': check src/Directory.Build.targets (ADR-0016)."
+              exit 1
+            fi
+          done
       - name: Upload packages
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
