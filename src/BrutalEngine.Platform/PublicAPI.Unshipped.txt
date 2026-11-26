@@ -19,6 +19,30 @@ BrutalEngine.Platform.DisplayMode.RefreshRate.get -> float
 BrutalEngine.Platform.DisplayMode.RefreshRate.init -> void
 BrutalEngine.Platform.DisplayMode.Width.get -> int
 BrutalEngine.Platform.DisplayMode.Width.init -> void
+BrutalEngine.Platform.IVulkanSurfaceSource
+BrutalEngine.Platform.IVulkanSurfaceSource.CreateVulkanSurface(nint instance) -> BrutalEngine.Core.Result<nint>
+BrutalEngine.Platform.IVulkanSurfaceSource.GetRequiredInstanceExtension(int index) -> System.ReadOnlySpan<byte>
+BrutalEngine.Platform.IVulkanSurfaceSource.RequiredInstanceExtensionCount.get -> int
+BrutalEngine.Platform.IWindow
+BrutalEngine.Platform.IWindow.ContentSize.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.IWindow.Display.get -> BrutalEngine.Platform.DisplayId
+BrutalEngine.Platform.IWindow.DisplayScale.get -> float
+BrutalEngine.Platform.IWindow.Id.get -> BrutalEngine.Platform.WindowId
+BrutalEngine.Platform.IWindow.IsRelativeMouseMode.get -> bool
+BrutalEngine.Platform.IWindow.IsTextInputActive.get -> bool
+BrutalEngine.Platform.IWindow.Mode.get -> BrutalEngine.Platform.WindowMode
+BrutalEngine.Platform.IWindow.PixelDensity.get -> float
+BrutalEngine.Platform.IWindow.PixelSize.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.IWindow.SetContentSize(BrutalEngine.Platform.WindowSize contentSize) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetExclusiveFullscreen(BrutalEngine.Platform.DisplayMode mode) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetMode(BrutalEngine.Platform.WindowMode mode) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetRelativeMouseMode(bool enabled) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetTitle(string! title) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.Size.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.IWindow.StartTextInput() -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.State.get -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.IWindow.StopTextInput() -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.VulkanSurface.get -> BrutalEngine.Platform.IVulkanSurfaceSource?
 BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.WindowId.Deconstruct(out uint Value) -> void
 BrutalEngine.Platform.WindowId.Equals(BrutalEngine.Platform.WindowId other) -> bool

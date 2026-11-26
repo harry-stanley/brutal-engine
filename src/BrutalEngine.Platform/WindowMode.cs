@@ -9,12 +9,12 @@ public enum WindowMode
 
     /// <summary>
     /// A borderless window covering its whole display, at the display's current mode. Set with
-    /// <c>IWindow.SetMode</c>.
+    /// <see cref="IWindow.SetMode"/>.
     /// </summary>
     BorderlessFullscreen = 1,
 
     /// <summary>
-    /// Fullscreen in a display mode of its own. Entered only with <c>IWindow.SetExclusiveFullscreen</c>, which
+    /// Fullscreen in a display mode of its own. Entered only with <see cref="IWindow.SetExclusiveFullscreen"/>, which
     /// takes the <see cref="DisplayMode"/> to use.
     /// </summary>
     ExclusiveFullscreen = 2,

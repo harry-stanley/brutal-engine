@@ -4,7 +4,7 @@ namespace BrutalEngine.Platform;
 
 /// <summary>The state of a window, as flags: a window can be visible, maximised and focused at once.</summary>
 /// <remarks>
-/// <c>IWindow.State</c> is a snapshot that the platform's event pump updates. The values are fixed: new flags are
+/// <see cref="IWindow.State"/> is a snapshot that the platform's event pump updates. The values are fixed: new flags are
 /// added at new bits, never renumbered.
 /// </remarks>
 [Flags]

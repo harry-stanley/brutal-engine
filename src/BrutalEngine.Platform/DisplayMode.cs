@@ -10,7 +10,7 @@ namespace BrutalEngine.Platform;
 /// <see cref="PixelDensity"/> of 2 has 3840 by 2160 pixels.
 /// </para>
 /// <para>
-/// Modes passed back to the platform (<c>IWindow.SetExclusiveFullscreen</c>) must be ones it returned: the backend
+/// Modes passed back to the platform (<see cref="IWindow.SetExclusiveFullscreen"/>) must be ones it returned: the backend
 /// matches every field exactly against the display's current list. <c>default(DisplayMode)</c> has display
 /// <c>0</c>, which is invalid.
 /// </para>

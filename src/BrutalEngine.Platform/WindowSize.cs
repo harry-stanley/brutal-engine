@@ -6,8 +6,8 @@ namespace BrutalEngine.Platform;
 /// <remarks>
 /// <para>
 /// Window sizes come in three units (see docs/design/platform.md, "Window coordinates, pixels and content units"):
-/// window coordinates (<c>IWindow.Size</c>), pixels (<c>IWindow.PixelSize</c>) and content units
-/// (<c>IWindow.ContentSize</c>). The type doesn't record which one a value is in.
+/// window coordinates (<see cref="IWindow.Size"/>), pixels (<see cref="IWindow.PixelSize"/>) and content units
+/// (<see cref="IWindow.ContentSize"/>). The type doesn't record which one a value is in.
 /// </para>
 /// <para>
 /// <c>default(WindowSize)</c> is 0 by 0, which is what a minimised window can report as its pixel size.
