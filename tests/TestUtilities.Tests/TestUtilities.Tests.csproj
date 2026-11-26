@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>BrutalEngine.TestUtilities.Tests</AssemblyName>
+    <RootNamespace>BrutalEngine.TestUtilities.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TestUtilities/TestUtilities.csproj" />
+  </ItemGroup>
+</Project>
