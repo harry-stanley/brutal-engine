@@ -494,64 +494,94 @@ public sealed class EntityTableTests
     [Fact]
     public void Pending_States()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
+        TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            Entity reserved = table.Reserve();
 
-        Entity reserved = table.Reserve();
+            Assert.Equal(new Entity(0, 1), reserved);
+            Assert.True(table.IsPending(reserved));
+            Assert.False(table.IsAlive(reserved));
+            Assert.False(table.TryGetLocation(reserved, out EntityRecord location));
+            Assert.Equal(default(EntityRecord), location);
+            Assert.Equal(1, table.PendingCount);
 
-        Assert.Equal(new Entity(0, 1), reserved);
-        Assert.True(table.IsPending(reserved));
-        Assert.False(table.IsAlive(reserved));
-        Assert.False(table.TryGetLocation(reserved, out EntityRecord location));
-        Assert.Equal(default(EntityRecord), location);
-        Assert.Equal(1, table.PendingCount);
+            // Playback places it: alive, no longer pending.
+            table.Place(0, archetype: 2, chunk: 3, row: 4);
+            Assert.False(table.IsPending(reserved));
+            Assert.True(table.IsAlive(reserved));
+            Assert.True(table.TryGetLocation(reserved, out location));
+            Assert.Equal(new EntityRecord { Generation = 1, Archetype = 2, Chunk = 3, Row = 4 }, location);
 
-        // Playback places it: alive, no longer pending.
-        table.Place(0, archetype: 2, chunk: 3, row: 4);
-        Assert.False(table.IsPending(reserved));
-        Assert.True(table.IsAlive(reserved));
-        Assert.True(table.TryGetLocation(reserved, out location));
-        Assert.Equal(new EntityRecord { Generation = 1, Archetype = 2, Chunk = 3, Row = 4 }, location);
+            // Cancelling (a cleared buffer) frees it with an advanced generation: stale, and the slot is reused next.
+            Entity cancelled = table.Reserve();
+            table.CancelPending(cancelled);
+            Assert.False(table.IsPending(cancelled));
+            Assert.False(table.IsAlive(cancelled));
+            Assert.Equal(0, table.PendingCount);
+            Assert.Equal(new EntityRecord { Generation = 2, Archetype = EntityRecord.FreeState, Chunk = -1, Row = -1 }, table.GetRecord(1));
+            Assert.Equal(new Entity(1, 2), table.Reserve());
+        }
 
-        // Cancelling (a cleared buffer) frees it with an advanced generation: stale, and the slot is reused next.
-        Entity cancelled = table.Reserve();
-        table.CancelPending(cancelled);
-        Assert.False(table.IsPending(cancelled));
-        Assert.False(table.IsAlive(cancelled));
-        Assert.Equal(0, table.PendingCount);
-        Assert.Equal(new EntityRecord { Generation = 2, Archetype = EntityRecord.FreeState, Chunk = -1, Row = -1 }, table.GetRecord(1));
-        Assert.Equal(new Entity(1, 2), table.Reserve());
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void CancelPending_AtMaxGeneration_Retires()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Reserve();
-        table.SetGenerationForTesting(0, uint.MaxValue);
+        TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Reserve();
+            table.SetGenerationForTesting(0, uint.MaxValue);
 
-        table.CancelPending(new Entity(0, uint.MaxValue));
+            table.CancelPending(new Entity(0, uint.MaxValue));
 
-        Assert.Equal(EntityRecord.RetiredState, table.GetRecord(0).Archetype);
-        Assert.Equal(1, table.RetiredCount);
-        Assert.Equal(new Entity(1, 1), table.Reserve());
+            Assert.Equal(EntityRecord.RetiredState, table.GetRecord(0).Archetype);
+            Assert.Equal(1, table.RetiredCount);
+            Assert.Equal(new Entity(1, 1), table.Reserve());
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void CancelPending_NotPending_Throws()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        Entity placed = table.Allocate();
-        table.Place(0, archetype: 0, chunk: 0, row: 0);
-        Entity pending = table.Reserve();
+        TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            Entity placed = table.Allocate();
+            table.Place(0, archetype: 0, chunk: 0, row: 0);
+            Entity pending = table.Reserve();
+            Entity freed = table.Allocate();
+            table.Place(2, archetype: 0, chunk: 0, row: 1);
+            _ = table.Allocate();
+            table.Place(3, archetype: 0, chunk: 0, row: 2);
+            table.Free(2);
+            table.SetGenerationForTesting(3, uint.MaxValue);
+            table.Free(3);
+            var retired = new Entity(3, uint.MaxValue);
 
-        _ = Assert.Throws<ArgumentException>(() => table.CancelPending(Entity.Null));
-        _ = Assert.Throws<InvalidOperationException>(() => table.CancelPending(placed));
-        _ = Assert.Throws<StaleHandleException>(() => table.CancelPending(new Entity(pending.Index, 2)));
-        _ = Assert.Throws<StaleHandleException>(() => table.CancelPending(new Entity(7, 1)));
+            Assert.Equal("entity", Assert.Throws<ArgumentException>(() => table.CancelPending(Entity.Null)).ParamName);
+            _ = Assert.Throws<InvalidOperationException>(() => table.CancelPending(placed));
+            Entity[] stale = [new Entity(pending.Index, 2), new Entity(7, 1), freed, new Entity(freed.Index, freed.Generation + 1), retired];
+            foreach (Entity entity in stale)
+            {
+                StaleHandleException exception = Assert.Throws<StaleHandleException>(() => table.CancelPending(entity));
+                Assert.Equal(new Handle(entity.Index, entity.Generation), exception.Handle);
+            }
 
-        // Nothing changed.
-        Assert.True(table.IsAlive(placed));
-        Assert.True(table.IsPending(pending));
+            // Nothing changed.
+            Assert.True(table.IsAlive(placed));
+            Assert.True(table.IsPending(pending));
+            Assert.Equal(new EntityRecord { Generation = 2, Archetype = EntityRecord.FreeState, Chunk = -1, Row = -1 }, table.GetRecord(2));
+            Assert.Equal(EntityRecord.RetiredState, table.GetRecord(3).Archetype);
+            Assert.Equal(1, table.FreeCount);
+            Assert.Equal(1, table.RetiredCount);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
@@ -585,7 +615,8 @@ public sealed class EntityTableTests
     [InlineData("alive", null)]
     public void Validate_Table(string situation, Type? expected)
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
+        TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+        Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4);
         Entity alive = table.Allocate();
         table.Place(0, archetype: 5, chunk: 6, row: 7);
         Entity stale = table.Allocate();
@@ -610,11 +641,15 @@ public sealed class EntityTableTests
         };
 
         Exception? exception = Record.Exception(() => table.Validate(entity));
+        EntityRecord record = expected is null ? table.Validate(entity) : default;
+        table.Dispose();
 
+        // Validation allocates nothing, and the table frees everything whichever way Validate went.
+        tracking.ThrowIfLeaks();
         if (expected is null)
         {
             Assert.Null(exception);
-            Assert.Equal(new EntityRecord { Generation = 1, Archetype = 5, Chunk = 6, Row = 7 }, table.Validate(entity));
+            Assert.Equal(new EntityRecord { Generation = 1, Archetype = 5, Chunk = 6, Row = 7 }, record);
             return;
         }
 
@@ -637,10 +672,12 @@ public sealed class EntityTableTests
     [Fact]
     public void Lookups_AfterDispose_ReturnFalse()
     {
-        Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
+        TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+        Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4);
         Entity alive = table.Allocate();
         table.Place(0, archetype: 0, chunk: 0, row: 0);
         table.Dispose();
+        tracking.ThrowIfLeaks();
 
         Assert.False(table.IsAlive(alive));
         Assert.False(table.IsPending(alive));
@@ -648,6 +685,9 @@ public sealed class EntityTableTests
         _ = Assert.Throws<ObjectDisposedException>(() => table.Reserve());
         _ = Assert.Throws<ObjectDisposedException>(() => table.CancelPending(alive));
         _ = Assert.Throws<ObjectDisposedException>(() => table.Validate(alive));
+
+        // The lookups and the rejected calls after Dispose allocated nothing.
+        tracking.ThrowIfLeaks();
     }
 
     /// <summary>
@@ -662,128 +702,146 @@ public sealed class EntityTableTests
         Gen.Select(Gen.Int[1, 12], Gen.Int[0, 7].Array[1, 200], Gen.Int.Array[200])
             .Sample((maxEntities, operations, picks) =>
             {
-                Model model = new(maxEntities);
-                using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 1 + (picks[0] & int.MaxValue) % maxEntities, maxEntities);
-                List<Entity> issued = [];
-                for (int step = 0; step < operations.Length; step++)
+                // One tracker per sample: whatever the sample grew, reserved, cancelled or retired, Dispose frees it.
+                TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+                bool matches;
+                using (Storage.EntityTable table = new(tracking, initialCapacity: 1 + (picks[0] & int.MaxValue) % maxEntities, maxEntities))
                 {
-                    int pick = picks[step] & int.MaxValue;
-                    Entity touched = Entity.Null;
-                    switch (operations[step])
+                    matches = MatchesModel(table, maxEntities, operations, picks);
+                }
+
+                tracking.ThrowIfLeaks();
+                return matches;
+            });
+    }
+
+    private static bool MatchesModel(Storage.EntityTable table, int maxEntities, int[] operations, int[] picks)
+    {
+        Model model = new(maxEntities);
+        List<Entity> issued = [];
+        for (int step = 0; step < operations.Length; step++)
+        {
+            int pick = picks[step] & int.MaxValue;
+            Entity touched = Entity.Null;
+            switch (operations[step])
+            {
+                case 0:
+                case 1:
+                    bool reserve = operations[step] == 0;
+                    Entity? expected = model.Take();
+                    if (expected is null)
                     {
-                        case 0:
-                        case 1:
-                            bool reserve = operations[step] == 0;
-                            Entity? expected = model.Take();
-                            if (expected is null)
-                            {
-                                if (Record.Exception(() => _ = reserve ? table.Reserve() : table.Allocate()) is not InvalidOperationException)
-                                {
-                                    return false;
-                                }
+                        if (Record.Exception(() => _ = reserve ? table.Reserve() : table.Allocate()) is not InvalidOperationException)
+                        {
+                            return false;
+                        }
 
-                                break;
-                            }
-
-                            Entity entity = reserve ? table.Reserve() : table.Allocate();
-                            if (entity != expected.Value)
-                            {
-                                return false;
-                            }
-
-                            issued.Add(entity);
-                            touched = entity;
-                            if (!reserve)
-                            {
-                                table.Place((int)entity.Index, pick % 5, pick % 7, pick % 11);
-                                model.Place((int)entity.Index, pick % 5, pick % 7, pick % 11);
-                            }
-
-                            break;
-                        case 2 when model.TryPick(ModelState.Pending, pick, out int index):
-                            table.Place(index, pick % 5, pick % 7, pick % 11);
-                            model.Place(index, pick % 5, pick % 7, pick % 11);
-                            touched = model.Current(index);
-                            break;
-                        case 3 when model.TryPick(ModelState.Placed, pick, out int index):
-                            table.Move(index, pick % 7, pick % 11);
-                            model.Move(index, pick % 7, pick % 11);
-                            touched = model.Current(index);
-                            break;
-                        case 4 when model.TryPick(ModelState.Placed, pick, out int index):
-                            touched = model.Current(index);
-                            table.Free(index);
-                            model.Release(index);
-                            break;
-                        case 5 when model.TryPick(ModelState.Pending, pick, out int index):
-                            touched = model.Current(index);
-                            table.CancelPending(touched);
-                            model.Release(index);
-                            break;
-                        case 6 when model.SlotCount > 0:
-                            int slot = pick % model.SlotCount;
-                            uint generation = uint.MaxValue - (uint)(pick % 2);
-                            if (model.Slots[slot].State is ModelState.Pending or ModelState.Placed)
-                            {
-                                table.SetGenerationForTesting(slot, generation);
-                                model.Slots[slot].Generation = generation;
-                                touched = model.Current(slot);
-                            }
-
-                            break;
-                        default:
-                            touched = issued.Count > 0 && pick % 3 != 0 ? issued[pick % issued.Count] : new Entity((uint)(pick % 20), 1 + (uint)(pick % 3));
-                            break;
+                        break;
                     }
 
-                    if (!CountsMatch(table, model) || !LookupsMatch(table, model, issued) || !ValidateMatches(table, model, touched))
+                    Entity entity = reserve ? table.Reserve() : table.Allocate();
+                    if (entity != expected.Value)
                     {
                         return false;
                     }
-                }
 
-                return true;
-            });
+                    issued.Add(entity);
+                    touched = entity;
+                    if (!reserve)
+                    {
+                        table.Place((int)entity.Index, pick % 5, pick % 7, pick % 11);
+                        model.Place((int)entity.Index, pick % 5, pick % 7, pick % 11);
+                    }
+
+                    break;
+                case 2 when model.TryPick(ModelState.Pending, pick, out int index):
+                    table.Place(index, pick % 5, pick % 7, pick % 11);
+                    model.Place(index, pick % 5, pick % 7, pick % 11);
+                    touched = model.Current(index);
+                    break;
+                case 3 when model.TryPick(ModelState.Placed, pick, out int index):
+                    table.Move(index, pick % 7, pick % 11);
+                    model.Move(index, pick % 7, pick % 11);
+                    touched = model.Current(index);
+                    break;
+                case 4 when model.TryPick(ModelState.Placed, pick, out int index):
+                    touched = model.Current(index);
+                    table.Free(index);
+                    model.Release(index);
+                    break;
+                case 5 when model.TryPick(ModelState.Pending, pick, out int index):
+                    touched = model.Current(index);
+                    table.CancelPending(touched);
+                    model.Release(index);
+                    break;
+                case 6 when model.SlotCount > 0:
+                    int slot = pick % model.SlotCount;
+                    uint generation = uint.MaxValue - (uint)(pick % 2);
+                    if (model.Slots[slot].State is ModelState.Pending or ModelState.Placed)
+                    {
+                        table.SetGenerationForTesting(slot, generation);
+                        model.Slots[slot].Generation = generation;
+                        touched = model.Current(slot);
+                    }
+
+                    break;
+                default:
+                    touched = issued.Count > 0 && pick % 3 != 0 ? issued[pick % issued.Count] : new Entity((uint)(pick % 20), 1 + (uint)(pick % 3));
+                    break;
+            }
+
+            if (!CountsMatch(table, model) || !LookupsMatch(table, model, issued) || !ValidateMatches(table, model, touched))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     [Fact]
     public void Lookups_DoNotAllocate()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        Entity alive = table.Allocate();
-        table.Place(0, archetype: 1, chunk: 2, row: 3);
-        Entity pending = table.Reserve();
-        Entity stale = table.Allocate();
-        table.Place(2, archetype: 0, chunk: 0, row: 0);
-        table.Free(2);
-        Entity[] probes = [alive, pending, stale, Entity.Null, new Entity(1000, 1)];
-
-        // Warm up so any one-time JIT or tiering work happens before measuring.
-        int found = Probe(table, probes);
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        TrackingAllocator tracking = new(new HeapAllocator(), "EntityTable");
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
         {
-            found += Probe(table, probes);
-        }
+            Entity alive = table.Allocate();
+            table.Place(0, archetype: 1, chunk: 2, row: 3);
+            Entity pending = table.Reserve();
+            Entity stale = table.Allocate();
+            table.Place(2, archetype: 0, chunk: 0, row: 0);
+            table.Free(2);
+            Entity[] probes = [alive, pending, stale, Entity.Null, new Entity(1000, 1)];
 
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            // Warm up so any one-time JIT or tiering work happens before measuring.
+            int found = Probe(table, probes);
 
-        Assert.Equal(0, allocated);
-        Assert.Equal(1001 * 3, found);
-
-        static int Probe(Storage.EntityTable table, Entity[] probes)
-        {
-            int found = 0;
-            foreach (Entity probe in probes)
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
             {
-                found += table.IsAlive(probe) ? 1 : 0;
-                found += table.IsPending(probe) ? 1 : 0;
-                found += table.TryGetLocation(probe, out EntityRecord record) && record.Row == 3 ? 1 : 0;
+                found += Probe(table, probes);
             }
 
-            return found;
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
+            Assert.Equal(1001 * 3, found);
+
+            static int Probe(Storage.EntityTable table, Entity[] probes)
+            {
+                int found = 0;
+                foreach (Entity probe in probes)
+                {
+                    found += table.IsAlive(probe) ? 1 : 0;
+                    found += table.IsPending(probe) ? 1 : 0;
+                    found += table.TryGetLocation(probe, out EntityRecord record) && record.Row == 3 ? 1 : 0;
+                }
+
+                return found;
+            }
         }
+
+        tracking.ThrowIfLeaks();
     }
 
     private static bool CountsMatch(Storage.EntityTable table, Model model) =>
