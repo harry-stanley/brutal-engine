@@ -24,8 +24,9 @@ internal static class Program
                                      e.g. NvidiaProprietary or MesaLlvmpipe
           --vulkan-loader <path>     load the Vulkan loader from this absolute path before BRUTAL looks for one
           --inject-validation-error  record an invalid barrier on purpose; validation must report it (exit 2)
-           or: BrutalEngine.Aot.Smoke graphics-vulkan [--vulkan-loader <path>]
+        Usage: BrutalEngine.Aot.Smoke graphics-vulkan [--vulkan-loader <path>]
           create the engine's Vulkan backend, which chooses the loader, and check the decision it logs
+          --vulkan-loader <path>     the loader the backend must use (VulkanBackendOptions.LoaderPath), absolute
         """;
 
     private static int Main(string[] args)
