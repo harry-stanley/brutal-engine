@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Unicode;
 using System.Threading;
 using Brutal.SdlApi;
+using BrutalEngine.Core;
 
 namespace BrutalEngine.Platform.Sdl3;
 
@@ -33,6 +34,15 @@ namespace BrutalEngine.Platform.Sdl3;
 /// sentinel left anywhere in the queue therefore neither delays an event nor reports a deferral.
 /// </para>
 /// <para>
+/// <b>Snapshots and displays:</b> after translating an event, taken from SDL or held by a wait, the pump refreshes the
+/// snapshot of the live window a window-range event names (<see cref="IWindowLookup"/>), for every window type
+/// including the ones the translator ignores (entering and leaving fullscreen change the mode), and sets
+/// <see cref="DisplaysChanged"/> for every display-range event. The pump doesn't rebuild the display list, which
+/// allocates: the platform's <c>Displays</c> getter rebuilds it when <see cref="DisplaysChanged"/> is set, then calls
+/// <see cref="AcknowledgeDisplaysChanged"/>. A failed refresh keeps the event and the window's previous snapshot and is
+/// counted (<see cref="RefreshFailureCount"/>, <see cref="LastRefreshError"/>).
+/// </para>
+/// <para>
 /// <b>Timestamps:</b> the clock's <see cref="TimeProvider.GetTimestamp"/>, read once for each event taken from SDL,
 /// whether the translator keeps it or ignores it; a waited-for event keeps the reading taken when the wait received
 /// it. SDL's own event time is never used.
@@ -49,6 +59,12 @@ internal sealed class SdlEventPump
     private const uint FirstType = (uint)SdlEventType.First;
     private const uint LastType = (uint)SdlEventType.Last;
 
+    // SDL's window and display event ranges, which the hooks act on.
+    private const uint WindowFirstType = (uint)SdlEventType.WindowFirst;
+    private const uint WindowLastType = (uint)SdlEventType.WindowLast;
+    private const uint DisplayFirstType = (uint)SdlEventType.DisplayFirst;
+    private const uint DisplayLastType = (uint)SdlEventType.DisplayLast;
+
     // The longest timeout SDL_WaitEventTimeout takes: int.MaxValue milliseconds.
     private const long MaxTimeoutTicks = int.MaxValue * TimeSpan.TicksPerMillisecond;
 
@@ -57,6 +73,8 @@ internal sealed class SdlEventPump
 
     private readonly PlatformEventBuffer _buffer;
     private readonly TimeProvider _clock;
+    private readonly IWindowLookup _windows;
+    private bool _displaysChanged;
 
     // The event a wait received, raw, until the next pump translates it; its text, if any, points into _heldText.
     private readonly byte[] _heldText;
@@ -64,29 +82,73 @@ internal sealed class SdlEventPump
     private long _heldTimestamp;
     private bool _hasHeld;
 
-    /// <summary>Creates a pump with its own event buffer, and a clock for the event timestamps.</summary>
+    /// <summary>
+    /// Creates a pump with its own event buffer, a clock for the event timestamps and the platform's windows for the
+    /// snapshot refreshes.
+    /// </summary>
     /// <param name="eventCapacity">How many events one pump can hold: 64 to 65536.</param>
     /// <param name="textCapacityBytes">How many bytes of UTF-8 text one pump can hold: 2048 to 1048576.</param>
     /// <param name="clock">The platform clock, read once for each event taken from SDL.</param>
+    /// <param name="windows">The platform's live windows, looked up by the window events' ids.</param>
     /// <remarks>
     /// Allocates the buffer and the held text's storage (<paramref name="textCapacityBytes"/> plus 5 bytes, pinned),
     /// once. The pump creates the buffer so the held text's storage always matches its text capacity.
     /// </remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="clock"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="clock"/> or <paramref name="windows"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">A capacity is outside its range.</exception>
-    public SdlEventPump(int eventCapacity, int textCapacityBytes, TimeProvider clock)
+    public SdlEventPump(int eventCapacity, int textCapacityBytes, TimeProvider clock, IWindowLookup windows)
     {
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(windows);
         _buffer = new PlatformEventBuffer(eventCapacity, textCapacityBytes);
         _clock = clock;
+        _windows = windows;
 
         // Pinned, so the held event can point SDL's text field at it until the next pump reads it.
         _heldText = GC.AllocateArray<byte>(textCapacityBytes + HeldTextExtraBytes + 1, pinned: true);
     }
 
+    /// <summary>
+    /// Finds the platform's live windows by id, so the pump can refresh a window's snapshot from its events. The
+    /// platform implements it over its window list; tests use fakes.
+    /// </summary>
+    internal interface IWindowLookup
+    {
+        /// <summary>Gets the live window with an id.</summary>
+        /// <param name="window">The id an SDL window event names; never <c>0</c>.</param>
+        /// <returns>
+        /// The window, or <see langword="null"/> if no live window has that id (not this platform's, or disposed).
+        /// </returns>
+        /// <remarks>
+        /// Called on the pumping thread, once for each window-range event that names a window. Must not allocate.
+        /// </remarks>
+        public SdlPlatformWindow.ISnapshotRefresh? Find(WindowId window);
+    }
+
     /// <summary>Gets the buffer each pump clears and fills, which the host reads through its batch.</summary>
     /// <value>The same buffer for the pump's lifetime.</value>
     public PlatformEventBuffer Buffer => _buffer;
+
+    /// <summary>Gets whether a display event was pumped since the last <see cref="AcknowledgeDisplaysChanged"/>.</summary>
+    /// <value>
+    /// <see langword="true"/> once a pump has taken any display-range event (added, removed, moved, orientation, mode,
+    /// content scale or usable bounds changed), until acknowledged; the platform then rebuilds its display list.
+    /// </value>
+    public bool DisplaysChanged => _displaysChanged;
+
+    /// <summary>Gets how many window snapshot refreshes failed over the pump's lifetime.</summary>
+    /// <value>0 until a refresh fails; each failed refresh adds one.</value>
+    public long RefreshFailureCount { get; private set; }
+
+    /// <summary>Gets the error of the most recent failed snapshot refresh.</summary>
+    /// <value><see langword="default"/> until a refresh fails; later successful refreshes keep it.</value>
+    public EngineError LastRefreshError { get; private set; }
+
+    /// <summary>Clears <see cref="DisplaysChanged"/>, after the platform has rebuilt its display list.</summary>
+    /// <remarks>A display event pumped afterwards sets it again. Allocates nothing.</remarks>
+    public void AcknowledgeDisplaysChanged() => _displaysChanged = false;
 
     /// <summary>
     /// Replaces the buffer's contents with the event <see cref="WaitForEvents"/> kept aside, if any, then the events
@@ -98,8 +160,11 @@ internal sealed class SdlEventPump
     /// SDL still held an event, which the next pump returns first.
     /// </returns>
     /// <remarks>
-    /// An event the translator ignores is removed from SDL's queue, or from the held slot, and adds nothing. Allocates
-    /// nothing, except the message when it throws.
+    /// An event the translator ignores is removed from SDL's queue, or from the held slot, and adds nothing, but still
+    /// runs the window and display hooks. A window's refresh throws <see cref="ObjectDisposedException"/> or
+    /// <see cref="WrongThreadException"/> if the lookup returned a disposed window or the pump runs off the windows'
+    /// thread, which are bugs in the caller; the buffer then keeps the events added before. Allocates nothing, except
+    /// the message when it throws.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <c>SDL_PeepEvents</c> failed, which it does only when SDL's event queue isn't running (SDL video was stopped):
@@ -113,7 +178,7 @@ internal sealed class SdlEventPump
         {
             // First into the cleared buffer, so it has room and its text gets the whole text capacity.
             _hasHeld = false;
-            _ = SdlEventTranslator.TryAdd(_held, _buffer, _heldTimestamp, ref scales);
+            Take(_held, _heldTimestamp, ref scales);
         }
 
         Sdl.PInvoke.PumpEvents();
@@ -126,7 +191,7 @@ internal sealed class SdlEventPump
                 return _buffer.AsBatch();
             }
 
-            _ = SdlEventTranslator.TryAdd(sdlEvent, _buffer, _clock.GetTimestamp(), ref scales);
+            Take(sdlEvent, _clock.GetTimestamp(), ref scales);
         }
 
         // Full: the pump defers only if SDL still holds an event. A peek skips a poll sentinel, as a get does.
@@ -212,6 +277,39 @@ internal sealed class SdlEventPump
 
         _hasHeld = true;
         return true;
+    }
+
+    // Translates one event, taken from SDL or held by a wait, then runs the hooks for its type range: a window event
+    // refreshes the snapshot of the live window it names, even when the translator ignores its type, and a display
+    // event marks the display list for a rebuild.
+    private void Take(in SdlEvent sdlEvent, long timestamp, ref SdlEventTranslator.SdlScaleSource scales)
+    {
+        _ = SdlEventTranslator.TryAdd(sdlEvent, _buffer, timestamp, ref scales);
+        uint type = (uint)sdlEvent.type;
+        if (type >= WindowFirstType && type <= WindowLastType)
+        {
+            Refresh(sdlEvent.window.windowID);
+        }
+        else if (type >= DisplayFirstType && type <= DisplayLastType)
+        {
+            _displaysChanged = true;
+        }
+    }
+
+    // Refreshes the live window an event names, if any; a failure keeps the event and the window's previous snapshot.
+    private void Refresh(uint windowId)
+    {
+        if (windowId == 0)
+        {
+            return;
+        }
+
+        SdlPlatformWindow.ISnapshotRefresh? window = _windows.Find(new WindowId(windowId));
+        if (window is not null && window.RefreshSnapshot().TryGetError(out EngineError error))
+        {
+            RefreshFailureCount++;
+            LastRefreshError = error;
+        }
     }
 
     /// <summary>

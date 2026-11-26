@@ -14,8 +14,9 @@ namespace BrutalEngine.Platform.Sdl3;
 /// <remarks>
 /// <para>
 /// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The event pump keeps the
-/// snapshot current through <see cref="RefreshSnapshot"/>. The setters ask SDL for changes; a size or mode change shows
-/// in the snapshot on the refresh after SDL applies it (the event pump refreshes on the window's events).
+/// snapshot current through <see cref="RefreshSnapshot"/>, which it reaches through <see cref="ISnapshotRefresh"/>. The
+/// setters ask SDL for changes; a size or mode change shows in the snapshot on the refresh after SDL applies it (the
+/// event pump refreshes on every one of the window's events).
 /// </para>
 /// <para>
 /// <b>Threads:</b> the thread that creates the window owns it. Every member, <see cref="Dispose"/> included, runs on
@@ -32,8 +33,21 @@ namespace BrutalEngine.Platform.Sdl3;
 /// <see cref="VulkanSurface"/> is destroyed before the window.
 /// </para>
 /// </remarks>
-internal sealed class SdlPlatformWindow : IWindow, SdlVulkanSurfaceSource.IOwner
+internal sealed class SdlPlatformWindow : IWindow, SdlVulkanSurfaceSource.IOwner, SdlPlatformWindow.ISnapshotRefresh
 {
+    /// <summary>
+    /// A window whose snapshot the event pump refreshes from the window's events, as
+    /// <see cref="SdlEventPump.IWindowLookup"/> finds it. <see cref="SdlPlatformWindow"/> implements it; a test fake can
+    /// fail a refresh and count refreshes.
+    /// </summary>
+    internal interface ISnapshotRefresh
+    {
+        /// <summary>Re-reads the window's snapshot from the OS.</summary>
+        /// <returns>Success, or the failure, which keeps the previous snapshot whole.</returns>
+        /// <remarks>Called on the pumping thread. Allocates nothing on success.</remarks>
+        public Result RefreshSnapshot();
+    }
+
     /// <summary>The message for a Vulkan window on <see cref="HeadlessMode.NoSurface"/>, with <see cref="ErrorKind.Unsupported"/>.</summary>
     public const string NoSurfaceVulkanMessage =
         "HeadlessMode.NoSurface uses SDL's dummy video driver, which has no Vulkan. Create the window with WindowSurface.None.";
@@ -410,16 +424,33 @@ internal sealed class SdlPlatformWindow : IWindow, SdlVulkanSurfaceSource.IOwner
     /// </summary>
     /// <returns>
     /// Success, or <see cref="ErrorKind.Native"/> with SDL's message if a query failed; the previous snapshot is then
-    /// kept whole.
+    /// kept whole, and so is the pending windowed content size.
     /// </returns>
-    /// <remarks>Owner thread only. Allocates nothing on success.</remarks>
+    /// <remarks>
+    /// A refresh that finds the window windowed drops the content size kept for <see cref="SetMode"/>'s return to
+    /// windowed (the one the window was created fullscreen with, or one set while fullscreen), without applying it: the
+    /// OS can leave fullscreen without <see cref="SetMode"/>, and a later fullscreen round trip would then apply a
+    /// stale size. Owner thread only. Allocates nothing on success.
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     internal Result RefreshSnapshot()
     {
         ThrowIfUnusable("SdlPlatformWindow.RefreshSnapshot");
-        return ReadSnapshot();
+        Result read = ReadSnapshot();
+        if (read.IsSuccess && _mode == WindowMode.Windowed)
+        {
+            // Windowed now, whether through SetMode or because the OS took the window out of fullscreen by itself (a
+            // window-manager shortcut). A pending size was meant for SetMode's return to windowed: kept, a later
+            // fullscreen round trip would apply it over the size the window has now, so it is dropped, not applied.
+            _windowedContentSize = null;
+        }
+
+        return read;
     }
+
+    /// <inheritdoc/>
+    Result ISnapshotRefresh.RefreshSnapshot() => RefreshSnapshot();
 
     /// <summary>Destroys the SDL window, once; later calls do nothing.</summary>
     /// <remarks>

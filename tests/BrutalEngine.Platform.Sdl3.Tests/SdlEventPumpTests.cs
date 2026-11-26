@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Brutal.SdlApi;
+using BrutalEngine.Core;
 using CsCheck;
 using Xunit;
 
@@ -28,13 +29,18 @@ public sealed unsafe class SdlEventPumpTests
     private static readonly byte[] _hello = Pinned("h\u00E9llo\0"u8);
     private static readonly byte[] _world = Pinned("w\u00F6rld\0"u8);
 
+    // A lookup that knows no window and records nothing, for rows that don't look at the hooks.
+    private static readonly LiveWindows _noWindows = new();
+
+    private static WindowOptions NoSurfaceWindow { get; } = new() { Title = "Platform.Sdl3.Tests", ContentSize = new(320, 200), Surface = WindowSurface.None };
+
     [Fact]
     public void Pump_PushedEvents_InOrder()
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
         ScriptedClock clock = new();
-        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        SdlEventPump pump = new(Capacity, TextCapacity, clock, _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
 
         // One event of each payload shape, with an ignored user event in the middle.
@@ -82,7 +88,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
         PushMotions(0, 150);
 
@@ -108,7 +114,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
 
         // Three 600-byte texts: after two, 848 bytes are free, below the 1,024 HasRoom keeps, though 62 events fit.
@@ -146,7 +152,7 @@ public sealed unsafe class SdlEventPumpTests
             row =>
             {
                 Sdl.PInvoke.FlushEvents(FirstType, LastType);
-                SdlEventPump pump = new(row.Capacity, TextCapacity, new ScriptedClock());
+                SdlEventPump pump = new(row.Capacity, TextCapacity, new ScriptedClock(), _noWindows);
                 PlatformEventBuffer buffer = pump.Buffer;
                 PushMotions(0, row.Count);
 
@@ -177,7 +183,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
         PushMotions(0, Capacity);
 
@@ -194,7 +200,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
 
         // A polling pump that took exactly what was queued leaves SDL's poll sentinel at the front of the queue.
@@ -224,7 +230,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
 
         // SDL_WaitEventTimeout takes the first event and queues its sentinel behind the 64 still queued.
@@ -258,7 +264,7 @@ public sealed unsafe class SdlEventPumpTests
         using SdlPlatformWindow window = session.CreateWindow(options).Value;
         Sdl.PInvoke.FlushEvents(FirstType, LastType);
         SdlEvent[] events = EveryKind(window.Id.Value, Sdl.PInvoke.GetPrimaryDisplay());
-        SdlEventPump pump = new(1024, 8192, new ScriptedClock());
+        SdlEventPump pump = new(1024, 8192, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
         long checksum = PumpEach(pump, events, 1); // warm-up: JIT and first-call costs
 
@@ -279,7 +285,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PlatformEventBuffer buffer = pump.Buffer;
         session.Dispose();
 
@@ -294,9 +300,10 @@ public sealed unsafe class SdlEventPumpTests
     [Fact]
     public void Constructor_InvalidArguments_Throw()
     {
-        Assert.Equal("clock", Assert.Throws<ArgumentNullException>(() => new SdlEventPump(Capacity, TextCapacity, null!)).ParamName);
-        Assert.Equal("eventCapacity", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity - 1, TextCapacity, new ScriptedClock())).ParamName);
-        Assert.Equal("textCapacityBytes", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity, TextCapacity - 1, new ScriptedClock())).ParamName);
+        Assert.Equal("clock", Assert.Throws<ArgumentNullException>(() => new SdlEventPump(Capacity, TextCapacity, null!, _noWindows)).ParamName);
+        Assert.Equal("windows", Assert.Throws<ArgumentNullException>(() => new SdlEventPump(Capacity, TextCapacity, new ScriptedClock(), null!)).ParamName);
+        Assert.Equal("eventCapacity", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity - 1, TextCapacity, new ScriptedClock(), _noWindows)).ParamName);
+        Assert.Equal("textCapacityBytes", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity, TextCapacity - 1, new ScriptedClock(), _noWindows)).ParamName);
     }
 
     [Fact]
@@ -305,7 +312,7 @@ public sealed unsafe class SdlEventPumpTests
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
         ScriptedClock clock = new();
-        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        SdlEventPump pump = new(Capacity, TextCapacity, clock, _noWindows);
         byte[] source = Pinned("h\u00E9llo\0"u8);
         Push(Text(source));
         Push(Motion(1f));
@@ -335,7 +342,7 @@ public sealed unsafe class SdlEventPumpTests
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
         ScriptedClock clock = new();
-        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        SdlEventPump pump = new(Capacity, TextCapacity, clock, _noWindows);
 
         // Zero only checks; one tick rounds up to a 1 ms wait. Nothing is queued, so each times out.
         Assert.False(pump.WaitForEvents(TimeSpan.Zero));
@@ -351,7 +358,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
 
         // SDL's poll sentinel at the front, an event behind it: SDL_WaitEventTimeout(0) would stop at the sentinel.
         PushMotions(0, 1);
@@ -373,7 +380,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         Push(Text(_hello));
         Push(Motion(1f));
         PlatformEventBatch batch = pump.Pump();
@@ -409,7 +416,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         byte[] source = PinnedText(string.Concat(Enumerable.Repeat(unit, repeat)));
         byte[] original = source.AsSpan(0, source.Length - 1).ToArray();
         Push(Text(source));
@@ -431,7 +438,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         byte[] source = Pinned(bytes);
         SdlEvent textEvent = isNull ? new SdlEvent { text = new SdlTextInputEvent { type = SdlEventType.TextInput, windowID = WindowIdValue } } : Text(source);
         Push(textEvent);
@@ -451,7 +458,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
 
         // Valid up to well past the capacity plus 4 bytes the wait keeps, then a byte that is never valid UTF-8: the
         // whole text is checked, as the translator checks a pumped one, not only the copied part.
@@ -475,7 +482,7 @@ public sealed unsafe class SdlEventPumpTests
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
         ScriptedClock clock = new();
-        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        SdlEventPump pump = new(Capacity, TextCapacity, clock, _noWindows);
         PushMotions(1, 2);
 
         Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
@@ -492,7 +499,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PushMotions(0, Capacity + 1);
 
         Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
@@ -520,7 +527,7 @@ public sealed unsafe class SdlEventPumpTests
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
         ScriptedClock clock = new();
-        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        SdlEventPump pump = new(Capacity, TextCapacity, clock, _noWindows);
         PushMotions(1, 1);
 
         ArgumentOutOfRangeException thrown = Assert.Throws<ArgumentOutOfRangeException>(() => pump.WaitForEvents(TimeSpan.FromTicks(ticks)));
@@ -543,7 +550,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         PushMotions(3, 1);
 
         Assert.True(pump.WaitForEvents(TimeSpan.FromTicks(ticks)));
@@ -572,7 +579,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
         session.Dispose();
 
         // A stopped queue makes SDL_WaitEventTimeout return false, like a timeout; the pump must say why instead. SDL
@@ -591,7 +598,7 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        SdlEventPump pump = new(1024, 8192, new ScriptedClock());
+        SdlEventPump pump = new(1024, 8192, new ScriptedClock(), _noWindows);
         SdlEvent text = Text(_hello);
         int handed = WaitEach(pump, text, 1); // warm-up: JIT and first-call costs
 
@@ -622,6 +629,250 @@ public sealed unsafe class SdlEventPumpTests
         }
 
         return handed;
+    }
+
+    [Fact]
+    public void WindowEvent_RefreshesSnapshot()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        using SdlPlatformWindow window = session.CreateWindow(NoSurfaceWindow).Value;
+        SdlWindow handle = Sdl.PInvoke.GetWindowFromID(window.Id.Value);
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), new LiveWindows(window));
+        _ = pump.Pump();
+
+        // The OS resizes the window (a raw SDL_SetWindowSize, as a user dragging its edge would): the getters keep the
+        // snapshot until the pump takes the resize event.
+        Assert.NotEqual(0, Sdl.PInvoke.SetWindowSize(handle, 500, 400));
+        Assert.NotEqual(0, Sdl.PInvoke.SyncWindow(handle));
+        Assert.Equal(new WindowSize(320, 200), window.Size);
+
+        PlatformEventBatch batch = pump.Pump();
+
+        Assert.Contains(batch.Events.ToArray(), e => e.Kind == PlatformEventKind.WindowResized && e.Size == new WindowSize(500, 400));
+        Assert.Equal(new WindowSize(500, 400), window.Size);
+        Assert.Equal(new WindowSize(500, 400), window.PixelSize);
+        Assert.Equal(new WindowSize(500, 400), window.ContentSize);
+        Assert.Equal(0, pump.RefreshFailureCount);
+    }
+
+    // Every SDL window-range type (514 to 538) refreshes the live window it names, the ones the translator ignores
+    // included; types outside the range, and a keyboard event that also carries a window id, look up nothing. Below the
+    // range the row is 512, not 513: pushing type 513 (0x201, SDL 2's old SYSWM slot) crashes SDL_PushEvent itself
+    // (observed on the dummy driver).
+    [Theory]
+    [InlineData(SdlEventType.WindowShown, true)]
+    [InlineData(SdlEventType.WindowHidden, true)]
+    [InlineData(SdlEventType.WindowExposed, true)]
+    [InlineData(SdlEventType.WindowMoved, true)]
+    [InlineData(SdlEventType.WindowResized, true)]
+    [InlineData(SdlEventType.WindowPixelSizeChanged, true)]
+    [InlineData(SdlEventType.WindowMetalViewResized, true)]
+    [InlineData(SdlEventType.WindowMinimized, true)]
+    [InlineData(SdlEventType.WindowMaximized, true)]
+    [InlineData(SdlEventType.WindowRestored, true)]
+    [InlineData(SdlEventType.WindowMouseEnter, true)]
+    [InlineData(SdlEventType.WindowMouseLeave, true)]
+    [InlineData(SdlEventType.WindowFocusGained, true)]
+    [InlineData(SdlEventType.WindowFocusLost, true)]
+    [InlineData(SdlEventType.WindowCloseRequested, true)]
+    [InlineData(SdlEventType.WindowHitTest, true)]
+    [InlineData(SdlEventType.WindowIccprofChanged, true)]
+    [InlineData(SdlEventType.WindowDisplayChanged, true)]
+    [InlineData(SdlEventType.WindowDisplayScaleChanged, true)]
+    [InlineData(SdlEventType.WindowSafeAreaChanged, true)]
+    [InlineData(SdlEventType.WindowOccluded, true)]
+    [InlineData(SdlEventType.WindowEnterFullscreen, true)]
+    [InlineData(SdlEventType.WindowLeaveFullscreen, true)]
+    [InlineData(SdlEventType.WindowDestroyed, true)]
+    [InlineData(SdlEventType.WindowHdrStateChanged, true)]
+    [InlineData((SdlEventType)512, false)]
+    [InlineData((SdlEventType)539, false)]
+    [InlineData(SdlEventType.KeyDown, false)]
+    public void WindowRangeEvents_RefreshLiveWindowOnly(SdlEventType type, bool windowRange)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        FakeWindows windows = new();
+        FakeWindow live = windows.Add(WindowIdValue);
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), windows);
+
+        // The live window, a window id the lookup doesn't know, and no window at all (id 0).
+        Push(new SdlEvent { window = new SdlWindowEvent { type = type, windowID = WindowIdValue } });
+        Push(new SdlEvent { window = new SdlWindowEvent { type = type, windowID = WindowIdValue + 1 } });
+        Push(new SdlEvent { window = new SdlWindowEvent { type = type, windowID = 0 } });
+        _ = pump.Pump();
+
+        uint[] expected = windowRange ? [WindowIdValue, WindowIdValue + 1] : [];
+        Assert.Equal(expected, windows.Lookups.ToArray());
+        Assert.Equal(windowRange ? 1 : 0, live.Refreshes);
+        Assert.Equal(0, pump.RefreshFailureCount);
+        Assert.False(pump.DisplaysChanged);
+    }
+
+    // Every SDL display-range type (337 to 344), the ones the translator ignores included, until acknowledged; the
+    // types just outside the range don't.
+    [Theory]
+    [InlineData(SdlEventType.DisplayOrientation, true)]
+    [InlineData(SdlEventType.DisplayAdded, true)]
+    [InlineData(SdlEventType.DisplayRemoved, true)]
+    [InlineData(SdlEventType.DisplayMoved, true)]
+    [InlineData(SdlEventType.DisplayDesktopModeChanged, true)]
+    [InlineData(SdlEventType.DisplayCurrentModeChanged, true)]
+    [InlineData(SdlEventType.DisplayContentScaleChanged, true)]
+    [InlineData(SdlEventType.DisplayUsableBoundsChanged, true)]
+    [InlineData((SdlEventType)336, false)]
+    [InlineData((SdlEventType)345, false)]
+    public void DisplayRangeEvents_SetDisplaysChanged(SdlEventType type, bool displayRange)
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        FakeWindows windows = new();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), windows);
+        Assert.False(pump.DisplaysChanged);
+
+        Push(new SdlEvent { display = new SdlDisplayEvent { type = type, displayID = DisplayIdValue } });
+        _ = pump.Pump();
+        Assert.Equal(displayRange, pump.DisplaysChanged);
+
+        // It stays set over a pump with no display event, until acknowledged; the next display event sets it again.
+        Push(Motion(1f));
+        _ = pump.Pump();
+        Assert.Equal(displayRange, pump.DisplaysChanged);
+        pump.AcknowledgeDisplaysChanged();
+        Assert.False(pump.DisplaysChanged);
+        Push(new SdlEvent { display = new SdlDisplayEvent { type = type, displayID = DisplayIdValue } });
+        _ = pump.Pump();
+        Assert.Equal(displayRange, pump.DisplaysChanged);
+        Assert.Empty(windows.Lookups);
+    }
+
+    [Fact]
+    public void WaitForEvents_HeldEvents_HookedAtPumpNotAtWait()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        FakeWindows windows = new();
+        FakeWindow live = windows.Add(WindowIdValue);
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), windows);
+
+        // A held window event refreshes at the pump that hands it out, so the snapshot changes only in the pump.
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowEnterFullscreen, windowID = WindowIdValue } });
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        Assert.Equal(0, live.Refreshes);
+        _ = pump.Pump();
+        Assert.Equal(1, live.Refreshes);
+
+        Push(new SdlEvent { display = new SdlDisplayEvent { type = SdlEventType.DisplayMoved, displayID = DisplayIdValue } });
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        Assert.False(pump.DisplaysChanged);
+        _ = pump.Pump();
+        Assert.True(pump.DisplaysChanged);
+        Assert.Equal(1, live.Refreshes);
+    }
+
+    // The OS takes a window created fullscreen out of fullscreen by itself (a raw SDL_SetWindowFullscreen, as a
+    // window-manager shortcut would). The pump's refresh sees it windowed and drops the size kept for SetMode, so it
+    // isn't applied now, nor by the next fullscreen round trip. Created at a content scale of 2, so SDL's own windowed
+    // size (the 640 by 400 estimate) differs from the 320 by 200 the window would otherwise be resized to.
+    [Fact]
+    public void WindowedRefresh_ClearsPendingSize()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        WindowOptions options = NoSurfaceWindow with { Mode = WindowMode.BorderlessFullscreen };
+        using SdlPlatformWindow window = SdlPlatformWindow.Create(options, session.VideoDriver, session.Headless, estimateScale: 2f).Value;
+        SdlWindow handle = Sdl.PInvoke.GetWindowFromID(window.Id.Value);
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), new LiveWindows(window));
+        _ = pump.Pump();
+        Assert.Equal(WindowMode.BorderlessFullscreen, window.Mode);
+
+        Assert.NotEqual(0, Sdl.PInvoke.SetWindowFullscreen(handle, 0));
+        Assert.NotEqual(0, Sdl.PInvoke.SyncWindow(handle));
+        WindowSize osWindowed = NativeSize(handle);
+        Assert.NotEqual(NoSurfaceWindow.ContentSize, osWindowed);
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowLeaveFullscreen, windowID = window.Id.Value } });
+        _ = pump.Pump();
+
+        Assert.Equal(WindowMode.Windowed, window.Mode);
+        Assert.Equal(osWindowed, NativeSize(handle));
+        Assert.True(window.SetMode(WindowMode.BorderlessFullscreen).IsSuccess);
+        Assert.True(window.SetMode(WindowMode.Windowed).IsSuccess);
+        Assert.Equal(osWindowed, NativeSize(handle));
+    }
+
+    // A refresh that sees the window still fullscreen keeps the pending size, so SetMode's return applies it.
+    [Fact]
+    public void FullscreenRefresh_KeepsPendingSize()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        WindowOptions options = NoSurfaceWindow with { Mode = WindowMode.BorderlessFullscreen };
+        using SdlPlatformWindow window = SdlPlatformWindow.Create(options, session.VideoDriver, session.Headless, estimateScale: 2f).Value;
+        SdlWindow handle = Sdl.PInvoke.GetWindowFromID(window.Id.Value);
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), new LiveWindows(window));
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowEnterFullscreen, windowID = window.Id.Value } });
+        _ = pump.Pump();
+        Assert.Equal(WindowMode.BorderlessFullscreen, window.Mode);
+
+        Assert.True(window.SetMode(WindowMode.Windowed).IsSuccess);
+
+        Assert.Equal(NoSurfaceWindow.ContentSize, NativeSize(handle));
+    }
+
+    [Fact]
+    public void RefreshFailure_KeepsEventAndSnapshot()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        FakeWindows windows = new();
+        FakeWindow failing = windows.Add(WindowIdValue);
+        FakeWindow working = windows.Add(WindowIdValue + 1);
+        failing.Failures.Enqueue(new EngineError(ErrorKind.Native, "SDL_GetWindowSize failed: first"));
+        failing.Failures.Enqueue(new EngineError(ErrorKind.Native, "SDL_GetWindowSize failed: second"));
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), windows);
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowResized, windowID = WindowIdValue, data1 = 640, data2 = 480 } });
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowShown, windowID = WindowIdValue + 1 } });
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowMoved, windowID = WindowIdValue } });
+
+        PlatformEventBatch batch = pump.Pump();
+
+        // Every event is kept, the next window still refreshes, and each failure is counted with its own error.
+        PlatformEventKind[] kinds = [PlatformEventKind.WindowResized, PlatformEventKind.WindowShown, PlatformEventKind.WindowMoved];
+        Assert.Equal(kinds, batch.Events.ToArray().Select(e => e.Kind).ToArray());
+        Assert.Equal(new WindowSize(640, 480), batch.Events[0].Size);
+        Assert.Equal(2, failing.Refreshes);
+        Assert.Equal(0, failing.Snapshot);
+        Assert.Equal(1, working.Refreshes);
+        Assert.Equal(1, working.Snapshot);
+        Assert.Equal(2, pump.RefreshFailureCount);
+        Assert.Equal(new EngineError(ErrorKind.Native, "SDL_GetWindowSize failed: second"), pump.LastRefreshError);
+
+        // A later refresh that succeeds counts nothing and keeps the last error.
+        Push(new SdlEvent { window = new SdlWindowEvent { type = SdlEventType.WindowExposed, windowID = WindowIdValue } });
+        _ = pump.Pump();
+        Assert.Equal(1, failing.Snapshot);
+        Assert.Equal(2, pump.RefreshFailureCount);
+        Assert.Equal("SDL_GetWindowSize failed: second", pump.LastRefreshError.Message);
+    }
+
+    [Fact]
+    public void RefreshFailure_NoneYet_DefaultError()
+    {
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), _noWindows);
+
+        Assert.Equal(0, pump.RefreshFailureCount);
+        Assert.Equal(default, pump.LastRefreshError);
+        Assert.False(pump.DisplaysChanged);
+    }
+
+    private static WindowSize NativeSize(SdlWindow handle)
+    {
+        int width, height;
+
+        // Sound: both ints are locals of this frame, which outlives the call.
+        Assert.NotEqual(0, Sdl.PInvoke.GetWindowSize(handle, &width, &height));
+        return new WindowSize(width, height);
     }
 
     // Pushes every type of the round, pumps, and folds each event's payload, read through its own view, into a
@@ -799,6 +1050,66 @@ public sealed unsafe class SdlEventPumpTests
         Sdl.PInvoke.PumpEvents();
         Sdl.PInvoke.FlushEvents(FirstType, LastType);
         return session;
+    }
+
+    // The platform's lookup over real windows: a window is live until disposed.
+    private sealed class LiveWindows(params SdlPlatformWindow[] windows) : SdlEventPump.IWindowLookup
+    {
+        public SdlPlatformWindow.ISnapshotRefresh? Find(WindowId window)
+        {
+            foreach (SdlPlatformWindow candidate in windows)
+            {
+                if (!candidate.IsDisposed && candidate.Id == window)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    // A lookup over fake windows that records every id it is asked for.
+    private sealed class FakeWindows : SdlEventPump.IWindowLookup
+    {
+        private readonly Dictionary<uint, FakeWindow> _windows = new();
+
+        public List<uint> Lookups { get; } = [];
+
+        public FakeWindow Add(uint id)
+        {
+            FakeWindow window = new();
+            _windows.Add(id, window);
+            return window;
+        }
+
+        public SdlPlatformWindow.ISnapshotRefresh? Find(WindowId window)
+        {
+            Lookups.Add(window.Value);
+            return _windows.GetValueOrDefault(window.Value);
+        }
+    }
+
+    // Counts refreshes, fails the next ones with the queued errors, and counts its "snapshot" up on each success only.
+    private sealed class FakeWindow : SdlPlatformWindow.ISnapshotRefresh
+    {
+        public Queue<EngineError> Failures { get; } = new();
+
+        public int Refreshes { get; private set; }
+
+        public int Snapshot { get; private set; }
+
+        public Result RefreshSnapshot()
+        {
+            Refreshes++;
+            if (Failures.TryDequeue(out EngineError error))
+            {
+                return error;
+            }
+
+            Snapshot++;
+            return Result.Success;
+        }
     }
 
     // Returns 1, 2, 3, ... and counts the reads, so a row can tell which event took which timestamp.
