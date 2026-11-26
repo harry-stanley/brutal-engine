@@ -1,0 +1,55 @@
+# ADR-0016: Develop milestones on trunk and gate what each release ships
+
+- **Status:** Accepted
+- **Date:** 2026-11-27
+- **Deciders:** the maintainer
+
+## Context
+
+Each milestone ends with a tagged release: milestone M*n* is released as `v0.(n+1).0`, so M0 was `v0.1.0-alpha`, M1 is `v0.2.0` and M2 will be `0.3.0` ([Roadmap](../09-roadmap.md), docs/09-roadmap.md:3 and the milestone headings). Below, *n* is the milestone being released next and M*n+1* is the one after it. Work for M2 is starting while M1 is still finishing, and the rules so far assume one milestone at a time:
+
+- **The roadmap orders milestones by completion.** Its overview said that every milestone builds only on what earlier milestones had *finished* (docs/09-roadmap.md:3, before this ADR).
+- **There is one changelog section for everything merged.** "Each PR updates the `Unreleased` section" ([CI/CD and release, Versioning](../06-ci-cd-and-release.md#versioning), docs/06-ci-cd-and-release.md:127, before this ADR), and `CHANGELOG.md` had a single `## [Unreleased]` section, introduced by "Every pull request adds its user-visible changes to the `Unreleased` section."
+- **Every engine library is packed.** Every src project that isn't a Roslyn component sets `IsPackable` (the "Shipped engine libraries" group, src/Directory.Build.props:23-27), and CI packs the whole solution (`dotnet pack BrutalEngine.slnx -c Release --no-build`, .github/workflows/ci.yml:187-189). Versions come from the `v` tags through MinVer, with `MinVerMinimumMajorMinor` `0.2` until `v0.2.0` (src/Directory.Build.props:42-47), and every package is released in lockstep ([ADR-0010](0010-monorepo-lockstep-packages.md)).
+
+So if M2 work merged to `main` today, the `v0.2.0` tag would pack and announce unfinished M2 libraries. Facts that constrain the alternatives:
+
+- **The repository allows squash merges only.** Merge commits and rebase merging are disabled (repository settings, checked through the GitHub API on 2026-11-27: `allow_squash_merge` true, `allow_merge_commit` and `allow_rebase_merge` false; [CI/CD and release, workflows](../06-ci-cd-and-release.md#ciyml-every-pr-and-every-push-to-main-plus-nightly), docs/06-ci-cd-and-release.md:45 and :94). A long-lived branch can't be merged back with its history: it becomes one squash commit for the whole branch, or every PR is replayed onto `main` by hand.
+- **Post-merge CI covers `main` only.** `ci.yml` runs on `push` for `branches: [main]` (.github/workflows/ci.yml:7-10). Its nightly `schedule` runs on the default branch, and the merge check that decides how much of the full tier a push needs is for pushes to `main` ([CI tiers](../06-ci-cd-and-release.md#ci-tiers)). PRs into another branch get PR runs, but nothing runs after they merge there.
+- **Releases are tagged on `main`.** The planned `release.yml` starts by verifying that the tag is on `main` and that CI is green for that commit (docs/06-ci-cd-and-release.md:112).
+
+## Options considered
+
+1. **Trunk with a ship gate.** Every milestone merges to `main` through the normal squash-merged PRs. A build property marks the milestone that first ships each library, the release packs only libraries of milestones up to the one being released, and the changelog keeps next-milestone entries in their own section. Pros: one branch, every PR gets the normal PR and post-merge CI, no merge-back. Cons: the source tree at a tag contains unfinished code; next-milestone work must not change what the release ships until the tag (a freeze).
+2. **A milestone integration branch.** M2 PRs merge into an `m2` branch, which joins `main` after `v0.2.0` is tagged. Rejected: the repository allows squash merges only, so the join is either one huge squash commit that becomes M2's single unit of revert on `main` and hides its PRs, or a replay of every M2 PR. The branch would have no post-merge CI (push runs, the nightly run and the merge check cover `main` only), and its conflicts with `main` grow until the join.
+3. **A release branch with next-milestone work removed.** M2 work merges to `main`, and `v0.2.0` is cut from a branch where it is reverted. Rejected: `release.yml` requires the tag to be on `main`, the release branch gets no post-merge CI, and the released tree would be one that `main` never contained or tested. Removing M2 by hand is error-prone wherever an M2 change touched a shared file.
+
+## Decision
+
+Decision (maintainer, 2026-11-27): option 1. Options 2 and 3 are rejected for the reasons above.
+
+1. **Trunk.** All milestones merge to `main` through the normal squash-merged PRs. There are no long-lived milestone, integration or release branches for milestone work, and milestone releases are always tags on `main`. ([CI/CD and release, Versioning](../06-ci-cd-and-release.md#versioning) keeps `x.y.z-preview.N` pre-releases from release branches when needed.)
+2. **Working ahead.** Work for M*n+1* may start before M*n*'s release is tagged. It builds only on *merged* work of earlier milestones, and dependencies across milestones are ordinary "Blocked by" links between issues. The [roadmap](../09-roadmap.md) states this ordering rule.
+3. **Ship gate.**
+   - `BrutalEngineMilestone`: an integer in every engine library's csproj, the milestone that first ships it (Core `0`; Platform, Platform.Sdl3, Graphics, Graphics.Vulkan and World `1`; M2's projects `2`).
+   - `BrutalEngineReleaseMilestone`: an integer in `src/Directory.Build.props`, the milestone the next release ships (`1` until `v0.2.0` is tagged).
+   - A library packs only when `BrutalEngineMilestone <= BrutalEngineReleaseMilestone`.
+   - A CI step after Pack, `.github/scripts/check-packages.sh`, fails when the packed set differs from the set of projects the rule selects.
+   - Projects the gate doesn't select are still built and tested on every PR. The source tree at a tag contains them; the packages, the release notes and the release assets don't.
+4. **Freeze.** Until M*n*'s release is tagged and the release PR (item 6) has merged, M*n+1* work doesn't change the packages or samples that the release ships (M*n*'s and earlier milestones'), or the build-wide files that shape every package: `Directory.Build.props`, `src/Directory.Build.props`, `src/Directory.Build.targets` and `global.json`. Adding a new package version to `Directory.Packages.props` is allowed; changing an existing one isn't. A change that M*n+1* work needs in any of these becomes an M*n* issue, or waits for the tag.
+5. **Changelog.** `CHANGELOG.md` keeps `## [Unreleased]` for the milestone being released next. M*n+1* PRs add their entries to a section directly below it, `## Next: 0.(n+2).0 (not in the next release)`, today `## Next: 0.3.0 (not in the next release)`. It has no brackets, so Keep a Changelog tooling doesn't read it as a version, and its intro line says what it is.
+6. **Release steps** for M*n*, in this order:
+   1. Tag `v0.(n+1).0` on `main` ([CI/CD and release, `release.yml`](../06-ci-cd-and-release.md#releaseyml-on-a-v-tag)).
+   2. Then one PR renames `## [Unreleased]` to `## [0.(n+1).0] - <date>`, renames the Next section to `## [Unreleased]` (dropping its intro line), adds an empty `## Next: 0.(n+3).0 (not in the next release)` section for M*n+2*, bumps `BrutalEngineReleaseMilestone` from *n* to *n+1* and `MinVerMinimumMajorMinor` to `0.(n+2)`, and fixes the compare links at the end of the changelog. For `v0.2.0`: `[0.2.0]`, a new `Next: 0.4.0`, `BrutalEngineReleaseMilestone` `2` and `MinVerMinimumMajorMinor` `0.3`.
+   3. The freeze lifts once that PR merges.
+
+## Consequences
+
+- **The source tag contains unfinished code.** Anyone building from a release tag gets next-milestone projects too. They aren't packed, aren't in the release notes and aren't attached to the release.
+- **A forgotten gate fails loudly.** A library without `BrutalEngineMilestone` fails the build or an architecture test, and a pack that differs from the rule fails `check-packages.sh`, so nothing ships silently (both implemented by #254).
+- **The freeze can hold up next-milestone work** that needs a change in a package the release ships, or in a build-wide file. That is the intended trade: the release is what M*n* tested, and the change waits for the tag or becomes M*n*'s own issue.
+- **Lockstep versioning is unchanged** ([ADR-0010](0010-monorepo-lockstep-packages.md)): every package a release ships has the release's version. A library the gate doesn't select isn't one of that release's packages; it first ships, at the same version as all the others, with its milestone.
+- **Contributors pick a changelog section.** A PR for the milestone being released next writes to `## [Unreleased]`; a PR for the milestone after writes to the Next section. The [pull request template](../../.github/pull_request_template.md), [CONTRIBUTING.md](../../CONTRIBUTING.md) and the [definition of done](../08-workflow.md#definition-of-done) say so.
+- **`release.yml`, when it's written,** generates release notes from the released version's section only (docs/06-ci-cd-and-release.md:114), so the Next section never appears in them.
+- **Revisit if** two milestones beyond the next release need to be in flight at once, or the freeze blocks work for longer than a milestone's release takes.
+- **Docs updated with this ADR:** the [roadmap](../09-roadmap.md)'s ordering sentence, [CI/CD and release](../06-ci-cd-and-release.md) (Versioning and the ship gate under `release.yml`), the [workflow](../08-workflow.md)'s definition of done, the pull request template, CONTRIBUTING.md and `CHANGELOG.md` (the Next section).
