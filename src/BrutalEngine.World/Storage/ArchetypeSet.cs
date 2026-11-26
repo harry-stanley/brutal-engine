@@ -24,7 +24,9 @@ namespace BrutalEngine.World.Storage;
 /// grows the set's managed tables when they are full, all before anything visible changes, so an archetype that can't
 /// be created (a row too wide, an invalid id) leaves the set unchanged. Creating one allocates no native memory: its
 /// chunk table allocates when it gets its first chunk. Finding an existing archetype allocates nothing, once the set's
-/// id buffer holds the request: only a request longer than every earlier one grows it.
+/// id buffer holds the request: it always holds one more id than the largest archetype, so
+/// <see cref="GetOrCreateAdding"/> and <see cref="GetOrCreateRemoving"/> never grow it, and only a
+/// <see cref="GetOrCreate"/> request longer than every earlier one (it can repeat ids) grows it.
 /// </para>
 /// <para>Not thread-safe: the owning world's owner thread is its only caller.</para>
 /// </remarks>
@@ -42,7 +44,7 @@ internal sealed class ArchetypeSet : IDisposable
     // Archetype index + 1 per slot, 0 for an empty slot. A power-of-two length, at most half full.
     private int[] _slots = new int[InitialCapacity * 2];
 
-    // Holds a request's ids while it is looked up.
+    // Holds a request's ids while it is looked up: at least one longer than the largest signature.
     private int[] _ids = new int[InitialCapacity];
     private int _count;
     private bool _disposed;
@@ -76,8 +78,9 @@ internal sealed class ArchetypeSet : IDisposable
     public Archetype Empty => this[0];
 
     /// <summary>
-    /// Test seam: the number of times the signature map has been searched. Every <see cref="GetOrCreate"/> searches it
-    /// once, so a test can prove that a cached path didn't. One increment per search; the engine never reads it.
+    /// Test seam: the number of times the signature map has been searched. Every <see cref="GetOrCreate"/>,
+    /// <see cref="GetOrCreateAdding"/> and <see cref="GetOrCreateRemoving"/> searches it once, so a test can prove that a
+    /// cached path didn't. One increment per search; the engine never reads it.
     /// </summary>
     internal int SignatureLookups { get; private set; }
 
@@ -134,6 +137,50 @@ internal sealed class ArchetypeSet : IDisposable
         return GetOrCreateSorted(ids[..ArchetypeSignature.Normalize(ids)]);
     }
 
+    /// <summary>Returns the archetype with <paramref name="source"/>'s components plus <paramref name="component"/>, creating it if needed.</summary>
+    /// <param name="source">An archetype of this set that lacks <paramref name="component"/>.</param>
+    /// <param name="component">The index of the component to add, an id of this world's registry.</param>
+    /// <returns>The neighbouring archetype.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="source"/> belongs to another set.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="component"/> isn't registered.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="source"/> already has <paramref name="component"/> (internal misuse), or the neighbour is new and
+    /// its row is too wide. The set is unchanged.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The set is disposed.</exception>
+    public Archetype GetOrCreateAdding(Archetype source, int component)
+    {
+        ReadOnlySpan<int> ids = CheckNeighbour(source, component, adding: true);
+
+        // Sound for the length: the buffer is at least one longer than every signature (see the class remarks).
+        Span<int> neighbour = _ids.AsSpan(0, ids.Length + 1);
+        int at = ~ids.BinarySearch(component);
+        ids[..at].CopyTo(neighbour);
+        neighbour[at] = component;
+        ids[at..].CopyTo(neighbour[(at + 1)..]);
+        return GetOrCreateSorted(neighbour);
+    }
+
+    /// <summary>Returns the archetype with <paramref name="source"/>'s components minus <paramref name="component"/>, creating it if needed.</summary>
+    /// <param name="source">An archetype of this set that has <paramref name="component"/>.</param>
+    /// <param name="component">The index of the component to remove, an id of this world's registry.</param>
+    /// <returns>The neighbouring archetype.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="source"/> belongs to another set.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="component"/> isn't registered.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="source"/> lacks <paramref name="component"/> (internal misuse). The set is unchanged.</exception>
+    /// <exception cref="ObjectDisposedException">The set is disposed.</exception>
+    public Archetype GetOrCreateRemoving(Archetype source, int component)
+    {
+        ReadOnlySpan<int> ids = CheckNeighbour(source, component, adding: false);
+        Span<int> neighbour = _ids.AsSpan(0, ids.Length - 1);
+        int at = ids.BinarySearch(component);
+        ids[..at].CopyTo(neighbour);
+        ids[(at + 1)..].CopyTo(neighbour[at..]);
+        return GetOrCreateSorted(neighbour);
+    }
+
     /// <summary>
     /// Disposes every archetype, returning their chunks to the pool, which must not be disposed yet. Idempotent;
     /// afterwards the lookups throw <see cref="ObjectDisposedException"/>.
@@ -168,6 +215,32 @@ internal sealed class ArchetypeSet : IDisposable
         }
 
         first?.Throw();
+    }
+
+    private ReadOnlySpan<int> CheckNeighbour(Archetype source, int component, bool adding)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(source);
+        if (!ReferenceEquals(source.Set, this))
+        {
+            throw new ArgumentException("The archetype belongs to another world's archetype set.", nameof(source));
+        }
+
+        int registered = _registry.Count;
+        if ((uint)component >= (uint)registered)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(component), component, $"Component id {component} isn't registered: the registry has {registered} component types.");
+        }
+
+        if (source.Signature.Contains(component) == adding)
+        {
+            throw new InvalidOperationException(adding
+                ? $"Archetype {source.Index} already has component {component}; it has no add edge for it."
+                : $"Archetype {source.Index} doesn't have component {component}; it has no remove edge for it.");
+        }
+
+        return source.Signature.Ids;
     }
 
     private Archetype GetOrCreateSorted(ReadOnlySpan<int> sortedIds)
@@ -224,6 +297,11 @@ internal sealed class ArchetypeSet : IDisposable
         if ((index + 1) * 2 > _slots.Length)
         {
             _slots = Rehash(checked(_slots.Length * 2));
+        }
+
+        if (signature.Count + 1 > _ids.Length)
+        {
+            _ids = new int[Math.Max(signature.Count + 1, _ids.Length * 2)];
         }
 
         // Allocates no native memory, and can't throw: the column count is at most the mask width, 4,096.
