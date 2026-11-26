@@ -139,8 +139,8 @@ public sealed class RotatingFileLogSink : ILogSink, IDisposable
             throw new ArgumentOutOfRangeException(nameof(options), options.FlushLevel, "RotatingFileLogSinkOptions.FlushLevel is not a defined LogLevel.");
         }
 
-        _path = Path.Combine(directory, fileName);
-        _archivePrefix = Path.Combine(directory, Path.GetFileNameWithoutExtension(fileName) + ".");
+        _path = Path.Join(directory, fileName);
+        _archivePrefix = Path.Join(directory, Path.GetFileNameWithoutExtension(fileName) + ".");
         _archiveSuffix = Path.GetExtension(fileName);
         _maxFileBytes = options.MaxFileBytes;
         _keptArchives = options.MaxFiles - 1;

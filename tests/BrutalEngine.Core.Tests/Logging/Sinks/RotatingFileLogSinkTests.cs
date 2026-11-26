@@ -181,6 +181,34 @@ public sealed class RotatingFileLogSinkTests : IDisposable
     }
 
     [Fact]
+    public void Construct_DriveRelativeFileName_NeverLeavesTheDirectory()
+    {
+        // "C:engine.log" is rooted on Windows (drive-relative), where ':' is an invalid file-name character, so the
+        // sink must reject it. Elsewhere it's a legal bare name and the file must land inside the directory.
+        const string FileName = "C:engine.log";
+        string directory = Path.Combine(_root, "drive-relative");
+
+        if (OperatingSystem.IsWindows())
+        {
+            ArgumentException thrown = Assert.Throws<ArgumentException>(
+                () => new RotatingFileLogSink(Options() with { Directory = directory, FileName = FileName }));
+
+            Assert.Equal("options", thrown.ParamName);
+            Assert.False(Directory.Exists(directory), "Misuse must be rejected before the sink touches the disk.");
+        }
+        else
+        {
+            using (RotatingFileLogSink sink = new(Options() with { Directory = directory, FileName = FileName }))
+            {
+                Write(sink, LogLevel.Information, "hello");
+            }
+
+            Assert.Equal([FileName], Files(directory));
+            Assert.Equal(Line("hello"), Read(Path.Combine(directory, FileName)));
+        }
+    }
+
+    [Fact]
     public void Construct_BoundaryOptions_AreAccepted()
     {
         new RotatingFileLogSink(Options() with { MaxFileBytes = SmallestMax, MaxFiles = 1, FlushLevel = LogLevel.None }).Dispose();
