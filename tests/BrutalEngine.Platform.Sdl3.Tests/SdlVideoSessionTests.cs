@@ -122,6 +122,21 @@ public sealed class SdlVideoSessionTests
     }
 
     [Fact]
+    public void Start_DisposedLogger_ThrowsAndLeavesNoSessionLive()
+    {
+        using var variable = NativeEnvironmentVariable.Set(VideoDriverVariable, null);
+        Logger logger = new(new LoggerOptions { Sinks = [new MemoryLogSink(1, 64)] });
+        logger.Dispose();
+
+        _ = Assert.Throws<ObjectDisposedException>(() => SdlVideoSession.Start(Options(HeadlessMode.NoSurface, logger), null));
+        Assert.Equal((SdlInitFlags)0, Sdl.PInvoke.WasInit(SdlInitFlags.Video));
+
+        using SdlVideoSession session = SdlVideoSession.Start(Options(HeadlessMode.NoSurface), null).Value;
+
+        Assert.Equal(HeadlessMode.NoSurface, session.Headless);
+    }
+
+    [Fact]
     public void Dispose_Twice_EndsTheSessionOnce()
     {
         using var variable = NativeEnvironmentVariable.Set(VideoDriverVariable, null);

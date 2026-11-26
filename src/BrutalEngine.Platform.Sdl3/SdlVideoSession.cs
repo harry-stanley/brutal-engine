@@ -55,6 +55,9 @@ internal sealed class SdlVideoSession : IDisposable
     /// <exception cref="ArgumentException">An option breaks its rule (see <see cref="OptionsValidator"/>).</exception>
     /// <exception cref="ArgumentOutOfRangeException">A capacity or the headless mode is out of range.</exception>
     /// <exception cref="InvalidOperationException">Another session is live.</exception>
+    /// <exception cref="ObjectDisposedException">
+    /// <see cref="PlatformOptions.Logger"/> is disposed. No session is left live.
+    /// </exception>
     public static Result<SdlVideoSession> Start(PlatformOptions options, SdlPlatformOptions? sdlOptions)
     {
         OptionsValidator.Validate(options, sdlOptions);
