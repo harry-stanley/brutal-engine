@@ -30,9 +30,21 @@ public sealed class EcsWorldTests
     {
         TrackingAllocator tracking = new(new HeapAllocator(), "World");
         using DisposeCountingAllocator allocator = new(tracking);
-        EcsWorld world = new(new WorldOptions { Allocator = allocator });
+        EcsWorld world = new(new WorldOptions { Allocator = allocator, InitialEntityCapacity = 2 });
 
         Assert.Same(allocator, world.Allocator);
+
+        // Use the entity table past its initial capacity, so the world has grown blocks and freed slots to release.
+        for (int i = 0; i < 5; i++)
+        {
+            _ = world.Entities.Allocate();
+            world.Entities.Place(i, archetype: 0, chunk: 0, row: i);
+        }
+
+        world.Entities.Free(1);
+        world.Entities.Free(3);
+        Assert.NotEqual(0, tracking.LiveAllocationCount);
+
         world.Dispose();
 
         Assert.Equal(0, allocator.DisposeCount);
