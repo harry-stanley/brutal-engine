@@ -8,7 +8,7 @@ namespace BrutalEngine.Platform;
 /// matching bit in <see cref="MouseButtons"/> is <c>1 &lt;&lt; (button - 1)</c>.
 /// </para>
 /// <para>
-/// Backed by a <see langword="byte"/>, so <c>MouseButtonData</c> fits the event payload. Buttons beyond
+/// Backed by a <see langword="byte"/>, so <see cref="MouseButtonData"/> fits the event payload. Buttons beyond
 /// <see cref="X2"/> can still arrive from a backend, as values without a member. The values are fixed: new members are
 /// only ever added, never renumbered.
 /// </para>

@@ -10,7 +10,7 @@ namespace BrutalEngine.Platform;
 /// state with a cast.
 /// </para>
 /// <para>
-/// Backed by a <see langword="byte"/>, so <c>MouseMotionData</c> fits the event payload. Bits without a member
+/// Backed by a <see langword="byte"/>, so <see cref="MouseMotionData"/> fits the event payload. Bits without a member
 /// can still arrive from a backend; ignore them. The values are fixed: new members are only ever added, never
 /// renumbered.
 /// </para>
