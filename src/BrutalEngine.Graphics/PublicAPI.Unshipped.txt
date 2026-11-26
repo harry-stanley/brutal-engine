@@ -1,0 +1,55 @@
+#nullable enable
+BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.BufferHandle.BufferHandle() -> void
+BrutalEngine.Graphics.BufferHandle.Equals(BrutalEngine.Graphics.BufferHandle other) -> bool
+BrutalEngine.Graphics.BufferHandle.IsNull.get -> bool
+BrutalEngine.Graphics.SamplerHandle
+BrutalEngine.Graphics.SamplerHandle.Equals(BrutalEngine.Graphics.SamplerHandle other) -> bool
+BrutalEngine.Graphics.SamplerHandle.IsNull.get -> bool
+BrutalEngine.Graphics.SamplerHandle.SamplerHandle() -> void
+BrutalEngine.Graphics.ShaderModuleHandle
+BrutalEngine.Graphics.ShaderModuleHandle.Equals(BrutalEngine.Graphics.ShaderModuleHandle other) -> bool
+BrutalEngine.Graphics.ShaderModuleHandle.IsNull.get -> bool
+BrutalEngine.Graphics.ShaderModuleHandle.ShaderModuleHandle() -> void
+BrutalEngine.Graphics.SwapchainHandle
+BrutalEngine.Graphics.SwapchainHandle.Equals(BrutalEngine.Graphics.SwapchainHandle other) -> bool
+BrutalEngine.Graphics.SwapchainHandle.IsNull.get -> bool
+BrutalEngine.Graphics.SwapchainHandle.SwapchainHandle() -> void
+BrutalEngine.Graphics.TextureHandle
+BrutalEngine.Graphics.TextureHandle.Equals(BrutalEngine.Graphics.TextureHandle other) -> bool
+BrutalEngine.Graphics.TextureHandle.IsNull.get -> bool
+BrutalEngine.Graphics.TextureHandle.TextureHandle() -> void
+BrutalEngine.Graphics.TextureViewHandle
+BrutalEngine.Graphics.TextureViewHandle.Equals(BrutalEngine.Graphics.TextureViewHandle other) -> bool
+BrutalEngine.Graphics.TextureViewHandle.IsNull.get -> bool
+BrutalEngine.Graphics.TextureViewHandle.TextureViewHandle() -> void
+override BrutalEngine.Graphics.BufferHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.BufferHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.BufferHandle.ToString() -> string!
+override BrutalEngine.Graphics.SamplerHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.SamplerHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.SamplerHandle.ToString() -> string!
+override BrutalEngine.Graphics.ShaderModuleHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.ShaderModuleHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.ShaderModuleHandle.ToString() -> string!
+override BrutalEngine.Graphics.SwapchainHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.SwapchainHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.SwapchainHandle.ToString() -> string!
+override BrutalEngine.Graphics.TextureHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.TextureHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureHandle.ToString() -> string!
+override BrutalEngine.Graphics.TextureViewHandle.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.TextureViewHandle.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureViewHandle.ToString() -> string!
+static BrutalEngine.Graphics.BufferHandle.operator !=(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
+static BrutalEngine.Graphics.BufferHandle.operator ==(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
+static BrutalEngine.Graphics.SamplerHandle.operator !=(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
+static BrutalEngine.Graphics.SamplerHandle.operator ==(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
+static BrutalEngine.Graphics.ShaderModuleHandle.operator !=(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
+static BrutalEngine.Graphics.ShaderModuleHandle.operator ==(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
+static BrutalEngine.Graphics.SwapchainHandle.operator !=(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
+static BrutalEngine.Graphics.SwapchainHandle.operator ==(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
+static BrutalEngine.Graphics.TextureHandle.operator !=(BrutalEngine.Graphics.TextureHandle left, BrutalEngine.Graphics.TextureHandle right) -> bool
+static BrutalEngine.Graphics.TextureHandle.operator ==(BrutalEngine.Graphics.TextureHandle left, BrutalEngine.Graphics.TextureHandle right) -> bool
+static BrutalEngine.Graphics.TextureViewHandle.operator !=(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
+static BrutalEngine.Graphics.TextureViewHandle.operator ==(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool

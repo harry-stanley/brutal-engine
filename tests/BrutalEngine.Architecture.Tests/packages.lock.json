@@ -166,6 +166,12 @@
       },
       "brutalengine.core": {
         "type": "Project"
+      },
+      "brutalengine.graphics": {
+        "type": "Project",
+        "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )"
+        }
       }
     }
   }

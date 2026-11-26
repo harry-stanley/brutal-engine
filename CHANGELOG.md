@@ -8,6 +8,10 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ## [Unreleased]
 
+### Added
+
+- `BrutalEngine.Graphics`, the render interface package, with its first typed GPU handles: `BufferHandle`, `TextureHandle`, `TextureViewHandle`, `SamplerHandle`, `ShaderModuleHandle` and `SwapchainHandle`. Each is a non-owning value over a generational Core `Handle`; `default` is the null handle, and a handle of one kind never converts to another ([render interface design](docs/design/graphics.md#1-object-model-handles-ownership-and-destruction)).
+
 ### Breaking
 
 - The engine targets .NET 11 (`net11.0`) instead of .NET 10 ([ADR-0014](docs/adr/0014-dotnet-11.md), superseding ADR-0001). `global.json` pins SDK 11.0.100 (`rollForward: latestPatch`). Migration: games and tools that reference BrutalEngine projects or packages target `net11.0` and build with the .NET 11 SDK. BRUTAL's `net10.0` packages are used unchanged; NativeAOT builds use the 11.0.0 compiler packs.
