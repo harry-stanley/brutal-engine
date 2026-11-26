@@ -181,17 +181,26 @@ internal sealed class ArchetypeSet : IDisposable
     {
         SignatureLookups++;
         int mask = _slots.Length - 1;
-        for (int slot = hash & mask; _slots[slot] != 0; slot = (slot + 1) & mask)
+        int slot = hash & mask;
+
+        // The map is at most half full, so the probe always reaches an empty slot; the bound only makes a broken map
+        // fail a lookup instead of spinning.
+        for (int probes = 0; probes < _slots.Length; probes++, slot = (slot + 1) & mask)
         {
-            ArchetypeSignature signature = _archetypes[_slots[slot] - 1].Signature;
+            int entry = _slots[slot];
+            if (entry == 0)
+            {
+                return -1;
+            }
+
+            ArchetypeSignature signature = _archetypes[entry - 1].Signature;
             if (signature.Hash == hash && signature.Matches(sortedIds))
             {
-                return _slots[slot] - 1;
+                return entry - 1;
             }
         }
 
-        // The map is at most half full, so the probe always reaches an empty slot.
-        return -1;
+        throw MapFull();
     }
 
     private Archetype Create(ReadOnlySpan<int> sortedIds, int hash)
@@ -240,13 +249,24 @@ internal sealed class ArchetypeSet : IDisposable
     {
         int mask = slots.Length - 1;
         int slot = hash & mask;
-        while (slots[slot] != 0)
+
+        // The map is at most half full, so the probe always reaches an empty slot; the bound only makes a broken map
+        // fail an insert instead of spinning.
+        for (int probes = 0; probes < slots.Length; probes++, slot = (slot + 1) & mask)
         {
-            slot = (slot + 1) & mask;
+            if (slots[slot] == 0)
+            {
+                slots[slot] = index + 1;
+                return;
+            }
         }
 
-        slots[slot] = index + 1;
+        throw MapFull();
     }
+
+    // An internal invariant is broken: the map should never be more than half full.
+    private static InvalidOperationException MapFull() =>
+        new("The archetype signature map has no empty slot; it should never be more than half full.");
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 }
