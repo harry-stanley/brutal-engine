@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using BrutalEngine.Core;
 using Xunit;
 
@@ -18,37 +19,60 @@ public sealed class PlatformInterfaceTests
     [Fact]
     public void Interface_DeclaresTheNoteMembers()
     {
-        // docs/design/platform.md section 1, "The platform root", written out by hand.
+        // docs/design/platform.md section 1, "The platform root", written out by hand: every member (events and
+        // nested types included), with its parameter names and the nullability of every reference type ('!' not
+        // null, '?' nullable), as the PublicAPI files write them.
         string[] expected =
         [
-            "System.String BackendName { get; }",
-            "System.String VideoDriver { get; }",
+            "System.String! BackendName { get; }",
+            "System.String! VideoDriver { get; }",
             "BrutalEngine.Platform.HeadlessMode Headless { get; }",
-            "System.TimeProvider Clock { get; }",
-            "System.String BaseDirectory { get; }",
-            "BrutalEngine.Core.Result`1[System.String] GetUserDataDirectory()",
-            "BrutalEngine.Core.Result`1[BrutalEngine.Platform.IWindow] CreateWindow(BrutalEngine.Platform.WindowOptions)",
+            "System.TimeProvider! Clock { get; }",
+            "System.String! BaseDirectory { get; }",
+            "BrutalEngine.Core.Result<System.String!> GetUserDataDirectory()",
+            "BrutalEngine.Core.Result<BrutalEngine.Platform.IWindow!> CreateWindow(BrutalEngine.Platform.WindowOptions! options)",
             "BrutalEngine.Platform.PlatformEventBatch PumpEvents()",
             "BrutalEngine.Platform.PlatformEventBatch Events { get; }",
-            "System.Boolean WaitForEvents(System.TimeSpan)",
-            "System.Collections.Generic.IReadOnlyList`1[BrutalEngine.Platform.DisplayInfo] Displays { get; }",
-            "BrutalEngine.Core.Result`1[System.Collections.Generic.IReadOnlyList`1[BrutalEngine.Platform.DisplayMode]] GetFullscreenModes(BrutalEngine.Platform.DisplayId)",
-            "BrutalEngine.Core.Result`1[System.String] GetClipboardText()",
-            "BrutalEngine.Core.Result SetClipboardText(System.String)",
-            "BrutalEngine.Core.Result SetCursor(BrutalEngine.Platform.SystemCursor)",
-            "BrutalEngine.Core.Result SetCursorVisible(System.Boolean)",
-            "BrutalEngine.Core.Result ShowMessageBox(BrutalEngine.Platform.MessageBoxRequest)",
+            "System.Boolean WaitForEvents(System.TimeSpan timeout)",
+            "System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.DisplayInfo!>! Displays { get; }",
+            "BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.DisplayMode>!> GetFullscreenModes(BrutalEngine.Platform.DisplayId display)",
+            "BrutalEngine.Core.Result<System.String!> GetClipboardText()",
+            "BrutalEngine.Core.Result SetClipboardText(System.String! text)",
+            "BrutalEngine.Core.Result SetCursor(BrutalEngine.Platform.SystemCursor cursor)",
+            "BrutalEngine.Core.Result SetCursorVisible(System.Boolean visible)",
+            "BrutalEngine.Core.Result ShowMessageBox(BrutalEngine.Platform.MessageBoxRequest! request)",
         ];
 
         Type type = typeof(IPlatform);
+        NullabilityInfoContext nullability = new();
         IEnumerable<string> properties = type.GetProperties().Select(p =>
-            $"{p.PropertyType} {p.Name} {{ {(p.CanWrite ? "get; set;" : "get;")} }}");
+            $"{Describe(nullability.Create(p))} {p.Name} {{ {(p.CanWrite ? "get; set;" : "get;")} }}");
         IEnumerable<string> methods = type.GetMethods().Where(m => !m.IsSpecialName).Select(m =>
-            $"{m.ReturnType} {m.Name}({string.Join(", ", m.GetParameters().Select(p => p.ParameterType.ToString()))})");
+            $"{Describe(nullability.Create(m.ReturnParameter))} {m.Name}({string.Join(", ", m.GetParameters().Select(p => $"{Describe(nullability.Create(p))} {p.Name}"))})");
+        IEnumerable<string> events = type.GetEvents().Select(e => $"event {Describe(nullability.Create(e))} {e.Name}");
+        IEnumerable<string> nestedTypes = type.GetNestedTypes().Select(t => $"nested {t}");
 
-        Assert.Equal(expected.Order(StringComparer.Ordinal), properties.Concat(methods).Order(StringComparer.Ordinal));
+        Assert.Equal(
+            expected.Order(StringComparer.Ordinal),
+            properties.Concat(methods).Concat(events).Concat(nestedTypes).Order(StringComparer.Ordinal));
         Assert.Equal([typeof(IDisposable)], type.GetInterfaces());
         Assert.True(type.IsPublic);
+    }
+
+    // A type as C# writes it, with '!' (not null), '?' (nullable) or '~' (oblivious) after each reference type.
+    private static string Describe(NullabilityInfo info)
+    {
+        Type type = info.Type;
+        string name = type.IsGenericType
+            ? $"{type.Namespace}.{type.Name[..type.Name.IndexOf('`', StringComparison.Ordinal)]}<{string.Join(", ", info.GenericTypeArguments.Select(Describe))}>"
+            : type.FullName!;
+        string state = info.ReadState switch
+        {
+            NullabilityState.NotNull => "!",
+            NullabilityState.Nullable => "?",
+            _ => "~",
+        };
+        return type.IsValueType ? name : name + state;
     }
 
     private static void Exercise<T>(T platform)
