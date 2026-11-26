@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using CsCheck;
 using Xunit;
 
 namespace BrutalEngine.Platform.Tests;
@@ -216,11 +217,137 @@ public sealed class PlatformEventFormatTests
         }
     }
 
+    [Fact]
+    public void RoundTrip_EveryPayload()
+    {
+        // Edges are drawn as often as uniform values: the extremes, zero, -1, default ids, every enum member and
+        // values without one, and floats with any bit pattern (NaNs with payloads, infinities, -0, subnormals).
+        var ints = Gen.OneOf(Gen.Int, Gen.OneOf(int.MinValue, int.MaxValue, 0, -1, 1));
+        var uints = Gen.OneOf(Gen.UInt, Gen.OneOf(0u, 1u, uint.MaxValue));
+        var timestamps = Gen.OneOf(Gen.Long, Gen.OneOf(long.MinValue, long.MaxValue, 0L, -1L));
+        var floats = Gen.OneOf(
+            Gen.Float,
+            Gen.Int.Select(BitConverter.Int32BitsToSingle),
+            Gen.OneOf(
+                float.NaN, float.PositiveInfinity, float.NegativeInfinity, 0f, -0f, float.MaxValue, float.MinValue,
+                float.Epsilon, -float.Epsilon, BitConverter.Int32BitsToSingle(0x7FC0_0001),
+                BitConverter.Int32BitsToSingle(unchecked((int)0xFF80_0001))));
+        var ushorts = Gen.OneOf(Gen.UShort, Gen.OneOf<ushort>(0, 1, 231, 257, ushort.MaxValue));
+        var bytes = Gen.OneOf(Gen.Byte, Gen.OneOf<byte>(0, 1, 5, 6, byte.MaxValue));
+        var scancodes = Gen.OneOf(ushorts.Select(v => (Scancode)v), Gen.Enum<Scancode>());
+        var modifiers = Gen.OneOf(ushorts.Select(v => (KeyModifiers)v), Gen.Enum<KeyModifiers>());
+        var buttons = Gen.OneOf(bytes.Select(v => (MouseButton)v), Gen.Enum<MouseButton>());
+        var held = Gen.OneOf(bytes.Select(v => (MouseButtons)v), Gen.Enum<MouseButtons>());
+
+        Headers("None", uints, timestamps).Sample(header => Assert.Equal(header, PlatformEvent.Create(header).Header));
+
+        Gen.Select(
+            Headers("Key", uints, timestamps),
+            Gen.Select(scancodes, uints, modifiers, Gen.Bool, (s, k, m, r) => new KeyEventData(s, new Keycode(k), m, r)))
+            .Sample((header, key) =>
+            {
+                var e = PlatformEvent.CreateKey(header, key);
+                Assert.Equal(header, e.Header);
+                Assert.Equal(key, e.Key);
+            });
+
+        Gen.Select(Headers("Text", uints, timestamps), Gen.Select(ints, ints, (o, l) => new TextEventData(o, l)))
+            .Sample((header, text) =>
+            {
+                var e = PlatformEvent.CreateText(header, text);
+                Assert.Equal(header, e.Header);
+                Assert.Equal(text, e.Text);
+            });
+
+        Gen.Select(
+            Headers("MouseMotion", uints, timestamps),
+            Gen.Select(floats, floats, floats, floats, held, (x, y, dx, dy, b) => new MouseMotionData(x, y, dx, dy, b)))
+            .Sample((header, motion) =>
+            {
+                var e = PlatformEvent.CreateMouseMotion(header, motion);
+                MouseMotionData read = e.MouseMotion;
+                Assert.Equal(header, e.Header);
+                Assert.Equal(motion.Buttons, read.Buttons);
+                AssertSameBits([motion.X, motion.Y, motion.DeltaX, motion.DeltaY], [read.X, read.Y, read.DeltaX, read.DeltaY]);
+            });
+
+        Gen.Select(
+            Headers("MouseButton", uints, timestamps),
+            Gen.Select(buttons, bytes, floats, floats, (b, c, x, y) => new MouseButtonData(b, c, x, y)))
+            .Sample((header, button) =>
+            {
+                var e = PlatformEvent.CreateMouseButton(header, button);
+                MouseButtonData read = e.MouseButton;
+                Assert.Equal(header, e.Header);
+                Assert.Equal((button.Button, button.Clicks), (read.Button, read.Clicks));
+                AssertSameBits([button.X, button.Y], [read.X, read.Y]);
+            });
+
+        Gen.Select(
+            Headers("MouseWheel", uints, timestamps),
+            Gen.Select(floats, floats, floats, floats, (x, y, mx, my) => new MouseWheelData(x, y, mx, my)))
+            .Sample((header, wheel) =>
+            {
+                var e = PlatformEvent.CreateMouseWheel(header, wheel);
+                MouseWheelData read = e.MouseWheel;
+                Assert.Equal(header, e.Header);
+                AssertSameBits([wheel.X, wheel.Y, wheel.MouseX, wheel.MouseY], [read.X, read.Y, read.MouseX, read.MouseY]);
+            });
+
+        Gen.Select(Headers("Size", uints, timestamps), Gen.Select(ints, ints, (w, h) => new WindowSize(w, h)))
+            .Sample((header, size) =>
+            {
+                var e = PlatformEvent.CreateSize(header, size);
+                Assert.Equal(header, e.Header);
+                Assert.Equal(size, e.Size);
+            });
+
+        Gen.Select(Headers("Display", uints, timestamps), uints).Sample((header, display) =>
+        {
+            var e = PlatformEvent.CreateDisplay(header, new DisplayId(display));
+            Assert.Equal(header, e.Header);
+            Assert.Equal(new DisplayId(display), e.Display);
+        });
+
+        Gen.Select(Headers("Scale", uints, timestamps), floats).Sample((header, scale) =>
+        {
+            var e = PlatformEvent.CreateScale(header, scale);
+            Assert.Equal(header, e.Header);
+            AssertSameBits([scale], [e.Scale]);
+        });
+
+        Gen.Select(Headers("DisplayScale", uints, timestamps), uints, floats).Sample((header, display, scale) =>
+        {
+            var e = PlatformEvent.CreateDisplayScale(header, new DisplayId(display), scale);
+            Assert.Equal(header, e.Header);
+            Assert.Equal(new DisplayId(display), e.Display);
+            AssertSameBits([scale], [e.Scale]);
+        });
+    }
+
     private static (PlatformEventKind Kind, string Payload, char Window) Row(PlatformEventKind kind) =>
         Array.Find(_kinds, k => k.Kind == kind);
 
     private static WindowId SampleWindowFor(PlatformEventKind kind) =>
         Row(kind).Window == 'D' ? default : _sampleWindow;
+
+    // Headers of the payload's kinds, each with a window its rule allows: any non-zero id for 'R', the default for
+    // 'D', and any id, the default included, for 'A'.
+    private static Gen<PlatformEventHeader> Headers(string payload, Gen<uint> windows, Gen<long> timestamps) =>
+        Gen.OneOf(Array.FindAll(_kinds, k => k.Payload == payload)).SelectMany(row => Gen.Select(
+            row.Window switch
+            {
+                'R' => Gen.OneOf(Gen.UInt[1, uint.MaxValue], Gen.OneOf(1u, uint.MaxValue)),
+                'D' => Gen.Const(0u),
+                _ => windows,
+            },
+            timestamps,
+            (window, timestamp) => new PlatformEventHeader(row.Kind, new WindowId(window), timestamp)));
+
+    private static void AssertSameBits(float[] expected, float[] actual) =>
+        Assert.Equal(
+            Array.ConvertAll(expected, BitConverter.SingleToInt32Bits),
+            Array.ConvertAll(actual, BitConverter.SingleToInt32Bits));
 
     // An event of any kind with the sample payloads. Kinds without a factory (None and values without a member) are
     // written as raw bytes, as a corrupted buffer slot would hold them, with every payload byte set, so a ToString
