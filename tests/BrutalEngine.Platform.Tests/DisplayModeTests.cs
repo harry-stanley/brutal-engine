@@ -34,24 +34,37 @@ public sealed class DisplayModeTests
     [Fact]
     public void Equality_MatchesFieldwiseComparison()
     {
+        // DisplayMode compares its floats with float.Equals, so NaN equals NaN: draw NaN for both float fields.
         Gen<DisplayMode> mode =
-            Gen.Select(Gen.UInt[0, 1], Gen.Int[0, 1], Gen.Int[0, 1], Gen.Int[1, 2], Gen.Int[0, 1])
+            Gen.Select(
+                    Gen.UInt[0, 1], Gen.Int[0, 1], Gen.Int[0, 1], Gen.OneOf(1f, 2f, float.NaN), Gen.OneOf(0f, 60f, float.NaN))
                 .Select((display, width, height, density, refresh) => new DisplayMode
                 {
                     Display = new DisplayId(display),
                     Width = width,
                     Height = height,
                     PixelDensity = density,
-                    RefreshRate = refresh * 60f,
+                    RefreshRate = refresh,
                 });
 
-        Gen.Select(mode, mode).Sample((left, right) =>
+        // Each field of the right mode is the left one's or, if its mask bit is set, another draw: equal pairs, and
+        // pairs that differ only in one NaN field, come up often instead of about once in 200 independent draws.
+        Gen.Select(mode, mode, Gen.Int[0, 31]).Sample((left, other, redraw) =>
         {
+            DisplayMode right = new()
+            {
+                Display = (redraw & 1) != 0 ? other.Display : left.Display,
+                Width = (redraw & 2) != 0 ? other.Width : left.Width,
+                Height = (redraw & 4) != 0 ? other.Height : left.Height,
+                PixelDensity = (redraw & 8) != 0 ? other.PixelDensity : left.PixelDensity,
+                RefreshRate = (redraw & 16) != 0 ? other.RefreshRate : left.RefreshRate,
+            };
+
             bool expected = left.Display.Value == right.Display.Value
                 && left.Width == right.Width
                 && left.Height == right.Height
-                && left.PixelDensity == right.PixelDensity
-                && left.RefreshRate == right.RefreshRate;
+                && left.PixelDensity.Equals(right.PixelDensity)
+                && left.RefreshRate.Equals(right.RefreshRate);
 
             Assert.Equal(expected, left == right);
             Assert.Equal(!expected, left != right);

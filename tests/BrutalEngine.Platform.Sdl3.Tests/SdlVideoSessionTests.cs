@@ -175,7 +175,7 @@ public sealed class SdlVideoSessionTests
         using var variable = NativeEnvironmentVariable.Set(VideoDriverVariable, null);
         using var vulkan = NativeEnvironmentVariable.Set("SDL_VULKAN_LIBRARY", "from-environment");
 
-        using (SdlVideoSession session = SdlVideoSession.Start(Options(HeadlessMode.NoSurface, logger), new() { VulkanLibraryPath = Path.GetTempPath() }).Value)
+        using (SdlVideoSession.Start(Options(HeadlessMode.NoSurface, logger), new() { VulkanLibraryPath = Path.GetTempPath() }).Value)
         {
             Assert.Equal("from-environment", Sdl.PInvoke.GetHint("SDL_VULKAN_LIBRARY"));
         }

@@ -168,10 +168,10 @@ public sealed class AdapterSelectionTests
     [Fact]
     public void Factories_StoreTheKindAndArgument()
     {
-        Assert.Equal((AdapterSelectionKind.Auto, 0, (string?)null, AdapterType.Other), Parts(AdapterSelection.Auto));
-        Assert.Equal((AdapterSelectionKind.Index, 3, (string?)null, AdapterType.Other), Parts(AdapterSelection.ByIndex(3)));
+        Assert.Equal((AdapterSelectionKind.Auto, 0, null, AdapterType.Other), Parts(AdapterSelection.Auto));
+        Assert.Equal((AdapterSelectionKind.Index, 3, null, AdapterType.Other), Parts(AdapterSelection.ByIndex(3)));
         Assert.Equal((AdapterSelectionKind.Name, 0, "Intel", AdapterType.Other), Parts(AdapterSelection.ByName("Intel")));
-        Assert.Equal((AdapterSelectionKind.Type, 0, (string?)null, AdapterType.Cpu), Parts(AdapterSelection.ByType(AdapterType.Cpu)));
+        Assert.Equal((AdapterSelectionKind.Type, 0, null, AdapterType.Cpu), Parts(AdapterSelection.ByType(AdapterType.Cpu)));
     }
 
     [Fact]
