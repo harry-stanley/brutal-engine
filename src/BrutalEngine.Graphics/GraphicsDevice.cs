@@ -78,9 +78,12 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <exception cref="WrongThreadException">A compatible window is set and this isn't its thread.</exception>
     /// <remarks>
     /// <para>
-    /// The adapter is the first suitable one in the backend's list (which the backend orders by preference) that the
-    /// selection matches: any for <see cref="AdapterSelection.Auto"/>, the one at the index, a name containing the
-    /// substring (ordinal, ignoring case), or one of the type. Each rejected adapter is logged at
+    /// Only suitable adapters (no rejection reasons) are candidates. An override narrows them first: the adapter at the
+    /// enumeration index, the names containing the substring (ordinal, ignoring case), or the adapters of the type;
+    /// <see cref="AdapterSelection.Auto"/> keeps them all. The rest are ranked <see cref="AdapterType.Discrete"/>, then
+    /// <see cref="AdapterType.Integrated"/>, <see cref="AdapterType.Virtual"/>, <see cref="AdapterType.Cpu"/> and
+    /// <see cref="AdapterType.Other"/>, ties going to the lowest <see cref="GraphicsAdapterInfo.Index"/>, and the first is
+    /// chosen. Each rejected adapter is logged at
     /// <see cref="LogLevel.Information"/> under <c>"Graphics"</c> with its reasons, whether or not creation succeeds.
     /// </para>
     /// <para>
@@ -229,14 +232,23 @@ public sealed partial class GraphicsDevice : IDisposable
 
     private static bool TrySelect(IReadOnlyList<GraphicsAdapterInfo> adapters, AdapterSelection selection, out int index, out EngineError error)
     {
+        GraphicsAdapterInfo? best = null;
         foreach (GraphicsAdapterInfo adapter in adapters)
         {
-            if (adapter.RejectionReasons.Count == 0 && Matches(adapter, selection))
+            // Strictly better only, so a tie keeps the lowest index.
+            if (adapter.RejectionReasons.Count == 0 && Matches(adapter, selection)
+                && (best is null || Preference(adapter.Type) > Preference(best.Type)
+                    || (Preference(adapter.Type) == Preference(best.Type) && adapter.Index < best.Index)))
             {
-                index = adapter.Index;
-                error = default;
-                return true;
+                best = adapter;
             }
+        }
+
+        if (best is not null)
+        {
+            index = best.Index;
+            error = default;
+            return true;
         }
 
         var message = new StringBuilder(selection.Kind == AdapterSelectionKind.Auto
@@ -258,6 +270,16 @@ public sealed partial class GraphicsDevice : IDisposable
         error = new EngineError(ErrorKind.Unsupported, message.ToString());
         return false;
     }
+
+    // The preference among suitable adapters, highest first (docs/design/graphics.md section 2, "Adapter selection").
+    private static int Preference(AdapterType type) => type switch
+    {
+        AdapterType.Discrete => 4,
+        AdapterType.Integrated => 3,
+        AdapterType.Virtual => 2,
+        AdapterType.Cpu => 1,
+        _ => 0,
+    };
 
     private static bool Matches(GraphicsAdapterInfo adapter, AdapterSelection selection) => selection.Kind switch
     {
