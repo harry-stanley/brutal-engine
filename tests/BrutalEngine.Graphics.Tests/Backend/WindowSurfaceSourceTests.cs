@@ -132,6 +132,21 @@ public sealed class WindowSurfaceSourceTests
     }
 
     [Fact]
+    public void Refresh_StateThrows_KeepsTheWholeSnapshot()
+    {
+        // PixelSize reads fine and State throws, so a Refresh that wrote the size before reading the state would leave a
+        // torn snapshot: the new size with the old minimised flag.
+        var window = new FakeWindow { PixelSize = new(320, 200), State = WindowState.Visible };
+        var surface = new WindowSurfaceSource(window, new FakeVulkanSurfaceSource(_extensions, (nint)1));
+        var failure = new WrongThreadException("IWindow.State", 1, 2);
+        window.PixelSize = new(0, 0);
+        window.StateFailure = failure;
+
+        Assert.Same(failure, Assert.Throws<WrongThreadException>(surface.Refresh));
+        Assert.Equal((320, 200, false), (surface.PixelWidth, surface.PixelHeight, surface.IsMinimised));
+    }
+
+    [Fact]
     public void Constructor_NullArguments_Throw()
     {
         var source = new FakeVulkanSurfaceSource(_extensions, (nint)1);

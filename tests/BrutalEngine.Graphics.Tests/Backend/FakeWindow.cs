@@ -8,6 +8,7 @@ namespace BrutalEngine.Graphics.Tests.Backend;
 /// A test window: <see cref="PixelSize"/>, <see cref="State"/> and <see cref="VulkanSurface"/> are settable snapshots,
 /// and every other member throws, so a test fails if the code under test reads anything else. After
 /// <see cref="Dispose"/>, the two snapshots throw <see cref="ObjectDisposedException"/> as a real window does.
+/// <see cref="StateFailure"/> makes <see cref="State"/> alone throw, so a test can fail the second read of a refresh.
 /// </summary>
 internal sealed class FakeWindow : IWindow
 {
@@ -15,6 +16,8 @@ internal sealed class FakeWindow : IWindow
     private WindowState _state;
 
     public bool IsDisposed { get; private set; }
+
+    public Exception? StateFailure { get; set; }
 
     public WindowSize PixelSize
     {
@@ -24,7 +27,7 @@ internal sealed class FakeWindow : IWindow
 
     public WindowState State
     {
-        get => IsDisposed ? throw new ObjectDisposedException(nameof(FakeWindow)) : _state;
+        get => IsDisposed ? throw new ObjectDisposedException(nameof(FakeWindow)) : StateFailure is null ? _state : throw StateFailure;
         set => _state = value;
     }
 
