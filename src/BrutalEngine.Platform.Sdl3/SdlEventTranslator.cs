@@ -43,7 +43,13 @@ namespace BrutalEngine.Platform.Sdl3;
 /// text that isn't valid UTF-8 is ignored, as is a null text pointer; an empty text adds an empty event.
 /// </para>
 /// <para>
-/// Mouse events are not translated yet and are ignored (#232).
+/// <b>Mouse:</b> mouse events carry SDL's window, or a default one when SDL reports none. Positions and motion are
+/// SDL's float window coordinates. The button number and the held-button state are cast, because the engine's values
+/// are SDL's; the state narrows to a byte, dropping buttons 9 and above. The wheel always uses SDL's normal
+/// convention: positive <see cref="MouseWheelData.Y"/> scrolls away from the user and positive
+/// <see cref="MouseWheelData.X"/> scrolls right. When SDL reports a wheel event as flipped
+/// (<c>SDL_MOUSEWHEEL_FLIPPED</c>, a "natural scrolling" setting), both amounts are negated back; the pointer position
+/// is never negated.
 /// </para>
 /// <para>
 /// <b>Threads:</b> call on the thread that pumps the buffer, which owns it; with <see cref="SdlScaleSource"/>, the
@@ -121,6 +127,19 @@ internal static class SdlEventTranslator
 
             case SdlEventType.TextInput:
                 return AddText(sdlEvent.text, buffer, timestamp);
+
+            case SdlEventType.MouseMotion:
+                AddMotion(sdlEvent.motion, buffer, timestamp);
+                return true;
+
+            case SdlEventType.MouseButtonDown:
+            case SdlEventType.MouseButtonUp:
+                AddButton(sdlEvent.button, buffer, timestamp);
+                return true;
+
+            case SdlEventType.MouseWheel:
+                AddWheel(sdlEvent.wheel, buffer, timestamp);
+                return true;
 
             default:
                 return sdlEvent.type is >= SdlEventType.WindowFirst and <= SdlEventType.WindowLast
@@ -247,6 +266,32 @@ internal static class SdlEventTranslator
 
         buffer.AddText(new WindowId(e.windowID), timestamp, utf8);
         return true;
+    }
+
+    private static void AddMotion(in SdlMouseMotionEvent e, PlatformEventBuffer buffer, long timestamp)
+    {
+        // The cast to byte keeps buttons 1-8, the bits MouseButtons can hold.
+        MouseMotionData motion = new(e.x, e.y, e.xrel, e.yrel, (MouseButtons)(byte)e.state);
+        PlatformEventHeader header = new(PlatformEventKind.MouseMotion, new WindowId(e.windowID), timestamp);
+        buffer.Add(PlatformEvent.CreateMouseMotion(header, motion));
+    }
+
+    private static void AddButton(in SdlMouseButtonEvent e, PlatformEventBuffer buffer, long timestamp)
+    {
+        PlatformEventKind kind = e.type == SdlEventType.MouseButtonDown
+            ? PlatformEventKind.MouseButtonDown
+            : PlatformEventKind.MouseButtonUp;
+        MouseButtonData button = new((MouseButton)e.button, e.clicks, e.x, e.y);
+        buffer.Add(PlatformEvent.CreateMouseButton(new(kind, new WindowId(e.windowID), timestamp), button));
+    }
+
+    private static void AddWheel(in SdlMouseWheelEvent e, PlatformEventBuffer buffer, long timestamp)
+    {
+        // SDL_events.h: "When FLIPPED the values in X and Y will be opposite. Multiply by -1 to change them back".
+        float sign = e.direction == SdlMouseWheelDirection.Flipped ? -1f : 1f;
+        MouseWheelData wheel = new(e.x * sign, e.y * sign, e.mouse_x, e.mouse_y);
+        PlatformEventHeader header = new(PlatformEventKind.MouseWheel, new WindowId(e.windowID), timestamp);
+        buffer.Add(PlatformEvent.CreateMouseWheel(header, wheel));
     }
 
     /// <summary>

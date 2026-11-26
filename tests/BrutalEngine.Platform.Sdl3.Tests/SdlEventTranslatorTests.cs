@@ -50,6 +50,10 @@ public sealed unsafe class SdlEventTranslatorTests
     [InlineData(SdlEventType.KeyDown, PlatformEventKind.KeyDown)]
     [InlineData(SdlEventType.KeyUp, PlatformEventKind.KeyUp)]
     [InlineData(SdlEventType.TextInput, PlatformEventKind.TextInput)]
+    [InlineData(SdlEventType.MouseMotion, PlatformEventKind.MouseMotion)]
+    [InlineData(SdlEventType.MouseButtonDown, PlatformEventKind.MouseButtonDown)]
+    [InlineData(SdlEventType.MouseButtonUp, PlatformEventKind.MouseButtonUp)]
+    [InlineData(SdlEventType.MouseWheel, PlatformEventKind.MouseWheel)]
     public void Translate_Table(SdlEventType type, PlatformEventKind kind)
     {
         PlatformEventBuffer buffer = NewBuffer();
@@ -281,6 +285,66 @@ public sealed unsafe class SdlEventTranslatorTests
         Assert.Equal(modifiers, (ushort)actual.Key.Modifiers);
     }
 
+    // The payload uses SDL's normal convention: SDL_MOUSEWHEEL_FLIPPED amounts are negated back, so a natural-scrolling
+    // setting doesn't reverse them. The pointer position is never negated.
+    [Theory]
+    [InlineData(SdlMouseWheelDirection.Normal, 1.5f, -2f, 1.5f, -2f)]
+    [InlineData(SdlMouseWheelDirection.Normal, -0.25f, 3f, -0.25f, 3f)]
+    [InlineData(SdlMouseWheelDirection.Flipped, 1.5f, -2f, -1.5f, 2f)]
+    [InlineData(SdlMouseWheelDirection.Flipped, -0.25f, 3f, 0.25f, -3f)]
+    [InlineData((SdlMouseWheelDirection)2, 1.5f, -2f, 1.5f, -2f)] // only FLIPPED flips
+    public void Wheel_Flipped_IsNatural(SdlMouseWheelDirection direction, float x, float y, float expectedX, float expectedY)
+    {
+        PlatformEvent actual = TranslateOne(new SdlEvent { wheel = WheelEvent(direction, x, y, WindowIdValue) });
+
+        Assert.Equal(new MouseWheelData(expectedX, expectedY, 10.5f, 20.25f), actual.MouseWheel);
+    }
+
+    // SDL's button numbers (SDL_BUTTON_LEFT = 1 ... SDL_BUTTON_X2 = 5, Brutal.Sdl/Generated/Sdl.Constants.gen.cs).
+    [Theory]
+    [InlineData((byte)1, MouseButton.Left)]
+    [InlineData((byte)2, MouseButton.Middle)]
+    [InlineData((byte)3, MouseButton.Right)]
+    [InlineData((byte)4, MouseButton.X1)]
+    [InlineData((byte)5, MouseButton.X2)]
+    [InlineData((byte)6, (MouseButton)6)] // buttons beyond X2 keep their number
+    [InlineData((byte)255, (MouseButton)255)]
+    public void MouseButton_MapsSdlButtonNumbers(byte button, MouseButton expected)
+    {
+        SdlEvent sdlEvent = new()
+        {
+            button = new SdlMouseButtonEvent { type = SdlEventType.MouseButtonUp, button = button, clicks = 255, x = -4f, y = 1e6f },
+        };
+
+        PlatformEvent actual = TranslateOne(sdlEvent);
+
+        Assert.Equal(new PlatformEventHeader(PlatformEventKind.MouseButtonUp, default, Timestamp), actual.Header);
+        Assert.Equal(new MouseButtonData(expected, 255, -4f, 1e6f), actual.MouseButton);
+    }
+
+    // SDL_MouseButtonFlags bits; the state narrows to a byte, so buttons 9 and above are dropped.
+    [Theory]
+    [InlineData(0u, MouseButtons.None)]
+    [InlineData(1u, MouseButtons.Left)]
+    [InlineData(2u, MouseButtons.Middle)]
+    [InlineData(4u, MouseButtons.Right)]
+    [InlineData(8u, MouseButtons.X1)]
+    [InlineData(16u, MouseButtons.X2)]
+    [InlineData(0xE0u, (MouseButtons)0xE0)] // buttons 6-8, without a member
+    [InlineData(0x100u, MouseButtons.None)] // button 9
+    [InlineData(0xFFFFFF05u, MouseButtons.Left | MouseButtons.Right)]
+    public void MouseMotion_MapsHeldButtons(uint state, MouseButtons expected)
+    {
+        SdlEvent sdlEvent = new()
+        {
+            motion = new SdlMouseMotionEvent { type = SdlEventType.MouseMotion, state = (SdlMouseButtonFlags)state, x = 1f, y = 2f, xrel = 3f, yrel = 4f },
+        };
+
+        PlatformEvent actual = TranslateOne(sdlEvent);
+
+        Assert.Equal(new MouseMotionData(1f, 2f, 3f, 4f, expected), actual.MouseMotion);
+    }
+
     [Fact]
     public void TryAdd_NullBuffer_Throws()
     {
@@ -324,7 +388,7 @@ public sealed unsafe class SdlEventTranslatorTests
     }
 
     [Fact]
-    public void Translate_WindowKinds_DoesNotAllocate()
+    public void Translate_DoesNotAllocate()
     {
         SdlEventType[] types =
         [
@@ -335,6 +399,8 @@ public sealed unsafe class SdlEventTranslatorTests
             SdlEventType.WindowFocusLost, SdlEventType.WindowCloseRequested, SdlEventType.WindowDisplayChanged,
             SdlEventType.WindowDisplayScaleChanged, SdlEventType.WindowOccluded, SdlEventType.DisplayAdded,
             SdlEventType.DisplayRemoved, SdlEventType.DisplayCurrentModeChanged, SdlEventType.DisplayContentScaleChanged,
+            SdlEventType.KeyDown, SdlEventType.KeyUp, SdlEventType.TextInput, SdlEventType.MouseMotion,
+            SdlEventType.MouseButtonDown, SdlEventType.MouseButtonUp, SdlEventType.MouseWheel,
             SdlEventType.GamepadAxisMotion, SdlEventType.DropFile,
         ];
         var events = new SdlEvent[types.Length];
@@ -343,7 +409,8 @@ public sealed unsafe class SdlEventTranslatorTests
             events[i] = SdlEventOf(types[i], WindowIdValue);
         }
 
-        PlatformEventBuffer buffer = new(1024, 2048);
+        // 1,000 six-byte texts fit the text storage, so text is copied every time, not cut.
+        PlatformEventBuffer buffer = new(1024, 8192);
         FakeScales scales = new(WindowIdValue, WindowScale, DisplayIdValue, DisplayScale);
         int added = TranslateEach(events, buffer, ref scales); // warm-up: JIT and first-call costs
 
@@ -353,6 +420,7 @@ public sealed unsafe class SdlEventTranslatorTests
 
         Assert.Equal(0, allocated);
         Assert.Equal(2 * 1000 * (types.Length - 2), added); // the last two are ignored
+        Assert.Equal(0, buffer.TruncatedTextCount);
     }
 
     [Fact]
@@ -470,6 +538,30 @@ public sealed unsafe class SdlEventTranslatorTests
             },
         };
 
+    private static SdlMouseWheelEvent WheelEvent(SdlMouseWheelDirection direction, float x, float y, uint windowId) =>
+        new()
+        {
+            type = SdlEventType.MouseWheel,
+            windowID = windowId,
+            which = 2,
+            x = x,
+            y = y,
+            direction = direction,
+            mouse_x = 10.5f,
+            mouse_y = 20.25f,
+            integer_x = (int)x,
+            integer_y = (int)y,
+        };
+
+    private static PlatformEvent TranslateOne(SdlEvent sdlEvent)
+    {
+        PlatformEventBuffer buffer = NewBuffer();
+        FakeScales scales = default;
+
+        Assert.True(SdlEventTranslator.TryAdd(sdlEvent, buffer, Timestamp, ref scales));
+        return Assert.Single(buffer.AsBatch().Events.ToArray());
+    }
+
     private static SdlVideoSession StartDummy()
     {
         PlatformOptions options = new() { Organization = "BrutalEngine", Application = "Platform.Sdl3.Tests", Headless = HeadlessMode.NoSurface };
@@ -508,6 +600,40 @@ public sealed unsafe class SdlEventTranslatorTests
                 sdlEvent.text = new SdlTextInputEvent { type = type, windowID = windowId, text = text };
             }
         }
+        else if (type == SdlEventType.MouseMotion)
+        {
+            // Left and right held (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK).
+            sdlEvent.motion = new SdlMouseMotionEvent
+            {
+                type = type,
+                windowID = windowId,
+                which = 2,
+                state = SdlMouseButtonFlags.Left | SdlMouseButtonFlags.Right,
+                x = 10.5f,
+                y = 20.25f,
+                xrel = -1.5f,
+                yrel = 3f,
+            };
+        }
+        else if (type is SdlEventType.MouseButtonDown or SdlEventType.MouseButtonUp)
+        {
+            // SDL_BUTTON_RIGHT, double-clicked.
+            sdlEvent.button = new SdlMouseButtonEvent
+            {
+                type = type,
+                windowID = windowId,
+                which = 2,
+                button = 3,
+                clicks = 2,
+                x = 10.5f,
+                y = 20.25f,
+                down = type == SdlEventType.MouseButtonDown ? (byte)1 : (byte)0,
+            };
+        }
+        else if (type == SdlEventType.MouseWheel)
+        {
+            sdlEvent.wheel = WheelEvent(SdlMouseWheelDirection.Normal, 0.5f, -2f, windowId);
+        }
         else if (type == SdlEventType.WindowDisplayChanged)
         {
             // SDL sends the new display's id in data1 (SDL_video.c, SDL_CheckWindowDisplayChanged).
@@ -540,6 +666,11 @@ public sealed unsafe class SdlEventTranslatorTests
             PlatformEventKind.KeyDown or PlatformEventKind.KeyUp => PlatformEvent.CreateKey(
                 window, new KeyEventData(Scancode.Z, new Keycode('z'), KeyModifiers.LeftShift | KeyModifiers.LeftControl, false)),
             PlatformEventKind.TextInput => PlatformEvent.CreateText(window, new TextEventData(0, 6)),
+            PlatformEventKind.MouseMotion => PlatformEvent.CreateMouseMotion(
+                window, new MouseMotionData(10.5f, 20.25f, -1.5f, 3f, MouseButtons.Left | MouseButtons.Right)),
+            PlatformEventKind.MouseButtonDown or PlatformEventKind.MouseButtonUp =>
+                PlatformEvent.CreateMouseButton(window, new MouseButtonData(MouseButton.Right, 2, 10.5f, 20.25f)),
+            PlatformEventKind.MouseWheel => PlatformEvent.CreateMouseWheel(window, new MouseWheelData(0.5f, -2f, 10.5f, 20.25f)),
             _ => PlatformEvent.Create(window),
         };
     }
