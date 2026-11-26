@@ -12,7 +12,7 @@ public sealed class AssemblyAttributeTests
     public void InternalsVisibleTo_IsExactlyTestsAndConformance()
     {
         // docs/design/graphics.md section 12: the matching test project, plus the conformance suite as the one named
-        // exception to docs/07's rule. Listed with duplicates, so a second copy of either attribute fails too.
+        // exception to docs/07's rule. This pins the exact friend set: no other assembly sees Graphics internals.
         string[] friends =
         [
             .. typeof(BufferHandle).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>()
