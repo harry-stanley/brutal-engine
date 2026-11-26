@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Spike S6 (throwaway): decode WAV, Ogg Vorbis, FLAC and MP3 with SDL3_mixer as a decoder only. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>S6Probe</RootNamespace>
+    <AssemblyName>S6Probe</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- NativeAOT on publish; every trim/AOT analyzer warning is surfaced (and is an error). -->
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- Allocation measurements: background GC voids allocation contexts mid-window (see the engine's Core.Tests). -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Sdl" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.Brutal.Sdl.Mixer" Version="2026.10.3" />
+    <!-- The engine pins BRUTAL's transitive ObjectPool to GA (ADR-0011); the spike does the same, directly. -->
+    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="11.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="audio/tone.*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

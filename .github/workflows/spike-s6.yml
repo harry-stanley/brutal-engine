@@ -1,0 +1,89 @@
+# Spike S6 (throwaway, never merged): SDL3_mixer as a decoder only, JIT and NativeAOT, on the hosted runners.
+name: spike-s6
+
+on:
+  push:
+    branches: [spike/s6-audio-decoding]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  # The same for the JIT and the NativeAOT run: no real audio device on the runners.
+  SDL_AUDIO_DRIVER: dummy
+
+jobs:
+  probe:
+    name: S6 probe (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+            exe: S6Probe
+          - os: windows-2025
+            rid: win-x64
+            exe: S6Probe.exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Runner info
+        run: |
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          dotnet --version
+          echo "SDL_AUDIO_DRIVER=$SDL_AUDIO_DRIVER"
+      # Same toolchain lookup as ci.yml: the image has versioned clang but no plain `clang`.
+      - name: Find NativeAOT toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          cc=$(compgen -c clang | grep -xE 'clang(-[0-9]+)?' | sort -uV | tail -n1 || true)
+          if [ -z "$cc" ] || ! dpkg -s zlib1g-dev > /dev/null 2>&1; then
+            sudo apt-get update -q
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends clang zlib1g-dev
+            cc=clang
+          fi
+          echo "NativeAOT compiler and linker: $cc ($(command -v "$cc"))"
+          echo "AOT_CC=$cc" >> "$GITHUB_ENV"
+      - name: Build (JIT)
+        run: dotnet build spikes/s6-audio-decoding -c Release
+      - name: Run (JIT)
+        run: |
+          set -euo pipefail
+          dotnet run --project spikes/s6-audio-decoding -c Release --no-build | tee "$RUNNER_TEMP/s6-jit.log"
+      - name: Publish (NativeAOT, ${{ matrix.rid }})
+        run: >-
+          dotnet publish spikes/s6-audio-decoding -c Release -r ${{ matrix.rid }} -o artifacts/aot
+          -p:TrimmerSingleWarn=false ${AOT_CC:+"-p:CppCompilerAndLinker=$AOT_CC"}
+      - name: Run (NativeAOT)
+        run: |
+          set -euo pipefail
+          ./artifacts/aot/${{ matrix.exe }} | tee "$RUNNER_TEMP/s6-aot.log"
+      - name: Compare JIT and NativeAOT results
+        run: |
+          set -euo pipefail
+          # Windows writes CRLF; strip it so the digest is comparable across OSes.
+          tr -d '\r' < "$RUNNER_TEMP/s6-jit.log" | grep '^RESULT ' > "$RUNNER_TEMP/jit-results.txt"
+          tr -d '\r' < "$RUNNER_TEMP/s6-aot.log" | grep '^RESULT ' > "$RUNNER_TEMP/aot-results.txt"
+          diff "$RUNNER_TEMP/jit-results.txt" "$RUNNER_TEMP/aot-results.txt"
+          echo "JIT and NativeAOT RESULT lines are identical ($(wc -l < "$RUNNER_TEMP/jit-results.txt") lines)."
+          echo "RESULT digest (compare across OSes): $(sha256sum < "$RUNNER_TEMP/jit-results.txt" | cut -d' ' -f1)"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: s6-logs-${{ matrix.rid }}
+          path: ${{ runner.temp }}/s6-*.log
