@@ -3,6 +3,7 @@
     <Project Path="src/BrutalEngine.Analyzers/BrutalEngine.Analyzers.csproj" />
     <Project Path="src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
     <Project Path="src/BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
+    <Project Path="src/BrutalEngine.World/BrutalEngine.World.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/HelloWindow/HelloWindow.csproj" />
@@ -13,6 +14,7 @@
     <Project Path="tests/BrutalEngine.Architecture.Tests/BrutalEngine.Architecture.Tests.csproj" />
     <Project Path="tests/BrutalEngine.Core.Tests/BrutalEngine.Core.Tests.csproj" />
     <Project Path="tests/BrutalEngine.Graphics.Tests/BrutalEngine.Graphics.Tests.csproj" />
+    <Project Path="tests/BrutalEngine.World.Tests/BrutalEngine.World.Tests.csproj" />
     <Project Path="tests/HelloWindow.Tests/HelloWindow.Tests.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">

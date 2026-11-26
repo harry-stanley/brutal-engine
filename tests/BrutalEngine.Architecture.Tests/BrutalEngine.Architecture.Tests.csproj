@@ -6,5 +6,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
     <ProjectReference Include="../../src/BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
+    <ProjectReference Include="../../src/BrutalEngine.World/BrutalEngine.World.csproj" />
   </ItemGroup>
 </Project>

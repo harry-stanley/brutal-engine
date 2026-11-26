@@ -88,8 +88,8 @@ Thread-affinity rules are asserted in debug builds. Calling a main-thread API fr
 
 ## 3.3 Memory
 
-- **Steady-state frames allocate zero managed memory.** Engine systems use BRUTAL `NativeList`, spans and pooled unmanaged storage. A test fails if a 1,000-frame steady-state run of the reference scenes allocates any managed bytes (`GC.GetAllocatedBytesForCurrentThread` and the per-thread totals of job workers).
-- **Unmanaged memory goes through engine allocators** built on `Brutal.Memory`: arena or frame allocators for per-frame scratch (reset each frame), pool allocators for fixed-size objects, and a general heap. Debug builds wrap every allocator with tracking (call-site, size, frame), so a leak report at shutdown fails tests.
+- **Steady-state frames allocate zero managed memory.** Engine systems use spans and pooled unmanaged storage: BRUTAL `NativeList` where it fits, or their own unmanaged arrays where they need control of layout and growth. World uses no BRUTAL collections ([world note](design/world.md#adr-0006-consistency)). A test fails if a 1,000-frame steady-state run of the reference scenes allocates any managed bytes (`GC.GetAllocatedBytesForCurrentThread` and the per-thread totals of job workers).
+- **Unmanaged memory goes through engine allocators** built on Core's `INativeAllocator` ([memory](design/memory.md)), not directly on `Brutal.Memory`, which has no aligned allocation: arena or frame allocators for per-frame scratch (reset each frame), pool allocators for fixed-size objects, and a general heap. Debug builds wrap every allocator with tracking (call-site, size, frame), so a leak report at shutdown fails tests.
 - **GPU memory** goes through VMA. Every GPU object is registered with the device's resource tracker, so leaked buffers, images and pipelines are reported by name at shutdown.
 - **Ownership is explicit.** Owning types implement `IDisposable` and are documented as owners. Handles are non-owning value types. Disposal order is the reverse of creation and is centralised in the module registry.
 
@@ -109,7 +109,7 @@ Engine objects exposed to games (entities, textures, sounds, bodies, fonts and s
 
 ## 3.6 World model
 
-Decided in [ADR-0006](adr/0006-world-model.md), which also records the trade-offs: **an archetype ECS core with first-class hierarchy and scene/prefab support**, written in-house on BRUTAL memory primitives, with:
+Decided in [ADR-0006](adr/0006-world-model.md), which also records the trade-offs: **an archetype ECS core with first-class hierarchy and scene/prefab support**, written in-house on Core's `INativeAllocator` and World-owned unmanaged arrays, with no BRUTAL package in M1 (a deviation from ADR-0006's stated basis, recorded in the [world note](design/world.md#adr-0006-consistency)), with:
 
 - components as unmanaged structs (no managed references, so handles are used for assets),
 - systems registered into named schedules (`FixedUpdate`, `Update`, `PostUpdate` and so on) with explicit ordering and read/write declarations, which lets the scheduler run non-conflicting systems in parallel on the job system,

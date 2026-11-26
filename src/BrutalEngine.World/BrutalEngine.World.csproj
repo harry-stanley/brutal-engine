@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>BrutalEngine world model: an archetype entity-component-system with hierarchy and 2D transforms.</Description>
+    <PackageTags>gamedev;game-engine;2d;brutal;ecs</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../BrutalEngine.Core/BrutalEngine.Core.csproj" />
+  </ItemGroup>
+</Project>

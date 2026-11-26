@@ -172,6 +172,12 @@
         "dependencies": {
           "BrutalEngine.Core": "[1.0.0, )"
         }
+      },
+      "brutalengine.world": {
+        "type": "Project",
+        "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )"
+        }
       }
     }
   }
