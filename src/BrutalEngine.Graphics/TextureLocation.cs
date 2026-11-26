@@ -15,7 +15,8 @@ namespace BrutalEngine.Graphics;
 /// The device checks a location against its texture before it records the copy or write that uses it
 /// (docs/design/graphics.md section 6). A mip level or layer outside the texture, or an aspect outside the enum, throws
 /// <see cref="System.ArgumentOutOfRangeException"/>; an aspect that doesn't match the format throws
-/// <see cref="System.ArgumentException"/>. A stale or null <see cref="Texture"/> is the device's handle check.
+/// <see cref="System.ArgumentException"/>, and so does a texture with more than one sample: every copy and write needs
+/// one. A stale or null <see cref="Texture"/> is the device's handle check.
 /// <c>default(TextureLocation)</c> has the null texture, mip 0, layer 0 and the color aspect.
 /// </para>
 /// <para>

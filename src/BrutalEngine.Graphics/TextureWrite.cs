@@ -7,8 +7,8 @@ namespace BrutalEngine.Graphics;
 /// <para>
 /// The data goes through the per-frame upload ring and is copied at the start of the next submitted frame
 /// (docs/design/graphics.md section 6); the front end repacks it into the ring, so any row pitch is accepted. The
-/// device checks a write before it copies the data: the texture's usage and format (color only), the location and
-/// region inside it, and the data long enough for the rows, <c>BytesPerRow * (Height - 1) + Width * texel size</c>
+/// device checks a write before it copies the data: the texture's usage, format (color only) and one sample, the location
+/// and region inside it, and the data long enough for the rows, <c>BytesPerRow * (Height - 1) + Width * texel size</c>
 /// bytes. A violation throws <see cref="System.ArgumentException"/> (<see cref="System.ArgumentOutOfRangeException"/> for
 /// ranges).
 /// </para>

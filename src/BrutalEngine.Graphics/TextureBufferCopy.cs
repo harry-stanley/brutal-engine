@@ -10,8 +10,8 @@ namespace BrutalEngine.Graphics;
 /// <para>
 /// The buffer holds the region's rows <see cref="BytesPerRow"/> apart, from <see cref="BufferOffset"/>; rows per image
 /// are always the region's height, because a copy covers one layer. The device checks a copy before it records it
-/// (docs/design/graphics.md section 6): the usages; the location and region inside the texture; the aspect against the
-/// format (depth is copied to buffers, never from them); <see cref="BytesPerRow"/> at least the region's width times
+/// (docs/design/graphics.md section 6): the usages; the texture has one sample; the location and region inside the texture;
+/// the aspect against the format (depth is copied to buffers, never from them); <see cref="BytesPerRow"/> at least the region's width times
 /// the texel size and a multiple of <see cref="RowPitchAlignment"/>; <see cref="BufferOffset"/> a multiple of the texel
 /// size and of 4; and the buffer large enough for the rows. A violation throws <see cref="System.ArgumentException"/>
 /// (<see cref="System.ArgumentOutOfRangeException"/> for ranges).
