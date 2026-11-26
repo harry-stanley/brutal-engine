@@ -13,7 +13,7 @@ One file per decision that is expensive to reverse. See the [ADR process](../08-
 | [0007](0007-nativeaot-release.md) | NativeAOT for release builds, JIT for development | Accepted |
 | [0008](0008-licence.md) | MIT licence for the engine | Accepted |
 | [0009](0009-github-actions-ci.md) | GitHub as source of truth, GitHub Actions CI | Accepted; amended by [0015](0015-tested-platforms-windows-linux.md) |
-| [0010](0010-monorepo-lockstep-packages.md) | Monorepo with lockstep-versioned NuGet packages | Accepted |
+| [0010](0010-monorepo-lockstep-packages.md) | Monorepo with lockstep-versioned NuGet packages | Accepted; amended by [0016](0016-trunk-based-milestones.md) |
 | [0011](0011-brutal-objectpool-dependency.md) | Accept BRUTAL's .NET 11 `Microsoft.Extensions.ObjectPool` dependency, pinned to GA | Accepted; amended by [0015](0015-tested-platforms-windows-linux.md); errata in [0014](0014-dotnet-11.md#errata-for-adr-0011) |
 | [0012](0012-m1-shader-cooking.md) | M1 shaders: a Slang-only cook command and committed SPIR-V | Accepted |
 | [0013](0013-imgui-without-brutal-backends.md) | ImGui overlay on `Ahwoo.Brutal.ImGui` only, with our own backends | Accepted |

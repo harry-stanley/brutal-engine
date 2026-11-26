@@ -1,6 +1,6 @@
 # ADR-0010: Monorepo with lockstep-versioned NuGet packages
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [ADR-0016](0016-trunk-based-milestones.md) (each release ships the packages its milestone gate selects; versioning stays lockstep)
 - **Date:** 2026-11-25
 - **Deciders:** Harry Stanley (maintainer)
 
