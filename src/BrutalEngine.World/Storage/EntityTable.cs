@@ -25,7 +25,9 @@ namespace BrutalEngine.World.Storage;
 /// <b>Memory.</b> The records and the free-index ring are two blocks from the allocator given to the constructor,
 /// which the table doesn't own. Both grow by doubling, capped at <see cref="MaxEntities"/>, when a fresh slot is
 /// needed and the records are full; growth frees the old blocks, and leaves the table unchanged if an allocation
-/// fails. <see cref="Dispose"/> frees both blocks once. No member allocates managed memory, except to throw.
+/// fails. <see cref="Dispose"/> frees both blocks once. No member allocates managed memory, except to throw. Block
+/// sizes are computed with checked arithmetic: on a 32-bit target a block too large to address would throw
+/// <see cref="OverflowException"/> instead of <see cref="OutOfMemoryException"/>; only 64-bit targets are built.
 /// </para>
 /// <para>
 /// Not thread-safe: the owning world's owner thread is its only caller. Index arguments name slots, not entities;
@@ -97,6 +99,12 @@ internal sealed unsafe class EntityTable : IDisposable
     /// Takes the longest-free slot, or a fresh one if none is free, and marks it pending. The caller places it with
     /// <see cref="Place"/> before returning to its own caller.
     /// </summary>
+    /// <remarks>
+    /// A pending slot counts towards <see cref="MaxEntities"/> and can't be released with <see cref="Free"/>, so a
+    /// direct caller must not fail between this call and <see cref="Place"/>: acquire the storage the entity needs (a
+    /// chunk row) first, or, if a step after this call can throw, roll the slot back with the table's cancel
+    /// operation before rethrowing. Otherwise the slot stays pending for good.
+    /// </remarks>
     /// <returns>The entity for the slot, at the slot's current generation.</returns>
     /// <exception cref="InvalidOperationException">
     /// No slot is free and all <see cref="MaxEntities"/> slots are live, pending or retired. The message names
@@ -255,6 +263,7 @@ internal sealed unsafe class EntityTable : IDisposable
         _retiredCount = 0;
     }
 
+    // Checked: on a 32-bit target an oversized block throws OverflowException rather than wrapping to a short block.
     private static EntityRecord* AllocateRecords(INativeAllocator allocator, int capacity) =>
         (EntityRecord*)allocator.Allocate(checked((nuint)(uint)capacity * (nuint)sizeof(EntityRecord)), RecordAlignment);
 

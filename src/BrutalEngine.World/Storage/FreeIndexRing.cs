@@ -136,6 +136,8 @@ internal sealed unsafe class FreeIndexRing : IDisposable
         _count = 0;
     }
 
+    // Checked: on a 32-bit target an oversized block throws OverflowException rather than wrapping to a short block.
+    // Only 64-bit targets are built, where capacity * 4 always fits.
     private static int* AllocateBlock(INativeAllocator allocator, int capacity) =>
         (int*)allocator.Allocate(checked((nuint)(uint)capacity * sizeof(int)), sizeof(int));
 
