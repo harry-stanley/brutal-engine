@@ -96,7 +96,8 @@ internal sealed unsafe class VulkanWindowHarness : IDisposable, SdlVulkanSurface
     public VkResult QueryCapabilities(nint surface)
     {
         // Sound: count, device and capabilities are locals of this frame, which outlives both calls, and count is 1, so
-        // the driver writes at most one handle into device.
+        // the driver writes at most one handle into device; device is read only after Assert.Equal(1, count) proves the
+        // driver wrote it.
         int count = 1;
         VkPhysicalDevice device;
         VkResult enumerated = _table.vkEnumeratePhysicalDevices.Invoke(_instance, &count, &device);
