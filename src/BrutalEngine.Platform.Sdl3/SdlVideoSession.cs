@@ -89,6 +89,27 @@ internal sealed class SdlVideoSession : IDisposable
         return result;
     }
 
+    /// <summary>Creates a window on the calling thread, which becomes the window's owner thread.</summary>
+    /// <param name="options">The window's options; validated first.</param>
+    /// <returns>
+    /// The window, or a failure: <see cref="ErrorKind.Unsupported"/> when this session's headless mode can't give the
+    /// requested surface, <see cref="ErrorKind.NotFound"/> when the requested display isn't connected, or
+    /// <see cref="ErrorKind.Native"/> with SDL's message (see <see cref="SdlPlatformWindow.Create"/>).
+    /// </returns>
+    /// <remarks>
+    /// The session stores no thread: the platform that owns it checks its own main thread before calling. The caller
+    /// disposes the window before this session. Allocates.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">An option breaks its rule (see <see cref="WindowOptionsValidator"/>).</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A content size side or an enum option is out of range.</exception>
+    /// <exception cref="ObjectDisposedException">The session has been disposed.</exception>
+    public Result<SdlPlatformWindow> CreateWindow(WindowOptions options)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        return SdlPlatformWindow.Create(options, VideoDriver, Headless);
+    }
+
     /// <summary>Stops SDL (<c>SDL_Quit</c>) and ends the session, once; later calls do nothing.</summary>
     public void Dispose()
     {

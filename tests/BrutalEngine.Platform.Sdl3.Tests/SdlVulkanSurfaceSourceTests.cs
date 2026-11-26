@@ -115,6 +115,7 @@ public sealed class SdlVulkanSurfaceSourceTests
     [InlineData("disposed count", typeof(ObjectDisposedException))]
     [InlineData("disposed get", typeof(ObjectDisposedException))]
     [InlineData("disposed create", typeof(ObjectDisposedException))]
+    [InlineData("disposed, wrong thread", typeof(WrongThreadException))]
     public void Misuse_Throws(string misuse, Type expected)
     {
         using VulkanWindowHarness harness = new();
@@ -152,6 +153,10 @@ public sealed class SdlVulkanSurfaceSourceTests
                         break;
                     case "disposed create":
                         created = Create(source, instance);
+                        break;
+                    case "disposed, wrong thread":
+                        // The thread is checked before disposal, as on the window that owns the source.
+                        created = CreateOnWorker(source, instance);
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(misuse), misuse, "Unknown case.");

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using Xunit;
 
 namespace BrutalEngine.Platform.Sdl3.Tests;
@@ -57,6 +58,27 @@ public sealed class ContentSizeModelTests
         // A minimised window can report a zero pixel size.
         Assert.Equal(new WindowSize(0, 0), ContentSizeModel.ContentFromPixels(new WindowSize(0, 0), 2f));
         Assert.Equal(new WindowSize(0, 0), ContentSizeModel.ToWindowCoordinates(new WindowSize(0, 0), 2f, 1f));
+    }
+
+    [Fact]
+    public void ToWindowCoordinates_NegativeSideUnderOtherCulture_FormatsInvariant()
+    {
+        // A culture whose negative sign isn't "-": the message must still read "-1", as every other message here does.
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        culture.NumberFormat.NegativeSign = "minus ";
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = culture;
+        try
+        {
+            ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(
+                () => ContentSizeModel.ToWindowCoordinates(new WindowSize(-1, 720), 1f, 1f));
+
+            Assert.StartsWith("Both sides of content must be 0 or more, got -1 by 720.", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
     }
 
     [Theory]
