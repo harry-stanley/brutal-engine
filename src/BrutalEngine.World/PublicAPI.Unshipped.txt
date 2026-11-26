@@ -41,6 +41,7 @@ BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -
 BrutalEngine.World.EcsWorld.IsAlive(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.IsPending(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.Name.get -> string!
+BrutalEngine.World.EcsWorld.TrimMemory() -> void
 BrutalEngine.World.Entity
 BrutalEngine.World.Entity.Entity() -> void
 BrutalEngine.World.Entity.Entity(uint index, uint generation) -> void

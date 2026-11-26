@@ -26,7 +26,9 @@ namespace BrutalEngine.World;
 /// <b>Allocation.</b> Constructing a world allocates; it is setup work, not frame work. It reserves
 /// <see cref="WorldOptions.InitialEntityCapacity"/> entity slots from the allocator up front, and the entity table
 /// grows by doubling through the same allocator, up to <see cref="WorldOptions.MaxEntities"/>. Its component
-/// registry is managed, and grows as types are registered. Reading <see cref="Name"/> allocates nothing.
+/// registry is managed, and grows as types are registered. Its chunk pool allocates nothing until storage first
+/// needs a chunk, and keeps emptied chunks for reuse until <see cref="TrimMemory"/> or <see cref="Dispose"/>.
+/// Reading <see cref="Name"/> allocates nothing.
 /// </para>
 /// </remarks>
 public sealed class EcsWorld : IDisposable
@@ -36,6 +38,7 @@ public sealed class EcsWorld : IDisposable
     private readonly INativeAllocator _allocator;
     private readonly EntityTable _entities;
     private readonly ComponentRegistry _components;
+    private readonly ChunkPool _chunkPool;
     private bool _disposed;
 
     /// <summary>Creates an empty world owned by the calling thread.</summary>
@@ -62,6 +65,9 @@ public sealed class EcsWorld : IDisposable
 
         // Managed only, so it needs no release if the entity table below throws.
         _components = new ComponentRegistry(_owner, options.MaxComponentTypes);
+
+        // Allocates nothing until a block is rented, so it needs no release if the entity table below throws.
+        _chunkPool = new ChunkPool(_allocator, options.ChunkBytes);
 
         // Last, so nothing allocated here needs releasing if an earlier step throws; the table frees its own partial
         // allocation if it throws.
@@ -137,13 +143,36 @@ public sealed class EcsWorld : IDisposable
         return _entities.IsPending(entity);
     }
 
+    /// <summary>
+    /// Returns the world's pooled empty chunks to the allocator. Chunks in use stay where they are; storage that needs
+    /// a chunk later allocates a new one.
+    /// </summary>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// Emptied chunks go back to a pool rather than the allocator, so steady spawn and despawn churn makes no
+    /// allocator calls; call this after a level unloads or a burst of entities is gone to give that memory back.
+    /// Allocates no managed memory. Frees one block per pooled chunk.
+    /// </remarks>
+    public void TrimMemory()
+    {
+        ThrowIfUnusable("EcsWorld.TrimMemory");
+        _chunkPool.Trim();
+    }
+
     /// <summary>The allocator every unmanaged block of this world comes from. Not owned by the world.</summary>
     internal INativeAllocator Allocator => _allocator;
 
     /// <summary>The world's entity table, which the world owns and frees in <see cref="Dispose"/>.</summary>
     internal EntityTable Entities => _entities;
 
-    /// <summary>Frees everything the world allocated, the entity table included. Idempotent: later calls do nothing.</summary>
+    /// <summary>The world's pool of chunk blocks, which the world owns and frees in <see cref="Dispose"/>.</summary>
+    internal ChunkPool ChunkPool => _chunkPool;
+
+    /// <summary>
+    /// Frees everything the world allocated, the entity table and pooled chunks included. Idempotent: later calls do
+    /// nothing.
+    /// </summary>
     /// <remarks>
     /// Afterwards every other member throws <see cref="ObjectDisposedException"/>. The allocator from
     /// <see cref="WorldOptions.Allocator"/> is not disposed. Allocates nothing.
@@ -160,6 +189,7 @@ public sealed class EcsWorld : IDisposable
         _disposed = true;
         _components.MarkDisposed();
         _entities.Dispose();
+        _chunkPool.Dispose();
     }
 
     private void ThrowIfUnusable(string apiName)
