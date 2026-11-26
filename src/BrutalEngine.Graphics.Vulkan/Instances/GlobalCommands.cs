@@ -22,8 +22,8 @@ namespace BrutalEngine.Graphics.Vulkan.Instances;
 /// </para>
 /// <para>
 /// <c>vkDestroyInstance</c> is not a global command and stays outside the gate: destroying instances concurrently with
-/// creation and enumeration never crashed in the repro. Global commands that another library in the process makes
-/// itself don't pass through the gate either.
+/// creation and enumeration never crashed in the repro (0 of 50 processes). That doesn't rule out a rarer race
+/// involving it. Global commands that another library in the process makes itself don't pass through the gate either.
 /// </para>
 /// <para>
 /// Thread-safe: any thread may call the helpers; a call blocks while another thread holds the gate. The helpers
