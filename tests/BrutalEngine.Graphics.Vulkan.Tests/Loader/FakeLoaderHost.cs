@@ -8,7 +8,8 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Loader;
 /// <summary>
 /// A scripted process for <see cref="LoaderSetup"/>: files, an environment, loadable libraries, and a BRUTAL that binds
 /// once, on its first touch, to the first library preloaded before it (BRUTAL's bare-name lookup reuses a library
-/// already in the process) or else to <see cref="SystemEntryPoint"/>. Every effect is recorded in order.
+/// already in the process) or else to <see cref="SystemEntryPoint"/>; with neither, BRUTAL's type initialisation fails
+/// and stays failed, as the real class's does. Every effect is recorded in order.
 /// </summary>
 internal sealed class FakeLoaderHost : IVulkanLoaderHost
 {
@@ -31,6 +32,10 @@ internal sealed class FakeLoaderHost : IVulkanLoaderHost
     public EngineError? SetEnvironmentFailure { get; set; }
 
     public List<string> Effects { get; } = [];
+
+    /// <summary>Gets the error BRUTAL reports when it found no loader, with the fake's own BRUTAL message.</summary>
+    public static EngineError BrutalMissing { get; } =
+        new(ErrorKind.Unavailable, "Vulkan loader missing: fake BRUTAL: Failed to load Vulkan library, tried: libvulkan.so.1, vulkan");
 
     public static EngineError PreloadFailure(string path) => new(ErrorKind.Unavailable, "fake: cannot load " + path);
 
@@ -90,9 +95,9 @@ internal sealed class FakeLoaderHost : IVulkanLoaderHost
         return entryPoint;
     }
 
-    public nint BrutalGetInstanceProcAddr()
+    public Result<nint> BrutalGetInstanceProcAddr()
     {
         _bound ??= _firstPreloaded != 0 ? _firstPreloaded : SystemEntryPoint;
-        return _bound.Value;
+        return _bound.Value != 0 ? _bound.Value : BrutalMissing;
     }
 }

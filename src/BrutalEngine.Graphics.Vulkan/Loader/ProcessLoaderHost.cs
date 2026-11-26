@@ -86,20 +86,40 @@ internal readonly partial struct ProcessLoaderHost : IVulkanLoaderHost
     /// <remarks>
     /// BRUTAL resolves its loader in the static constructor of <c>Vulkan</c> (Brutal.Vulkan/ImportResolver.cs:16-37),
     /// which throws <see cref="DllNotFoundException"/> when nothing loads (:69); that surfaces as a
-    /// <see cref="TypeInitializationException"/> on this and every later touch, the one exception caught here.
-    /// Allocates nothing after the first call.
+    /// <see cref="TypeInitializationException"/> on this and every later touch, the one exception caught here. It becomes
+    /// <see cref="LoaderMissing"/>'s error. Success allocates nothing after the first call; a failure allocates its
+    /// message (setup time only).
     /// </remarks>
-    public unsafe nint BrutalGetInstanceProcAddr()
+    public unsafe Result<nint> BrutalGetInstanceProcAddr()
     {
+        nint entryPoint;
         try
         {
             // Sound: only the function pointer's address is read; nothing is called through it.
-            return (nint)global::Brutal.VulkanApi.Vulkan.GetInstanceProcAddr.Invoke;
+            entryPoint = (nint)global::Brutal.VulkanApi.Vulkan.GetInstanceProcAddr.Invoke;
         }
-        catch (TypeInitializationException)
+        catch (TypeInitializationException exception)
         {
-            return 0;
+            return LoaderMissing(exception);
         }
+
+        // BRUTAL's constructor already rejects a null export (Brutal.Vulkan/ImportResolver.cs:34-35); kept as a check.
+        return entryPoint != 0
+            ? entryPoint
+            : new EngineError(ErrorKind.Unavailable, "Vulkan loader missing: BRUTAL bound no vkGetInstanceProcAddr");
+    }
+
+    /// <summary>
+    /// The error for BRUTAL's failed loader resolution: <see cref="ErrorKind.Unavailable"/>, "Vulkan loader missing: "
+    /// and BRUTAL's own message (the inner <see cref="DllNotFoundException"/>'s, or the outer message without one).
+    /// </summary>
+    /// <param name="exception">The type-initialisation failure of BRUTAL's <c>Vulkan</c> class.</param>
+    /// <returns>The error. Allocates its message.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is null.</exception>
+    internal static EngineError LoaderMissing(TypeInitializationException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return new EngineError(ErrorKind.Unavailable, "Vulkan loader missing: " + (exception.InnerException?.Message ?? exception.Message));
     }
 
     // libSystem holds the C runtime on macOS. An absolute path, so neither the JIT nor NativeAOT has to probe for it.

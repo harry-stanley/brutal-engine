@@ -51,6 +51,10 @@ internal interface IVulkanLoaderHost
     /// Returns the <c>vkGetInstanceProcAddr</c> that BRUTAL's <c>Vulkan</c> class bound. The first call runs BRUTAL's
     /// loader resolution, which binds for the process lifetime.
     /// </summary>
-    /// <returns>The function's address, or 0 when BRUTAL found no loader.</returns>
-    public nint BrutalGetInstanceProcAddr();
+    /// <returns>
+    /// The function's non-zero address, or an <see cref="ErrorKind.Unavailable"/> failure when BRUTAL found no loader,
+    /// whose message is "Vulkan loader missing: " followed by BRUTAL's own message. The failure allocates its message
+    /// (setup time only); success allocates nothing after the first call.
+    /// </returns>
+    public Result<nint> BrutalGetInstanceProcAddr();
 }

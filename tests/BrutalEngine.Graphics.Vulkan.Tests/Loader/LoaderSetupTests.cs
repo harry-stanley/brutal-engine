@@ -75,11 +75,24 @@ public sealed class LoaderSetupTests
     public void Mismatch_BrutalBoundBeforePreload_IsUnavailable()
     {
         FakeLoaderHost host = Host(macOS: true, _bundled);
-        Assert.Equal(SystemEntry, host.BrutalGetInstanceProcAddr());
+        Assert.Equal(SystemEntry, host.BrutalGetInstanceProcAddr().Value);
 
         Result<LoaderDecision> result = LoaderSetup.Configure(_app, null, host);
 
         Assert.Equal(new EngineError(ErrorKind.Unavailable, "BRUTAL resolved a different Vulkan loader than " + _bundled), result.Error);
+    }
+
+    [Fact]
+    public void Configure_BrutalFailedBeforePreload_PassesBrutalErrorThrough()
+    {
+        // BRUTAL's type initialisation already failed (no system loader); it stays failed, so the preload can't help.
+        FakeLoaderHost host = Host(macOS: false).WithoutSystemLoader();
+        Assert.True(host.BrutalGetInstanceProcAddr().IsFailure);
+
+        Result<LoaderDecision> result = LoaderSetup.Configure(_app, _explicit, host);
+
+        Assert.Equal(FakeLoaderHost.BrutalMissing, result.Error);
+        Assert.Equal(["preload " + _explicit], host.Effects);
     }
 
     [Fact]
@@ -137,7 +150,7 @@ public sealed class LoaderSetupTests
         "system: bundled files are ignored off macOS" =>
             new(Host(macOS: false, _icd, _bundled), null, new(null, LoaderOrigin.System, null), null, []),
         "system: no loader found" =>
-            new(Host(macOS: false).WithoutSystemLoader(), null, null, new(ErrorKind.Unavailable, LoaderSetup.SystemLoaderMissingMessage), []),
+            new(Host(macOS: false).WithoutSystemLoader(), null, null, FakeLoaderHost.BrutalMissing, []),
         "explicit: off macOS, drivers untouched" =>
             new(Host(macOS: false, _icd), _explicit, new(_explicit, LoaderOrigin.Explicit, null), null, ["preload " + _explicit]),
         "explicit: on macOS, wins over the bundled loader, bundled driver set" =>
@@ -162,7 +175,7 @@ public sealed class LoaderSetupTests
         "bundled: no bundled files uses BRUTAL's search" =>
             new(Host(macOS: true), null, new(null, LoaderOrigin.System, null), null, []),
         "bundled: no bundled files and no loader found" =>
-            new(Host(macOS: true).WithoutSystemLoader(), null, null, new(ErrorKind.Unavailable, LoaderSetup.SystemLoaderMissingMessage), []),
+            new(Host(macOS: true).WithoutSystemLoader(), null, null, FakeLoaderHost.BrutalMissing, []),
         "bundled: setenv failure stops before the preload" =>
             new(Host(macOS: true, _icd, _bundled).WithSetenvFailure(_setenvFailure), null, null, _setenvFailure, [_setIcd]),
         "bundled: preload failure is passed through" =>

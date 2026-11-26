@@ -19,7 +19,9 @@ public sealed class ProcessLoaderHostTests
 
         Assert.True(result.IsSuccess, result.ToString());
         Assert.Equal(new LoaderDecision(null, LoaderOrigin.System, null), result.Value);
-        Assert.NotEqual(0, host.BrutalGetInstanceProcAddr());
+        Result<nint> bound = host.BrutalGetInstanceProcAddr();
+        Assert.True(bound.IsSuccess, bound.ToString());
+        Assert.NotEqual(0, bound.Value);
     }
 
     [Fact]
@@ -37,6 +39,35 @@ public sealed class ProcessLoaderHostTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void LoaderMissing_CarriesBrutalsMessage()
+    {
+        // What BRUTAL's static constructor throws when nothing loads (Brutal.Vulkan/ImportResolver.cs:69), as the runtime
+        // wraps it.
+        var failure = new TypeInitializationException(
+            "Brutal.VulkanApi.Vulkan", new DllNotFoundException("Failed to load Vulkan library, tried: libvulkan.so.1, vulkan"));
+
+        EngineError error = ProcessLoaderHost.LoaderMissing(failure);
+
+        Assert.Equal(new EngineError(ErrorKind.Unavailable, "Vulkan loader missing: Failed to load Vulkan library, tried: libvulkan.so.1, vulkan"), error);
+    }
+
+    [Fact]
+    public void LoaderMissing_NoInnerException_UsesOuterMessage()
+    {
+        var failure = new TypeInitializationException("Brutal.VulkanApi.Vulkan", null);
+
+        EngineError error = ProcessLoaderHost.LoaderMissing(failure);
+
+        Assert.Equal(new EngineError(ErrorKind.Unavailable, "Vulkan loader missing: " + failure.Message), error);
+    }
+
+    [Fact]
+    public void LoaderMissing_Null_Throws()
+    {
+        Assert.Throws<ArgumentNullException>("exception", () => ProcessLoaderHost.LoaderMissing(null!));
     }
 
     [Fact]

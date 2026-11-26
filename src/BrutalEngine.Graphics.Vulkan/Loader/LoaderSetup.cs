@@ -38,9 +38,6 @@ internal static class LoaderSetup
     /// <summary>The deprecated name of <see cref="DriverFilesVariable"/>, which the loader still honours.</summary>
     public const string LegacyDriverFilesVariable = "VK_ICD_FILENAMES";
 
-    /// <summary>The message when BRUTAL's own search found no loader.</summary>
-    public const string SystemLoaderMissingMessage = "Vulkan loader missing: BRUTAL found no Vulkan loader on this system";
-
     /// <summary>Decides the loader and drivers, preloads the loader if needed, and checks that BRUTAL bound it.</summary>
     /// <typeparam name="THost">The process abstraction; the real one is a struct, so nothing is boxed.</typeparam>
     /// <param name="appDirectory">The app's directory, fully qualified: where bundled natives would be.</param>
@@ -50,8 +47,8 @@ internal static class LoaderSetup
     /// The decision, or a failure: the host's <see cref="ErrorKind.Native"/> error when setting the driver variable
     /// failed; the host's <see cref="ErrorKind.Unavailable"/> error when the chosen loader couldn't be preloaded;
     /// <see cref="ErrorKind.Unavailable"/> ("BRUTAL resolved a different Vulkan loader than &lt;path&gt;") when BRUTAL
-    /// bound another loader than the preloaded one, never a fallback; and <see cref="ErrorKind.Unavailable"/>
-    /// (<see cref="SystemLoaderMissingMessage"/>) when nothing was preloaded and BRUTAL found no loader.
+    /// bound another loader than the preloaded one, never a fallback; and the host's <see cref="ErrorKind.Unavailable"/>
+    /// error ("Vulkan loader missing: " and BRUTAL's message) when BRUTAL found no loader, passed through unchanged.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="appDirectory"/> or <paramref name="host"/> is null.</exception>
     /// <exception cref="ArgumentException">
@@ -99,11 +96,11 @@ internal static class LoaderSetup
             }
         }
 
+        Result<nint> bound;
         if (loader is null)
         {
-            return host.BrutalGetInstanceProcAddr() != 0
-                ? new LoaderDecision(null, LoaderOrigin.System, driverFiles)
-                : new EngineError(ErrorKind.Unavailable, SystemLoaderMissingMessage);
+            bound = host.BrutalGetInstanceProcAddr();
+            return bound.TryGetError(out EngineError missing) ? missing : new LoaderDecision(null, LoaderOrigin.System, driverFiles);
         }
 
         // BRUTAL looks the loader up by bare name, which binds to a library of that name already in the process. Check
@@ -114,7 +111,13 @@ internal static class LoaderSetup
             return preloaded.Error;
         }
 
-        return host.BrutalGetInstanceProcAddr() == entryPoint
+        bound = host.BrutalGetInstanceProcAddr();
+        if (!bound.TryGetValue(out nint brutalEntryPoint))
+        {
+            return bound.Error;
+        }
+
+        return brutalEntryPoint == entryPoint
             ? new LoaderDecision(loader, origin, driverFiles)
             : new EngineError(ErrorKind.Unavailable, "BRUTAL resolved a different Vulkan loader than " + loader);
     }
