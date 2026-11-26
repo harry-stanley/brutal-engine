@@ -100,6 +100,7 @@ public sealed class ArchetypeSignatureTests
         Assert.False(a.Equals(ArchetypeSignature.Create([1], 64)));
         Assert.False(a.Equals(null));
         Assert.True(a.Matches([1, 2]));
+        Assert.False(a.Matches([1, 3]));
         Assert.False(a.Matches([1, 2, 3]));
     }
 
@@ -115,6 +116,24 @@ public sealed class ArchetypeSignatureTests
         Assert.Equal(first.Hash, second.Hash);
         Assert.False(first.Equals(second));
         Assert.False(second.Equals((object)first));
+    }
+
+    [Fact]
+    public void Equality_SameLengthHashCollision_ComparesIds()
+    {
+        // Two sets of four ids with the same hash (798018277 for both in a separate Python implementation of the
+        // hash), so neither the hash nor the count can tell them apart: only the ids can.
+        int[] firstIds = [2541, 3416, 3860, 3975];
+        int[] secondIds = [1678, 2405, 2423, 3690];
+        var first = ArchetypeSignature.Create(firstIds, 4096);
+        var second = ArchetypeSignature.Create(secondIds, 4096);
+
+        Assert.Equal(798018277, ArchetypeSignature.ComputeHash(firstIds));
+        Assert.Equal(798018277, ArchetypeSignature.ComputeHash(secondIds));
+        Assert.Equal(first.Count, second.Count);
+        Assert.False(first.Equals(second));
+        Assert.False(second.Equals((object)first));
+        Assert.False(first.Matches(secondIds));
     }
 
     // Expected values from a separate Python implementation of the same definition: per id, hash = (hash ^ id) *
