@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
@@ -27,6 +26,11 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
         { "Buffer", "" },
         { "Sampler", "Pixel art" },
         { "Sampler", null },
+        { "Texture", "Atlas" },
+        { "Texture", null },
+        { "TextureArray", "Layers" },
+        { "TextureView", "Mip 1" },
+        { "TextureView", null },
     };
 
     [Theory]
@@ -38,27 +42,24 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
 
         Made made = Make(device, kind, debugName);
 
-        FakeBackendCall create = Assert.Single(backend.Calls, call => call.Operation == made.CreateOperation);
-        Assert.Equal(made.Kind, create.Kind);
+        // The calls since the object's own creation began: a texture also creates its default view.
+        FakeBackendCall[] creates = [.. backend.Calls.Skip(made.CallsBefore).Where(call => call.Operation is FakeBackendOperation.CreateBuffer
+            or FakeBackendOperation.CreateSampler or FakeBackendOperation.CreateTexture or FakeBackendOperation.CreateTextureView)];
+        Assert.Equal(made.ObjectCount, creates.Length);
+        Assert.Equal((made.CreateOperation, (BackendObjectKind?)made.Kind), (creates[0].Operation, creates[0].Kind));
         Assert.False(made.Handle.IsNull);
-        Assert.Equal(create.Id, made.TableId(backend.Objects));
-        Assert.Equal(1, backend.LiveObjectCount);
-        IEnumerable<FakeBackendCall> names = backend.Calls.Where(call => call.Operation == FakeBackendOperation.SetDebugName);
-        if (string.IsNullOrEmpty(debugName))
-        {
-            Assert.Empty(names);
-        }
-        else
-        {
-            FakeBackendCall name = Assert.Single(names);
-            Assert.Equal((made.Kind, create.Id), (name.Kind, name.Id));
-        }
+        Assert.Equal(creates[0].Id, made.TableId(backend.Objects));
+        Assert.Equal(made.LiveBefore + made.ObjectCount, backend.LiveObjectCount);
+        ulong[] named = [.. backend.Calls.Skip(made.CallsBefore).Where(call => call.Operation == FakeBackendOperation.SetDebugName).Select(call => call.Id)];
+        Assert.Equal(string.IsNullOrEmpty(debugName) ? [] : creates.Select(call => call.Id), named);
+        int beforeDestroy = backend.Calls.Count;
 
         made.Destroy();
 
-        FakeBackendCall destroy = Assert.Single(backend.Calls, call => call.Operation == FakeBackendOperation.Destroy);
-        Assert.Equal((made.Kind, create.Id), (destroy.Kind, destroy.Id));
-        Assert.Equal(0, backend.LiveObjectCount);
+        FakeBackendCall[] destroys = [.. backend.Calls.Skip(beforeDestroy).Where(call => call.Operation == FakeBackendOperation.Destroy)];
+        // Views before their texture: the object itself goes last.
+        Assert.Equal(creates.Select(call => (call.Kind, call.Id)).Reverse(), destroys.Select(call => (call.Kind, call.Id)));
+        Assert.Equal(made.LiveBefore, backend.LiveObjectCount);
         Assert.Throws<StaleHandleException>(() => made.TableId(backend.Objects));
     }
 
@@ -496,9 +497,21 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
                 SamplerHandle sampler = device.CreateSampler(new SamplerDescription { DebugName = debugName }).Value;
                 return new Made(BackendObjectKind.Sampler, FakeBackendOperation.CreateSampler, sampler.Value, () => device.Destroy(sampler), objects => objects.GetId(sampler));
             default:
-                throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+                return MakeTextureKind(device, kind, debugName);
         }
     }
 
-    private sealed record Made(BackendObjectKind Kind, FakeBackendOperation CreateOperation, Handle Handle, Action Destroy, Func<BackendObjectTable, ulong> TableId);
+    /// <summary>One object a test made, and how to look it up and destroy it.</summary>
+    /// <remarks>
+    /// <see cref="CallsBefore"/> and <see cref="LiveBefore"/> are the backend's call count and live objects when its own
+    /// creation began (a view's texture comes before); <see cref="ObjectCount"/> backend objects are created with it.
+    /// </remarks>
+    private sealed record Made(BackendObjectKind Kind, FakeBackendOperation CreateOperation, Handle Handle, Action Destroy, Func<BackendObjectTable, ulong> TableId)
+    {
+        public int CallsBefore { get; init; }
+
+        public int LiveBefore { get; init; }
+
+        public int ObjectCount { get; init; } = 1;
+    }
 }
