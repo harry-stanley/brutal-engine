@@ -30,6 +30,15 @@ internal enum VfsPathError
     /// <summary>A segment that ends in <c>.</c> or a space.</summary>
     TrailingDotOrSpace,
 
+    /// <summary>A segment that is a Windows device name, with or without an extension.</summary>
+    DeviceName,
+
+    /// <summary>A segment longer than 255 bytes in UTF-8.</summary>
+    SegmentTooLong,
+
+    /// <summary>A normalised path longer than 1,024 bytes in UTF-8.</summary>
+    PathTooLong,
+
     /// <summary>A relative path passed to <c>Combine</c> that starts with <c>/</c>.</summary>
     AbsoluteRelativePath,
 

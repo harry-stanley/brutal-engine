@@ -18,8 +18,17 @@ public sealed class VfsPathTests
     private const string ReservedRule = "are not allowed in a segment";
     private const string SurrogateRule = "lone UTF-16 surrogate";
     private const string TrailingRule = "may not end in '.' or a space";
+    private const string DeviceRule = "Windows device name";
+    private const string SegmentLengthRule = "at most 255 bytes in UTF-8";
+    private const string PathLengthRule = "at most 1,024 bytes in UTF-8";
     private const string AbsoluteRule = "must not start with '/'";
     private const string SchemeQualifiedRule = "must not have a scheme";
+
+    // CJK ideograph U+65E5: 3 bytes in UTF-8, one UTF-16 code unit.
+    private const char Cjk = '\u65E5';
+
+    // U+1F600 as a surrogate pair: 4 bytes in UTF-8, two UTF-16 code units.
+    private const string Emoji = "\U0001F600";
 
     [Theory]
     [InlineData("res://textures/hero.png", "res://textures/hero.png", "res", "textures/hero.png", "hero.png")]
@@ -125,7 +134,14 @@ public sealed class VfsPathTests
             { "res://a{DE00}b", SurrogateRule },
             { "res://a{D83D}", SurrogateRule },
             { "res://{DE00}{D83D}", SurrogateRule },
+            { "res://" + new string('a', 256), SegmentLengthRule },
+            { "res://" + LongPath(1025 - 6), PathLengthRule },
         };
+        foreach (string device in (string[])["CON", "prn", "Aux", "nUl", "COM1", "com9", "LPT1", "lpt9", "CON.txt", "nul.tar.gz", "a/com5.log"])
+        {
+            data.Add("res://" + device, DeviceRule);
+        }
+
         return data;
     }
 
@@ -214,6 +230,83 @@ public sealed class VfsPathTests
     }
 
     [Theory]
+    [InlineData("console")]
+    [InlineData("construct")]
+    [InlineData("auxiliary.png")]
+    [InlineData("nul1")]
+    [InlineData("aux_")]
+    [InlineData("xcon")]
+    [InlineData("co")]
+    [InlineData("COM0")]
+    [InlineData("LPT0")]
+    [InlineData("COM10")]
+    [InlineData("com12")]
+    [InlineData("lpt10.txt")]
+    [InlineData("conx.txt")]
+    [InlineData("com.txt")]
+    [InlineData("nul-1.log")]
+    public void Parse_DeviceLikeNameNotOnTheList_IsValid(string segment)
+    {
+        // Only CON, PRN, AUX, NUL, COM1-COM9 and LPT1-LPT9 are device names, matched on the whole text before the
+        // first '.': longer, shorter or other names that start like one, and COM0/LPT0, are ordinary segments.
+        Assert.True(VfsPath.TryParse("res://" + segment, out VfsPath parsed));
+        Assert.Equal(segment, parsed.RelativePath);
+        Assert.Equal(segment, VfsPath.Parse("res://a/" + segment).Name);
+        Assert.Equal("res://a/" + segment, VfsPath.Parse("res://a").Combine(segment).ToString());
+    }
+
+    [Fact]
+    public void SegmentLimit_CountsUtf8Bytes()
+    {
+        // 200 CJK characters are 200 UTF-16 code units but 600 bytes in UTF-8: rejected on every OS.
+        string segment = new(Cjk, 200);
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => VfsPath.Parse("res://" + segment));
+
+        Assert.Contains(SegmentLengthRule, exception.Message, StringComparison.Ordinal);
+        Assert.False(VfsPath.TryParse("res://" + segment, out _));
+    }
+
+    [Theory]
+    [InlineData(254, true)]
+    [InlineData(255, true)]
+    [InlineData(256, false)]
+    public void SegmentLimit_AtBoundary_CountsEveryEncodingWidth(int bytes, bool valid)
+    {
+        // 255 bytes: 63 emoji (252 bytes) + one CJK character (3); 256: one more byte as 'a'; 254: 63 emoji + one
+        // two-byte character.
+        StringBuilder segment = new();
+        for (int i = 0; i < 63; i++)
+        {
+            segment.Append(Emoji);
+        }
+
+        segment.Append(bytes == 254 ? '\u00E9' : Cjk);
+        if (bytes == 256)
+        {
+            segment.Append('a');
+        }
+
+        Assert.Equal(bytes, Encoding.UTF8.GetByteCount(segment.ToString()));
+        Assert.Equal(valid, VfsPath.TryParse("res://" + segment, out _));
+        Assert.Equal(valid, VfsPath.TryParse("res://" + new string('\u00E9', bytes / 2) + new string('a', bytes % 2), out _));
+    }
+
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void PathLimit_AtBoundary_CountsNormalisedUtf8Bytes(int bytes, bool valid)
+    {
+        string path = "res://" + LongPath(bytes - 6);
+
+        Assert.Equal(bytes, Encoding.UTF8.GetByteCount(path));
+        Assert.Equal(valid, VfsPath.TryParse(path, out _));
+
+        // Removed "." segments and repeated '/' don't count: the limit applies to the normalised path.
+        Assert.Equal(valid, VfsPath.TryParse("res://./" + LongPath(bytes - 6).Replace("/", "//", StringComparison.Ordinal), out _));
+    }
+
+    [Theory]
     [InlineData("res://", "a", "res://a")]
     [InlineData("res://", "a/b", "res://a/b")]
     [InlineData("res://textures", "hero.png", "res://textures/hero.png")]
@@ -253,6 +346,7 @@ public sealed class VfsPathTests
     [InlineData("c:a", ReservedRule)]
     [InlineData("a\\b", BackslashRule)]
     [InlineData("a.", TrailingRule)]
+    [InlineData("nul.txt", DeviceRule)]
     [InlineData("{D800}", SurrogateRule)]
     public void Combine_InvalidRelativePath_ThrowsNamingTheRule(string relative, string rule)
     {
@@ -262,6 +356,79 @@ public sealed class VfsPathTests
 
         Assert.Equal("relative", exception.ParamName);
         Assert.Contains(rule, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Combine_SegmentTooLong_Throws()
+    {
+        var path = VfsPath.Parse("res://a");
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => path.Combine(new string(Cjk, 86)));
+
+        Assert.Contains(SegmentLengthRule, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void Combine_PathLimit_CountsTheCombinedPath(int bytes, bool valid)
+    {
+        // "res://ab" + "/" + relative: the base's bytes and the joining '/' count.
+        var path = VfsPath.Parse("res://ab");
+        string relative = LongPath(bytes - "res://ab/".Length);
+
+        if (valid)
+        {
+            Assert.Equal(bytes, Encoding.UTF8.GetByteCount(path.Combine(relative).ToString()));
+        }
+        else
+        {
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => path.Combine(relative));
+            Assert.Contains(PathLengthRule, exception.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("res://\u65E5\u672C", 1024, true)]
+    [InlineData("res://\u65E5\u672C", 1025, false)]
+    [InlineData("res://\u00E9/\U0001F600", 1024, true)]
+    [InlineData("res://\u00E9/\U0001F600", 1025, false)]
+    public void Combine_PathLimit_CountsTheBaseInUtf8Bytes(string basePath, int bytes, bool valid)
+    {
+        // The base's multi-byte characters count in UTF-8 bytes (6 for the two CJK characters, 2 + 4 for the other
+        // base), plus the joining '/'.
+        var path = VfsPath.Parse(basePath);
+        string relative = LongPath(bytes - Encoding.UTF8.GetByteCount(basePath) - 1);
+
+        if (valid)
+        {
+            Assert.Equal(bytes, Encoding.UTF8.GetByteCount(path.Combine(relative).ToString()));
+        }
+        else
+        {
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => path.Combine(relative));
+            Assert.Contains(PathLengthRule, exception.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void Combine_PathLimitAtMountRoot_CountsNoJoiningSlash(int bytes, bool valid)
+    {
+        // "res://" + relative: the mount root has no relative path, so no '/' joins them.
+        var root = VfsPath.Parse("res://");
+        string relative = LongPath(bytes - "res://".Length);
+
+        if (valid)
+        {
+            Assert.Equal(bytes, Encoding.UTF8.GetByteCount(root.Combine(relative).ToString()));
+        }
+        else
+        {
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => root.Combine(relative));
+            Assert.Contains(PathLengthRule, exception.Message, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -400,5 +567,31 @@ public sealed class VfsPathTests
         }
 
         return decoded.ToString();
+    }
+
+    // A relative path of exactly `bytes` bytes: segments of at most 200 'a's joined by '/'.
+    private static string LongPath(int bytes)
+    {
+        int remaining = bytes;
+        StringBuilder path = new();
+        while (remaining > 0)
+        {
+            if (path.Length > 0)
+            {
+                path.Append('/');
+                remaining--;
+            }
+
+            int length = Math.Min(200, remaining);
+            if (remaining - length == 1)
+            {
+                length--;
+            }
+
+            path.Append('a', length);
+            remaining -= length;
+        }
+
+        return path.ToString();
     }
 }
