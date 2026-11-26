@@ -6,9 +6,10 @@ namespace BrutalEngine.Graphics.Backend;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every native outcome of an acquire or present lands on one of these: a backend never throws for one. Any native failure
-/// that is neither out of date nor surface or device loss (for example out of memory) is reported as
-/// <see cref="DeviceLost"/> with its native code, because a frame call has no partial recovery.
+/// Every native outcome of an acquire or present lands on one of these: a backend never throws for one. An acquire that
+/// times out or finds no image ready is reported as <see cref="OutOfDate"/>, so the front end recreates the swapchain
+/// and retries once. Any native failure that is neither out of date nor surface or device loss (for example out of
+/// memory) is reported as <see cref="DeviceLost"/> with its native code, because this enum has no other failure value.
 /// </para>
 /// <para>
 /// The numeric values are fixed. They are no native API's values, so backends map them by name, never by casting.

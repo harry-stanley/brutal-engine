@@ -19,8 +19,10 @@ namespace BrutalEngine.Graphics.Backend;
 /// <para>
 /// The request holds <see cref="Logger"/>, <see cref="Allocator"/> and <see cref="CompatibleSurface"/> without owning them:
 /// the front end keeps them alive until the backend device is disposed, and the backend never disposes them. Equality
-/// compares every property; those three compare by reference, <see cref="ApplicationName"/> ordinally. An immutable
-/// record, safe to share between threads; reading it allocates nothing.
+/// compares every property with its type's default equality: <see cref="Logger"/> and <see cref="CompatibleSurface"/>
+/// by reference, <see cref="Allocator"/> by reference unless its implementation overrides
+/// <see cref="object.Equals(object)"/>, and <see cref="ApplicationName"/> ordinally. An immutable record, safe to share
+/// between threads; reading it allocates nothing.
 /// </para>
 /// </remarks>
 public sealed record BackendDeviceRequest
