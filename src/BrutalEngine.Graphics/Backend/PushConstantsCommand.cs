@@ -23,6 +23,10 @@ public readonly struct PushConstantsCommand
     /// <summary>The byte offset of the bytes in the push-constant range: at least 0.</summary>
     public int Offset { get; init; }
 
-    /// <summary>The number of bytes in the trailing part: greater than 0.</summary>
+    /// <summary>
+    /// The number of bytes in the trailing part: the size of the encoder's value, recorded as it was. Section 9's
+    /// encoding rules check only that the range lies inside the layout's push-constant range, not the size itself;
+    /// Vulkan's <c>vkCmdPushConstants</c> requires it to be greater than 0 and a multiple of 4.
+    /// </summary>
     public int Size { get; init; }
 }

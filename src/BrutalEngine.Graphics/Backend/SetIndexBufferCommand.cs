@@ -22,7 +22,9 @@ public readonly struct SetIndexBufferCommand
     public ulong Buffer { get; init; }
 
     /// <summary>
-    /// The byte offset in the buffer where the indices start: at least 0, and a multiple of the index size.
+    /// The byte offset in the buffer where the indices start, recorded as the encoder was given it: section 9's
+    /// encoding rules don't check it. Vulkan's <c>vkCmdBindIndexBuffer</c> requires it to be less than the buffer's
+    /// size and a multiple of the index size.
     /// </summary>
     public long Offset { get; init; }
 }
