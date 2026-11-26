@@ -172,6 +172,38 @@ public sealed class VfsPathTests
     }
 
     [Theory]
+    [InlineData(256, false)]
+    [InlineData(257, true)]
+    [InlineData(300, true)]
+    public void Parse_LongInput_QuotesAtMost256Characters(int length, bool cut)
+    {
+        // Short segments, so that no other rule applies, then a reserved character, so that the path is invalid.
+        string input = "res://" + Segments(30)[..(length - 7)] + "*";
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => VfsPath.Parse(input));
+
+        Assert.Equal(length, input.Length);
+        string quoted = cut ? input[..256] + "..." : input;
+        Assert.Contains("'" + quoted + "'", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(cut ? input[..257] : input + "...", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_SurrogatePairCutAtTheQuoteLimit_EscapesTheHighHalf()
+    {
+        // Characters 0 to 254 are ASCII and 255 and 256 are the halves of U+1F600, so the 256 quoted characters end in
+        // a high surrogate without its low half. The message escapes it rather than carry invalid UTF-16.
+        string input = "res://" + Segments(25)[..249] + "\U0001F600/b*";
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => VfsPath.Parse(input));
+
+        Assert.True(char.IsHighSurrogate(input[255]) && char.IsLowSurrogate(input[256]));
+        Assert.Contains("'" + input[..255] + "\\uD83D...'", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\uD83D', exception.Message);
+        Assert.DoesNotContain('\uDE00', exception.Message);
+    }
+
+    [Theory]
     [InlineData("res://", "a", "res://a")]
     [InlineData("res://", "a/b", "res://a/b")]
     [InlineData("res://textures", "hero.png", "res://textures/hero.png")]
@@ -293,6 +325,9 @@ public sealed class VfsPathTests
         Assert.Equal(0, path.GetHashCode());
         Assert.Equal(string.Empty, path.ToString());
     }
+
+    // The given number of copies of "abcdefghi/": valid segments, none near a length limit.
+    private static string Segments(int count) => new StringBuilder().Insert(0, "abcdefghi/", count).ToString();
 
     // Replaces each "{XXXX}" with the UTF-16 code unit U+XXXX, so test data stays printable in test names.
     private static string Decode(string encoded)
