@@ -46,7 +46,10 @@ public sealed class FakeGraphicsBackend : IGraphicsBackend
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">An adapter in the script has an index other than its position.</exception>
-    /// <remarks>Takes a pending <see cref="FakeBackendOperation.EnumerateAdapters"/> failure first. Returns a copy of the list.</remarks>
+    /// <remarks>
+    /// The script's adapter-index check runs first, then a pending <see cref="FakeBackendOperation.EnumerateAdapters"/>
+    /// failure is taken. Returns a copy of the list.
+    /// </remarks>
     public Result<IReadOnlyList<GraphicsAdapterInfo>> EnumerateAdapters(BackendDeviceRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

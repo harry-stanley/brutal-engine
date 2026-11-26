@@ -22,7 +22,8 @@ namespace BrutalEngine.TestUtilities;
 /// view's texture must resolve, through the front end's table, to a live texture; <see cref="GetFormatSupport"/> takes only
 /// a defined format other than <see cref="TextureFormat.Undefined"/>; and nothing but <see cref="Dispose"/> is called after
 /// disposal. The fake can't tell which frames used an object (that needs the command reader), so it doesn't check that a
-/// destroyed object's frames completed.
+/// destroyed object's frames completed. Nor does it check that the front end destroys every view before its texture: both
+/// checks come with #118.
 /// </para>
 /// <para>
 /// <b>Memory.</b> Each <see cref="BackendMemory.HostUpload"/> or <see cref="BackendMemory.HostReadback"/> buffer gets a
