@@ -579,6 +579,17 @@ BrutalEngine.Platform.Vfs.IFileSystem.List(string! relativePath) -> BrutalEngine
 BrutalEngine.Platform.Vfs.IFileSystem.OpenRead(string! relativePath) -> BrutalEngine.Core.Result<System.IO.Stream!>
 BrutalEngine.Platform.Vfs.IFileSystem.ReadAllBytes(string! relativePath) -> BrutalEngine.Core.Result<byte[]!>
 BrutalEngine.Platform.Vfs.IFileSystem.WriteAllBytes(string! relativePath, System.ReadOnlySpan<byte> contents) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.InMemoryFileSystem
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.CreateDirectory(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.Delete(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.Freeze() -> void
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.GetEntryKind(string! relativePath) -> BrutalEngine.Core.Result<BrutalEngine.Platform.Vfs.VfsEntryKind>
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.InMemoryFileSystem(bool isReadOnly = false) -> void
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.IsReadOnly.get -> bool
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.List(string! relativePath) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.Vfs.VfsEntry>!>
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.OpenRead(string! relativePath) -> BrutalEngine.Core.Result<System.IO.Stream!>
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.ReadAllBytes(string! relativePath) -> BrutalEngine.Core.Result<byte[]!>
+BrutalEngine.Platform.Vfs.InMemoryFileSystem.WriteAllBytes(string! relativePath, System.ReadOnlySpan<byte> contents) -> BrutalEngine.Core.Result
 BrutalEngine.Platform.Vfs.VfsEntry
 BrutalEngine.Platform.Vfs.VfsEntry.Deconstruct(out string! Name, out BrutalEngine.Platform.Vfs.VfsEntryKind Kind, out long Length) -> void
 BrutalEngine.Platform.Vfs.VfsEntry.Equals(BrutalEngine.Platform.Vfs.VfsEntry other) -> bool
