@@ -1,4 +1,11 @@
 #nullable enable
+BrutalEngine.Graphics.AcquireStatus
+BrutalEngine.Graphics.AcquireStatus.Acquired = 0 -> BrutalEngine.Graphics.AcquireStatus
+BrutalEngine.Graphics.AcquireStatus.DeviceLost = 5 -> BrutalEngine.Graphics.AcquireStatus
+BrutalEngine.Graphics.AcquireStatus.Minimised = 2 -> BrutalEngine.Graphics.AcquireStatus
+BrutalEngine.Graphics.AcquireStatus.Recreated = 1 -> BrutalEngine.Graphics.AcquireStatus
+BrutalEngine.Graphics.AcquireStatus.Skipped = 3 -> BrutalEngine.Graphics.AcquireStatus
+BrutalEngine.Graphics.AcquireStatus.SurfaceLost = 4 -> BrutalEngine.Graphics.AcquireStatus
 BrutalEngine.Graphics.AdapterSelection
 BrutalEngine.Graphics.AdapterSelection.AdapterSelection() -> void
 BrutalEngine.Graphics.AdapterSelection.Equals(BrutalEngine.Graphics.AdapterSelection other) -> bool
@@ -93,6 +100,9 @@ BrutalEngine.Graphics.FormatSupport.Multisample = 256 -> BrutalEngine.Graphics.F
 BrutalEngine.Graphics.FormatSupport.None = 0 -> BrutalEngine.Graphics.FormatSupport
 BrutalEngine.Graphics.FormatSupport.Sampled = 1 -> BrutalEngine.Graphics.FormatSupport
 BrutalEngine.Graphics.FormatSupport.Storage = 32 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FrameStatus
+BrutalEngine.Graphics.FrameStatus.DeviceLost = 1 -> BrutalEngine.Graphics.FrameStatus
+BrutalEngine.Graphics.FrameStatus.Ready = 0 -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.GraphicsAdapterInfo
 BrutalEngine.Graphics.GraphicsAdapterInfo.<Clone>$() -> BrutalEngine.Graphics.GraphicsAdapterInfo!
 BrutalEngine.Graphics.GraphicsAdapterInfo.ApiVersion.get -> string!
@@ -158,6 +168,11 @@ BrutalEngine.Graphics.PipelineLayoutHandle
 BrutalEngine.Graphics.PipelineLayoutHandle.Equals(BrutalEngine.Graphics.PipelineLayoutHandle other) -> bool
 BrutalEngine.Graphics.PipelineLayoutHandle.IsNull.get -> bool
 BrutalEngine.Graphics.PipelineLayoutHandle.PipelineLayoutHandle() -> void
+BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.PresentMode.Fifo = 0 -> BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.PresentMode.FifoRelaxed = 1 -> BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.PresentMode.Immediate = 3 -> BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.PresentMode.Mailbox = 2 -> BrutalEngine.Graphics.PresentMode
 BrutalEngine.Graphics.SampleCounts
 BrutalEngine.Graphics.SampleCounts.None = 0 -> BrutalEngine.Graphics.SampleCounts
 BrutalEngine.Graphics.SampleCounts.X1 = 1 -> BrutalEngine.Graphics.SampleCounts
@@ -199,10 +214,55 @@ BrutalEngine.Graphics.ShaderStages.Compute = 4 -> BrutalEngine.Graphics.ShaderSt
 BrutalEngine.Graphics.ShaderStages.Fragment = 2 -> BrutalEngine.Graphics.ShaderStages
 BrutalEngine.Graphics.ShaderStages.None = 0 -> BrutalEngine.Graphics.ShaderStages
 BrutalEngine.Graphics.ShaderStages.Vertex = 1 -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.SwapchainFormat
+BrutalEngine.Graphics.SwapchainFormat.Srgb = 0 -> BrutalEngine.Graphics.SwapchainFormat
+BrutalEngine.Graphics.SwapchainFormat.Unorm = 1 -> BrutalEngine.Graphics.SwapchainFormat
 BrutalEngine.Graphics.SwapchainHandle
 BrutalEngine.Graphics.SwapchainHandle.Equals(BrutalEngine.Graphics.SwapchainHandle other) -> bool
 BrutalEngine.Graphics.SwapchainHandle.IsNull.get -> bool
 BrutalEngine.Graphics.SwapchainHandle.SwapchainHandle() -> void
+BrutalEngine.Graphics.SwapchainImage
+BrutalEngine.Graphics.SwapchainImage.Deconstruct(out BrutalEngine.Graphics.TextureHandle Texture, out BrutalEngine.Graphics.TextureViewHandle View, out int Width, out int Height, out BrutalEngine.Graphics.TextureFormat Format) -> void
+BrutalEngine.Graphics.SwapchainImage.Equals(BrutalEngine.Graphics.SwapchainImage other) -> bool
+BrutalEngine.Graphics.SwapchainImage.Format.get -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.SwapchainImage.Format.init -> void
+BrutalEngine.Graphics.SwapchainImage.Height.get -> int
+BrutalEngine.Graphics.SwapchainImage.Height.init -> void
+BrutalEngine.Graphics.SwapchainImage.SwapchainImage() -> void
+BrutalEngine.Graphics.SwapchainImage.SwapchainImage(BrutalEngine.Graphics.TextureHandle Texture, BrutalEngine.Graphics.TextureViewHandle View, int Width, int Height, BrutalEngine.Graphics.TextureFormat Format) -> void
+BrutalEngine.Graphics.SwapchainImage.Texture.get -> BrutalEngine.Graphics.TextureHandle
+BrutalEngine.Graphics.SwapchainImage.Texture.init -> void
+BrutalEngine.Graphics.SwapchainImage.View.get -> BrutalEngine.Graphics.TextureViewHandle
+BrutalEngine.Graphics.SwapchainImage.View.init -> void
+BrutalEngine.Graphics.SwapchainImage.Width.get -> int
+BrutalEngine.Graphics.SwapchainImage.Width.init -> void
+BrutalEngine.Graphics.SwapchainInfo
+BrutalEngine.Graphics.SwapchainInfo.Deconstruct(out int Width, out int Height, out BrutalEngine.Graphics.TextureFormat Format, out BrutalEngine.Graphics.PresentMode PresentMode, out int ImageCount, out bool SupportsCopyDestination) -> void
+BrutalEngine.Graphics.SwapchainInfo.Equals(BrutalEngine.Graphics.SwapchainInfo other) -> bool
+BrutalEngine.Graphics.SwapchainInfo.Format.get -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.SwapchainInfo.Format.init -> void
+BrutalEngine.Graphics.SwapchainInfo.Height.get -> int
+BrutalEngine.Graphics.SwapchainInfo.Height.init -> void
+BrutalEngine.Graphics.SwapchainInfo.ImageCount.get -> int
+BrutalEngine.Graphics.SwapchainInfo.ImageCount.init -> void
+BrutalEngine.Graphics.SwapchainInfo.PresentMode.get -> BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.SwapchainInfo.PresentMode.init -> void
+BrutalEngine.Graphics.SwapchainInfo.SupportsCopyDestination.get -> bool
+BrutalEngine.Graphics.SwapchainInfo.SupportsCopyDestination.init -> void
+BrutalEngine.Graphics.SwapchainInfo.SwapchainInfo() -> void
+BrutalEngine.Graphics.SwapchainInfo.SwapchainInfo(int Width, int Height, BrutalEngine.Graphics.TextureFormat Format, BrutalEngine.Graphics.PresentMode PresentMode, int ImageCount, bool SupportsCopyDestination) -> void
+BrutalEngine.Graphics.SwapchainInfo.Width.get -> int
+BrutalEngine.Graphics.SwapchainInfo.Width.init -> void
+BrutalEngine.Graphics.SwapchainOptions
+BrutalEngine.Graphics.SwapchainOptions.<Clone>$() -> BrutalEngine.Graphics.SwapchainOptions!
+BrutalEngine.Graphics.SwapchainOptions.DebugName.get -> string?
+BrutalEngine.Graphics.SwapchainOptions.DebugName.init -> void
+BrutalEngine.Graphics.SwapchainOptions.Equals(BrutalEngine.Graphics.SwapchainOptions? other) -> bool
+BrutalEngine.Graphics.SwapchainOptions.Format.get -> BrutalEngine.Graphics.SwapchainFormat
+BrutalEngine.Graphics.SwapchainOptions.Format.init -> void
+BrutalEngine.Graphics.SwapchainOptions.PresentMode.get -> BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.SwapchainOptions.PresentMode.init -> void
+BrutalEngine.Graphics.SwapchainOptions.SwapchainOptions() -> void
 BrutalEngine.Graphics.TextureAspect
 BrutalEngine.Graphics.TextureAspect.Color = 0 -> BrutalEngine.Graphics.TextureAspect
 BrutalEngine.Graphics.TextureAspect.Depth = 1 -> BrutalEngine.Graphics.TextureAspect
@@ -393,6 +453,13 @@ override BrutalEngine.Graphics.ShaderModuleHandle.ToString() -> string!
 override BrutalEngine.Graphics.SwapchainHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.SwapchainHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.SwapchainHandle.ToString() -> string!
+override BrutalEngine.Graphics.SwapchainImage.GetHashCode() -> int
+override BrutalEngine.Graphics.SwapchainImage.ToString() -> string!
+override BrutalEngine.Graphics.SwapchainInfo.GetHashCode() -> int
+override BrutalEngine.Graphics.SwapchainInfo.ToString() -> string!
+override BrutalEngine.Graphics.SwapchainOptions.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.SwapchainOptions.GetHashCode() -> int
+override BrutalEngine.Graphics.SwapchainOptions.ToString() -> string!
 override BrutalEngine.Graphics.TextureBufferCopy.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureBufferCopy.ToString() -> string!
 override BrutalEngine.Graphics.TextureCopy.GetHashCode() -> int
@@ -452,6 +519,12 @@ static BrutalEngine.Graphics.ShaderModuleHandle.operator !=(BrutalEngine.Graphic
 static BrutalEngine.Graphics.ShaderModuleHandle.operator ==(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
 static BrutalEngine.Graphics.SwapchainHandle.operator !=(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
 static BrutalEngine.Graphics.SwapchainHandle.operator ==(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
+static BrutalEngine.Graphics.SwapchainImage.operator !=(BrutalEngine.Graphics.SwapchainImage left, BrutalEngine.Graphics.SwapchainImage right) -> bool
+static BrutalEngine.Graphics.SwapchainImage.operator ==(BrutalEngine.Graphics.SwapchainImage left, BrutalEngine.Graphics.SwapchainImage right) -> bool
+static BrutalEngine.Graphics.SwapchainInfo.operator !=(BrutalEngine.Graphics.SwapchainInfo left, BrutalEngine.Graphics.SwapchainInfo right) -> bool
+static BrutalEngine.Graphics.SwapchainInfo.operator ==(BrutalEngine.Graphics.SwapchainInfo left, BrutalEngine.Graphics.SwapchainInfo right) -> bool
+static BrutalEngine.Graphics.SwapchainOptions.operator !=(BrutalEngine.Graphics.SwapchainOptions? left, BrutalEngine.Graphics.SwapchainOptions? right) -> bool
+static BrutalEngine.Graphics.SwapchainOptions.operator ==(BrutalEngine.Graphics.SwapchainOptions? left, BrutalEngine.Graphics.SwapchainOptions? right) -> bool
 static BrutalEngine.Graphics.TextureBufferCopy.operator !=(BrutalEngine.Graphics.TextureBufferCopy left, BrutalEngine.Graphics.TextureBufferCopy right) -> bool
 static BrutalEngine.Graphics.TextureBufferCopy.operator ==(BrutalEngine.Graphics.TextureBufferCopy left, BrutalEngine.Graphics.TextureBufferCopy right) -> bool
 static BrutalEngine.Graphics.TextureCopy.operator !=(BrutalEngine.Graphics.TextureCopy left, BrutalEngine.Graphics.TextureCopy right) -> bool
@@ -475,6 +548,8 @@ static BrutalEngine.Graphics.TextureWrite.operator ==(BrutalEngine.Graphics.Text
 ~override BrutalEngine.Graphics.BufferDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SamplerDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.SwapchainImage.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.SwapchainInfo.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureBufferCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureDescription.Equals(object obj) -> bool

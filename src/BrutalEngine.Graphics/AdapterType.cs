@@ -5,8 +5,8 @@ namespace BrutalEngine.Graphics;
 /// Without an override, suitable adapters are preferred in the order <see cref="Discrete"/>, <see cref="Integrated"/>,
 /// <see cref="Virtual"/>, <see cref="Cpu"/>, then <see cref="Other"/>, ties going to the first enumerated
 /// (docs/design/graphics.md section 2). For Vulkan each value corresponds to one <c>VkPhysicalDeviceType</c>, but
-/// the numeric values differ (Vulkan's integrated GPU is 1 and discrete GPU 2), so backends map them by name, never
-/// by casting.
+/// two of the numeric values differ (Vulkan's integrated GPU is 1 and discrete GPU 2), so backends map them by name,
+/// never by casting.
 /// </remarks>
 public enum AdapterType
 {
