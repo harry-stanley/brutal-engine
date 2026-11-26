@@ -1,1 +1,12 @@
 #nullable enable
+BrutalEngine.Platform.Sdl3.SdlPlatformOptions
+BrutalEngine.Platform.Sdl3.SdlPlatformOptions.<Clone>$() -> BrutalEngine.Platform.Sdl3.SdlPlatformOptions!
+BrutalEngine.Platform.Sdl3.SdlPlatformOptions.Equals(BrutalEngine.Platform.Sdl3.SdlPlatformOptions? other) -> bool
+BrutalEngine.Platform.Sdl3.SdlPlatformOptions.SdlPlatformOptions() -> void
+BrutalEngine.Platform.Sdl3.SdlPlatformOptions.VulkanLibraryPath.get -> string?
+BrutalEngine.Platform.Sdl3.SdlPlatformOptions.VulkanLibraryPath.init -> void
+override BrutalEngine.Platform.Sdl3.SdlPlatformOptions.Equals(object? obj) -> bool
+override BrutalEngine.Platform.Sdl3.SdlPlatformOptions.GetHashCode() -> int
+override BrutalEngine.Platform.Sdl3.SdlPlatformOptions.ToString() -> string!
+static BrutalEngine.Platform.Sdl3.SdlPlatformOptions.operator !=(BrutalEngine.Platform.Sdl3.SdlPlatformOptions? left, BrutalEngine.Platform.Sdl3.SdlPlatformOptions? right) -> bool
+static BrutalEngine.Platform.Sdl3.SdlPlatformOptions.operator ==(BrutalEngine.Platform.Sdl3.SdlPlatformOptions? left, BrutalEngine.Platform.Sdl3.SdlPlatformOptions? right) -> bool
