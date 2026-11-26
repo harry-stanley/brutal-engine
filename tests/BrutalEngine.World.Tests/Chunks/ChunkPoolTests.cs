@@ -120,6 +120,48 @@ public sealed unsafe class ChunkPoolTests
     }
 
     [Fact]
+    public void Trim_FreeThrowsPartway_PooledCountMatchesList()
+    {
+        TrackingAllocator tracking = NewTracking();
+        CountingAllocator counting = new(tracking) { ThrowOnFreeCall = 2 };
+        ChunkPool pool = new(counting, ChunkBytes);
+        nint[] blocks = [(nint)pool.Rent(), (nint)pool.Rent(), (nint)pool.Rent()];
+        ReturnAll(pool, blocks);
+
+        // The second free throws without freeing: one block is freed, and the two left are still pooled and counted.
+        _ = Assert.Throws<InvalidOperationException>(pool.Trim);
+        Assert.Equal(2, pool.PooledCount);
+        Assert.Equal(2, tracking.LiveAllocationCount);
+
+        // A later Dispose frees the rest, the block whose free failed included.
+        pool.Dispose();
+        Assert.Equal(0, pool.PooledCount);
+        Assert.Equal(4, counting.FreeCalls);
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Dispose_FreeThrowsPartway_LaterDisposeFreesRest()
+    {
+        TrackingAllocator tracking = NewTracking();
+        CountingAllocator counting = new(tracking) { ThrowOnFreeCall = 2 };
+        ChunkPool pool = new(counting, ChunkBytes);
+        nint[] blocks = [(nint)pool.Rent(), (nint)pool.Rent(), (nint)pool.Rent()];
+        ReturnAll(pool, blocks);
+
+        // The second free throws without freeing: the pool stays undisposed, with the two blocks left still pooled.
+        _ = Assert.Throws<InvalidOperationException>(pool.Dispose);
+        Assert.Equal(2, pool.PooledCount);
+        Assert.Equal(2, tracking.LiveAllocationCount);
+
+        // A later Dispose frees the rest, the block whose free failed included.
+        pool.Dispose();
+        Assert.Equal(0, pool.PooledCount);
+        Assert.Equal(4, counting.FreeCalls);
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void Return_Null_Throws()
     {
         TrackingAllocator tracking = NewTracking();
@@ -229,7 +271,10 @@ public sealed unsafe class ChunkPoolTests
     /// <summary>A fresh tracking allocator per test, so each test's leak check sees only its own blocks.</summary>
     private static TrackingAllocator NewTracking() => new(new HeapAllocator(), "ChunkPool");
 
-    /// <summary>Passes calls through and counts them; throws an out-of-memory exception from Allocate while <see cref="Fail"/> is set.</summary>
+    /// <summary>
+    /// Passes calls through and counts them; throws an out-of-memory exception from Allocate while <see cref="Fail"/>
+    /// is set, and throws from the Free call numbered <see cref="ThrowOnFreeCall"/> without freeing.
+    /// </summary>
     private sealed class CountingAllocator(INativeAllocator inner) : INativeAllocator
     {
         public int AllocateCalls { get; private set; }
@@ -237,6 +282,9 @@ public sealed unsafe class ChunkPoolTests
         public int FreeCalls { get; private set; }
 
         public bool Fail { get; set; }
+
+        /// <summary>The 1-based Free call that throws instead of freeing; 0 never throws.</summary>
+        public int ThrowOnFreeCall { get; init; }
 
         public void* Allocate(nuint byteCount, nuint alignment, [CallerFilePath] string callerFile = "", [CallerLineNumber] int callerLine = 0)
         {
@@ -249,6 +297,11 @@ public sealed unsafe class ChunkPoolTests
         public void Free(void* memory)
         {
             FreeCalls++;
+            if (FreeCalls == ThrowOnFreeCall)
+            {
+                throw new InvalidOperationException("Injected free failure.");
+            }
+
             inner.Free(memory);
         }
     }

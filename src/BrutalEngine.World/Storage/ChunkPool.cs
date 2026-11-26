@@ -103,6 +103,10 @@ internal sealed unsafe class ChunkPool : IDisposable
     }
 
     /// <summary>Frees every pooled block to the allocator. Rented blocks are untouched.</summary>
+    /// <remarks>
+    /// If the allocator's free throws, the exception propagates; the blocks freed before it are gone, and the rest,
+    /// the failed one included, stay pooled and counted in <see cref="PooledCount"/>.
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">The pool is disposed.</exception>
     public void Trim()
     {
@@ -115,7 +119,8 @@ internal sealed unsafe class ChunkPool : IDisposable
     /// </summary>
     /// <remarks>
     /// Rented blocks aren't freed: their renters return them first. A block still rented here stays allocated, and a
-    /// tracking allocator reports it as a leak.
+    /// tracking allocator reports it as a leak. If the allocator's free throws, the pool stays undisposed with the
+    /// unfreed blocks still pooled, as in <see cref="Trim"/>, so a later Dispose frees them.
     /// </remarks>
     public void Dispose()
     {
@@ -128,17 +133,20 @@ internal sealed unsafe class ChunkPool : IDisposable
         _disposed = true;
     }
 
+    // The head leaves the list only once its free succeeds, so if the allocator throws, the block it couldn't free
+    // is still pooled and counted, and a later Trim or Dispose frees it with the rest.
     private void FreePooled()
     {
         while (_head != null)
         {
             byte* block = _head;
 
-            // Sound: as in Rent, a pooled block's first 8 bytes hold the next pooled block.
-            _head = *(byte**)block;
+            // Sound: as in Rent, a pooled block's first 8 bytes hold the next pooled block. Read before the free,
+            // after which the block is no longer ours to read.
+            byte* next = *(byte**)block;
             _allocator.Free(block);
+            _head = next;
+            PooledCount--;
         }
-
-        PooledCount = 0;
     }
 }
