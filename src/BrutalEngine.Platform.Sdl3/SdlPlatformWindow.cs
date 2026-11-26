@@ -12,9 +12,9 @@ namespace BrutalEngine.Platform.Sdl3;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The setters, the fullscreen
-/// members and the <see cref="IWindow"/> declaration come later; the event pump keeps the snapshot current through
-/// <see cref="RefreshSnapshot"/>.
+/// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The fullscreen members and
+/// the <see cref="IWindow"/> declaration come later; the event pump keeps the snapshot current through
+/// <see cref="RefreshSnapshot"/>, and the setters ask SDL for changes that the snapshot reports once refreshed.
 /// </para>
 /// <para>
 /// <b>Threads:</b> the thread that creates the window owns it. Every member, <see cref="Dispose"/> included, runs on
@@ -22,8 +22,8 @@ namespace BrutalEngine.Platform.Sdl3;
 /// <see cref="IsDisposed"/> is the exception: the window's surface source reads it from any thread.
 /// </para>
 /// <para>
-/// <b>Allocation:</b> creation allocates (the window, its surface source, error text). The getters and a successful
-/// <see cref="RefreshSnapshot"/> allocate nothing; a failure allocates its message.
+/// <b>Allocation:</b> creation allocates (the window, its surface source, error text). The getters, a successful
+/// <see cref="RefreshSnapshot"/> and the setters that succeed allocate nothing; a failure allocates its message.
 /// </para>
 /// <para>
 /// <b>Ownership:</b> the creator owns the window and disposes it before the video session. Any Vulkan surface made from
@@ -177,6 +177,46 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
                 window.Dispose();
             }
         }
+    }
+
+    /// <summary>Sets the window's title through <c>SDL_SetWindowTitle</c>.</summary>
+    /// <param name="title">The new title.</param>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// Owner thread only. Allocates no managed memory on success: BRUTAL converts the title to UTF-8 in a stack buffer,
+    /// or in native memory freed after the call when the title is long. A failure allocates its message.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="title"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result SetTitle(string title)
+    {
+        ThrowIfUnusable("IWindow.SetTitle");
+        ArgumentNullException.ThrowIfNull(title);
+        return SdlCheck.Check(Sdl.PInvoke.SetWindowTitle(_handle, title), "SDL_SetWindowTitle");
+    }
+
+    /// <summary>
+    /// Asks SDL for a new size in content units: converted to window coordinates with the snapshot's display scale and
+    /// pixel density, as at creation, then set through <c>SDL_SetWindowSize</c>.
+    /// </summary>
+    /// <param name="contentSize">The requested size in content units. Each side must be from 1 to 16384.</param>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// The snapshot (<see cref="Size"/>, <see cref="PixelSize"/>, <see cref="ContentSize"/>) changes on the next
+    /// <see cref="RefreshSnapshot"/>, because SDL can apply the size asynchronously; the result can differ from the
+    /// request by rounding or because the OS clamped it. Owner thread only. Allocates nothing on success; a failure
+    /// allocates its message.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">A side of <paramref name="contentSize"/> is outside 1 to 16384.</exception>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result SetContentSize(WindowSize contentSize)
+    {
+        ThrowIfUnusable("IWindow.SetContentSize");
+        WindowOptionsValidator.ValidateContentSize(contentSize, nameof(contentSize), nameof(contentSize));
+        WindowSize size = ContentSizeModel.ToWindowCoordinates(contentSize, _displayScale, _pixelDensity);
+        return SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
     }
 
     /// <summary>
