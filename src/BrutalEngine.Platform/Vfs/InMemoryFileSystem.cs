@@ -34,8 +34,10 @@ namespace BrutalEngine.Platform.Vfs;
 /// </para>
 /// <para>
 /// <b>Ownership and allocation:</b> the file system holds only managed memory and isn't disposable; drop it when no
-/// longer mounted. Every operation allocates (copies, streams, entry lists, path checks and error messages); file I/O
-/// is not a hot path. See docs/design/platform.md section 5, "Mounts and operations".
+/// longer mounted. Any operation may allocate, on success as well as on failure: a non-empty path is checked by
+/// parsing it (a string and a <see cref="VfsPath"/>), and copies, streams, entry lists, new nodes and error messages
+/// allocate too. Only <see cref="IsReadOnly"/> and <see cref="Freeze"/> never allocate. File I/O is not a hot path.
+/// See docs/design/platform.md section 5, "Mounts and operations".
 /// </para>
 /// </remarks>
 public sealed class InMemoryFileSystem : IFileSystem
