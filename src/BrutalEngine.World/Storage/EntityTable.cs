@@ -1,4 +1,5 @@
 using System;
+using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
 
 namespace BrutalEngine.World.Storage;
@@ -18,8 +19,16 @@ namespace BrutalEngine.World.Storage;
 /// <para>
 /// <b>States.</b> <see cref="Allocate"/> takes a slot and marks it pending; the direct call that allocated it places
 /// it with <see cref="Place"/> before it returns, so that pending state is never observable outside the call.
+/// <see cref="Reserve"/> takes a slot the same way for a command buffer: it stays pending, and observable through
+/// <see cref="IsPending"/>, until playback places it or <see cref="CancelPending"/> releases it.
 /// <see cref="Place"/> also moves a placed entity to another archetype, <see cref="Move"/> changes its chunk and row
 /// within its archetype, and <see cref="Free"/> releases a placed slot.
+/// </para>
+/// <para>
+/// <b>Lookups and misuse.</b> <see cref="IsAlive"/>, <see cref="IsPending"/> and <see cref="TryGetLocation"/> answer
+/// for any entity value, never throw, and allocate nothing; after <see cref="Dispose"/> they answer
+/// <see langword="false"/>. <see cref="Validate"/> classifies misuse as the world's failure table says
+/// (docs/design/world.md, section 11), for every direct world member.
 /// </para>
 /// <para>
 /// <b>Memory.</b> The records and the free-index ring are two blocks from the allocator given to the constructor,
@@ -95,6 +104,9 @@ internal sealed unsafe class EntityTable : IDisposable
     /// <summary>Slots retired at generation <see cref="uint.MaxValue"/>, never to be reused.</summary>
     public int RetiredCount => _retiredCount;
 
+    /// <summary>Slots whose entity is issued but not placed: reserved by a command buffer, or mid-way through a direct call.</summary>
+    public int PendingCount => _slotCount - _placedCount - _free.Count - _retiredCount;
+
     /// <summary>
     /// Takes the longest-free slot, or a fresh one if none is free, and marks it pending. The caller places it with
     /// <see cref="Place"/> before returning to its own caller.
@@ -112,35 +124,102 @@ internal sealed unsafe class EntityTable : IDisposable
     /// </exception>
     /// <exception cref="ObjectDisposedException">The table is disposed.</exception>
     /// <exception cref="OutOfMemoryException">Growing the table failed. The table is unchanged.</exception>
-    public Entity Allocate()
+    public Entity Allocate() => TakeSlot();
+
+    /// <summary>
+    /// Reserves an entity for a command buffer: takes a slot as <see cref="Allocate"/> does and leaves it pending until
+    /// playback places it with <see cref="Place"/>, or <see cref="CancelPending"/> releases it.
+    /// </summary>
+    /// <returns>The pending entity.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// No slot is free and all <see cref="MaxEntities"/> slots are live, pending or retired. The message names
+    /// <c>WorldOptions.MaxEntities</c>.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The table is disposed.</exception>
+    /// <exception cref="OutOfMemoryException">Growing the table failed. The table is unchanged.</exception>
+    public Entity Reserve() => TakeSlot();
+
+    /// <summary>
+    /// Releases a reserved entity that won't be placed (its buffer was cleared or disposed): the slot's generation
+    /// advances and it joins the back of the reuse queue, or it is retired at <see cref="uint.MaxValue"/>, as in
+    /// <see cref="Free"/>.
+    /// </summary>
+    /// <param name="entity">The pending entity.</param>
+    /// <exception cref="ArgumentException"><paramref name="entity"/> is <see cref="Entity.Null"/>.</exception>
+    /// <exception cref="StaleHandleException">The entity's slot doesn't have its generation (out of range, freed or retired).</exception>
+    /// <exception cref="InvalidOperationException">The entity is placed, not pending. Nothing changes.</exception>
+    /// <exception cref="ObjectDisposedException">The table is disposed.</exception>
+    public void CancelPending(Entity entity)
     {
         ThrowIfDisposed();
-        if (!_free.TryDequeue(out int index))
+        EntityRecord* record = FindInUse(entity);
+        if (record->Archetype != EntityRecord.PendingState)
         {
-            if (_slotCount == MaxEntities)
-            {
-                throw new InvalidOperationException(
-                    $"The world has no entity slot left: all {MaxEntities} slots allowed by WorldOptions.MaxEntities are live, pending or retired.");
-            }
-
-            if (_slotCount == _capacity)
-            {
-                Grow();
-            }
-
-            index = _slotCount;
-
-            // Sound: index < _capacity after the check and growth above, and _records holds _capacity records.
-            _records[index].Generation = 1;
-            _slotCount++;
+            throw new InvalidOperationException($"{entity} is placed, not pending, so it can't be cancelled.");
         }
 
-        // Sound: index < _slotCount <= _capacity, from the queue or the fresh slot above.
-        ref EntityRecord record = ref _records[index];
-        record.Archetype = EntityRecord.PendingState;
-        record.Chunk = -1;
-        record.Row = -1;
-        return new Entity((uint)index, record.Generation);
+        Release(ref *record, (int)entity.Index);
+    }
+
+    /// <summary>Returns whether <paramref name="entity"/> is placed with its generation: alive. Never throws.</summary>
+    /// <param name="entity">Any entity value.</param>
+    /// <returns><see langword="false"/> for null, stale, retired, pending and out-of-range entities.</returns>
+    public bool IsAlive(Entity entity)
+    {
+        EntityRecord* record = Find(entity);
+        return record != null && record->Archetype >= 0;
+    }
+
+    /// <summary>Returns whether <paramref name="entity"/> is pending with its generation. Never throws.</summary>
+    /// <param name="entity">Any entity value.</param>
+    /// <returns><see langword="false"/> for null, stale, retired, alive and out-of-range entities.</returns>
+    public bool IsPending(Entity entity)
+    {
+        EntityRecord* record = Find(entity);
+        return record != null && record->Archetype == EntityRecord.PendingState;
+    }
+
+    /// <summary>Returns where an alive entity is stored. Never throws.</summary>
+    /// <param name="entity">Any entity value.</param>
+    /// <param name="record">The entity's record if it is alive, otherwise <c>default</c>.</param>
+    /// <returns><see langword="true"/> if <paramref name="entity"/> is alive.</returns>
+    public bool TryGetLocation(Entity entity, out EntityRecord record)
+    {
+        EntityRecord* found = Find(entity);
+        if (found == null || found->Archetype < 0)
+        {
+            record = default;
+            return false;
+        }
+
+        record = *found;
+        return true;
+    }
+
+    /// <summary>
+    /// Checks that <paramref name="entity"/> is alive and returns its record, or throws the exception the world's
+    /// failure table gives for its misuse.
+    /// </summary>
+    /// <param name="entity">The entity a direct world member was given.</param>
+    /// <returns>The entity's record.</returns>
+    /// <exception cref="ArgumentException"><paramref name="entity"/> is <see cref="Entity.Null"/>.</exception>
+    /// <exception cref="StaleHandleException">
+    /// The entity is stale: its slot was freed or retired, or its index is outside the table (for example, an entity
+    /// from another world). <see cref="StaleHandleException.Handle"/> holds its index and generation.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The entity is pending: reserved by a command buffer and not placed yet.</exception>
+    /// <exception cref="ObjectDisposedException">The table is disposed.</exception>
+    public EntityRecord Validate(Entity entity)
+    {
+        ThrowIfDisposed();
+        EntityRecord* record = FindInUse(entity);
+        if (record->Archetype == EntityRecord.PendingState)
+        {
+            throw new InvalidOperationException(
+                $"{entity} is pending: it was reserved by a command buffer and isn't placed until that buffer is played back.");
+        }
+
+        return *record;
     }
 
     /// <summary>
@@ -210,21 +289,7 @@ internal sealed unsafe class EntityTable : IDisposable
         ThrowIfNotPlaced(ref record, index);
 
         _placedCount--;
-        record.Chunk = -1;
-        record.Row = -1;
-        if (record.Generation == uint.MaxValue)
-        {
-            // Advancing would wrap to 0 (reserved for Entity.Null) and then reissue old generations. Retire instead.
-            record.Archetype = EntityRecord.RetiredState;
-            _retiredCount++;
-            return;
-        }
-
-        record.Generation++;
-        record.Archetype = EntityRecord.FreeState;
-
-        // Never full: the ring holds at least _capacity indices, and fewer than _slotCount slots are free.
-        _free.Enqueue(index);
+        Release(ref record, index);
     }
 
     /// <summary>Returns a copy of a slot's record.</summary>
@@ -273,6 +338,94 @@ internal sealed unsafe class EntityTable : IDisposable
         {
             throw new InvalidOperationException($"Entity slot {index} is not placed.");
         }
+    }
+
+    /// <summary>The record of the slot <paramref name="entity"/> names, if it has the entity's generation; otherwise null.</summary>
+    private EntityRecord* Find(Entity entity)
+    {
+        // Null has generation 0, which no slot has; checked anyway so the answer doesn't depend on that.
+        uint index = entity.Index;
+        if (entity.IsNull || index >= (uint)_slotCount)
+        {
+            return null;
+        }
+
+        // Sound: index < _slotCount <= _capacity, and _records holds _capacity records. After Dispose _slotCount is 0,
+        // so a disposed table never reaches this.
+        EntityRecord* record = _records + index;
+        return record->Generation == entity.Generation ? record : null;
+    }
+
+    /// <summary>
+    /// The record of a pending or placed <paramref name="entity"/>; otherwise throws as the failure table says for a
+    /// null or stale entity.
+    /// </summary>
+    private EntityRecord* FindInUse(Entity entity)
+    {
+        if (entity.IsNull)
+        {
+            throw new ArgumentException("Entity.Null doesn't refer to an entity.", nameof(entity));
+        }
+
+        EntityRecord* record = Find(entity);
+        if (record == null || record->Archetype is EntityRecord.FreeState or EntityRecord.RetiredState)
+        {
+            throw new StaleHandleException(new Handle(entity.Index, entity.Generation));
+        }
+
+        return record;
+    }
+
+    /// <summary>Takes the longest-free slot, or a fresh one, and marks it pending: <see cref="Allocate"/> and <see cref="Reserve"/>.</summary>
+    private Entity TakeSlot()
+    {
+        ThrowIfDisposed();
+        if (!_free.TryDequeue(out int index))
+        {
+            if (_slotCount == MaxEntities)
+            {
+                throw new InvalidOperationException(
+                    $"The world has no entity slot left: all {MaxEntities} slots allowed by WorldOptions.MaxEntities are live, pending or retired.");
+            }
+
+            if (_slotCount == _capacity)
+            {
+                Grow();
+            }
+
+            index = _slotCount;
+
+            // Sound: index < _capacity after the check and growth above, and _records holds _capacity records.
+            _records[index].Generation = 1;
+            _slotCount++;
+        }
+
+        // Sound: index < _slotCount <= _capacity, from the queue or the fresh slot above.
+        ref EntityRecord record = ref _records[index];
+        record.Archetype = EntityRecord.PendingState;
+        record.Chunk = -1;
+        record.Row = -1;
+        return new Entity((uint)index, record.Generation);
+    }
+
+    /// <summary>Frees a slot in use: advances its generation and queues it for reuse, or retires it at <see cref="uint.MaxValue"/>.</summary>
+    private void Release(ref EntityRecord record, int index)
+    {
+        record.Chunk = -1;
+        record.Row = -1;
+        if (record.Generation == uint.MaxValue)
+        {
+            // Advancing would wrap to 0 (reserved for Entity.Null) and then reissue old generations. Retire instead.
+            record.Archetype = EntityRecord.RetiredState;
+            _retiredCount++;
+            return;
+        }
+
+        record.Generation++;
+        record.Archetype = EntityRecord.FreeState;
+
+        // Never full: the ring holds at least _capacity indices, and fewer than _slotCount slots are free.
+        _free.Enqueue(index);
     }
 
     private ref EntityRecord RecordAt(int index)

@@ -2,6 +2,8 @@
 BrutalEngine.World.EcsWorld
 BrutalEngine.World.EcsWorld.Dispose() -> void
 BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -> void
+BrutalEngine.World.EcsWorld.IsAlive(BrutalEngine.World.Entity entity) -> bool
+BrutalEngine.World.EcsWorld.IsPending(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.Name.get -> string!
 BrutalEngine.World.Entity
 BrutalEngine.World.Entity.Entity() -> void
