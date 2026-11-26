@@ -84,7 +84,7 @@ check 0 ".snupkg ignored" "Packed set matches"
 
 fresh; standard_tree
 library Fixture.Analyzers '<TargetFramework>netstandard2.0</TargetFramework>'
-library Fixture.Generators '<BrutalEngineMilestone>9</BrutalEngineMilestone>'
+library Fixture.Generators '<TargetFramework>netstandard2.0</TargetFramework>'
 check 0 "Roslyn components ignored (no milestone needed, none expected)" "Packed set matches"
 
 fresh; standard_tree
