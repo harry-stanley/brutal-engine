@@ -74,6 +74,9 @@ internal sealed class SdlVideoSession : IDisposable
         }
         catch
         {
+            // Stops SDL whatever step threw, so a failed start leaves SDL stopped by construction. SDL_Quit is safe
+            // when SDL isn't initialised, and it also clears any hints already set.
+            Sdl.PInvoke.Quit();
             _ = Interlocked.Exchange(ref _liveSessions, 0);
             throw;
         }
