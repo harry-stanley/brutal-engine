@@ -168,7 +168,7 @@ Adding a backend means implementing `BrutalEngine.Graphics` and passing the same
 
 - **Device layer:** an SDL3 audio stream (`SDL_OpenAudioDeviceStream`) at the device's preferred format. The backend handles device changes and loss, reopening the default device on change.
 - **Mixer (ours):** runs on the audio thread. 32-bit float, voice pool (fixed capacity, voice stealing by priority), buses (master, music, SFX, UI, voice, plus user buses) with volume, pan, mute and solo, a small DSP set (low-pass and high-pass filters, simple reverb, compressor/limiter on master), sample-accurate scheduling, and 2D spatialisation (pan and attenuation relative to a listener).
-- **Sources:** short sounds fully decoded in memory (cooked to PCM or ADPCM). Music and long ambience streamed from compressed data (Ogg Vorbis or Opus, decoder chosen in spike S6).
+- **Sources:** short sounds fully decoded in memory: cooked to PCM, so the runtime decodes nothing for them. Music and long ambience ship as Ogg Vorbis and are streamed by a decoder worker, never the audio thread, through SDL3_mixer used as a decoder only. No Opus in 0.3 ([ADR-0017](adr/0017-audio-decoding.md)).
 - **Thread safety:** the game thread sends commands (play, stop, set parameter) through a lock-free queue. The mixer publishes state (voice finished, levels) back the same way. The audio callback must never allocate, lock or block. This is enforced by an audio-thread assertion in debug builds and tested by a stress test.
 - **FMOD** is a post-v1 optional backend behind the same `IAudioEngine` interface.
 
