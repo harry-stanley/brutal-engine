@@ -483,3 +483,209 @@ public sealed record AssetPackFileSystemOptions
 - **Paths** are the entries' paths; directories are implied by them. `ReadAllBytes` returns the uncompressed payload in a new array, `OpenRead` the entry's view (uncompressed entries) or a read-only `MemoryStream` over the payload, `GetEntryKind` and `List` answer from the index (sorted ordinally, `Length` the uncompressed size), and writes, deletes and `CreateDirectory` fail with `Unsupported`, as for any read-only mount (`docs/design/platform.md:430`). It implements Platform's `IFileSystem` exactly as merged (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:573-581`).
 - **Fallback:** a path no pack holds is passed to `Fallback`; `List` merges both, and pack entries win on equal names. Without a fallback, it is `NotFound`. A path in two packs, or one that is a file in one pack and a directory in another, fails `Create` with `InvalidData`.
 - **Mounting.** In a release build the game opens its packs through the host's `res://` (the application directory, `docs/design/platform.md:421`), then replaces that mount: `files.Unmount("res")`, then `files.Mount("res", packFileSystem)` with a fallback over the same directory (`DirectoryFileSystem`, `:437`), so `res://` reads see packed files first and loose files second (`VirtualFileSystem.Mount`/`Unmount`, `src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:620`, `:623`). The open packs keep their streams across the remount. When Runtime implements step 90 it does this itself.
+
+## 7. Development mode
+
+- **Sources.** With an `Importer` the database is in development mode. The host mounts the game's `assets/` folder as `res://` in development (`docs/design/platform.md:421`). `Create` walks `res://` recursively through `VirtualFileSystem.List` and, for every `<file>.meta` sidecar (ADR-0005; next to the file it describes), calls `ReadMeta` and adds the declared assets to the catalogue. Two sidecars that declare the same id are logged at `Error` naming both paths, and that id fails to load (`InvalidData`) until one is fixed. A source without a sidecar is ignored with a `Warning`; creating sidecars is the cooker's (#283).
+- **Loads** call `Import` on a worker instead of reading a pack; the rest of the pipeline (dependencies, loaders, budgets) is the same. A source's dependencies are known only when its import returns, so section 3's dependency walk runs then, on the owner thread, before the loader is called. Import results aren't cached across runs (that is the cooker's incremental cache, #283).
+- **Watching. Decision (this note): `FileSystemWatcher` as a change signal, with content hashes as the test.** The VFS has no change notifications and its listings carry no modification times (`VfsEntry` is name, kind and length, `src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:593-600`), so polling through it would have to hash the whole tree; Platform is frozen, so the VFS can't grow a watch API now. `AssetDevelopmentOptions.WatchDirectory` is the absolute OS directory backing `res://`. A watcher (subdirectories included) records changed relative paths into a bounded set (4,096 paths; beyond that, or on the watcher's `Error` event, such as a buffer overflow, a full rescan is flagged). After `Debounce` (default 200 ms, on `Clock`) with no new event, a worker re-reads every affected `.meta`, source and `ReadPaths` file through the VFS and compares a SHA-256 of their bytes with the hash recorded at the last import, so editors' save patterns (temporary files, double writes) never cause a spurious reload. `RescanSources()` flags a full rescan explicitly; with `WatchDirectory` null it is the only trigger, which is how tests drive hot reload over an `InMemoryFileSystem` (section 12).
+
+```csharp
+public sealed record AssetDevelopmentOptions
+{
+    public string? WatchDirectory { get; init; }                        // absolute; null: RescanSources only
+    public TimeSpan Debounce { get; init; } = TimeSpan.FromMilliseconds(200);   // 0..10 s
+}
+```
+
+- **Hot swap.** A changed asset that is loaded (or failed) is imported again at `Normal` priority. In `ProcessCompletions` its slot gets the new object, the old one is released with `Replaced`, `GetVersion` goes up by one and `Reloaded` is raised (`SourceChanged`). The handle and the reference count don't change (docs/03 3.13: "handles stay valid"). Changed dependency lists take references on new dependencies before the swap and release dropped ones after it; a new cycle fails the new version.
+- **Dependants are notified by being loaded again:** every loaded asset that depends on a swapped one, transitively, is loaded again from its own payload once its dependencies are swapped, in dependency order, and raises `Reloaded` with `DependencyChanged`. So a loader that copied a value out of a dependency (a font reading its atlas size) never keeps a stale copy. Systems that cache derived data compare `GetVersion`, which allocates nothing.
+- **Failed reloads keep the old version:** the asset stays `Loaded` with its old object, the error is logged at `Error` and raised in `Reloaded` with `Error` set. A sidecar edited to another kind fails the new version (`InvalidData`). A deleted source keeps the loaded object (`Warning`); new loads of its id fail with `NotFound`. A new or moved sidecar updates the catalogue, so moves keep the id and its handles.
+- **What Release builds contain.** The game's project references `BrutalEngine.Importers` with `Condition="'$(Configuration)' == 'Debug'"` and creates the importer in `#if DEBUG` code, so a Release build neither compiles against nor ships it; #283 designs that reference and the Importers packaging. Assets itself contains no importer code: only the seam's interfaces and the watcher, which is BCL. **The check:** a CI step on the M2 sample game's Release publish (JIT and NativeAOT) fails if the output contains `BrutalEngine.Importers.dll`, if the JIT publish's `.deps.json` names `BrutalEngine.Importers`, or if `dotnet msbuild <game> -getItem:ProjectReference -p:Configuration=Release` lists it; the sample's issue adds it (section 13).
+
+## 8. Memory budgets
+
+```csharp
+public readonly record struct AssetBudget(AssetKind Kind, long MaxBytes, AssetBudgetAction Action = AssetBudgetAction.Warn);
+public enum AssetBudgetAction { Warn = 0, FailLoad }
+public readonly record struct AssetBudgetUsage
+{
+    public AssetKind Kind { get; init; }
+    public long Bytes { get; init; }
+    public long MaxBytes { get; init; }              // 0: no budget for the kind
+    public bool IsExceeded { get; init; }
+}
+```
+
+- **Sizes are CPU-side** until Graphics has a GPU memory query (a Graphics addition after the 0.2.0 release): an asset counts its uncompressed payload `Length` while it is loaded or loading. For M2's uncompressed textures that is also their GPU texel size (section 9). `Stream` assets count 0: their data stays in storage, and their decode buffers are Audio's to report.
+- **Exceeding a budget.** `Warn`: the load completes, a `Warning` is logged once each time the kind crosses its budget, and `GetBudgetUsage` reports `IsExceeded`. `FailLoad`: a load that would take the kind over its budget fails with `OutOfMemory` ("TXTR budget 256 MiB exceeded: 270 MiB"), checked when the request is dispatched (pack entries, whose sizes are known) and again when it completes (both sources). Nothing is evicted: assets with references are in use, and assets without are already unloaded at the next safe point.
+- One budget per kind (`ArgumentException` for duplicates, `MaxBytes <= 0`); kinds without a budget are unlimited.
+
+## 9. GPU resources and audio
+
+**Cooked texture payload** (kind `TXTR`, payload version 1), written by the image importers (#283):
+
+| Offset | Size | Field | Rule |
+|-------:|-----:|-------|------|
+| 0 | 2 | Version | `u16`, 1 (above: `Unsupported`; 0: `InvalidData`) |
+| 2 | 2 | Format | `u16`, a `TextureFormat` value: `Rgba8UnormSrgb` (4) or `R8Unorm` (1) (`src/BrutalEngine.Graphics/PublicAPI.Unshipped.txt:805`, `:797`); others `Unsupported` |
+| 4 | 4 | Width | `u32`, 1..16,384 texels |
+| 8 | 4 | Height | `u32`, 1..16,384 texels |
+| 12 | 4 | Reserved | 0 |
+| 16 | W x H x 4 or 1 | Texels | rows top to bottom, tightly packed; the payload is exactly this long |
+
+```csharp
+namespace BrutalEngine.Assets.Loaders;
+
+public sealed class TextureAsset                 // immutable; any thread may read it, the device's thread uses the handles
+{
+    public TextureHandle Texture { get; }
+    public TextureViewHandle View { get; }        // the texture's default view
+    public int Width { get; }                      // texels
+    public int Height { get; }
+    public TextureFormat Format { get; }
+}
+
+public sealed class TextureLoader : IAssetLoader<TextureAsset>
+{
+    public TextureLoader(GraphicsDevice device);                            // the database's device; doesn't own it
+    public AssetKind Kind { get; }                                          // TXTR
+    public AssetLoaderTraits Traits { get; }                                // OwnerThread, Bytes, RecreateOnDeviceLoss
+    public Result<TextureAsset> Load(in AssetLoadContext context);
+    public void Release(TextureAsset asset, AssetReleaseReason reason);     // Destroy, except with DeviceLost
+}
+```
+
+- **Load** (owner thread, in `ProcessCompletions` or `LoadNow`): checks the payload (`InvalidData`), checks the size against the device's `MaxTextureDimension2D` (`Unsupported`), then `CreateTexture` with `Usage = Sampled | CopyDestination`, one mip and `DebugName` the asset's name (`docs/design/graphics.md:296`, `:320-330`), and `WriteTexture` of the texels (`:391`). Writes made between frames go into pending upload blocks copied at the start of the next submitted frame (`:454`), so a texture is usable from the next submitted frame on. If the write fails the texture is destroyed and the failure returned. Premultiplied or straight alpha is the importer's choice (#283); the loader uploads texels as given. `Release` destroys the texture (its view goes with it, `:67`) except with `DeviceLost`.
+- **Device loss.** With `Graphics` set, `Create` registers an internal `IGpuResourceOwner` implementation (`docs/design/graphics.md:740-744`) with `GraphicsDevice.RegisterOwner` (`:724`), so docs/03 3.5's "recreates GPU resources from the asset database" (`docs/03-architecture.md:107`) happens through the device's contract (`docs/design/graphics.md:750`: "M2's asset database registers as one owner and reloads what it loaded"), and `Dispose` disposes the registration. `OnDeviceLost` releases every object whose loader has `RecreateOnDeviceLoss` with `DeviceLost` (handles are dropped, the device isn't called). `OnDeviceRecreated` loads each of them again, dependencies first, reading the payload again from its pack or importer, swaps it in (`Reloaded` with `DeviceRecreated`, `GetVersion` + 1) and reloads their dependants as in section 7, all on the owner thread inside `Recover`, which raises those `Reloaded` events too. A data or I/O failure fails that asset and is logged; recovery continues. A device failure (`Unavailable`, `OutOfMemory`) is returned, and the host treats it as fatal (`docs/design/graphics.md:748`). The GraphicsDevice front end is specified in the render interface note and is still in review; Assets cites the note, not code.
+- **Audio** owns the decoded clip type `AudioClip` (PCM in `INativeAllocator` memory), the streaming source contract and their creation APIs (#281). Assets owns two loaders that call that API:
+
+```csharp
+public sealed class AudioClipLoader : IAssetLoader<AudioClip>          // thread-safe
+{
+    public AudioClipLoader(INativeAllocator allocator);                 // where clip PCM lives; the caller owns it
+    public AssetKind Kind { get; }                                      // ACLP
+    public AssetLoaderTraits Traits { get; }                            // Worker, Bytes
+    public Result<AudioClip> Load(in AssetLoadContext context);
+    public void Release(AudioClip asset, AssetReleaseReason reason);    // disposes the clip
+}
+
+public sealed class AudioStreamAsset                                   // immutable; thread-safe
+{
+    public AssetContentSource Content { get; }                         // the encoded stream, stored uncompressed in packs
+}
+
+public sealed class AudioStreamLoader : IAssetLoader<AudioStreamAsset> // stateless; thread-safe
+{
+    public AudioStreamLoader();
+    public AssetKind Kind { get; }                                         // ASTM
+    public AssetLoaderTraits Traits { get; }                               // Worker, Stream
+    public Result<AudioStreamAsset> Load(in AssetLoadContext context);     // keeps context.Content
+    public void Release(AudioStreamAsset asset, AssetReleaseReason reason); // no-op; the source closes itself
+}
+```
+
+- **Clips:** `Load` passes `context.Data` (the cooked clip payload, whose layout #281 defines with its creation API) to Audio's clip creation and returns its `Result<AudioClip>`; `Release` disposes the clip. **Streams:** each playback needs its own decoder state, so the asset is the source, not a decoder: `Load` keeps `context.Content`, and the game creates one Audio streaming source per playback through Audio's API from `Content.OpenRead()`'s stream. What Assets requires of #281's API: clip creation from a `ReadOnlySpan<byte>` and an `INativeAllocator`, callable on any thread, returning `Result<AudioClip>`; disposing a clip on the owner thread while a voice plays it is safe (Audio's rule); a streaming source created over a seekable read-only `Stream` that it disposes, read on Audio's decoder thread. If #281's creation API also needs its engine object, `AudioClipLoader`'s constructor takes it as well; the issue that adds the loaders follows the merged audio note.
+
+## 10. Threading, ownership and allocation
+
+**Threads.** `AssetDatabase` and `AssetGroup` are owner-thread only (the thread that called `Create`, the main thread in a host): **every** member checks `ThreadAffinity.ThrowIfNotCurrentThread` (`src/BrutalEngine.Core/PublicAPI.Unshipped.txt:257`) in every build and throws `WrongThreadException` naming the API, as in Platform and Graphics (stricter than docs/03's debug-only assertion, `docs/03-architecture.md:87`). `Reloaded` is raised on that thread. Workers never call the database; they post results.
+
+| Type | Threads | Ownership | Allocation |
+|------|---------|-----------|------------|
+| `AssetId`, `AssetKind`, `AssetHandle<T>`, `AssetSource`, `AssetPackEntry`, `AssetBudget`, `AssetBudgetUsage`, `AssetStatistics`, `AssetLoaderTraits`, the enums | any (immutable values) | values | none, except `ToString` and `Parse` failures |
+| `AssetDatabaseOptions`, `AssetDevelopmentOptions`, `AssetImportRequest`, `ImportedAsset`, `AssetPackFileSystemOptions` | any (immutable; read by the call that takes them) | the caller's | at creation |
+| `AssetDatabase` | owner thread | the creator; `Dispose` cancels and joins the workers, disposes the groups, releases every object with `DatabaseDisposed` (dependants first), then disposes the device registration | the list below |
+| `AssetGroup` | owner thread | the caller of `CreateGroup`; the database disposes it at the latest | `Load`; `Dispose` |
+| `AssetLoadContext` | the loader's call only (`ref struct`) | the database's | none |
+| `AssetContentSource`, `AssetPack`, `AssetPackFileSystem` | any (thread-safe) | the database's; the caller's (owns its stream); the caller's (owns nothing) | open and reads |
+| Loaded objects (`TextureAsset`, `BytesAsset`, `AudioStreamAsset`, `AudioClip`, others' types) | as their type says | the database: released through their loader; the game never disposes them | at load |
+| Loaders, the importer | `Load` per traits, `Release` owner thread; importer on workers | the caller's; the database holds them | at load and import |
+
+**Owner-thread allocation.** Steady-state frames allocate nothing in: `ProcessCompletions` with nothing completed, nothing to unload and no reload; `TryGet`, `Get`, `GetState`, `GetVersion`, `GetId`, `GetReferenceCount`, `Contains`, `TryGetKind`; `AddReference`; `Release` (the pending-unload list grows only past its capacity, reserved at `Create` for 256 entries); `Statistics`; `GetBudgetUsage`; handle copies and equality; `AssetId` comparison and `TryFormat`. These allocate and belong to load time (Runtime's `MarkFrameNonSteady`, `docs/design/runtime.md:199`): `Create`, `MountPack`, `Load` and `LoadNow` (requests, slot growth), `CreateGroup` and group loads, completions that publish results, unloads that run loader `Release`s, reloads and `Reloaded` events, failures (their messages). Workers allocate per load (buffers, decoder state, the loader's object); their memory is bounded by section 5.
+
+**Unmanaged memory** is the loaders' own (clip PCM through the `INativeAllocator` given to `AudioClipLoader`; GPU memory through the device). The database's payload buffers are managed arrays, released after each load.
+
+## 11. Failure modes
+
+| Failure | Result |
+|---------|--------|
+| Unknown id; no loader for its kind; `T` not the kind's type | `Load`/`LoadNow` fail synchronously: `NotFound`, `Unsupported`, `InvalidData`; no reference taken |
+| A pack or source file missing or unreadable | The handle `Failed` with the VFS's kind (`NotFound`, `Unavailable`, `Io`); `MountPack`/`AssetPack.Open` fail with it |
+| Corrupt pack: bad magic, checksums, offsets, counts, paths, sorting, compression | `AssetPack.Open` fails `InvalidData` naming the field (section 6); a bad entry checksum or stream fails that asset only |
+| Newer pack format or texture payload version | `Unsupported`, with the versions in the message |
+| Duplicate id across packs or sidecars | `MountPack` fails `InvalidData`; sidecars: `Error` logged, the id fails `InvalidData` |
+| Dependency cycle, or a failed dependency | Every asset on the cycle, and every dependant, `Failed` (`InvalidData`; the dependency's kind) |
+| Loader or importer failure | The handle `Failed` with its `Result`'s error; an exception becomes `Unspecified` and is logged with its stack |
+| Asset over `MaxAssetBytes`; a `FailLoad` budget exceeded | `Unsupported`; `OutOfMemory` |
+| Hot reload fails | Old version kept, `Error` logged, `Reloaded` with `Error` |
+| Device recreation fails | That asset `Failed`; a device failure is returned to `Recover` (fatal) |
+| `Create` fails (development scan, options) | `Result` failure, nothing started; misuse is an exception; the host treats a failed start as fatal |
+| Wrong thread; a stale or default handle; more `Release`s than references | `WrongThreadException`; `StaleHandleException`, `ArgumentException`; `InvalidOperationException` |
+| A second loader for a kind; `UnmountPack` with live assets; `Get`/`GetError` in the wrong state; `RescanSources` outside development mode; use after `Dispose` | `InvalidOperationException`; `ObjectDisposedException` |
+
+## 12. Testing
+
+All in `tests/BrutalEngine.Assets.Tests` on Windows and Linux CI, without a GPU except the texture loader's, over `InMemoryFileSystem` (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:582-592`) and a fake importer.
+
+- **Unit tests** for every rule: `AssetId` text form (every rejection: braces, whitespace, wrong hyphens, all-zero, upper-case accepted, lower-case written), ordering equal to the text order, canonical bytes against hand-written vectors; `AssetKind` characters each side of every range; the CRC-32 against the published check value; every reader check of section 6 with one row per field and per side of each limit, the version rule (0, 1, 2), and a row proving a rejected pack is never partly opened; database rules (synchronous failures, priorities and raising, the same handle per id, revival before the safe point, staleness after it, cycles, failed dependencies, `LoadNow` stealing and waiting, groups, budgets in both modes, the in-flight bound with an asset larger than it, cancellation at each worker stage, every misuse exception).
+- **Pack round trips** through a reference writer in the test project, written from section 6's tables, not from the reader: random entry sets (kinds, sizes 0 and over-sampled boundaries, each compression, dependencies, paths with nesting) written and read back with CsCheck; the worked example's 261 bytes as a committed fixture that must open and read exactly as section 6 says; `TryFind` against a sorted-list model.
+- **Reference counts against a model:** CsCheck sequences of `Load`, `AddReference`, `Release`, group loads and disposes, `ProcessCompletions`, source changes and failures, with `WorkerCount = 0`, against a model written separately; after every step each handle's state, count, validity and version, `Statistics` and the loader's release log equal the model's.
+- **Hot reload** over `InMemoryFileSystem` with `RescanSources`: a change swaps the object and keeps the handle; dependants reload in order; a failed reload keeps the old version; a moved sidecar keeps the id; an unchanged rewrite (same bytes) doesn't reload. One test drives a real `FileSystemWatcher` over a temporary directory, bounded by the test's token, never by sleeps.
+- **Concurrency:** two and eight workers loading a random graph, with results compared to `WorkerCount = 0`; `AssetPack` reads from several threads at once (a barrier, then concurrent `ReadContent` and `OpenContent` views).
+- **Allocation tests** (`GC.GetAllocatedBytesForCurrentThread`, background GC off in the project, as in Core): 1,000 frames of `ProcessCompletions` with nothing to do, every read member of section 10's list, and `AddReference`/`Release` pairs allocate 0 bytes.
+- **Fuzz targets** (SharpFuzz, nightly, docs/05's fuzz tier, `docs/05-testing-strategy.md:19`): `AssetPack.Open` plus every `ReadContent`, and the table of contents alone; the corpus is seeded from the reference writer's outputs and the cooker's fixtures. Crashes become regression rows.
+- **GPU:** the texture loader against the graphics conformance device on lavapipe in CI and the RTX 2070 SUPER locally (each PR says where it ran): upload and read back texels, and device-loss recovery through the device's fault-injection seam, recreating and reloading dependants.
+- **Cook-to-load round trips** with #283's cooker (ADR-0005): cook fixture sources, mount the pack, load every asset, and compare with a development-mode import of the same sources, byte for byte.
+- **Architecture:** `BrutalEngine.Assets` joins `tests/BrutalEngine.Architecture.Tests` (layering, binding surface, static state, the ship gate).
+
+Mutation self-checks, for example: compare ids as signed bytes; skip the `DataOffset` alignment rule; accept a decompressed stream longer than `Length`; unload at `Release` instead of at the safe point; skip reloading dependants.
+
+## 13. Issue split
+
+Sized line by line (source with every XML doc section, `PublicAPI.Unshipped.txt` lines, tests about 1:1). The issues share one project and one `PublicAPI.Unshipped.txt`, so they run in this order unless noted.
+
+| Issue | Scope | Blocked by | Src + docs | API | Tests | Est. |
+|-------|-------|------------|-----------:|----:|------:|-----:|
+| A1 feat(assets): add the Assets project with asset ids and kinds | Creates `src/BrutalEngine.Assets` (milestone 2, ADR-0016) and its tests, the Architecture.Tests reference and the solution line; `AssetId`, `AssetKind` | this note | 210 | 45 | 220 | ~475 |
+| A2 feat(assets): open and validate packs | `Crc32`, `PackCompression`, `AssetPackEntry`, `AssetPack.Open` with every header and table check, `TryFind`, `TryFindPath`, `GetDependencies`; the reference writer and the worked-example fixture | A1 | 230 | 25 | 240 | ~495 |
+| A3 feat(assets): read pack contents | `ReadContent` with checksums and both decompressors, `OpenContent` views, the thread-safety tests, the round-trip property tests | A2 | 140 | 5 | 220 | ~365 |
+| A4 feat(assets): serve packs as a file system | `AssetPackFileSystem` and its options, the fallback, the remount example as a test | A3 | 160 | 15 | 200 | ~375 |
+| A5 feat(assets): add handles and the loader contract | `AssetHandle<T>`, `AssetState`, `IAssetLoader<T>`, `AssetLoaderTraits` and its enums, `AssetLoadContext`, `AssetContentSource`, `BytesAsset`, `BytesLoader` | A1 | 220 | 50 | 160 | ~430 |
+| A6 feat(assets): add the asset database with synchronous loads | Options, `Create`, `Dispose`, `RegisterLoader`, `MountPack`/`UnmountPack`, the catalogue, `LoadNow`, dependencies and cycles, reference counts, safe-point unloads, the read members; the reference-model property test | A3, A5 | 270 | 40 | 240 | ~550 |
+| A7 feat(assets): load assets asynchronously | `Load`, priorities, workers and `WorkerCount = 0`, the completion queue, owner-thread loaders, cancellation, the in-flight bound, `AssetStatistics`; concurrency and allocation tests | A6 | 250 | 20 | 260 | ~530 |
+| A8 feat(assets): add load groups and memory budgets | `AssetGroup`, `AssetBudget` and its types, `GetBudgetUsage` | A7 | 150 | 30 | 200 | ~380 |
+| A9 feat(assets): load source assets in development mode | The import seam types, `ReadMeta` scanning, imports on workers, duplicate sidecars; a fake importer | A7 | 200 | 35 | 220 | ~455 |
+| A10 feat(assets): hot-reload changed sources | `AssetDevelopmentOptions`, `RescanSources`, the watcher and debounce, hashes, swaps, dependant reloads, `Reloaded` and its types, `GetVersion` | A9 | 230 | 25 | 260 | ~515 |
+| A11 feat(assets): load textures and recreate them after device loss | `TextureAsset`, `TextureLoader`, the payload checks, the device-owner registration and recovery; GPU tests | A7; the GraphicsDevice front end on `main` | 200 | 20 | 230 | ~450 |
+| A12 feat(assets): load audio clips and streams | `AudioClipLoader`, `AudioStreamAsset`, `AudioStreamLoader` against the merged audio API | A7; #281 merged and Audio's clip and stream APIs on `main` | 90 | 15 | 120 | ~225 |
+| A13 test(assets): fuzz the pack reader | SharpFuzz targets (the tool docs/05 names; not yet in `Directory.Packages.props`), the seeded corpus and the nightly job | A3 | 80 | 0 | 60 | ~140 + CI |
+
+A6 and A7 are the largest parts: reference counts, the catalogue and unloading only make sense together, as do the workers and the completion queue. The `Rendering2D -> Assets`, `Text -> Assets` and `Input -> Assets` edges are added by those modules' first loader issues (Input's is the input note's I10), each blocked by A5 and A6. The Release check of section 7 is part of the M2 sample game's issue, blocked by #283's packaging. Each issue's CHANGELOG entry goes under `## Next: 0.3.0 (not in the next release)`.
+
+## Consistency with ADR-0005 and Architecture 3.13
+
+| They say | This note | Why |
+|----------|-----------|-----|
+| "Asset decoding" runs on job workers (docs/03 3.2, `docs/03-architecture.md:82`) | Decoding runs on the database's own workers | The engine has no job system yet; a worker pool can be swapped for jobs behind the same API |
+| Thread checks "asserted in debug builds" (3.2) | Checked in every build | As in Platform and Graphics |
+| "Dependants are notified" (3.13) | Dependants are loaded again, then `Reloaded` is raised for them | A loader may have copied values out of the dependency |
+| Packs mounted at `res://` (`docs/03-architecture.md:129`) | The game remounts `res://` until Runtime's step 90 | Runtime is frozen until the 0.2.0 release |
+
+Every ADR-0005 rule holds: the cooker writes versioned packs, development builds import in-process through the same importers, identity is a GUID in `.meta` sidecars, cook-to-load round trips and pack fuzzing are tested (section 12). Nothing here deviates from an ADR.
+
+**Layer edges this note needs:** none for Assets itself (Core, Platform, Graphics and Audio are lower layers). Three listed same-layer edges come with their modules' loader issues, each added to `EngineLayers` (today's only L3 edge is Rendering2D → Text, `tests/BrutalEngine.Architecture.Tests/EngineLayers.cs:62`) and to the table in [architecture tests](architecture-tests.md#the-layer-map):
+
+| Edge | Reason |
+|------|--------|
+| Rendering2D → Assets | Rendering2D registers its atlas loader (kind `ATLS`, section 1) |
+| Text → Assets | Text registers its font loader (kind `FONT`) |
+| Input → Assets | Input registers its input-map loader (the input note, section 9) |
+
+## Not verified
+
+- The note is design only; nothing in it has run. The worked pack example was produced and checked by a scratch reference writer and reader written from section 6, outside the repository.
+- `DirectoryFileSystem` and the `GraphicsDevice` front end (textures, uploads, device-owner registration) are cited from their notes; their code is in review.
+- That the BCL's Deflate and Brotli encoders give identical bytes on Windows and Linux for the same runtime version: the reader doesn't depend on it, the cooker's determinism does (#283).
+- `FileSystemWatcher` behaviour (inotify watch limits on Linux, buffer overflows on Windows) is taken from its documentation; the rescan fallback doesn't depend on it, and A10 tests a real watcher on both CI OSes.
+- Audio's creation APIs don't exist yet (#281); section 9 states what Assets requires of them.
