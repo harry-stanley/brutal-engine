@@ -1,7 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using CsCheck;
 using Xunit;
 
 namespace BrutalEngine.Platform.Tests;
@@ -15,6 +18,40 @@ public sealed class PlatformEventBufferTests
 
     // One event of every kind except TextInput, which only AddText makes.
     private static readonly PlatformEvent[] _nonTextEvents = MakeNonTextEvents();
+
+    // Any event that Add takes: one of every non-text kind, with random headers and payloads.
+    private static readonly Gen<PlatformEvent> _genEvent = Gen.OneOf(
+        Gen.Select(Gen.UShort[4, 231], Gen.UInt, Gen.Long, Gen.Bool, (code, w, t, repeat) =>
+            PlatformEvent.CreateKey(
+                new PlatformEventHeader(PlatformEventKind.KeyUp, new WindowId(w), t),
+                new KeyEventData((Scancode)code, new Keycode(code), KeyModifiers.None, repeat))),
+        Gen.Select(Gen.Float, Gen.Float, Gen.UInt[1, uint.MaxValue], Gen.Long, (x, y, w, t) =>
+            PlatformEvent.CreateMouseMotion(
+                new PlatformEventHeader(PlatformEventKind.MouseMotion, new WindowId(w), t),
+                new MouseMotionData(x, y, -x, -y, MouseButtons.X1))),
+        Gen.Select(Gen.Int, Gen.Int, Gen.UInt[1, uint.MaxValue], Gen.Long, (width, height, w, t) =>
+            PlatformEvent.CreateSize(
+                new PlatformEventHeader(PlatformEventKind.WindowResized, new WindowId(w), t),
+                new WindowSize(width, height))),
+        Gen.Long.Select(t => PlatformEvent.Create(new PlatformEventHeader(PlatformEventKind.QuitRequested, default, t))));
+
+    // UTF-8 text that over-samples multi-byte sequences: each code point is 1, 2, 3 or 4 bytes with equal weight, so
+    // a cut lands inside a sequence about as often as between two. Up to 2,400 bytes, so text often exceeds the
+    // 2,048-byte buffer and gets cut.
+    private static readonly Gen<byte[]> _genText = Gen.OneOf(
+            Gen.Int[0x01, 0x7F], Gen.Int[0x80, 0x7FF], Gen.Int[0x800, 0xD7FF], Gen.Int[0xE000, 0xFFFF],
+            Gen.Int[0x10000, 0x10FFFF])
+        .Array[0, 600]
+        .Select(codePoints =>
+        {
+            StringBuilder text = new();
+            foreach (int codePoint in codePoints)
+            {
+                text.Append(new Rune(codePoint));
+            }
+
+            return Encoding.UTF8.GetBytes(text.ToString());
+        });
 
     [Theory]
     [InlineData(63, MinText, "eventCapacity")]
@@ -44,8 +81,10 @@ public sealed class PlatformEventBufferTests
         Assert.Equal(eventCapacity, buffer.Capacity);
         Assert.Equal(0, buffer.Count);
         Assert.True(buffer.HasRoom);
+        Assert.Equal(0, buffer.DeferredPumpCount);
         Assert.Equal(0, buffer.TruncatedTextCount);
         Assert.True(buffer.AsBatch().Events.IsEmpty);
+        Assert.False(buffer.AsBatch().HasDeferredEvents);
     }
 
     [Fact]
@@ -265,6 +304,29 @@ public sealed class PlatformEventBufferTests
     }
 
     [Fact]
+    public void MarkDeferred_SetsFlagUntilClear()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        bool before = buffer.AsBatch().HasDeferredEvents;
+
+        buffer.MarkDeferred();
+        buffer.MarkDeferred();
+        bool marked = buffer.AsBatch().HasDeferredEvents;
+        long countedOnce = buffer.DeferredPumpCount;
+        buffer.Clear();
+        bool afterClear = buffer.AsBatch().HasDeferredEvents;
+        long keptByClear = buffer.DeferredPumpCount;
+        buffer.MarkDeferred();
+
+        Assert.False(before);
+        Assert.True(marked);
+        Assert.Equal(1, countedOnce);
+        Assert.False(afterClear);
+        Assert.Equal(1, keptByClear);
+        Assert.Equal(2, buffer.DeferredPumpCount);
+    }
+
+    [Fact]
     public void Clear_EmptiesEvents()
     {
         PlatformEventBuffer buffer = new(MinEvents, MinText);
@@ -317,8 +379,95 @@ public sealed class PlatformEventBufferTests
         var empty = PlatformEvent.CreateText(Header(PlatformEventKind.TextInput, 1), new TextEventData(0, 0));
 
         Assert.True(batch.Events.IsEmpty);
+        Assert.False(batch.HasDeferredEvents);
         Assert.True(batch.GetText(empty).IsEmpty);
     }
+
+    [Fact]
+    public void AddsAndClears_MatchReferenceModel()
+    {
+        var op = Gen.Frequency(
+            (8, _genEvent.Select(e => new Op(OpKind.Add, e, default, 0, []))),
+            (6, Gen.Select(Gen.UInt, Gen.Long, _genText, (w, t, text) =>
+                new Op(OpKind.AddText, default, new WindowId(w), t, text))),
+            (1, Gen.Const(new Op(OpKind.Clear, default, default, 0, []))),
+            (1, Gen.Const(new Op(OpKind.MarkDeferred, default, default, 0, []))));
+
+        op.Array[0, 200].Sample(ops =>
+        {
+            PlatformEventBuffer buffer = new(MinEvents, MinText);
+            Model model = new();
+            foreach (Op step in ops)
+            {
+                model.Apply(buffer, step);
+                model.AssertMatches(buffer);
+            }
+        });
+    }
+
+    [Fact]
+    public void FillAndRead_DoesNotAllocate()
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        byte[] shortText = Encoding.UTF8.GetBytes("aé€😀");
+        byte[] longText = [.. Ascii(1499), .. Encoding.UTF8.GetBytes("😀")];
+        _ = FillAndRead(buffer, shortText, longText, 1);
+
+        // A collection between warm-up and the window rebuilds any cache that only a weak handle keeps.
+        GC.Collect();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        double checksum = FillAndRead(buffer, shortText, longText, 1000);
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0, allocated);
+        Assert.NotEqual(0, checksum);
+        Assert.Equal(1001, buffer.TruncatedTextCount);
+        Assert.Equal(1001, buffer.DeferredPumpCount);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static double FillAndRead(PlatformEventBuffer buffer, byte[] shortText, byte[] longText, int batches)
+    {
+        double sum = 0;
+        for (int i = 0; i < batches; i++)
+        {
+            buffer.Clear();
+            foreach (PlatformEvent e in _nonTextEvents)
+            {
+                buffer.Add(e);
+            }
+
+            buffer.AddText(_window, i, shortText);
+            buffer.AddText(_window, i, longText);
+            buffer.AddText(_window, i, longText); // cut to fit
+            buffer.MarkDeferred();
+
+            PlatformEventBatch batch = buffer.AsBatch();
+            sum += batch.HasDeferredEvents ? 1 : 0;
+            foreach (ref readonly PlatformEvent e in batch.Events)
+            {
+                sum += ReadPayload(batch, e) + e.Timestamp + e.Window.Value;
+            }
+        }
+
+        return sum;
+    }
+
+    private static double ReadPayload(PlatformEventBatch batch, in PlatformEvent e) => e.Kind switch
+    {
+        PlatformEventKind.KeyDown or PlatformEventKind.KeyUp => (int)e.Key.Scancode,
+        PlatformEventKind.TextInput => batch.GetText(e).Length,
+        PlatformEventKind.MouseMotion => e.MouseMotion.DeltaX,
+        PlatformEventKind.MouseButtonDown or PlatformEventKind.MouseButtonUp => e.MouseButton.X,
+        PlatformEventKind.MouseWheel => e.MouseWheel.Y,
+        PlatformEventKind.WindowResized or PlatformEventKind.WindowPixelSizeChanged => e.Size.Width,
+        PlatformEventKind.WindowDisplayChanged or PlatformEventKind.DisplayAdded or PlatformEventKind.DisplayRemoved
+            or PlatformEventKind.DisplayCurrentModeChanged => e.Display.Value,
+        PlatformEventKind.WindowDisplayScaleChanged => e.Scale,
+        PlatformEventKind.DisplayContentScaleChanged => e.Display.Value + e.Scale,
+        _ => (ushort)e.Kind,
+    };
 
     private static PlatformEvent[] MakeNonTextEvents()
     {
@@ -388,5 +537,106 @@ public sealed class PlatformEventBufferTests
     {
         Assert.Equal(
             MemoryMarshal.AsBytes(expected).ToArray(), MemoryMarshal.AsBytes(actual).ToArray());
+    }
+
+    private enum OpKind
+    {
+        Add,
+        AddText,
+        Clear,
+        MarkDeferred,
+    }
+
+    private sealed record Op(OpKind Kind, PlatformEvent Event, WindowId Window, long Timestamp, byte[] Text);
+
+    // The rules of docs/design/platform.md, "One buffer per pump", written independently of the buffer: text is cut
+    // by decoding it forwards, one code point at a time, and keeping whole code points while they fit.
+    private sealed class Model
+    {
+        private readonly List<(PlatformEvent Event, byte[]? Text)> _events = [];
+        private int _textLength;
+        private bool _deferred;
+        private long _deferredPumps;
+        private long _truncated;
+
+        public void Apply(PlatformEventBuffer buffer, Op op)
+        {
+            switch (op.Kind)
+            {
+                case OpKind.Add when _events.Count == MinEvents:
+                    Assert.Throws<InvalidOperationException>(() => buffer.Add(op.Event));
+                    break;
+                case OpKind.Add:
+                    buffer.Add(op.Event);
+                    _events.Add((op.Event, null));
+                    break;
+                case OpKind.AddText when _events.Count == MinEvents:
+                    Assert.Throws<InvalidOperationException>(() => buffer.AddText(op.Window, op.Timestamp, op.Text));
+                    break;
+                case OpKind.AddText:
+                    buffer.AddText(op.Window, op.Timestamp, op.Text);
+                    byte[] kept = KeepWholeCodePoints(op.Text, MinText - _textLength);
+                    _truncated += kept.Length < op.Text.Length ? 1 : 0;
+                    _textLength += kept.Length;
+                    PlatformEventHeader header = new(PlatformEventKind.TextInput, op.Window, op.Timestamp);
+                    _events.Add((PlatformEvent.CreateText(header, default), kept));
+                    break;
+                case OpKind.Clear:
+                    buffer.Clear();
+                    _events.Clear();
+                    _textLength = 0;
+                    _deferred = false;
+                    break;
+                default:
+                    buffer.MarkDeferred();
+                    _deferredPumps += _deferred ? 0 : 1;
+                    _deferred = true;
+                    break;
+            }
+        }
+
+        public void AssertMatches(PlatformEventBuffer buffer)
+        {
+            PlatformEventBatch batch = buffer.AsBatch();
+            Assert.Equal(_events.Count, buffer.Count);
+            Assert.Equal(_events.Count, batch.Events.Length);
+            Assert.Equal(_deferred, batch.HasDeferredEvents);
+            Assert.Equal(_deferredPumps, buffer.DeferredPumpCount);
+            Assert.Equal(_truncated, buffer.TruncatedTextCount);
+            Assert.Equal(
+                _events.Count < MinEvents && MinText - _textLength >= PlatformEventBuffer.TextReserveBytes,
+                buffer.HasRoom);
+            for (int i = 0; i < _events.Count; i++)
+            {
+                (PlatformEvent expected, byte[]? text) = _events[i];
+                PlatformEvent actual = batch.Events[i];
+                if (text is null)
+                {
+                    AssertSameEvents([expected], [actual]);
+                }
+                else
+                {
+                    Assert.Equal(expected.Header, actual.Header);
+                    Assert.Equal(text, batch.GetText(actual).ToArray());
+                }
+            }
+        }
+
+        private static byte[] KeepWholeCodePoints(byte[] utf8, int free)
+        {
+            int kept = 0;
+            while (kept < utf8.Length)
+            {
+                Assert.Equal(OperationStatus.Done, Rune.DecodeFromUtf8(utf8.AsSpan(kept), out _, out int size));
+                if (kept + size > free)
+                {
+                    break;
+                }
+
+                kept += size;
+            }
+
+            return utf8[..kept];
+        }
     }
 }

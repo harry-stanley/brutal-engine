@@ -23,15 +23,23 @@ public readonly ref struct PlatformEventBatch
     private readonly ReadOnlySpan<PlatformEvent> _events;
     private readonly ReadOnlySpan<byte> _text;
 
-    internal PlatformEventBatch(ReadOnlySpan<PlatformEvent> events, ReadOnlySpan<byte> text)
+    internal PlatformEventBatch(ReadOnlySpan<PlatformEvent> events, ReadOnlySpan<byte> text, bool hasDeferredEvents)
     {
         _events = events;
         _text = text;
+        HasDeferredEvents = hasDeferredEvents;
     }
 
     /// <summary>Gets the pump's events, in the order the OS delivered them.</summary>
     /// <value>The events; empty when the pump found none.</value>
     public ReadOnlySpan<PlatformEvent> Events => _events;
+
+    /// <summary>
+    /// Gets whether the pump stopped with events still queued in the OS because the buffer was full. They arrive,
+    /// in order, with the next pump.
+    /// </summary>
+    /// <value><see langword="true"/> when more events were waiting.</value>
+    public bool HasDeferredEvents { get; }
 
     /// <summary>Gets the UTF-8 text of one of this batch's <see cref="PlatformEventKind.TextInput"/> events.</summary>
     /// <param name="textEvent">A <see cref="PlatformEventKind.TextInput"/> event from <see cref="Events"/>.</param>

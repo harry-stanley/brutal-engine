@@ -12,7 +12,7 @@ namespace BrutalEngine.Platform;
 /// <para>
 /// The backend clears the buffer at the start of each pump, then translates OS events into it one at a time while
 /// <see cref="HasRoom"/> holds. When the buffer fills up with events still queued in the OS, the backend leaves
-/// them there, in order, for the next pump: events are deferred, never dropped.
+/// them there, in order, for the next pump, and calls <see cref="MarkDeferred"/>: events are deferred, never dropped.
 /// The one lossy case is a single text event longer than the remaining text space, which <see cref="AddText"/> cuts
 /// at a code-point boundary and counts in <see cref="TruncatedTextCount"/> (docs/design/platform.md, "One buffer
 /// per pump").
@@ -40,6 +40,7 @@ public sealed class PlatformEventBuffer
     private readonly byte[] _text;
     private int _count;
     private int _textLength;
+    private bool _hasDeferredEvents;
 
     /// <summary>Creates an empty buffer with fixed event and text capacities.</summary>
     /// <param name="eventCapacity">How many events one pump can hold: 64 to 65536.</param>
@@ -74,19 +75,27 @@ public sealed class PlatformEventBuffer
     /// </value>
     public bool HasRoom => _count < _events.Length && _text.Length - _textLength >= TextReserveBytes;
 
+    /// <summary>
+    /// Gets how many pumps stopped with events still queued, as recorded by <see cref="MarkDeferred"/>.
+    /// </summary>
+    /// <value>A count over the buffer's lifetime; <see cref="Clear"/> keeps it.</value>
+    public long DeferredPumpCount { get; private set; }
+
     /// <summary>Gets how many text events <see cref="AddText"/> has cut to fit the remaining text space.</summary>
     /// <value>A count over the buffer's lifetime; <see cref="Clear"/> keeps it.</value>
     public long TruncatedTextCount { get; private set; }
 
     /// <summary>
-    /// Empties the buffer for the next pump: removes every event and all text. <see cref="TruncatedTextCount"/> keeps
-    /// counting.
+    /// Empties the buffer for the next pump: removes every event and all text, and resets the batch's
+    /// <see cref="PlatformEventBatch.HasDeferredEvents"/>. <see cref="DeferredPumpCount"/> and
+    /// <see cref="TruncatedTextCount"/> keep counting.
     /// </summary>
     /// <remarks>Ends the lifetime of every batch, span and text the buffer handed out before.</remarks>
     public void Clear()
     {
         _count = 0;
         _textLength = 0;
+        _hasDeferredEvents = false;
     }
 
     /// <summary>Adds an event after the ones already in the buffer.</summary>
@@ -160,13 +169,29 @@ public sealed class PlatformEventBuffer
         _textLength += length;
     }
 
+    /// <summary>
+    /// Records that this pump stopped with events still queued in the OS: sets the batch's
+    /// <see cref="PlatformEventBatch.HasDeferredEvents"/> and counts the pump in <see cref="DeferredPumpCount"/>.
+    /// </summary>
+    /// <remarks>
+    /// Counts each pump once: calling it again before the next <see cref="Clear"/> changes nothing.
+    /// </remarks>
+    public void MarkDeferred()
+    {
+        if (!_hasDeferredEvents)
+        {
+            _hasDeferredEvents = true;
+            DeferredPumpCount++;
+        }
+    }
+
     /// <summary>Gets the events and text the buffer holds now, for the host and input to read.</summary>
     /// <returns>
     /// A view of the buffer as it is now, valid until the next <see cref="Clear"/>. Events added afterwards are in
     /// the next batch taken, not this one.
     /// </returns>
     public PlatformEventBatch AsBatch() =>
-        new(_events.AsSpan(0, _count), _text.AsSpan(0, _textLength));
+        new(_events.AsSpan(0, _count), _text.AsSpan(0, _textLength), _hasDeferredEvents);
 
     private static void CheckRange(int value, int min, int max, string paramName)
     {

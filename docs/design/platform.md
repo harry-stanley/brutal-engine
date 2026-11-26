@@ -272,9 +272,12 @@ public sealed class PlatformEventBuffer   // filled by backends; read through Pl
     public void Clear();
     public void Add(in PlatformEvent platformEvent);     // throws InvalidOperationException when full
     public void AddText(WindowId window, long timestamp, ReadOnlySpan<byte> utf8);
+    public void MarkDeferred();                          // records that the pump stopped with events left
     public PlatformEventBatch AsBatch();
 }
 ```
+
+Only the backend knows that SDL still had events queued when the buffer filled up, so it records that with `MarkDeferred`: it sets the batch's `HasDeferredEvents` and counts the pump once in `DeferredPumpCount` (calling it again in the same pump changes nothing). `Clear` resets the flag and keeps both counters.
 
 - **Who pumps:** the host, once per frame on the main thread (`IPlatform.PumpEvents`, [Architecture 3.2](../03-architecture.md#frame-loop-fixed-step-simulation-variable-rate-rendering)). Each pump clears the buffer, lets SDL collect OS events (`SDL_PumpEvents`, `Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9507`), then dequeues and translates one event at a time with the raw `SDL_PollEvent` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:9579`) while `HasRoom` holds. Input and the host then read the same batch through `Events`.
 - **Capacity:** `PlatformOptions.EventCapacity`, default 1,024 events (40 KiB), and `TextCapacityBytes`, default 8 KiB; both fixed at creation. A frame with more events than that is a hitch, not normal input.

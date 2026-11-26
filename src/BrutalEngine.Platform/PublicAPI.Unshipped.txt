@@ -206,6 +206,7 @@ BrutalEngine.Platform.PlatformEvent.Window.get -> BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.PlatformEventBatch
 BrutalEngine.Platform.PlatformEventBatch.Events.get -> System.ReadOnlySpan<BrutalEngine.Platform.PlatformEvent>
 BrutalEngine.Platform.PlatformEventBatch.GetText(in BrutalEngine.Platform.PlatformEvent textEvent) -> System.ReadOnlySpan<byte>
+BrutalEngine.Platform.PlatformEventBatch.HasDeferredEvents.get -> bool
 BrutalEngine.Platform.PlatformEventBatch.PlatformEventBatch() -> void
 BrutalEngine.Platform.PlatformEventBuffer
 BrutalEngine.Platform.PlatformEventBuffer.Add(in BrutalEngine.Platform.PlatformEvent platformEvent) -> void
@@ -214,7 +215,9 @@ BrutalEngine.Platform.PlatformEventBuffer.AsBatch() -> BrutalEngine.Platform.Pla
 BrutalEngine.Platform.PlatformEventBuffer.Capacity.get -> int
 BrutalEngine.Platform.PlatformEventBuffer.Clear() -> void
 BrutalEngine.Platform.PlatformEventBuffer.Count.get -> int
+BrutalEngine.Platform.PlatformEventBuffer.DeferredPumpCount.get -> long
 BrutalEngine.Platform.PlatformEventBuffer.HasRoom.get -> bool
+BrutalEngine.Platform.PlatformEventBuffer.MarkDeferred() -> void
 BrutalEngine.Platform.PlatformEventBuffer.PlatformEventBuffer(int eventCapacity, int textCapacityBytes) -> void
 BrutalEngine.Platform.PlatformEventBuffer.TruncatedTextCount.get -> long
 BrutalEngine.Platform.PlatformEventHeader
