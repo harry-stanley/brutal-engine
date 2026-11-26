@@ -78,6 +78,13 @@ BrutalEngine.Platform.IWindow.StartTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.State.get -> BrutalEngine.Platform.WindowState
 BrutalEngine.Platform.IWindow.StopTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.VulkanSurface.get -> BrutalEngine.Platform.IVulkanSurfaceSource?
+BrutalEngine.Platform.Keycode
+BrutalEngine.Platform.Keycode.Character.get -> System.Text.Rune
+BrutalEngine.Platform.Keycode.Equals(BrutalEngine.Platform.Keycode other) -> bool
+BrutalEngine.Platform.Keycode.IsCharacter.get -> bool
+BrutalEngine.Platform.Keycode.Keycode() -> void
+BrutalEngine.Platform.Keycode.Keycode(uint value) -> void
+BrutalEngine.Platform.Keycode.Value.get -> uint
 BrutalEngine.Platform.MessageBoxKind
 BrutalEngine.Platform.MessageBoxKind.Error = 2 -> BrutalEngine.Platform.MessageBoxKind
 BrutalEngine.Platform.MessageBoxKind.Information = 0 -> BrutalEngine.Platform.MessageBoxKind
@@ -433,6 +440,8 @@ override BrutalEngine.Platform.DisplayMode.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayMode.ToString() -> string!
 override BrutalEngine.Platform.DisplayRect.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayRect.ToString() -> string!
+override BrutalEngine.Platform.Keycode.GetHashCode() -> int
+override BrutalEngine.Platform.Keycode.ToString() -> string!
 override BrutalEngine.Platform.MessageBoxRequest.Equals(object? obj) -> bool
 override BrutalEngine.Platform.MessageBoxRequest.GetHashCode() -> int
 override BrutalEngine.Platform.MessageBoxRequest.ToString() -> string!
@@ -452,6 +461,9 @@ static BrutalEngine.Platform.DisplayMode.operator !=(BrutalEngine.Platform.Displ
 static BrutalEngine.Platform.DisplayMode.operator ==(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
 static BrutalEngine.Platform.DisplayRect.operator !=(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
 static BrutalEngine.Platform.DisplayRect.operator ==(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
+static BrutalEngine.Platform.Keycode.FromScancode(BrutalEngine.Platform.Scancode scancode) -> BrutalEngine.Platform.Keycode
+static BrutalEngine.Platform.Keycode.operator !=(BrutalEngine.Platform.Keycode left, BrutalEngine.Platform.Keycode right) -> bool
+static BrutalEngine.Platform.Keycode.operator ==(BrutalEngine.Platform.Keycode left, BrutalEngine.Platform.Keycode right) -> bool
 static BrutalEngine.Platform.MessageBoxRequest.operator !=(BrutalEngine.Platform.MessageBoxRequest? left, BrutalEngine.Platform.MessageBoxRequest? right) -> bool
 static BrutalEngine.Platform.MessageBoxRequest.operator ==(BrutalEngine.Platform.MessageBoxRequest? left, BrutalEngine.Platform.MessageBoxRequest? right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
@@ -466,6 +478,7 @@ static BrutalEngine.Platform.WindowSize.operator ==(BrutalEngine.Platform.Window
 ~override BrutalEngine.Platform.DisplayId.ToString() -> string
 ~override BrutalEngine.Platform.DisplayMode.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.DisplayRect.Equals(object obj) -> bool
+~override BrutalEngine.Platform.Keycode.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.ToString() -> string
 ~override BrutalEngine.Platform.WindowSize.Equals(object obj) -> bool
