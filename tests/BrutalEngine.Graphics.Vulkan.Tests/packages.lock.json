@@ -300,7 +300,8 @@
       "brutalengine.graphics": {
         "type": "Project",
         "dependencies": {
-          "BrutalEngine.Core": "[1.0.0, )"
+          "BrutalEngine.Core": "[1.0.0, )",
+          "BrutalEngine.Platform": "[1.0.0, )"
         }
       },
       "brutalengine.graphics.vulkan": {
@@ -308,6 +309,12 @@
         "dependencies": {
           "Ahwoo.Brutal.Vulkan": "[2026.10.3, )",
           "BrutalEngine.Graphics": "[1.0.0, )"
+        }
+      },
+      "brutalengine.platform": {
+        "type": "Project",
+        "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )"
         }
       },
       "Ahwoo.BRUTAL.Vulkan": {

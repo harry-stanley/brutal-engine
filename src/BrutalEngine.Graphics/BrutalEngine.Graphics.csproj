@@ -6,6 +6,9 @@
 
   <ItemGroup>
     <ProjectReference Include="../BrutalEngine.Core/BrutalEngine.Core.csproj" />
+    <!-- The one same-layer edge the layer map allows Graphics: windows reach a backend as a WindowSurfaceSource
+         (docs/design/graphics.md section 3). -->
+    <ProjectReference Include="../BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
   </ItemGroup>
 
   <!--

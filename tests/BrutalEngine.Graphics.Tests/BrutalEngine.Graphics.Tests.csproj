@@ -13,5 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
+    <!-- Direct, not only through Graphics: the tests implement IWindow and IVulkanSurfaceSource (Backend/FakeWindow.cs). -->
+    <ProjectReference Include="../../src/BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
   </ItemGroup>
 </Project>

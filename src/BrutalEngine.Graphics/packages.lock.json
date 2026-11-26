@@ -22,6 +22,12 @@
       },
       "brutalengine.core": {
         "type": "Project"
+      },
+      "brutalengine.platform": {
+        "type": "Project",
+        "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )"
+        }
       }
     },
     "net11.0/linux-x64": {},
