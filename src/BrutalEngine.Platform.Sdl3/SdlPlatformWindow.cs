@@ -24,7 +24,8 @@ namespace BrutalEngine.Platform.Sdl3;
 /// </para>
 /// <para>
 /// <b>Allocation:</b> creation allocates (the window, its surface source, error text). The getters, a successful
-/// <see cref="RefreshSnapshot"/> and the setters that succeed allocate nothing; a failure allocates its message.
+/// <see cref="RefreshSnapshot"/> and the setters that succeed allocate nothing, except
+/// <see cref="SetExclusiveFullscreen"/>, which copies the display's mode list; a failure allocates its message.
 /// </para>
 /// <para>
 /// <b>Ownership:</b> the creator owns the window and disposes it before the video session. Any Vulkan surface made from
@@ -232,7 +233,9 @@ internal sealed class SdlPlatformWindow : IWindow, SdlVulkanSurfaceSource.IOwner
         Result set = SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
         if (set.IsSuccess)
         {
-            // SDL doesn't keep a size set while fullscreen as the windowed size (observed on its dummy driver).
+            // SDL doesn't keep a size set while fullscreen as the windowed size (observed on its dummy driver). On a
+            // windowed window the size applies now, so null drops any pending size still left: one left over when
+            // LeaveFullscreen's resize failed, or when the OS took the window out of fullscreen without SetMode.
             _windowedContentSize = IsFullscreen() ? contentSize : null;
         }
 
