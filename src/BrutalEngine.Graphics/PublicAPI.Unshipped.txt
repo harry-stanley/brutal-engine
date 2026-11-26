@@ -25,6 +25,19 @@ BrutalEngine.Graphics.BorderColor
 BrutalEngine.Graphics.BorderColor.OpaqueBlack = 1 -> BrutalEngine.Graphics.BorderColor
 BrutalEngine.Graphics.BorderColor.OpaqueWhite = 2 -> BrutalEngine.Graphics.BorderColor
 BrutalEngine.Graphics.BorderColor.TransparentBlack = 0 -> BrutalEngine.Graphics.BorderColor
+BrutalEngine.Graphics.BufferCopy
+BrutalEngine.Graphics.BufferCopy.BufferCopy() -> void
+BrutalEngine.Graphics.BufferCopy.Destination.get -> BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.BufferCopy.Destination.init -> void
+BrutalEngine.Graphics.BufferCopy.DestinationOffset.get -> long
+BrutalEngine.Graphics.BufferCopy.DestinationOffset.init -> void
+BrutalEngine.Graphics.BufferCopy.Equals(BrutalEngine.Graphics.BufferCopy other) -> bool
+BrutalEngine.Graphics.BufferCopy.Size.get -> long
+BrutalEngine.Graphics.BufferCopy.Size.init -> void
+BrutalEngine.Graphics.BufferCopy.Source.get -> BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.BufferCopy.Source.init -> void
+BrutalEngine.Graphics.BufferCopy.SourceOffset.get -> long
+BrutalEngine.Graphics.BufferCopy.SourceOffset.init -> void
 BrutalEngine.Graphics.BufferDescription
 BrutalEngine.Graphics.BufferDescription.BufferDescription() -> void
 BrutalEngine.Graphics.BufferDescription.DebugName.get -> string?
@@ -190,6 +203,35 @@ BrutalEngine.Graphics.SwapchainHandle
 BrutalEngine.Graphics.SwapchainHandle.Equals(BrutalEngine.Graphics.SwapchainHandle other) -> bool
 BrutalEngine.Graphics.SwapchainHandle.IsNull.get -> bool
 BrutalEngine.Graphics.SwapchainHandle.SwapchainHandle() -> void
+BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.TextureAspect.Color = 0 -> BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.TextureAspect.Depth = 1 -> BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.TextureBufferCopy
+BrutalEngine.Graphics.TextureBufferCopy.Buffer.get -> BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.TextureBufferCopy.Buffer.init -> void
+BrutalEngine.Graphics.TextureBufferCopy.BufferOffset.get -> long
+BrutalEngine.Graphics.TextureBufferCopy.BufferOffset.init -> void
+BrutalEngine.Graphics.TextureBufferCopy.BytesPerRow.get -> int
+BrutalEngine.Graphics.TextureBufferCopy.BytesPerRow.init -> void
+BrutalEngine.Graphics.TextureBufferCopy.Equals(BrutalEngine.Graphics.TextureBufferCopy other) -> bool
+BrutalEngine.Graphics.TextureBufferCopy.Region.get -> BrutalEngine.Graphics.TextureRegion
+BrutalEngine.Graphics.TextureBufferCopy.Region.init -> void
+BrutalEngine.Graphics.TextureBufferCopy.Texture.get -> BrutalEngine.Graphics.TextureLocation
+BrutalEngine.Graphics.TextureBufferCopy.Texture.init -> void
+BrutalEngine.Graphics.TextureBufferCopy.TextureBufferCopy() -> void
+BrutalEngine.Graphics.TextureCopy
+BrutalEngine.Graphics.TextureCopy.Destination.get -> BrutalEngine.Graphics.TextureLocation
+BrutalEngine.Graphics.TextureCopy.Destination.init -> void
+BrutalEngine.Graphics.TextureCopy.DestinationX.get -> int
+BrutalEngine.Graphics.TextureCopy.DestinationX.init -> void
+BrutalEngine.Graphics.TextureCopy.DestinationY.get -> int
+BrutalEngine.Graphics.TextureCopy.DestinationY.init -> void
+BrutalEngine.Graphics.TextureCopy.Equals(BrutalEngine.Graphics.TextureCopy other) -> bool
+BrutalEngine.Graphics.TextureCopy.Source.get -> BrutalEngine.Graphics.TextureLocation
+BrutalEngine.Graphics.TextureCopy.Source.init -> void
+BrutalEngine.Graphics.TextureCopy.SourceRegion.get -> BrutalEngine.Graphics.TextureRegion
+BrutalEngine.Graphics.TextureCopy.SourceRegion.init -> void
+BrutalEngine.Graphics.TextureCopy.TextureCopy() -> void
 BrutalEngine.Graphics.TextureDescription
 BrutalEngine.Graphics.TextureDescription.ArrayLayers.get -> int
 BrutalEngine.Graphics.TextureDescription.ArrayLayers.init -> void
@@ -231,6 +273,32 @@ BrutalEngine.Graphics.TextureHandle
 BrutalEngine.Graphics.TextureHandle.Equals(BrutalEngine.Graphics.TextureHandle other) -> bool
 BrutalEngine.Graphics.TextureHandle.IsNull.get -> bool
 BrutalEngine.Graphics.TextureHandle.TextureHandle() -> void
+BrutalEngine.Graphics.TextureLocation
+BrutalEngine.Graphics.TextureLocation.ArrayLayer.get -> int
+BrutalEngine.Graphics.TextureLocation.ArrayLayer.init -> void
+BrutalEngine.Graphics.TextureLocation.Aspect.get -> BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.TextureLocation.Aspect.init -> void
+BrutalEngine.Graphics.TextureLocation.Deconstruct(out BrutalEngine.Graphics.TextureHandle Texture, out int MipLevel, out int ArrayLayer, out BrutalEngine.Graphics.TextureAspect Aspect) -> void
+BrutalEngine.Graphics.TextureLocation.Equals(BrutalEngine.Graphics.TextureLocation other) -> bool
+BrutalEngine.Graphics.TextureLocation.MipLevel.get -> int
+BrutalEngine.Graphics.TextureLocation.MipLevel.init -> void
+BrutalEngine.Graphics.TextureLocation.Texture.get -> BrutalEngine.Graphics.TextureHandle
+BrutalEngine.Graphics.TextureLocation.Texture.init -> void
+BrutalEngine.Graphics.TextureLocation.TextureLocation() -> void
+BrutalEngine.Graphics.TextureLocation.TextureLocation(BrutalEngine.Graphics.TextureHandle Texture, int MipLevel = 0, int ArrayLayer = 0, BrutalEngine.Graphics.TextureAspect Aspect = BrutalEngine.Graphics.TextureAspect.Color) -> void
+BrutalEngine.Graphics.TextureRegion
+BrutalEngine.Graphics.TextureRegion.Deconstruct(out int X, out int Y, out int Width, out int Height) -> void
+BrutalEngine.Graphics.TextureRegion.Equals(BrutalEngine.Graphics.TextureRegion other) -> bool
+BrutalEngine.Graphics.TextureRegion.Height.get -> int
+BrutalEngine.Graphics.TextureRegion.Height.init -> void
+BrutalEngine.Graphics.TextureRegion.TextureRegion() -> void
+BrutalEngine.Graphics.TextureRegion.TextureRegion(int X, int Y, int Width, int Height) -> void
+BrutalEngine.Graphics.TextureRegion.Width.get -> int
+BrutalEngine.Graphics.TextureRegion.Width.init -> void
+BrutalEngine.Graphics.TextureRegion.X.get -> int
+BrutalEngine.Graphics.TextureRegion.X.init -> void
+BrutalEngine.Graphics.TextureRegion.Y.get -> int
+BrutalEngine.Graphics.TextureRegion.Y.init -> void
 BrutalEngine.Graphics.TextureUsage
 BrutalEngine.Graphics.TextureUsage.ColorTarget = 4 -> BrutalEngine.Graphics.TextureUsage
 BrutalEngine.Graphics.TextureUsage.CopyDestination = 32 -> BrutalEngine.Graphics.TextureUsage
@@ -263,6 +331,22 @@ BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.TextureViewHandle.Equals(BrutalEngine.Graphics.TextureViewHandle other) -> bool
 BrutalEngine.Graphics.TextureViewHandle.IsNull.get -> bool
 BrutalEngine.Graphics.TextureViewHandle.TextureViewHandle() -> void
+BrutalEngine.Graphics.TextureWrite
+BrutalEngine.Graphics.TextureWrite.BytesPerRow.get -> int
+BrutalEngine.Graphics.TextureWrite.BytesPerRow.init -> void
+BrutalEngine.Graphics.TextureWrite.Equals(BrutalEngine.Graphics.TextureWrite other) -> bool
+BrutalEngine.Graphics.TextureWrite.Region.get -> BrutalEngine.Graphics.TextureRegion
+BrutalEngine.Graphics.TextureWrite.Region.init -> void
+BrutalEngine.Graphics.TextureWrite.Target.get -> BrutalEngine.Graphics.TextureLocation
+BrutalEngine.Graphics.TextureWrite.Target.init -> void
+BrutalEngine.Graphics.TextureWrite.TextureWrite() -> void
+BrutalEngine.Graphics.TransientUsage
+BrutalEngine.Graphics.TransientUsage.Index = 2 -> BrutalEngine.Graphics.TransientUsage
+BrutalEngine.Graphics.TransientUsage.Indirect = 16 -> BrutalEngine.Graphics.TransientUsage
+BrutalEngine.Graphics.TransientUsage.Storage = 8 -> BrutalEngine.Graphics.TransientUsage
+BrutalEngine.Graphics.TransientUsage.Uniform = 4 -> BrutalEngine.Graphics.TransientUsage
+BrutalEngine.Graphics.TransientUsage.Vertex = 1 -> BrutalEngine.Graphics.TransientUsage
+const BrutalEngine.Graphics.TextureBufferCopy.RowPitchAlignment = 256 -> int
 override BrutalEngine.Graphics.AdapterSelection.GetHashCode() -> int
 override BrutalEngine.Graphics.AdapterSelection.ToString() -> string!
 override BrutalEngine.Graphics.BindGroupHandle.Equals(object? obj) -> bool
@@ -271,6 +355,8 @@ override BrutalEngine.Graphics.BindGroupHandle.ToString() -> string!
 override BrutalEngine.Graphics.BindGroupLayoutHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BindGroupLayoutHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BindGroupLayoutHandle.ToString() -> string!
+override BrutalEngine.Graphics.BufferCopy.GetHashCode() -> int
+override BrutalEngine.Graphics.BufferCopy.ToString() -> string!
 override BrutalEngine.Graphics.BufferDescription.GetHashCode() -> int
 override BrutalEngine.Graphics.BufferDescription.ToString() -> string!
 override BrutalEngine.Graphics.BufferHandle.Equals(object? obj) -> bool
@@ -307,16 +393,26 @@ override BrutalEngine.Graphics.ShaderModuleHandle.ToString() -> string!
 override BrutalEngine.Graphics.SwapchainHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.SwapchainHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.SwapchainHandle.ToString() -> string!
+override BrutalEngine.Graphics.TextureBufferCopy.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureBufferCopy.ToString() -> string!
+override BrutalEngine.Graphics.TextureCopy.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureCopy.ToString() -> string!
 override BrutalEngine.Graphics.TextureDescription.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureDescription.ToString() -> string!
 override BrutalEngine.Graphics.TextureHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.TextureHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureHandle.ToString() -> string!
+override BrutalEngine.Graphics.TextureLocation.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureLocation.ToString() -> string!
+override BrutalEngine.Graphics.TextureRegion.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureRegion.ToString() -> string!
 override BrutalEngine.Graphics.TextureViewDescription.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureViewDescription.ToString() -> string!
 override BrutalEngine.Graphics.TextureViewHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.TextureViewHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureViewHandle.ToString() -> string!
+override BrutalEngine.Graphics.TextureWrite.GetHashCode() -> int
+override BrutalEngine.Graphics.TextureWrite.ToString() -> string!
 static BrutalEngine.Graphics.AdapterSelection.Auto.get -> BrutalEngine.Graphics.AdapterSelection
 static BrutalEngine.Graphics.AdapterSelection.ByIndex(int index) -> BrutalEngine.Graphics.AdapterSelection
 static BrutalEngine.Graphics.AdapterSelection.ByName(string! nameSubstring) -> BrutalEngine.Graphics.AdapterSelection
@@ -328,6 +424,8 @@ static BrutalEngine.Graphics.BindGroupHandle.operator !=(BrutalEngine.Graphics.B
 static BrutalEngine.Graphics.BindGroupHandle.operator ==(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupLayoutHandle.operator !=(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupLayoutHandle.operator ==(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
+static BrutalEngine.Graphics.BufferCopy.operator !=(BrutalEngine.Graphics.BufferCopy left, BrutalEngine.Graphics.BufferCopy right) -> bool
+static BrutalEngine.Graphics.BufferCopy.operator ==(BrutalEngine.Graphics.BufferCopy left, BrutalEngine.Graphics.BufferCopy right) -> bool
 static BrutalEngine.Graphics.BufferDescription.operator !=(BrutalEngine.Graphics.BufferDescription left, BrutalEngine.Graphics.BufferDescription right) -> bool
 static BrutalEngine.Graphics.BufferDescription.operator ==(BrutalEngine.Graphics.BufferDescription left, BrutalEngine.Graphics.BufferDescription right) -> bool
 static BrutalEngine.Graphics.BufferHandle.operator !=(BrutalEngine.Graphics.BufferHandle left, BrutalEngine.Graphics.BufferHandle right) -> bool
@@ -354,17 +452,33 @@ static BrutalEngine.Graphics.ShaderModuleHandle.operator !=(BrutalEngine.Graphic
 static BrutalEngine.Graphics.ShaderModuleHandle.operator ==(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
 static BrutalEngine.Graphics.SwapchainHandle.operator !=(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
 static BrutalEngine.Graphics.SwapchainHandle.operator ==(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
+static BrutalEngine.Graphics.TextureBufferCopy.operator !=(BrutalEngine.Graphics.TextureBufferCopy left, BrutalEngine.Graphics.TextureBufferCopy right) -> bool
+static BrutalEngine.Graphics.TextureBufferCopy.operator ==(BrutalEngine.Graphics.TextureBufferCopy left, BrutalEngine.Graphics.TextureBufferCopy right) -> bool
+static BrutalEngine.Graphics.TextureCopy.operator !=(BrutalEngine.Graphics.TextureCopy left, BrutalEngine.Graphics.TextureCopy right) -> bool
+static BrutalEngine.Graphics.TextureCopy.operator ==(BrutalEngine.Graphics.TextureCopy left, BrutalEngine.Graphics.TextureCopy right) -> bool
 static BrutalEngine.Graphics.TextureDescription.operator !=(BrutalEngine.Graphics.TextureDescription left, BrutalEngine.Graphics.TextureDescription right) -> bool
 static BrutalEngine.Graphics.TextureDescription.operator ==(BrutalEngine.Graphics.TextureDescription left, BrutalEngine.Graphics.TextureDescription right) -> bool
 static BrutalEngine.Graphics.TextureHandle.operator !=(BrutalEngine.Graphics.TextureHandle left, BrutalEngine.Graphics.TextureHandle right) -> bool
 static BrutalEngine.Graphics.TextureHandle.operator ==(BrutalEngine.Graphics.TextureHandle left, BrutalEngine.Graphics.TextureHandle right) -> bool
+static BrutalEngine.Graphics.TextureLocation.operator !=(BrutalEngine.Graphics.TextureLocation left, BrutalEngine.Graphics.TextureLocation right) -> bool
+static BrutalEngine.Graphics.TextureLocation.operator ==(BrutalEngine.Graphics.TextureLocation left, BrutalEngine.Graphics.TextureLocation right) -> bool
+static BrutalEngine.Graphics.TextureRegion.operator !=(BrutalEngine.Graphics.TextureRegion left, BrutalEngine.Graphics.TextureRegion right) -> bool
+static BrutalEngine.Graphics.TextureRegion.operator ==(BrutalEngine.Graphics.TextureRegion left, BrutalEngine.Graphics.TextureRegion right) -> bool
 static BrutalEngine.Graphics.TextureViewDescription.operator !=(BrutalEngine.Graphics.TextureViewDescription left, BrutalEngine.Graphics.TextureViewDescription right) -> bool
 static BrutalEngine.Graphics.TextureViewDescription.operator ==(BrutalEngine.Graphics.TextureViewDescription left, BrutalEngine.Graphics.TextureViewDescription right) -> bool
 static BrutalEngine.Graphics.TextureViewHandle.operator !=(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
 static BrutalEngine.Graphics.TextureViewHandle.operator ==(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
+static BrutalEngine.Graphics.TextureWrite.operator !=(BrutalEngine.Graphics.TextureWrite left, BrutalEngine.Graphics.TextureWrite right) -> bool
+static BrutalEngine.Graphics.TextureWrite.operator ==(BrutalEngine.Graphics.TextureWrite left, BrutalEngine.Graphics.TextureWrite right) -> bool
 ~override BrutalEngine.Graphics.AdapterSelection.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.BufferCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SamplerDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.TextureBufferCopy.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.TextureCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.TextureLocation.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.TextureRegion.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureViewDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.TextureWrite.Equals(object obj) -> bool
