@@ -74,7 +74,7 @@ public sealed class GraphicsDeviceCreateTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Selections))]
-    public void Create_Selection_PicksFirstSuitableMatch(string selection, int expected)
+    public void Create_Selection_PicksBestSuitableMatch(string selection, int expected)
     {
         // 0 is rejected; 1 and 3 are discrete, 2 integrated; names "Alpha", "Shared Beta", "Shared Gamma", "Delta".
         SetAdapters(
