@@ -31,8 +31,8 @@ public sealed unsafe class SdlEventPumpTests
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
         ScriptedClock clock = new();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, clock);
+        SdlEventPump pump = new(Capacity, TextCapacity, clock);
+        PlatformEventBuffer buffer = pump.Buffer;
 
         // One event of each payload shape, with an ignored user event in the middle.
         Push(new SdlEvent { type = SdlEventType.Quit });
@@ -79,8 +79,8 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
         PushMotions(0, 150);
 
         PlatformEventBatch first = pump.Pump();
@@ -105,8 +105,8 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
 
         // Three 600-byte texts: after two, 848 bytes are free, below the 1,024 HasRoom keeps, though 62 events fit.
         byte[] text = GC.AllocateArray<byte>(601, pinned: true);
@@ -143,8 +143,8 @@ public sealed unsafe class SdlEventPumpTests
             row =>
             {
                 Sdl.PInvoke.FlushEvents(FirstType, LastType);
-                PlatformEventBuffer buffer = new(row.Capacity, TextCapacity);
-                SdlEventPump pump = new(buffer, new ScriptedClock());
+                SdlEventPump pump = new(row.Capacity, TextCapacity, new ScriptedClock());
+                PlatformEventBuffer buffer = pump.Buffer;
                 PushMotions(0, row.Count);
 
                 List<int> received = [];
@@ -174,8 +174,8 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
         PushMotions(0, Capacity);
 
         PlatformEventBatch batch = pump.Pump();
@@ -191,8 +191,8 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
 
         // A polling pump that took exactly what was queued leaves SDL's poll sentinel at the front of the queue.
         PushMotions(0, 3);
@@ -221,8 +221,8 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         using SdlVideoSession session = StartDummy();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
 
         // SDL_WaitEventTimeout takes the first event and queues its sentinel behind the 64 still queued.
         PushMotions(0, Capacity + 1);
@@ -255,8 +255,8 @@ public sealed unsafe class SdlEventPumpTests
         using SdlPlatformWindow window = session.CreateWindow(options).Value;
         Sdl.PInvoke.FlushEvents(FirstType, LastType);
         SdlEvent[] events = EveryKind(window.Id.Value, Sdl.PInvoke.GetPrimaryDisplay());
-        PlatformEventBuffer buffer = new(1024, 8192);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(1024, 8192, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
         long checksum = PumpEach(pump, events, 1); // warm-up: JIT and first-call costs
 
         long before = GC.GetAllocatedBytesForCurrentThread();
@@ -276,8 +276,8 @@ public sealed unsafe class SdlEventPumpTests
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
         SdlVideoSession session = StartDummy();
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-        SdlEventPump pump = new(buffer, new ScriptedClock());
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock());
+        PlatformEventBuffer buffer = pump.Buffer;
         session.Dispose();
 
         InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(() => pump.Pump());
@@ -289,12 +289,11 @@ public sealed unsafe class SdlEventPumpTests
     }
 
     [Fact]
-    public void Constructor_NullArguments_Throw()
+    public void Constructor_InvalidArguments_Throw()
     {
-        PlatformEventBuffer buffer = new(Capacity, TextCapacity);
-
-        Assert.Equal("buffer", Assert.Throws<ArgumentNullException>(() => new SdlEventPump(null!, new ScriptedClock())).ParamName);
-        Assert.Equal("clock", Assert.Throws<ArgumentNullException>(() => new SdlEventPump(buffer, null!)).ParamName);
+        Assert.Equal("clock", Assert.Throws<ArgumentNullException>(() => new SdlEventPump(Capacity, TextCapacity, null!)).ParamName);
+        Assert.Equal("eventCapacity", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity - 1, TextCapacity, new ScriptedClock())).ParamName);
+        Assert.Equal("textCapacityBytes", Assert.Throws<ArgumentOutOfRangeException>(() => new SdlEventPump(Capacity, TextCapacity - 1, new ScriptedClock())).ParamName);
     }
 
     // Pushes every type of the round, pumps, and folds each event's payload, read through its own view, into a

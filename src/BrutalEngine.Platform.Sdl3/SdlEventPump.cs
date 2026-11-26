@@ -28,8 +28,8 @@ namespace BrutalEngine.Platform.Sdl3;
 /// </para>
 /// <para>
 /// <b>Threads:</b> the thread that started SDL video, which owns the buffer; the platform checks it. Not thread-safe.
-/// <b>Allocation:</b> none, except the message of a failure. <b>Ownership:</b> the pump doesn't own the buffer or the
-/// clock; the platform that creates it does.
+/// <b>Allocation:</b> the constructor allocates the buffer; nothing else allocates, except the message of a failure.
+/// <b>Ownership:</b> the pump owns its buffer; the platform owns the pump and the clock.
 /// </para>
 /// </remarks>
 internal sealed class SdlEventPump
@@ -41,19 +41,26 @@ internal sealed class SdlEventPump
     private readonly PlatformEventBuffer _buffer;
     private readonly TimeProvider _clock;
 
-    /// <summary>Creates a pump over a buffer, with a clock for the event timestamps.</summary>
-    /// <param name="buffer">The buffer each pump clears and fills, read by the host through the batch.</param>
+    /// <summary>Creates a pump with its own event buffer, and a clock for the event timestamps.</summary>
+    /// <param name="eventCapacity">How many events one pump can hold: 64 to 65536.</param>
+    /// <param name="textCapacityBytes">How many bytes of UTF-8 text one pump can hold: 2048 to 1048576.</param>
     /// <param name="clock">The platform clock, read once for each event taken from SDL.</param>
-    /// <exception cref="ArgumentNullException">
-    /// <paramref name="buffer"/> or <paramref name="clock"/> is <see langword="null"/>.
-    /// </exception>
-    public SdlEventPump(PlatformEventBuffer buffer, TimeProvider clock)
+    /// <remarks>
+    /// Allocates the buffer, once. The pump creates the buffer so that storage of its own can match the buffer's text
+    /// capacity, which the buffer doesn't expose.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="clock"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A capacity is outside its range.</exception>
+    public SdlEventPump(int eventCapacity, int textCapacityBytes, TimeProvider clock)
     {
-        ArgumentNullException.ThrowIfNull(buffer);
         ArgumentNullException.ThrowIfNull(clock);
-        _buffer = buffer;
+        _buffer = new PlatformEventBuffer(eventCapacity, textCapacityBytes);
         _clock = clock;
     }
+
+    /// <summary>Gets the buffer each pump clears and fills, which the host reads through its batch.</summary>
+    /// <value>The same buffer for the pump's lifetime.</value>
+    public PlatformEventBuffer Buffer => _buffer;
 
     /// <summary>
     /// Replaces the buffer's contents with the events SDL has queued, in order, until the buffer is full or SDL's
