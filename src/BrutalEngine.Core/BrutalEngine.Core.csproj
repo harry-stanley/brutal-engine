@@ -2,5 +2,6 @@
   <PropertyGroup>
     <Description>BrutalEngine core types: generational handles, diagnostics and other foundations shared by every engine module.</Description>
     <PackageTags>gamedev;game-engine;2d;brutal</PackageTags>
+    <BrutalEngineMilestone>0</BrutalEngineMilestone>
   </PropertyGroup>
 </Project>

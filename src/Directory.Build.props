@@ -20,6 +20,15 @@
     <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
+  <!--
+    The ship gate (ADR-0016): the milestone the next release ships. A library packs only when its csproj's
+    BrutalEngineMilestone is at most this (src/Directory.Build.targets). The PR that follows each release tag raises it
+    by one: 1 until v0.2.0 is tagged, then 2.
+  -->
+  <PropertyGroup>
+    <BrutalEngineReleaseMilestone>1</BrutalEngineReleaseMilestone>
+  </PropertyGroup>
+
   <!-- Shipped engine libraries: one project = one NuGet package (docs/04-repo-layout.md). -->
   <PropertyGroup Condition="'$(IsRoslynComponentProject)' != 'true'">
     <IsPackable>true</IsPackable>

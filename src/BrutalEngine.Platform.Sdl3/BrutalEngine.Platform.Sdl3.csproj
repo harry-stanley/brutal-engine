@@ -2,6 +2,7 @@
   <PropertyGroup>
     <Description>BrutalEngine SDL 3 platform backend: windows, input and displays through BRUTAL's SDL bindings.</Description>
     <PackageTags>gamedev;game-engine;2d;brutal;platform;sdl3</PackageTags>
+    <BrutalEngineMilestone>1</BrutalEngineMilestone>
   </PropertyGroup>
 
   <!--

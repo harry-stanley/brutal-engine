@@ -2,6 +2,7 @@
   <PropertyGroup>
     <Description>BrutalEngine render interface: the backend-neutral GPU API (typed GPU object handles first) that every graphics backend implements.</Description>
     <PackageTags>gamedev;game-engine;2d;brutal;graphics</PackageTags>
+    <BrutalEngineMilestone>1</BrutalEngineMilestone>
   </PropertyGroup>
 
   <ItemGroup>
