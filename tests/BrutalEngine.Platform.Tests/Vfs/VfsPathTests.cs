@@ -386,6 +386,29 @@ public sealed class VfsPathTests
         }
     }
 
+    [Theory]
+    [InlineData("res://\u65E5\u672C", 1024, true)]
+    [InlineData("res://\u65E5\u672C", 1025, false)]
+    [InlineData("res://\u00E9/\U0001F600", 1024, true)]
+    [InlineData("res://\u00E9/\U0001F600", 1025, false)]
+    public void Combine_PathLimit_CountsTheBaseInUtf8Bytes(string basePath, int bytes, bool valid)
+    {
+        // The base's multi-byte characters count in UTF-8 bytes (6 for the two CJK characters, 2 + 4 for the other
+        // base), plus the joining '/'.
+        var path = VfsPath.Parse(basePath);
+        string relative = LongPath(bytes - Encoding.UTF8.GetByteCount(basePath) - 1);
+
+        if (valid)
+        {
+            Assert.Equal(bytes, Encoding.UTF8.GetByteCount(path.Combine(relative).ToString()));
+        }
+        else
+        {
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => path.Combine(relative));
+            Assert.Contains(PathLengthRule, exception.Message, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void Combine_NullRelative_Throws()
     {
