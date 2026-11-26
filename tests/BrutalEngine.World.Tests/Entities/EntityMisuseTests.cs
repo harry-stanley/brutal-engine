@@ -22,6 +22,18 @@ public sealed class EntityMisuseTests
 
         /// <summary><see cref="EcsWorld.Despawn"/>.</summary>
         Despawn,
+
+        /// <summary><see cref="EcsWorld.Spawn{T1, T2}(in T1, in T2)"/>.</summary>
+        SpawnWithComponents,
+
+        /// <summary><see cref="EcsWorld.Has{T}"/>.</summary>
+        Has,
+
+        /// <summary><see cref="EcsWorld.Get{T}"/>.</summary>
+        Get,
+
+        /// <summary><see cref="EcsWorld.TryGet{T}"/>.</summary>
+        TryGet,
     }
 
     /// <summary>The misuse a row makes.</summary>
@@ -61,6 +73,29 @@ public sealed class EntityMisuseTests
     [InlineData(Member.Spawn, Misuse.WrongThread, typeof(WrongThreadException))]
     [InlineData(Member.EntityCount, Misuse.Disposed, typeof(ObjectDisposedException))]
     [InlineData(Member.EntityCount, Misuse.WrongThread, typeof(WrongThreadException))]
+    [InlineData(Member.Has, Misuse.Null, typeof(ArgumentException))]
+    [InlineData(Member.Has, Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(Member.Has, Misuse.Retired, typeof(StaleHandleException))]
+    [InlineData(Member.Has, Misuse.OutOfRange, typeof(StaleHandleException))]
+    [InlineData(Member.Has, Misuse.Pending, typeof(InvalidOperationException))]
+    [InlineData(Member.Has, Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Member.Has, Misuse.WrongThread, typeof(WrongThreadException))]
+    [InlineData(Member.Get, Misuse.Null, typeof(ArgumentException))]
+    [InlineData(Member.Get, Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(Member.Get, Misuse.Retired, typeof(StaleHandleException))]
+    [InlineData(Member.Get, Misuse.OutOfRange, typeof(StaleHandleException))]
+    [InlineData(Member.Get, Misuse.Pending, typeof(InvalidOperationException))]
+    [InlineData(Member.Get, Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Member.Get, Misuse.WrongThread, typeof(WrongThreadException))]
+    [InlineData(Member.TryGet, Misuse.Null, typeof(ArgumentException))]
+    [InlineData(Member.TryGet, Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(Member.TryGet, Misuse.Retired, typeof(StaleHandleException))]
+    [InlineData(Member.TryGet, Misuse.OutOfRange, typeof(StaleHandleException))]
+    [InlineData(Member.TryGet, Misuse.Pending, typeof(InvalidOperationException))]
+    [InlineData(Member.TryGet, Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Member.TryGet, Misuse.WrongThread, typeof(WrongThreadException))]
+    [InlineData(Member.SpawnWithComponents, Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Member.SpawnWithComponents, Misuse.WrongThread, typeof(WrongThreadException))]
     public void Table(Member member, Misuse misuse, Type expected)
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
@@ -87,13 +122,14 @@ public sealed class EntityMisuseTests
             };
 
             int slots = world.Entities.SlotCount;
+            int types = world.Components.Count;
             int rows = world.Archetypes.Empty.RowCount;
             Exception? failure;
             if (misuse == Misuse.WrongThread)
             {
                 failure = EntityTestSupport.RunOnOtherThread(() => Call(world, member, target));
                 WrongThreadException wrongThread = Assert.IsType<WrongThreadException>(failure);
-                Assert.Equal($"EcsWorld.{member}", wrongThread.ApiName);
+                Assert.Equal(member == Member.SpawnWithComponents ? "EcsWorld.Spawn" : $"EcsWorld.{member}", wrongThread.ApiName);
             }
             else
             {
@@ -112,6 +148,8 @@ public sealed class EntityMisuseTests
                 // Thrown before any effect: the same entities, slots and rows as before the call.
                 Assert.Equal(2, world.EntityCount);
                 Assert.Equal(slots, world.Entities.SlotCount);
+                Assert.Equal(types, world.Components.Count);
+                Assert.Equal(1, world.ArchetypeCount);
                 Assert.Equal(rows, world.Archetypes.Empty.RowCount);
                 Assert.True(world.IsAlive(alive));
                 Assert.True(world.IsAlive(other));
@@ -131,6 +169,51 @@ public sealed class EntityMisuseTests
         tracking.ThrowIfLeaks();
     }
 
+    /// <summary>
+    /// Data access that a component rule forbids: the entity lacks the type, the type isn't registered here, or it is a
+    /// tag (registered and on the entity, registered and not on it, or not registered). Each throws
+    /// <see cref="InvalidOperationException"/> naming the entity and the component, and registers nothing.
+    /// </summary>
+    [Theory]
+    [InlineData(Member.Get, "missing")]
+    [InlineData(Member.Get, "unregistered")]
+    [InlineData(Member.Get, "tag")]
+    [InlineData(Member.Get, "absent tag")]
+    [InlineData(Member.Get, "unregistered tag")]
+    [InlineData(Member.TryGet, "tag")]
+    [InlineData(Member.TryGet, "absent tag")]
+    [InlineData(Member.TryGet, "unregistered tag")]
+    public void ComponentTable(Member member, string rule)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Entity tagged = world.Spawn(new Position(1, 2), default(Marker));
+            Entity plain = world.Spawn(new Health(3));
+            int types = world.Components.Count;
+            (Entity target, string component, Action call) = (member, rule) switch
+            {
+                (Member.Get, "missing") => (plain, "Position", () => _ = world.Get<Position>(plain)),
+                (Member.Get, "unregistered") => (plain, "Unused", () => _ = world.Get<Unused>(plain)),
+                (Member.Get, "tag") => (tagged, "Marker", () => _ = world.Get<Marker>(tagged)),
+                (Member.Get, "absent tag") => (plain, "Marker", () => _ = world.Get<Marker>(plain)),
+                (Member.Get, _) => (plain, "UnusedTag", () => _ = world.Get<UnusedTag>(plain)),
+                (_, "tag") => (tagged, "Marker", () => _ = world.TryGet(tagged, out Marker _)),
+                (_, "absent tag") => (plain, "Marker", () => _ = world.TryGet(plain, out Marker _)),
+                _ => (plain, "UnusedTag", (Action)(() => _ = world.TryGet(plain, out UnusedTag _))),
+            };
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(call);
+
+            Assert.Contains(target.ToString(), exception.Message, StringComparison.Ordinal);
+            Assert.Contains($"Entities.{component}", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(types, world.Components.Count);
+            Assert.Equal(new Position(1, 2), world.Get<Position>(tagged));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     private static void Call(EcsWorld world, Member member, Entity target)
     {
         switch (member)
@@ -143,6 +226,18 @@ public sealed class EntityMisuseTests
                 break;
             case Member.Despawn:
                 world.Despawn(target);
+                break;
+            case Member.SpawnWithComponents:
+                _ = world.Spawn(new Position(1, 2), new Health(3));
+                break;
+            case Member.Has:
+                _ = world.Has<Position>(target);
+                break;
+            case Member.Get:
+                _ = world.Get<Position>(target);
+                break;
+            case Member.TryGet:
+                _ = world.TryGet(target, out Position _);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(member), member, "No such member.");
