@@ -70,13 +70,17 @@ public sealed unsafe class SdlPlatformWindowTests
         Assert.Equal(mode, window.Mode);
     }
 
-    [Fact]
-    public void Create_WrongEstimate_ResizesOnce()
+    // The resize is followed by SDL_SyncWindow, which returns at once on both drivers (their changes are immediate), so
+    // these rows prove the resize and the re-read after it, not the wait itself.
+    [Theory]
+    [InlineData(HeadlessMode.NoSurface)]
+    [InlineData(HeadlessMode.Offscreen)]
+    public void Create_WrongEstimate_ResizesOnce(HeadlessMode headless)
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
-        using SdlVideoSession session = Start(HeadlessMode.NoSurface);
+        using SdlVideoSession session = Start(headless);
 
-        // A display content scale of 2 makes the estimate 640 by 400; the window's own scale on dummy is 1.
+        // A display content scale of 2 makes the estimate 640 by 400; the window's own scale on dummy and offscreen is 1.
         using SdlPlatformWindow window = SdlPlatformWindow.Create(NoSurface, session.VideoDriver, session.Headless, estimateScale: 2f).Value;
 
         Assert.Equal(1f, window.DisplayScale);

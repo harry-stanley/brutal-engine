@@ -122,7 +122,10 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
     /// <remarks>
     /// The size is estimated as content units times the display's content scale, which is already in window
     /// coordinates (so not divided by pixel density). Once the window exists, its own display scale and pixel density
-    /// give the exact size, and a windowed window whose estimate was off is resized once. Allocates.
+    /// give the exact size, and a windowed window whose estimate was off is resized once. Window systems that apply
+    /// resizes asynchronously (X11, Wayland) are waited for with <c>SDL_SyncWindow</c> before the snapshot is re-read.
+    /// A sync that times out doesn't fail creation: the window is kept and its snapshot holds the size SDL reports at
+    /// that point, until the event pump refreshes it from the resize event. Allocates.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> or <paramref name="videoDriver"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">An option breaks its rule (see <see cref="WindowOptionsValidator"/>).</exception>
@@ -331,7 +334,16 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         }
 
         Result resized = SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, exact.Width, exact.Height), "SDL_SetWindowSize");
-        return resized.IsFailure ? resized : ReadSnapshot();
+        if (resized.IsFailure)
+        {
+            return resized;
+        }
+
+        // SDL applies the resize asynchronously on some window systems, so wait for it before re-reading. SDL_SyncWindow
+        // returns false only when it timed out (it returns within finite time, and at once where changes are immediate);
+        // that isn't a failure, so its status is deliberately not checked: the snapshot then holds what SDL reports now.
+        _ = Sdl.PInvoke.SyncWindow(_handle);
+        return ReadSnapshot();
     }
 
     private unsafe Result ReadSnapshot()
