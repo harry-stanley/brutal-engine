@@ -28,7 +28,9 @@ public sealed class ProcessLoaderHostTests
     [Trait("Category", "Gpu")]
     public void SystemLoader_SecondCall_AllocatesNothing()
     {
-        // The real host is a struct passed to a generic: a box would show here (AC4).
+        // The real host is a struct passed to a generic: a box would show here (AC4). Limit: this proves it for optimised
+        // code (Release, which CI runs) only. In optimised code the JIT folds a box feeding a null check, so removing the
+        // value-type guard in LoaderSetup.Configure still passes here; it allocates 24 bytes only in Debug.
         var host = default(ProcessLoaderHost);
         string app = AppContext.BaseDirectory;
         Assert.True(LoaderSetup.Configure(app, null, host).IsSuccess);
@@ -94,7 +96,7 @@ public sealed class ProcessLoaderHostTests
         Result<nint> result = default(ProcessLoaderHost).Preload(path);
 
         Assert.True(result.IsFailure);
-        Assert.Equal(new EngineError(ErrorKind.Unavailable, "Not a Vulkan loader (no vkGetInstanceProcAddr export): " + path), result.Error);
+        Assert.Equal(new EngineError(ErrorKind.Unavailable, "Vulkan loader missing: no vkGetInstanceProcAddr export in " + path), result.Error);
     }
 
     [Fact]

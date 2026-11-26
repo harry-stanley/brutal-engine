@@ -11,8 +11,23 @@ namespace BrutalEngine.Graphics.Vulkan.Loader;
 /// <c>Configure</c> never boxes it.
 /// </summary>
 /// <remarks>
-/// Main thread only, before the platform or any other thread starts (<see cref="IVulkanLoaderHost"/>). A preloaded
-/// library is never freed: BRUTAL binds it for the process lifetime.
+/// <para>
+/// Main thread only, before the platform or any other thread starts (<see cref="IVulkanLoaderHost"/>).
+/// </para>
+/// <para>
+/// A library that <see cref="Preload"/> loaded stays loaded for the process lifetime, whether or not BRUTAL bound it:
+/// on success BRUTAL binds it for the process lifetime, and after a failed check (BRUTAL bound another loader, or its
+/// type initialisation had already failed) it is still kept. Freeing isn't attempted, because BRUTAL may hold the same
+/// handle (its bare-name lookup reuses a library already in the process) or take it on a later touch, and the
+/// interface returns no handle to free; the cost is one loader kept loaded at setup. Only a library without the
+/// <c>vkGetInstanceProcAddr</c> export is freed, inside <see cref="Preload"/>.
+/// </para>
+/// <para>
+/// No boxing is measured by a zero-allocation test in Release builds, which CI runs. In optimised code the JIT removes
+/// a box that only feeds a null check, so that test can't tell whether the value-type guard on
+/// <c>LoaderSetup.Configure</c>'s null check is present. The guard is what keeps unoptimised (Debug) code from boxing
+/// the host (24 bytes per call without it), and no test covers that.
+/// </para>
 /// </remarks>
 internal readonly partial struct ProcessLoaderHost : IVulkanLoaderHost
 {
@@ -76,7 +91,7 @@ internal readonly partial struct ProcessLoaderHost : IVulkanLoaderHost
         {
             // Not a loader, so nothing will bind it: drop this load's reference.
             NativeLibrary.Free(library);
-            return new EngineError(ErrorKind.Unavailable, "Not a Vulkan loader (no vkGetInstanceProcAddr export): " + path);
+            return new EngineError(ErrorKind.Unavailable, "Vulkan loader missing: no vkGetInstanceProcAddr export in " + path);
         }
 
         return entryPoint;
