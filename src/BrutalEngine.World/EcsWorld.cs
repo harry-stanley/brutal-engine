@@ -77,6 +77,45 @@ public sealed class EcsWorld : IDisposable
         }
     }
 
+    /// <summary>
+    /// Returns whether <paramref name="entity"/> is alive in this world: issued by it, placed in storage, and not
+    /// despawned since. A lookup: it never throws for an entity that isn't alive here.
+    /// </summary>
+    /// <param name="entity">Any entity value.</param>
+    /// <returns>
+    /// <see langword="true"/> if the entity is alive. <see langword="false"/> for <see cref="Entity.Null"/>, a stale
+    /// entity (despawned, or its slot retired), a pending entity (reserved by a command buffer and not yet placed), and
+    /// an entity whose index is outside this world's table. An entity from another world that matches a live slot
+    /// here returns <see langword="true"/>: entities carry no world reference.
+    /// </returns>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>Allocates nothing.</remarks>
+    public bool IsAlive(Entity entity)
+    {
+        ThrowIfUnusable("EcsWorld.IsAlive");
+        return _entities.IsAlive(entity);
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="entity"/> is pending in this world: reserved by a command buffer and not yet
+    /// placed by its playback, nor released by clearing or disposing the buffer. A lookup: it never throws for an
+    /// entity that isn't pending here.
+    /// </summary>
+    /// <param name="entity">Any entity value.</param>
+    /// <returns>
+    /// <see langword="true"/> if the entity is pending. <see langword="false"/> for <see cref="Entity.Null"/>, alive,
+    /// stale and out-of-range entities.
+    /// </returns>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>Allocates nothing.</remarks>
+    public bool IsPending(Entity entity)
+    {
+        ThrowIfUnusable("EcsWorld.IsPending");
+        return _entities.IsPending(entity);
+    }
+
     /// <summary>The allocator every unmanaged block of this world comes from. Not owned by the world.</summary>
     internal INativeAllocator Allocator => _allocator;
 

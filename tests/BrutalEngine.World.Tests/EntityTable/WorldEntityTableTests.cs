@@ -1,5 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
 using Xunit;
 
@@ -41,6 +43,96 @@ public sealed class WorldEntityTableTests
 
         // Invalid options are rejected before anything is allocated.
         Assert.Equal(0, tracking.TotalAllocationCount);
+    }
+
+    [Fact]
+    public void IsAlive_IsPending_Lookups()
+    {
+        using EcsWorld world = new(new WorldOptions { InitialEntityCapacity = 4 });
+        Entity alive = world.Entities.Allocate();
+        world.Entities.Place(0, archetype: 0, chunk: 0, row: 0);
+        Entity pending = world.Entities.Reserve();
+        Entity stale = world.Entities.Allocate();
+        world.Entities.Place(2, archetype: 0, chunk: 0, row: 1);
+        world.Entities.Free(2);
+
+        Assert.True(world.IsAlive(alive));
+        Assert.False(world.IsPending(alive));
+        Assert.False(world.IsAlive(pending));
+        Assert.True(world.IsPending(pending));
+
+        // Lookups never throw for entities that aren't alive here: null, stale, or foreign and out of range.
+        Entity[] notAlive = [Entity.Null, stale, new Entity(4096, 1), new Entity(alive.Index, alive.Generation + 1)];
+        foreach (Entity entity in notAlive)
+        {
+            Assert.False(world.IsAlive(entity));
+            Assert.False(world.IsPending(entity));
+        }
+    }
+
+    [Fact]
+    public void IsAlive_IsPending_AfterDispose_Throw()
+    {
+        EcsWorld world = new(new WorldOptions());
+        world.Dispose();
+
+        _ = Assert.Throws<ObjectDisposedException>(() => world.IsAlive(Entity.Null));
+        _ = Assert.Throws<ObjectDisposedException>(() => world.IsPending(Entity.Null));
+    }
+
+    [Theory]
+    [InlineData("EcsWorld.IsAlive")]
+    [InlineData("EcsWorld.IsPending")]
+    public void IsAlive_IsPending_OtherThread_Throw(string apiName)
+    {
+        using EcsWorld world = new(new WorldOptions());
+        Exception? failure = null;
+        Thread thread = new(() =>
+        {
+            // Caught here, so a failure can't escape the thread and take down the test host.
+            failure = Record.Exception(() => _ = apiName == "EcsWorld.IsAlive" ? world.IsAlive(Entity.Null) : world.IsPending(Entity.Null));
+        });
+        thread.Start();
+        thread.Join();
+
+        WrongThreadException exception = Assert.IsType<WrongThreadException>(failure);
+        Assert.Equal(apiName, exception.ApiName);
+    }
+
+    [Fact]
+    public void IsAlive_IsPending_DoNotAllocate()
+    {
+        using EcsWorld world = new(new WorldOptions { InitialEntityCapacity = 4 });
+        Entity alive = world.Entities.Allocate();
+        world.Entities.Place(0, archetype: 0, chunk: 0, row: 0);
+        Entity pending = world.Entities.Reserve();
+        Entity[] probes = [alive, pending, Entity.Null, new Entity(1000, 1)];
+
+        // Warm up so any one-time JIT or tiering work happens before measuring.
+        int found = Probe(world, probes);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++)
+        {
+            found += Probe(world, probes);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.Equal(1001 * 2, found);
+
+        static int Probe(EcsWorld world, Entity[] probes)
+        {
+            int found = 0;
+            foreach (Entity probe in probes)
+            {
+                found += world.IsAlive(probe) ? 1 : 0;
+                found += world.IsPending(probe) ? 1 : 0;
+            }
+
+            return found;
+        }
     }
 
     /// <summary>An allocator that has no memory to give.</summary>
