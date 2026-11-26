@@ -12,8 +12,9 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Instances;
 /// unknown layer is <c>VK_ERROR_LAYER_NOT_PRESENT</c>). Each of the next <see cref="GrowthsLeft"/> count queries is
 /// followed by one more entry in the queried list, as when a layer is installed between the two calls, and each of the
 /// next <see cref="ShrinksLeft"/> by one entry fewer, as when one is removed. <see cref="CreateInstance"/> never
-/// creates one: it fails as BRUTAL's wrapper does, with <c>VK_ERROR_INITIALIZATION_FAILED</c>. Every call is recorded, and
-/// so is every call made while the calling thread didn't hold <see cref="GlobalCommands.Gate"/>.
+/// creates one: it fails as BRUTAL's wrapper does, with <c>VK_ERROR_INITIALIZATION_FAILED</c>. A set
+/// <see cref="LayersFailure"/> fails every layer enumeration with that result. Every call is recorded, and so is every
+/// call made while the calling thread didn't hold <see cref="GlobalCommands.Gate"/>.
 /// </summary>
 internal sealed class FakeEnumeration : GlobalCommands.ISource
 {
@@ -25,6 +26,9 @@ internal sealed class FakeEnumeration : GlobalCommands.ISource
     public int GrowthsLeft { get; set; }
 
     public int ShrinksLeft { get; set; }
+
+    /// <summary>Gets or sets the result every layer enumeration fails with; <see langword="null"/> lists <see cref="Layers"/>.</summary>
+    public VkResult? LayersFailure { get; set; }
 
     /// <summary>Gets the calls in order, e.g. <c>"extensions() count"</c>, <c>"layers fill"</c>, <c>"create"</c>.</summary>
     public List<string> Calls { get; } = [];
@@ -61,6 +65,11 @@ internal sealed class FakeEnumeration : GlobalCommands.ISource
     public unsafe VkResult EnumerateLayers(ref int count, Span<VkLayerProperties> properties)
     {
         Record($"layers {(properties.IsEmpty ? "count" : "fill")}");
+        if (LayersFailure is VkResult failure)
+        {
+            return failure;
+        }
+
         if (Counted(Layers, ref count, properties.IsEmpty))
         {
             return VkResult.Success;

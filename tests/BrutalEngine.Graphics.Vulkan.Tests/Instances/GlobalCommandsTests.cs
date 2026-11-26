@@ -33,6 +33,7 @@ public sealed class GlobalCommandsTests
     [Fact]
     public void Select_EveryEnumeration_RunsInsideTheGate()
     {
+        AssertTheGateIsFree();
         FakeEnumeration loader = ValidationLoader();
 
         Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options { Validation = true }, new VulkanCallGate());
@@ -47,6 +48,7 @@ public sealed class GlobalCommandsTests
     [Fact]
     public void Create_CreateInstance_RunsInsideTheGate()
     {
+        AssertTheGateIsFree();
         FakeEnumeration loader = new();
 
         Result<VulkanInstance> result = InstanceFactory.Create(new InstanceFactory.Options(), new VulkanCallGate(), loader);
@@ -59,6 +61,7 @@ public sealed class GlobalCommandsTests
     [Fact]
     public void Select_Returns_ReleasesTheGate()
     {
+        AssertTheGateIsFree();
         FakeEnumeration loader = ValidationLoader();
 
         Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options { Validation = true }, new VulkanCallGate());
@@ -69,8 +72,40 @@ public sealed class GlobalCommandsTests
     }
 
     [Fact]
+    public void Select_EnumerationFails_ReleasesTheGate()
+    {
+        AssertTheGateIsFree();
+        FakeEnumeration loader = ValidationLoader();
+        _ = loader.Extensions.Remove(Validation);
+
+        Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options { Validation = true }, new VulkanCallGate());
+
+        // The layer's own extension count query failed inside the gate, after three that succeeded.
+        Assert.Equal(new EngineError(ErrorKind.Unsupported, "vkEnumerateInstanceExtensionProperties failed", (int)VkResult.ErrorLayerNotPresent), result.Error);
+        Assert.Equal($"extensions({Validation}) count", loader.Calls[^1]);
+        Assert.False(GlobalCommands.Gate.IsHeldByCurrentThread);
+        Assert.True(OtherThreadEntersTheGate());
+    }
+
+    [Fact]
+    public void Select_LayerEnumerationFails_ReleasesTheGate()
+    {
+        AssertTheGateIsFree();
+        FakeEnumeration loader = ValidationLoader();
+        loader.LayersFailure = VkResult.ErrorOutOfHostMemory;
+
+        Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options { Validation = true }, new VulkanCallGate());
+
+        Assert.Equal(new EngineError(ErrorKind.OutOfMemory, "vkEnumerateInstanceLayerProperties failed", (int)VkResult.ErrorOutOfHostMemory), result.Error);
+        Assert.Equal(["extensions() count", "extensions() fill", "layers count"], loader.Calls);
+        Assert.False(GlobalCommands.Gate.IsHeldByCurrentThread);
+        Assert.True(OtherThreadEntersTheGate());
+    }
+
+    [Fact]
     public void Create_SourceThrows_ReleasesTheGate()
     {
+        AssertTheGateIsFree();
         FakeEnumeration loader = new();
 
         Result<VulkanInstance> result = InstanceFactory.Create(new InstanceFactory.Options(), new VulkanCallGate(), loader);
@@ -86,6 +121,7 @@ public sealed class GlobalCommandsTests
     {
         const int Threads = 8;
         const int PerThread = 25;
+        AssertTheGateIsFree();
         OverlapRecorder source = new();
         CancellationToken token = TestContext.Current.CancellationToken;
         using Barrier start = new(Threads);
@@ -109,7 +145,11 @@ public sealed class GlobalCommandsTests
                 {
                     failures.Enqueue(exception);
                 }
-            });
+            })
+            {
+                // A worker stuck behind a leaked gate then fails the join below instead of keeping the test host alive.
+                IsBackground = true,
+            };
             threads[t].Start();
         }
 
@@ -131,6 +171,7 @@ public sealed class GlobalCommandsTests
     public void Create_RealLoader_GlobalCommandsRunInsideTheGate()
     {
         GpuValidation.BindLoader();
+        AssertTheGateIsFree();
         GateCheckingLoader loader = new();
 
         Result<VulkanInstance> result = InstanceFactory.Create(
@@ -198,11 +239,22 @@ public sealed class GlobalCommandsTests
             {
                 failure = exception;
             }
-        });
+        })
+        {
+            IsBackground = true,
+        };
         other.Start();
         Assert.True(other.Join(TimeSpan.FromSeconds(60)));
         Assert.Null(failure);
         return entered;
+    }
+
+    // Fails, instead of blocking the test host, when another thread holds the gate for longer than any global command
+    // takes, which only a release bug causes: every gate entry the test makes on this thread would wait forever.
+    private static void AssertTheGateIsFree()
+    {
+        Assert.True(GlobalCommands.Gate.TryEnter(TimeSpan.FromSeconds(30)), "the gate is held by another thread: a release path leaked it");
+        GlobalCommands.Gate.Exit();
     }
 
     // The repository root: the nearest folder above the test binaries that holds the solution file.
