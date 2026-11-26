@@ -213,6 +213,66 @@ internal static class CopyValidator
         }
     }
 
+    /// <summary>Checks a texture-to-texture copy against both textures.</summary>
+    /// <param name="copy">The copy to check.</param>
+    /// <param name="source">The description of the texture copied from; already valid.</param>
+    /// <param name="destination">
+    /// The description of the texture copied to; already valid, and the same as <paramref name="source"/> when both
+    /// locations name one texture.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// The source lacks <see cref="TextureUsage.CopySource"/> or the destination <see cref="TextureUsage.CopyDestination"/>;
+    /// the formats differ; either texture has more than one sample; an aspect doesn't match the format; or both
+    /// locations are the same subresource (texture, mip level and layer) and the regions overlap. Depth textures can be
+    /// copied this way.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// An aspect is outside its enum, or a mip level, layer or region lies outside its texture. The destination region
+    /// is <c>(DestinationX, DestinationY, SourceRegion.Width, SourceRegion.Height)</c>.
+    /// </exception>
+    public static void Validate(in TextureCopy copy, in TextureDescription source, in TextureDescription destination)
+    {
+        const string Type = nameof(TextureCopy);
+        CheckTextureUsage(nameof(copy), Type, nameof(TextureCopy.Source), source, TextureUsage.CopySource);
+        CheckTextureUsage(nameof(copy), Type, nameof(TextureCopy.Destination), destination, TextureUsage.CopyDestination);
+        if (source.Format != destination.Format)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureCopy.Destination),
+                string.Create(CultureInfo.InvariantCulture, $"must have the source's format ({source.Format}), but has {destination.Format}"),
+                destination.DebugName);
+        }
+
+        CheckSingleSample(nameof(copy), Type, nameof(TextureCopy.Source), source);
+        CheckSingleSample(nameof(copy), Type, nameof(TextureCopy.Destination), destination);
+        CheckLocation(nameof(copy), Type, nameof(TextureCopy.Source), copy.Source, source);
+        CheckLocation(nameof(copy), Type, nameof(TextureCopy.Destination), copy.Destination, destination);
+        TextureRegion from = copy.SourceRegion;
+        CheckRegion(nameof(copy), Type, nameof(TextureCopy.SourceRegion), from, copy.Source.MipLevel, source);
+        int mip = copy.Destination.MipLevel;
+        CheckSpan(nameof(copy), Type, null, nameof(TextureCopy.DestinationX), "SourceRegion.Width", copy.DestinationX, from.Width, MipSize(destination.Width, mip), "width", destination.DebugName);
+        CheckSpan(nameof(copy), Type, null, nameof(TextureCopy.DestinationY), "SourceRegion.Height", copy.DestinationY, from.Height, MipSize(destination.Height, mip), "height", destination.DebugName);
+
+        // Both regions lie inside the same mip level here, so no end can overflow.
+        if (copy.Source.Texture == copy.Destination.Texture
+            && copy.Source.MipLevel == copy.Destination.MipLevel
+            && copy.Source.ArrayLayer == copy.Destination.ArrayLayer
+            && from.X < copy.DestinationX + from.Width
+            && copy.DestinationX < from.X + from.Width
+            && from.Y < copy.DestinationY + from.Height
+            && copy.DestinationY < from.Y + from.Height)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureCopy.Destination),
+                string.Create(CultureInfo.InvariantCulture, $"must not overlap the source region within the same subresource, but the region at ({copy.DestinationX}, {copy.DestinationY}) overlaps {from}"),
+                source.DebugName);
+        }
+    }
+
     /// <summary>Checks a transient allocation request's size and usage.</summary>
     /// <param name="byteCount">The bytes requested.</param>
     /// <param name="usage">What the allocation will be bound as.</param>

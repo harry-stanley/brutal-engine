@@ -334,6 +334,9 @@ public sealed partial class CopyValidatorTests
         CopyValidator.ValidateCopyToBuffer(_textureBufferCopy, _texture, buffer);
         CopyValidator.ValidateCopyToTexture(_textureBufferCopy, buffer, _texture);
         CopyValidator.ValidateWriteTexture(_write, _texture, 256);
+
+        // Within one texture, so the overlap test runs to its last term.
+        CopyValidator.Validate(_textureCopy with { Destination = _textureCopy.Source, DestinationX = 16, DestinationY = 0 }, _texture, _texture);
     }
 
     // The rules in exact integer arithmetic (Int128 holds every sum of two longs), written from the table rather than
