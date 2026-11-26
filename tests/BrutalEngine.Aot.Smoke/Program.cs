@@ -10,7 +10,8 @@ namespace BrutalEngine.Aot.Smoke;
 /// Entry point for the native-stack smoke harness.
 /// </summary>
 /// <remarks>
-/// Usage: <c>BrutalEngine.Aot.Smoke vulkan-offscreen [options]</c>; the options are listed in the usage text.
+/// Usage: <c>BrutalEngine.Aot.Smoke vulkan-offscreen [options]</c> or <c>BrutalEngine.Aot.Smoke graphics-vulkan
+/// [--vulkan-loader &lt;path&gt;]</c>; the options are listed in the usage text.
 /// Exit codes are listed in <see cref="ExitCode"/>.
 /// </remarks>
 internal static class Program
@@ -23,6 +24,8 @@ internal static class Program
                                      e.g. NvidiaProprietary or MesaLlvmpipe
           --vulkan-loader <path>     load the Vulkan loader from this absolute path before BRUTAL looks for one
           --inject-validation-error  record an invalid barrier on purpose; validation must report it (exit 2)
+           or: BrutalEngine.Aot.Smoke graphics-vulkan [--vulkan-loader <path>]
+          create the engine's Vulkan backend, which chooses the loader, and check the decision it logs
         """;
 
     private static int Main(string[] args)
@@ -38,7 +41,13 @@ internal static class Program
             return probe;
         }
 
-        if (!TryParse(args, out SmokeOptions? options, out string error))
+        SmokeOptions? options = null;
+        string? loaderPath = null;
+        string error;
+        bool parsed = args.Length > 0 && args[0] == GraphicsVulkanScenario.Name
+            ? GraphicsVulkanScenario.TryParse(args.AsSpan(1), out loaderPath, out error)
+            : TryParse(args, out options, out error);
+        if (!parsed)
         {
             Console.Error.WriteLine(error);
             Console.Error.WriteLine(Usage);
@@ -47,7 +56,7 @@ internal static class Program
 
         try
         {
-            ExitCode result = VulkanOffscreenScenario.Run(options);
+            ExitCode result = options is null ? GraphicsVulkanScenario.Run(loaderPath) : VulkanOffscreenScenario.Run(options);
             Console.WriteLine(result == ExitCode.Pass ? "PASS" : $"FAIL ({result})");
             return (int)result;
         }
@@ -64,7 +73,7 @@ internal static class Program
         error = string.Empty;
         if (args.Length == 0 || args[0] != "vulkan-offscreen")
         {
-            error = "Expected the scenario name 'vulkan-offscreen'.";
+            error = "Expected the scenario name 'vulkan-offscreen' or 'graphics-vulkan'.";
             return false;
         }
 

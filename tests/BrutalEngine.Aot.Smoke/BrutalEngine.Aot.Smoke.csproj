@@ -15,5 +15,6 @@
   <ItemGroup>
     <PackageReference Include="Ahwoo.Brutal.Vulkan" />
     <PackageReference Include="Ahwoo.Brutal.Vulkan.Abstractions" />
+    <ProjectReference Include="../../src/BrutalEngine.Graphics.Vulkan/BrutalEngine.Graphics.Vulkan.csproj" />
   </ItemGroup>
 </Project>
