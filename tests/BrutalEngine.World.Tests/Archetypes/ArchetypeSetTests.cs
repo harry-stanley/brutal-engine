@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using System.Threading;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
@@ -55,6 +56,43 @@ public sealed class ArchetypeSetTests
             // After growth, every request still finds the archetype it got the first time.
             Assert.Equal(firstIndices, Run(first, requests));
             Assert.Equal(next, first.ArchetypeCount);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void GetOrCreate_ManyArchetypes_MapGrowsAndFindsEveryOne()
+    {
+        // Every subset of 7 components: 128 archetypes, four times the map's initial 2 * InitialCapacity slots, so
+        // the map grows three times (32 to 256 slots) and the list three times (16 to 128).
+        const int Components = 7;
+        const int Subsets = 1 << Components;
+        Assert.True(Subsets > 2 * ArchetypeSet.InitialCapacity, "the map would never need to grow past its initial slots");
+
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking }))
+        {
+            _ = ArchetypeTestTypes.Forge(world, Components);
+            ArchetypeSet set = world.Archetypes;
+            var archetypes = new Archetype[Subsets];
+            for (int subset = 0; subset < Subsets; subset++)
+            {
+                archetypes[subset] = set.GetOrCreate(SubsetIds(subset, descending: false));
+            }
+
+            Assert.Equal(Subsets, set.Count);
+            Assert.Same(set.Empty, archetypes[0]);
+
+            // After all the growth, every set is found again, asked for in the other order, and nothing new is created.
+            for (int subset = 0; subset < Subsets; subset++)
+            {
+                Archetype found = set.GetOrCreate(SubsetIds(subset, descending: true));
+                Assert.Same(archetypes[subset], found);
+                Assert.Equal(BitOperations.PopCount((uint)subset), found.Signature.Count);
+            }
+
+            Assert.Equal(Subsets, set.Count);
         }
 
         tracking.ThrowIfLeaks();
@@ -314,6 +352,23 @@ public sealed class ArchetypeSetTests
         }
 
         return indices;
+    }
+
+    // The ids of the components whose bits are set in subset, in ascending or descending order.
+    private static ComponentId[] SubsetIds(int subset, bool descending)
+    {
+        var ids = new ComponentId[BitOperations.PopCount((uint)subset)];
+        int next = 0;
+        for (int bit = 0; bit < 32; bit++)
+        {
+            if ((subset & (1 << bit)) != 0)
+            {
+                ids[descending ? ids.Length - 1 - next : next] = new ComponentId(bit);
+                next++;
+            }
+        }
+
+        return ids;
     }
 
     private static unsafe nint BlockOf(Archetype archetype) => (nint)archetype.Chunks.GetData(0);
