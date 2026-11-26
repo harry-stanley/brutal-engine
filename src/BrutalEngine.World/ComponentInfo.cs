@@ -6,8 +6,8 @@ namespace BrutalEngine.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The component generator emits this from the type's metadata name and its <c>[Component(SchemaVersion = n)]</c>
-/// attribute. Hand-written values must follow the same rules: <see cref="SchemaVersion"/> at least <c>1</c>, a
+/// The component generator will emit this from the type's metadata name and a <c>[Component(SchemaVersion = n)]</c>
+/// attribute; until it ships, components write it by hand. Hand-written values must follow the same rules: <see cref="SchemaVersion"/> at least <c>1</c>, a
 /// non-empty <see cref="FullName"/>, <see cref="StableId"/> equal to
 /// <see cref="StableComponentId.FromFullName"/> of <see cref="FullName"/>, and <see cref="IsTag"/> only for a type
 /// with no instance fields. <c>default(ComponentInfo)</c> breaks them (its <see cref="FullName"/> is
