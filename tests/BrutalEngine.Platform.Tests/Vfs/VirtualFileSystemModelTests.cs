@@ -50,6 +50,10 @@ public sealed class VirtualFileSystemModelTests
             Gen.Int[0, _paths.Length - 1],
             Gen.Int[0, _contents.Length - 1]);
 
+        // Every path of every scheme, parsed once: after each step the whole state is compared, not only what the
+        // step touched.
+        VfsPath[] everyPath = [.. _schemes.SelectMany(s => _paths.Select(p => VfsPath.Parse(s + "://" + p)))];
+
         // How often the interesting outcomes happened, so a generator change that stops reaching them fails.
         int filesRead = 0, nonEmptyListings = 0, ioFailures = 0, doubleMounts = 0, unmountedCalls = 0;
         step.Array[10, 80].Sample(steps =>
@@ -144,11 +148,23 @@ public sealed class VirtualFileSystemModelTests
 
                 Count(op > Op.IsMounted && !model.Mounted.Contains(scheme), ref unmountedCalls);
 
-                // After every step, each mounted scheme's root listing matches the model's, and unmounted ones fail.
+                // After every step, the whole state matches the model, so a failure names the step that diverged:
+                // each mounted scheme's root listing, the kind of every path, and the bytes of every file; on an
+                // unmounted scheme each of these fails.
                 foreach (string s in _schemes)
                 {
                     var root = VfsPath.Parse(s + "://");
                     AssertSame($"{at}, then List {root}", model.List(root), vfs.List(root), Entries);
+                }
+
+                foreach (VfsPath p in everyPath)
+                {
+                    Expected<VfsEntryKind> kind = model.GetEntryKind(p);
+                    AssertSame($"{at}, then GetEntryKind {p}", kind, vfs.GetEntryKind(p));
+                    if (kind is { Ok: true, Value: VfsEntryKind.File })
+                    {
+                        AssertSame($"{at}, then ReadAllBytes {p}", model.Read(p), vfs.ReadAllBytes(p), Bytes);
+                    }
                 }
             }
         }, iter: Iterations);
