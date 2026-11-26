@@ -78,6 +78,23 @@ BrutalEngine.Platform.IWindow.StartTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.State.get -> BrutalEngine.Platform.WindowState
 BrutalEngine.Platform.IWindow.StopTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.VulkanSurface.get -> BrutalEngine.Platform.IVulkanSurfaceSource?
+BrutalEngine.Platform.MessageBoxKind
+BrutalEngine.Platform.MessageBoxKind.Error = 2 -> BrutalEngine.Platform.MessageBoxKind
+BrutalEngine.Platform.MessageBoxKind.Information = 0 -> BrutalEngine.Platform.MessageBoxKind
+BrutalEngine.Platform.MessageBoxKind.Warning = 1 -> BrutalEngine.Platform.MessageBoxKind
+BrutalEngine.Platform.MessageBoxRequest
+BrutalEngine.Platform.MessageBoxRequest.<Clone>$() -> BrutalEngine.Platform.MessageBoxRequest!
+BrutalEngine.Platform.MessageBoxRequest.Deconstruct(out BrutalEngine.Platform.MessageBoxKind Kind, out string! Title, out string! Message) -> void
+BrutalEngine.Platform.MessageBoxRequest.Equals(BrutalEngine.Platform.MessageBoxRequest? other) -> bool
+BrutalEngine.Platform.MessageBoxRequest.Kind.get -> BrutalEngine.Platform.MessageBoxKind
+BrutalEngine.Platform.MessageBoxRequest.Kind.init -> void
+BrutalEngine.Platform.MessageBoxRequest.Message.get -> string!
+BrutalEngine.Platform.MessageBoxRequest.Message.init -> void
+BrutalEngine.Platform.MessageBoxRequest.MessageBoxRequest(BrutalEngine.Platform.MessageBoxKind Kind, string! Title, string! Message) -> void
+BrutalEngine.Platform.MessageBoxRequest.Parent.get -> BrutalEngine.Platform.IWindow?
+BrutalEngine.Platform.MessageBoxRequest.Parent.init -> void
+BrutalEngine.Platform.MessageBoxRequest.Title.get -> string!
+BrutalEngine.Platform.MessageBoxRequest.Title.init -> void
 BrutalEngine.Platform.PlatformOptions
 BrutalEngine.Platform.PlatformOptions.<Clone>$() -> BrutalEngine.Platform.PlatformOptions!
 BrutalEngine.Platform.PlatformOptions.Application.get -> string!
@@ -168,6 +185,9 @@ override BrutalEngine.Platform.DisplayMode.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayMode.ToString() -> string!
 override BrutalEngine.Platform.DisplayRect.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayRect.ToString() -> string!
+override BrutalEngine.Platform.MessageBoxRequest.Equals(object? obj) -> bool
+override BrutalEngine.Platform.MessageBoxRequest.GetHashCode() -> int
+override BrutalEngine.Platform.MessageBoxRequest.ToString() -> string!
 override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
@@ -184,6 +204,8 @@ static BrutalEngine.Platform.DisplayMode.operator !=(BrutalEngine.Platform.Displ
 static BrutalEngine.Platform.DisplayMode.operator ==(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
 static BrutalEngine.Platform.DisplayRect.operator !=(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
 static BrutalEngine.Platform.DisplayRect.operator ==(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
+static BrutalEngine.Platform.MessageBoxRequest.operator !=(BrutalEngine.Platform.MessageBoxRequest? left, BrutalEngine.Platform.MessageBoxRequest? right) -> bool
+static BrutalEngine.Platform.MessageBoxRequest.operator ==(BrutalEngine.Platform.MessageBoxRequest? left, BrutalEngine.Platform.MessageBoxRequest? right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.WindowId.operator !=(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
