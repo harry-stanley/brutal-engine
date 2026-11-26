@@ -332,12 +332,12 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <exception cref="InvalidOperationException">
     /// Contract violation: the surface isn't live, the request's source isn't the surface's, the options are
     /// <see langword="null"/>, the window is minimised, the old swapchain isn't a live, unretired swapchain of that surface,
-    /// the surface already has an unretired swapchain and none is replaced, or a call after disposal. Also thrown when the
-    /// script's <see cref="FakeBackendScript.SwapchainInfo"/> reports no images.
+    /// the surface already has an unretired swapchain and none is replaced, or a call after disposal. Also thrown, with no
+    /// effect, when the script's <see cref="FakeBackendScript.SwapchainInfo"/> reports no images.
     /// </exception>
     /// <remarks>
-    /// The checks run first; then the old swapchain is retired, then a pending <see cref="FakeBackendOperation.CreateSwapchain"/>
-    /// failure is taken, so a failed recreation still retires it.
+    /// The checks run first, the script's swapchain info among them; then the old swapchain is retired, then a pending
+    /// <see cref="FakeBackendOperation.CreateSwapchain"/> failure is taken, so a failed recreation still retires it.
     /// </remarks>
     public Result<BackendSwapchain> CreateSwapchain(in BackendSwapchainRequest request)
     {
@@ -373,17 +373,17 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
             }
         }
 
+        SwapchainInfo info = _script.SwapchainInfo(request);
+        if (info.ImageCount < 1)
+        {
+            throw new InvalidOperationException($"The script's swapchain info has {info.ImageCount} images; at least 1 is needed.");
+        }
+
         old?.Retired = true;
         if (_script.TakeFailure(FakeBackendOperation.CreateSwapchain, out EngineError error))
         {
             Record(FakeBackendOperation.CreateSwapchain, null, 0);
             return error;
-        }
-
-        SwapchainInfo info = _script.SwapchainInfo(request);
-        if (info.ImageCount < 1)
-        {
-            throw new InvalidOperationException($"The script's swapchain info has {info.ImageCount} images; at least 1 is needed.");
         }
 
         ulong id = _nextId++;

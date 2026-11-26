@@ -113,6 +113,33 @@ public sealed partial class FakeBackendDeviceTests
     }
 
     [Fact]
+    public void CreateSwapchain_ScriptReportsNoImages_ThrowsWithoutEffect()
+    {
+        FakeBackendDevice device = _fixture.CreateDevice();
+        WindowSurfaceSource source = FakeBackendFixture.Window();
+        ulong surface = device.CreateSurface(source).Value;
+        Func<BackendSwapchainRequest, SwapchainInfo> noImages =
+            request => FakeBackendScript.DefaultSwapchainInfo(request) with { ImageCount = 0 };
+        _fixture.Script.SwapchainInfo = noImages;
+        int calls = device.Calls.Count;
+
+        Assert.Throws<InvalidOperationException>(() => device.CreateSwapchain(FakeBackendFixture.Swapchain(surface, source)));
+        Assert.Equal((calls, 1), (device.Calls.Count, device.LiveObjectCount));
+
+        _fixture.Script.SwapchainInfo = FakeBackendScript.DefaultSwapchainInfo;
+        ulong old = device.CreateSwapchain(FakeBackendFixture.Swapchain(surface, source)).Value.Id;
+        _fixture.Script.SwapchainInfo = noImages;
+        calls = device.Calls.Count;
+
+        Assert.Throws<InvalidOperationException>(() => device.CreateSwapchain(FakeBackendFixture.Swapchain(surface, source, old)));
+        Assert.Equal((calls, 2), (device.Calls.Count, device.LiveObjectCount));
+
+        // The failed recreation didn't retire the old swapchain, so it can still be replaced.
+        _fixture.Script.SwapchainInfo = FakeBackendScript.DefaultSwapchainInfo;
+        Assert.True(device.CreateSwapchain(FakeBackendFixture.Swapchain(surface, source, old)).IsSuccess);
+    }
+
+    [Fact]
     public void CreateSwapchain_ReportsTheScriptedInfo()
     {
         FakeBackendDevice device = _fixture.CreateDevice();
