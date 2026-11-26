@@ -260,6 +260,38 @@ public sealed unsafe class ArchetypeRowTests
         Assert.Equal(0, archetype.Chunks.ChunkCount);
     }
 
+    [Fact]
+    public void Dispose_ChunkTableThrows_ResetsRowCount()
+    {
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        using (EcsWorld world = NewWorld(tracking))
+        {
+            _ = ArchetypeTestTypes.Forge(world, 1);
+            int baseline = tracking.LiveAllocationCount;
+            ChunkPool pool = new(tracking, ChunkBytes);
+            ArchetypeSet set = new(tracking, pool, world.Components, 256);
+            Archetype archetype = set.GetOrCreate(ArchetypeTestTypes.Ids(0));
+            _ = archetype.AppendRow(new Entity(0, 1), tick: 1);
+            void* block = archetype.Chunks.GetData(0);
+            Assert.Equal(1, archetype.RowCount);
+
+            // Misuse: the pool goes first, so returning the block throws; the count still matches the empty table.
+            pool.Dispose();
+            _ = Assert.Throws<ObjectDisposedException>(archetype.Dispose);
+            Assert.Equal(0, archetype.RowCount);
+            Assert.Equal(0, archetype.Chunks.ChunkCount);
+
+            // Only the block is left: the chunk table's arrays were freed.
+            Assert.Equal(baseline + 1, tracking.LiveAllocationCount);
+
+            // Sound: the block came from this tracking allocator, through the pool, and was never freed.
+            tracking.Free(block);
+            set.Dispose();
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     [Theory]
     [InlineData(-1, 0)]
     [InlineData(1, 0)]
