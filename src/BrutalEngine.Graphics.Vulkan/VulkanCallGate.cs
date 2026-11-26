@@ -14,15 +14,17 @@ namespace BrutalEngine.Graphics.Vulkan;
 /// result to <see cref="Check"/>. <c>VK_ERROR_DEVICE_LOST</c> from any call marks the device lost, and it stays lost.
 /// </para>
 /// <para>
-/// The rules every call site follows are in docs/design/graphics-vulkan.md, section 13, "Status checking", and
-/// review enforces them:
+/// The rules every call site follows are in
+/// <see href="https://github.com/harry-stanley/brutal-engine/blob/main/docs/design/graphics-vulkan.md#13-status-checking">docs/design/graphics-vulkan.md, section 13, "Status checking"</see>,
+/// and review enforces them:
 /// </para>
 /// <list type="number">
 /// <item><description>Raw function tables for every result-returning call after creation, each with its own
 /// <see cref="VulkanCall"/> member, then <see cref="Check"/>.</description></item>
 /// <item><description>Only three BRUTAL wrappers, each at one creation-time call site that catches
-/// <see cref="VkResultError"/> and converts it with <see cref="VkCheck.FromException"/>; no exception is caught on the
-/// frame path.</description></item>
+/// <see cref="VkResultError"/> and converts it with <see cref="VkCheck.FromException"/>. The only other caught
+/// exception is the <see cref="TypeInitializationException"/> of a missing loader, in <c>VulkanBackend.Create</c>. No
+/// exception is ever caught on the frame path.</description></item>
 /// <item><description>Void commands also go through the raw table.</description></item>
 /// <item><description>Extension entry points only when their extension is enabled.</description></item>
 /// <item><description>VMA: only the generated, result-returning calls, through this gate.</description></item>
