@@ -87,6 +87,31 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
     public void MemoryIntent_Rows_CoverEveryValue() =>
         Assert.Equal(Enum.GetValues<MemoryIntent>(), MemoryIntents().Select(row => row.Data.Item1));
 
+    // The expected bytes are written out from the UTF-8 encoding of each name, not computed by the code under test:
+    // "Ünïcode 🎮" is U+00DC, n, U+00EF, c, o, d, e, space, U+1F3AE.
+    public static TheoryData<string, string, byte[]> DebugNames() => new()
+    {
+        { "Buffer", "Vertices", [0x56, 0x65, 0x72, 0x74, 0x69, 0x63, 0x65, 0x73] },
+        { "Buffer", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
+        { "Sampler", "Pixel art", [0x50, 0x69, 0x78, 0x65, 0x6C, 0x20, 0x61, 0x72, 0x74] },
+        { "Sampler", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
+    };
+
+    [Theory]
+    [MemberData(nameof(DebugNames))]
+    public void Create_DebugName_ReachesTheBackendAsUtf8(string kind, string debugName, byte[] expected)
+    {
+        var backend = new CountingBackend(_fixture.Backend);
+        using GraphicsDevice device = GraphicsDevice.Create(backend, _fixture.Options()).Value;
+
+        Made made = Make(device, kind, debugName);
+
+        (BackendObjectKind Kind, ulong Id, byte[] Utf8Name) name = Assert.Single(backend.LastDevice!.Names);
+        Assert.Equal((made.Kind, made.TableId(_fixture.BackendDevice.Objects)), (name.Kind, name.Id));
+        Assert.Equal(expected, name.Utf8Name);
+        made.Destroy();
+    }
+
     [Theory]
     [InlineData("Buffer")]
     [InlineData("Sampler")]
