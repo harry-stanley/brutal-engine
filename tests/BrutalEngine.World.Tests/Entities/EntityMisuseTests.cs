@@ -228,6 +228,9 @@ public sealed class EntityMisuseTests
 
             Assert.Contains(target.ToString(), exception.Message, StringComparison.Ordinal);
             Assert.Contains($"Entities.{component}", exception.Message, StringComparison.Ordinal);
+
+            // Which rule fired: a tag is rejected as a tag, not as a missing component.
+            Assert.Equal(rule.EndsWith("tag", StringComparison.Ordinal), exception.Message.Contains("is a tag", StringComparison.Ordinal));
             Assert.Equal(types, world.Components.Count);
             Assert.Equal(new Position(1, 2), world.Get<Position>(tagged));
 

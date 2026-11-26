@@ -18,12 +18,15 @@ public sealed class ChangeStampTests
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
         {
+            // On a world whose tick was never set, a spawn stamps tick 1. Two columns: the tag has none.
+            Entity zero = world.Spawn(new Position(0, 0), new Health(0), default(Marker));
+            Archetype archetype = ArchetypeOf(world, zero);
+            AssertTicks(archetype, chunk: 0, changed: [1, 1], added: [1, 1]);
             Assert.Equal(1u, world.ChangeTick);
+
             world.SetChangeTickForTesting(5);
             Entity first = world.Spawn(new Position(1, 2), new Health(3), default(Marker));
-            Archetype archetype = ArchetypeOf(world, first);
-
-            // Two columns (the tag has none), both stamped when the chunk opened.
+            Assert.Equal(archetype.Index, ArchetypeOf(world, first).Index);
             AssertTicks(archetype, chunk: 0, changed: [5, 5], added: [5, 5]);
 
             // Reads at a later tick stamp nothing.
