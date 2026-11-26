@@ -171,6 +171,14 @@ public sealed class VfsPathTests
         Assert.DoesNotContain('\n', exception.Message);
     }
 
+    [Fact]
+    public void Parse_SurrogatePair_IsQuotedUnescaped()
+    {
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => VfsPath.Parse("res://\U0001F600*"));
+
+        Assert.Contains("'res://\U0001F600*'", exception.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(256, false)]
     [InlineData(257, true)]
