@@ -6,11 +6,14 @@ namespace BrutalEngine.Graphics.Tests.Device;
 
 /// <summary>
 /// Forwards every call to the fake's device and counts <see cref="Dispose"/> calls, including the ones the fake ignores
-/// because it is already disposed, so a test sees a second dispose the fake alone would hide.
+/// because it is already disposed, so a test sees a second dispose the fake alone would hide. It also keeps the memory
+/// of the last <see cref="CreateBuffer"/>, which the fake doesn't record.
 /// </summary>
 internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevice
 {
     public int DisposeCalls { get; private set; }
+
+    public BackendMemory? LastBufferMemory { get; private set; }
 
     public GraphicsAdapterInfo Adapter => inner.Adapter;
 
@@ -22,7 +25,11 @@ internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevi
 
     public FormatSupport GetFormatSupport(TextureFormat format) => inner.GetFormatSupport(format);
 
-    public Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory) => inner.CreateBuffer(description, memory);
+    public Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory)
+    {
+        LastBufferMemory = memory;
+        return inner.CreateBuffer(description, memory);
+    }
 
     public Result<ulong> CreateTexture(in TextureDescription description) => inner.CreateTexture(description);
 

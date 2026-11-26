@@ -5,6 +5,7 @@ using System.Text;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Backend;
+using BrutalEngine.Graphics.Internal;
 
 namespace BrutalEngine.Graphics;
 
@@ -39,12 +40,14 @@ public sealed partial class GraphicsDevice : IDisposable
     private const string LogCategoryName = "Graphics";
 
     private readonly IBackendDevice _backend;
+    private readonly HandleTables _handles;
     private readonly ThreadAffinity _owner;
     private bool _disposed;
 
-    private GraphicsDevice(IBackendDevice backend, ThreadAffinity owner)
+    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, ThreadAffinity owner)
     {
         _backend = backend;
+        _handles = new HandleTables(objects);
         _owner = owner;
         Adapter = backend.Adapter;
         Capabilities = backend.Capabilities;
@@ -114,7 +117,8 @@ public sealed partial class GraphicsDevice : IDisposable
             return error;
         }
 
-        Result<IBackendDevice> created = backend.CreateDevice(request, adapterIndex, new BackendObjectTable());
+        var objects = new BackendObjectTable();
+        Result<IBackendDevice> created = backend.CreateDevice(request, adapterIndex, objects);
         if (!created.TryGetValue(out IBackendDevice? device))
         {
             return created.Error;
@@ -129,7 +133,7 @@ public sealed partial class GraphicsDevice : IDisposable
                 $"Create: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
         }
 
-        return new GraphicsDevice(device, ThreadAffinity.CurrentThread());
+        return new GraphicsDevice(device, objects, ThreadAffinity.CurrentThread());
     }
 
     /// <summary>Lists every adapter the backend can see for these options, each with the reasons it can't serve them.</summary>
@@ -181,7 +185,9 @@ public sealed partial class GraphicsDevice : IDisposable
         return _backend.GetFormatSupport(format);
     }
 
-    /// <summary>Disposes the backend device, once; later calls do nothing.</summary>
+    /// <summary>
+    /// Destroys every object still alive, newest first, then disposes the backend device, once; later calls do nothing.
+    /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>
     /// Afterwards every member except <see cref="Dispose"/>, <see cref="Adapter"/> and <see cref="Capabilities"/> throws
@@ -196,6 +202,11 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         _disposed = true;
+        foreach (HandleTables.LiveObject live in _handles.TakeAll())
+        {
+            _backend.Destroy(live.Kind, live.Id);
+        }
+
         _backend.Dispose();
     }
 
