@@ -51,6 +51,22 @@ internal sealed class FakeBackendFixture : IDisposable
             new TestWindow { PixelSize = new WindowSize(width, height), State = minimised ? WindowState.Minimized : default },
             new TestSurfaceSource());
 
+    /// <summary>Waits for a slot and opens its frame, as the front end does at the start of each frame.</summary>
+    public static void OpenFrame(FakeBackendDevice device, int slot)
+    {
+        Assert.True(device.WaitForFrame(slot).IsSuccess);
+        Assert.True(device.BeginFrame(slot).IsSuccess);
+    }
+
+    /// <summary>Acquires an image of a swapchain in an open frame and executes a plan that waits for it; returns its index.</summary>
+    public static int ExecuteWithImage(FakeBackendDevice device, int slot, ulong swapchain)
+    {
+        BackendAcquire acquire = device.AcquireImage(swapchain, slot);
+        Assert.Equal(SwapchainStatus.Success, acquire.Status);
+        Assert.True(device.Execute(GraphicsInternals.NewFramePlan(slot, 0, [], [new(swapchain, acquire.ImageIndex)])).IsSuccess);
+        return acquire.ImageIndex;
+    }
+
     public static BackendSwapchainRequest Swapchain(ulong surface, WindowSurfaceSource source, ulong old = 0) =>
         new(surface, source, new SwapchainOptions(), old);
 

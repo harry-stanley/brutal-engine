@@ -78,6 +78,7 @@ public sealed partial class FakeBackendDeviceTests
         Assert.Throws<InvalidOperationException>(() => device.Present(old, 0));
         device.GetSwapchainImage(created.Id, 2, out ulong texture, out ulong view);
         Assert.DoesNotContain(texture, new[] { oldTexture, oldView });
+        FakeBackendFixture.OpenFrame(device, 0);
         Assert.Equal(SwapchainStatus.Success, device.AcquireImage(created.Id, 0).Status);
         device.DestroySwapchain(old);
         Assert.Throws<InvalidOperationException>(() => device.SetDebugName(BackendObjectKind.Texture, oldTexture, "x"u8));
@@ -162,14 +163,13 @@ public sealed partial class FakeBackendDeviceTests
 
         for (int i = 0; i < indices.Length; i++)
         {
-            BackendAcquire acquire = device.AcquireImage(swapchain, i % 2);
-            Assert.Equal((SwapchainStatus.Success, 0), (acquire.Status, acquire.NativeCode));
-            Assert.Equal(new BackendPresent(SwapchainStatus.Success, 0), device.Present(swapchain, acquire.ImageIndex));
-            indices[i] = acquire.ImageIndex;
+            FakeBackendFixture.OpenFrame(device, i % 2);
+            indices[i] = FakeBackendFixture.ExecuteWithImage(device, i % 2, swapchain);
+            Assert.Equal(new BackendPresent(SwapchainStatus.Success, 0), device.Present(swapchain, indices[i]));
         }
 
         Assert.Equal([0, 1, 2, 0], indices);
-        Assert.Equal(new FakeBackendCall(FakeBackendOperation.AcquireImage, null, swapchain, 1), device.Calls[^2]);
+        Assert.Equal(new FakeBackendCall(FakeBackendOperation.AcquireImage, null, swapchain, 1), device.Calls[^3]);
     }
 
     public static TheoryData<FakeBackendOperation, SwapchainStatus> ScriptedStatuses()
@@ -204,13 +204,16 @@ public sealed partial class FakeBackendDeviceTests
 
         (SwapchainStatus, int, int) Call()
         {
+            FakeBackendFixture.OpenFrame(device, 0);
             if (operation is FakeBackendOperation.Present)
             {
-                BackendPresent present = device.Present(swapchain, 0);
+                BackendPresent present = device.Present(swapchain, FakeBackendFixture.ExecuteWithImage(device, 0, swapchain));
                 return (present.Status, 0, present.NativeCode);
             }
 
             BackendAcquire acquire = device.AcquireImage(swapchain, 0);
+            ReadOnlySpan<SwapchainImageUse> acquired = acquire.ImageIndex < 0 ? [] : [new(swapchain, acquire.ImageIndex)];
+            Assert.True(device.Execute(GraphicsInternals.NewFramePlan(0, 0, [], acquired)).IsSuccess);
             return (acquire.Status, acquire.ImageIndex, acquire.NativeCode);
         }
     }
@@ -240,6 +243,7 @@ public sealed partial class FakeBackendDeviceTests
         device.GetSwapchainImage(swapchain, 0, out ulong texture, out ulong view);
         WindowSurfaceSource other = FakeBackendFixture.Window();
         ulong otherSurface = device.CreateSurface(other).Value;
+        FakeBackendFixture.OpenFrame(device, 0);
         return violation switch
         {
             "DestroySurface unknown id" => () => device.DestroySurface(999),
@@ -272,7 +276,13 @@ public sealed partial class FakeBackendDeviceTests
                 Then(() => device.DestroySwapchain(swapchain), () => device.AcquireImage(swapchain, 0)),
             "AcquireImage slot below range" => () => device.AcquireImage(swapchain, -1),
             "AcquireImage slot above range" => () => device.AcquireImage(swapchain, 2),
-            "Present on a retired swapchain" => Then(() => Recreate(swapchain), () => device.Present(swapchain, 0)),
+            "Present on a retired swapchain" => Then(
+                () =>
+                {
+                    _ = FakeBackendFixture.ExecuteWithImage(device, 0, swapchain);
+                    _ = Recreate(swapchain);
+                },
+                () => device.Present(swapchain, 0)),
             "Present image index below range" => () => device.Present(swapchain, -1),
             "Present image index above range" => () => device.Present(swapchain, 3),
             _ => throw new ArgumentOutOfRangeException(nameof(violation), violation, "Unknown row."),
