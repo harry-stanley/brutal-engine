@@ -596,6 +596,59 @@ while (!replayer.IsFinished)
 
 **Uses.** Tests replay committed recordings, or build them in code, against a reference model (section 11). Bug repros: a development build saves `recorder.ToRecording().ToBytes()` through the VFS (where and when is the game's choice), and a developer replays it in a harness that drives its own loop as above. Replay inside a Runtime game needs the host to take its step counts from the replayer, which `FixedStepClock` can't do in M1; that waits for Runtime's built-in modules after the 0.2.0 release.
 
+## 8. Host integration
+
+Per frame, on the main thread, in this order:
+
+1. `IPlatform.PumpEvents()`.
+2. `input.BeginFrame(platform.Events, frameDelta)`, before any schedule (`docs/03-architecture.md:59-60`).
+3. If `input.WantsTextInput != window.IsTextInputActive`, start or stop text input on the window.
+4. For each fixed step: `input.BeginFixedStep()`, then `FixedUpdate`.
+5. `Update`, `PostUpdate`, rendering: read `input.Frame`.
+
+After the splash, a loading screen, or anything else gameplay shouldn't react to, call `input.Rebase()` once.
+
+**With Runtime today.** Runtime calls every module's `BeginFrame` after the pump and before `FixedUpdate` (`docs/design/runtime.md:311-314`), with the engine context in the frame (`:335-341`; `EngineContext.Platform`, `:187`), but it has no per-step hook, so the step call goes into the first `FixedUpdate` system. Both wrappers are game code:
+
+```csharp
+sealed class GameInputModule(InputMap map) : EngineModule(new ModuleInfo { Name = "game.input" })
+{
+    private HostPhase _lastPhase;
+    public InputService? Input { get; private set; }
+
+    public override Result Start(EngineContext context)
+    {
+        Input = new InputService(new InputOptions { Map = map, Logger = context.Logger });
+        return Result.Success;
+    }
+
+    public override void BeginFrame(in FrameContext frame)
+    {
+        InputService input = Input!;
+        input.BeginFrame(frame.Engine.Platform.Events, frame.Timing.Delta);
+        if (frame.Phase == HostPhase.Running && _lastPhase != HostPhase.Running) input.Rebase();   // drop the splash's input
+        _lastPhase = frame.Phase;
+
+        IWindow? window = frame.Engine.Window;
+        if (window is not null && input.WantsTextInput != window.IsTextInputActive)
+        {
+            Result changed = input.WantsTextInput ? window.StartTextInput() : window.StopTextInput();
+            if (changed.IsFailure) { /* the game logs changed.Error and carries on */ }
+        }
+    }
+}
+
+sealed class InputFixedStepSystem(InputService input) : ISystem
+{
+    public void Configure(SystemBuilder builder) { }
+    public void Run(in SystemContext context) => input.BeginFixedStep();
+}
+```
+
+`EngineModule`, `ModuleInfo` and `FrameContext` are Runtime's (`docs/design/runtime.md:235-237`, `:228`, `:335-341`); `ISystem`, `SystemBuilder` and `SystemContext` are World's (`docs/design/world.md:313-317`). Input references neither: the game does. The game adds `InputFixedStepSystem` to `FixedUpdate` (`new SystemOptions { Name = "input.fixed-step" }`) **before any other system** with no ordering of its own; schedules break ties by insertion order (`docs/design/world.md:376`), so it runs first, and systems that read `input.Fixed` add `After = ["input.fixed-step"]` where it matters. The game registers the module in `IGame.ConfigureModules` with a map built in code or read from `res://` there; the service exists from the module's `Start`, before `IGame.Initialize`, where the game reads `context.Modules.Get<GameInputModule>().Input` and constructs its systems with the views.
+
+**After Runtime gains built-in modules** (after the 0.2.0 release), Runtime owns an `InputService`, makes the same calls (step 4 from its own loop, so no system is needed), exposes it on `EngineContext`, and applies `Rebase` when the splash ends. The calls and their order are this section's; that Runtime change is its own issue.
+
 ## 9. The input-map asset
 
 An input map is a JSON asset; `InputMap.FromJson` reads it and `InputMap.ToJson` writes its **canonical** form, which `ContentHash` hashes, so it is pinned exactly: `Utf8JsonWriter` with `Indented = true`, `IndentSize = 2` and `NewLine = "\n"`; properties in the order the records of section 1 declare them, `version` and `name` first; properties at their default value omitted; numbers in the writer's shortest round-trip form; no trailing newline. The example below is hand-formatted; the gamepad bindings in it validate once I11 lands (section 12).
@@ -642,3 +695,92 @@ public sealed class InputMapLoader       // stateless; thread-safe; implements t
 | Input → Assets | Input registers its input-map loader with the asset database ([input](input.md#9-the-input-map-asset)) |
 
 Input's earlier issues don't reference Assets, so they don't wait for it.
+
+## 10. Threading, ownership, allocation and failures
+
+**Threads.** `InputService`, `InputView`, `InputPlayer`, `RebindOperation`, `InputRecorder` and `InputReplayer` are main thread only: the service captures Core's `ThreadAffinity` (`src/BrutalEngine.Core/PublicAPI.Unshipped.txt:257`) at construction, and **every** member of these types calls `ThrowIfNotCurrentThread` in every build (`WrongThreadException` naming the API; [platform note section 9](platform.md#9-threading), stricter than `docs/03-architecture.md:87`'s debug-only assertion, as in Platform, World and Runtime). A view read is one integer comparison more. The ids, `InputControl`, `InputProcessor`, the definition records, `InputMap`, `UserBindings` and `InputRecording` are immutable and thread-safe. `UserBindingsFile` runs on the calling thread and is main thread only because it touches the service.
+
+| Type | Threads | Ownership | Allocation |
+|------|---------|-----------|------------|
+| `ActionId`, the typed ids, `InputContextId`, `InputControl`, `InputProcessor`, `CompositeControl`, `BindingSlot`, `BindingOverride`, `MouseSnapshot`, `GamepadChange`, every enum | any (immutable values) | values | none, except `InputControl.ToString` |
+| `InputBinding`, the three definition records, `InputOptions`, `RebindRequest`, `InputRecorderOptions`, `UserBindingsReport` | any (immutable; read once by the call that takes them) | the caller's | at creation |
+| `InputMap`, `UserBindings`, `InputRecording` | any (immutable) | shared; no disposal | at creation, `ToJson`, `ToBytes` |
+| `InputMapLoader` | any (stateless) | the asset database holds it once registered | as `FromJson` |
+| `InputService`, `InputView`, `InputPlayer` | main thread | the game owns the service; views and players are the service's | the list below |
+| `RebindOperation`, `InputRecorder`, `InputReplayer`, `ReplayFrame` | main thread | the service's; `ReplayFrame` is valid until the next `NextFrame` | at their creation |
+| `UserBindingsFile` | main thread (it reads and writes the service) | stateless | always (I/O) |
+| Platform additions (section 6) | as the platform note's equivalents: payload types any thread, `IPlatform` members main thread | `GamepadInfo` snapshot owned by the platform | `Gamepads` rebuilds allocate |
+
+**Ownership.** The game owns the service and the map it passes; `InputMap` is shared and immutable, so one map can serve several services. Input never owns the `IPlatform`, the `VirtualFileSystem` or the batch it is given. A recorder and a replayer belong to their service and stop being usable when another starts.
+
+**Allocation.** Steady-state frames allocate **nothing**: `BeginFrame` over every event kind, `BeginFixedStep`, `Rebase`, every view read, `PushContext`/`PopContext` (visibility arrays are sized at `SetMap`), `Text`, `Mouse`, `IsKeyDown`, `GamepadChanges`, `Rumble` on success, recording within capacity, and `NextFrame`. These allocate, and never belong in a measured frame (Runtime's `MarkFrameNonSteady`): constructing the service; `SetMap`; name lookups that fail (the exception); building, parsing and writing maps; `StartRebind` and its completion (the conflict list) and `Apply`; `SetBinding`, `ResetBinding(s)`; user-bindings load, save, `GetUserBindings` and `ApplyUserBindings`; `StartRecording`, `ToRecording`, `ToBytes`, `Read` and `InputReplayer.Create`; and failures (their messages). Device state for the 16 trackable gamepads is allocated with the service, so hot-plug allocates nothing in Input (the platform's `Gamepads` snapshot does).
+
+**Failure modes.**
+
+| Failure | Result |
+|---------|--------|
+| A map that breaks a rule of section 1, or bad map JSON | `InputMap.Create`/`FromJson` fails: `InvalidData` naming the place and rule; a newer map version: `Unsupported` |
+| Corrupt, foreign or newer user-bindings file; an I/O error | `UserBindingsFile.Load` fails (`InvalidData`, `Unsupported`, the VFS's kinds), service unchanged, `Warning` logged, the game continues on defaults; a missing file is success |
+| Bad entries in a good user-bindings file | Skipped and listed in `UserBindingsReport.Ignored`, `Warning` logged |
+| Corrupt or newer recording; replay against another map | `InputRecording.Read`/`InputReplayer.Create` fail: `InvalidData` or `Unsupported` |
+| Recorder buffer full | Recording stops, `IsTruncated` set; never an exception in a frame |
+| More text in a frame than `TextCapacityBytes` | Cut at a code-point boundary, counted in `TruncatedTextCount` |
+| Rumble without a pad, platform or support | `NotFound`, `Unavailable`, `Unsupported` |
+| Wrong thread | `WrongThreadException` |
+| Default or foreign ids; unknown names; a name reused with another kind in `SetMap`; invalid arguments | `ArgumentException`, `InvalidOperationException` (`SetMap`) |
+| Context misuse (push twice, pop the wrong top, deeper than 16); a second rebind or recorder; `Apply` outside `Completed`; `NextFrame` after the end | `InvalidOperationException` |
+
+## 11. Testing
+
+All pure, in `tests/BrutalEngine.Input.Tests`, on Windows and Linux CI. Batches are built without SDL through Platform's public buffer and factories (section 7's citations), and the clock is never read.
+
+- **Unit tests** for every rule: id resolution, staleness across `SetMap` and the kind-change exception; control text forms (every kind, case folding, every rejection: numbers, comma lists, `Unknown`, `None`, upper-case keycode letters folded); every validation rule of `InputMap.Create` with a row each side of every limit; each processor's formula at and around its bounds; composites (both keys of an axis held give 0, diagonals, modifiers); sampling (repeats, focus loss releasing in order, releases from other windows, default-window events, keycode release after a layout change, wheel notches from fractional amounts); contexts (consumption by binding, modifiers not consuming, `TextEntry` blocking keys except its own, `BlocksLowerContexts`, newly visible held controls masked, pass-through HUD keeping a held key, a covered action's release edge, pending fixed edges delivered after covering, misuse); rebinding (each state change, the held-at-start mask, the consumed completing press, cancel and excluded controls, each resolution including `Swap` with several conflicts, illegal controls); user-bindings JSON (round trip, each version rule, a foreign map, every skipped-entry kind, size limits); recording format (round trip, every `Read` rejection, the hash and map checks).
+- **Property tests (CsCheck)** against a reference model written separately in the test project: random per-frame event lists and step counts (zero steps over-sampled, press and release in one frame over-sampled); after every step, the fixed view's press count equals the model's edges since the previous step, every edge reaches exactly one step, the sum of fixed deltas equals the sum of frame deltas, and the frame view equals the model per frame. Random context stacks and bindings: an action sees a control exactly when the model's top-down walk says so. Random `Axis2D` inputs through `Normalize` never exceed length 1.
+- **Allocation tests** (`GC.GetAllocatedBytesForCurrentThread`, background GC off in the project as Core does): 1,000 frames that each carry **every** event kind Input applies, read through each kind's payload, plus `BeginFixedStep`, every view read, a push and a pop, and recording, allocate 0 bytes; also under the Windows dynamic coverage CI runs.
+- **Replay determinism:** record a scripted run, replay it on a fresh service, and compare every view read of every frame and step bit for bit; a committed version-1 recording fixture keeps replaying identically, so a format change can't slip in.
+- **Gamepads** (with I11, I12 and PG): synthetic gamepad events through the same buffer cover hot-plug, assignment, focus and stick deadzones; Platform.Sdl3's translation is table-tested over synthetic `SdlEvent`s. A **real gamepad** (connection, button and axis directions, rumble, background events, SDL's id rule) is unverified until a device is available, and is listed as not verified in those PRs.
+- **Manual** (release QA): keyboard layouts (AZERTY scancodes, keycode shortcuts), relative mouse mode deltas, focus loss with keys held on Windows and Linux desktops.
+- **Architecture:** `BrutalEngine.Input` joins `tests/BrutalEngine.Architecture.Tests` (layering, binding surface, static state).
+
+Mutation self-checks, for example: deliver edges to every step instead of the first; drop the pending carry over zero-step frames; release only from the input window; let modifiers consume; skip the newly-visible mask; skip the trailer hash check.
+
+## 12. Issue split
+
+Sized line by line (source with every XML doc section, `PublicAPI.Unshipped.txt` lines, tests about 1:1). The Input issues share one project and its `PublicAPI.Unshipped.txt`, so they run one at a time in this order unless noted.
+
+| Issue | Scope | Blocked by | Src + docs | API | Tests | Est. |
+|-------|-------|------------|-----------:|----:|------:|-----:|
+| I1 feat(input): add the Input project with action ids and controls | Creates `src/BrutalEngine.Input` (milestone 2 per ADR-0016) and its tests; `ActionKind`, `ActionId`, the typed ids, `InputContextId`, `ControlKind` (no gamepad members), `AxisComponent`, `InputControl` with its text form; the Architecture.Tests reference | this note | 230 | 60 | 200 | ~490 |
+| I2 feat(input): add bindings, processors and validated input maps | `CompositeKind`, `CompositePart`, `CompositeControl`, `InputBinding`, `ProcessorKind`, `InputProcessor`, the definition records, `InputMap.Create` and every rule | I1 | 260 | 70 | 200 | ~530 |
+| I3 feat(input): sample keyboard and mouse into actions | `InputOptions`, `InputService` (construction, `SetMap`, lookups, `BeginFrame`), `InputView` (frame), `InputPlayer`, `MouseSnapshot`; section 2's table; processors and composites evaluated; thread checks | I2 | 280 | 45 | 230 | ~555 |
+| I4 feat(input): latch edges for fixed steps | `BeginFixedStep`, `Rebase`, the fixed view; section 3's table; the reference-model property tests; the allocation test | I3 | 120 | 10 | 260 | ~390 |
+| I5 feat(input): stack input contexts | Push and pop, consumption, `TextEntry` and `Text`, `BlocksLowerContexts`, the held-control mask, `WantsTextInput` | I4 | 200 | 15 | 260 | ~475 |
+| I6 feat(input): read and write input maps as JSON | `InputMap.FromJson`, `ToJson`, `ContentHash`, the source-generated context, section 9's form | I2; after I5 (same `PublicAPI.Unshipped.txt`) | 230 | 5 | 230 | ~465 |
+| I7 feat(input): rebind actions at runtime | `BindingSlot`, `RebindRequest` and its enums, `RebindOperation`, `SetBinding`, `ResetBinding(s)`, overrides | I6 | 230 | 40 | 230 | ~500 |
+| I8 feat(input): save user bindings | `BindingOverride`, `UserBindings`, `UserBindingsReport`, `UserBindingsFile`, `GetUserBindings`, `ApplyUserBindings`; versions and the never-stop rules | I7; Platform's `VirtualFileSystem` merged | 220 | 25 | 230 | ~475 |
+| I9 feat(input): record and replay input | `InputRecorderOptions`, `InputRecorder`, `InputRecording`, `InputReplayer`, `ReplayFrame`; the format (its start block holds the map hash and the user bindings); determinism tests and a committed fixture | I8 | 280 | 30 | 260 | ~570 |
+| I10 feat(input): load input maps through the asset database | `InputMapLoader`; the `Input -> Assets` edge in `EngineLayers` and [architecture tests](architecture-tests.md#the-layer-map); a load and hot-reload test over an in-memory database | I9 (same project); #282 merged and the Assets project's loader contract on `main` | 90 | 8 | 120 | ~220 |
+| PG feat(platform): translate gamepad events | Section 6's Platform additions in Platform and Platform.Sdl3, value-mirroring tests, synthetic translation tests (a Platform issue, after the 0.2.0 release) | the 0.2.0 release (ADR-0016's freeze) | 300 | 90 | 200 | ~590 |
+| I11 feat(input): bind gamepads and assign players | Gamepad `ControlKind` members and factories, device state, assignment, hot-plug, focus rule, `GamepadChanges`, `IsGamepadButtonDown`, recording of gamepad kinds | PG, I9 | 260 | 30 | 250 | ~540 |
+| I12 feat(input): rumble gamepads | `InputOptions.Platform`, `Rumble`; the real-device check stays not verified until a gamepad is available | I11 | 60 | 5 | 90 | ~155 |
+
+I10 can run whenever its blockers allow; it touches little else. I12 is small on purpose: it is the only part that needs a real device to verify, so it is kept apart. Each issue's CHANGELOG entry goes under `## Next: 0.3.0 (not in the next release)`.
+
+## Consistency with Architecture 3.10 and the platform note
+
+| They say | This note | Why |
+|----------|-----------|-----|
+| `input.BeginFrame(events)` (docs/03 3.2) | `BeginFrame(events, frameDelta)` plus `BeginFixedStep()` per step | Latching needs the step boundary; the delta is recorded for replay |
+| "Latched until consumed by a fixed tick" (3.10) | Every pending edge goes to the next step (section 3) | The pump's timestamps can't place events between steps of one frame |
+| Thread checks "asserted in debug builds" (3.2) | Checked in every build | As Platform, World and Runtime |
+| Gamepads need a variable-length payload (platform note's consistency table, `docs/design/platform.md:607`) | Fixed payloads; names in the `Gamepads` snapshot | Section 6 |
+| Gamepads in M2 (roadmap) | Designed here; code after Platform's gamepad events, after the 0.2.0 release | Decision above |
+
+Nothing here deviates from an ADR.
+
+## Not verified
+
+- The note is design only; nothing in it has run.
+- SDL behaviour cited from SDL's documentation rather than observed: gamepad instance ids not being reused, stick directions, background joystick events, relative-mode delta scaling, and which events SDL sends around focus changes. Input's own rules (release on focus loss, idempotent releases) don't depend on the last one. I3, PG and I11 verify what CI can with synthetic events; real-device behaviour needs a gamepad, which the reference machine doesn't have yet.
+- Cross-architecture bit equality of replays beyond win-x64 and linux-x64 (macOS is best-effort with no CI, [ADR-0015](../adr/0015-tested-platforms-windows-linux.md)).
+- `VirtualFileSystem` is cited from the platform note; its code is in review. The asset database's loader contract is #282's, not yet written; section 9 depends only on its name.
