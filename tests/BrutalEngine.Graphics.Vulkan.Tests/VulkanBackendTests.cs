@@ -93,7 +93,10 @@ public sealed class VulkanBackendTests
     {
         MemoryLogSink sink = new(16, 4096);
         using Logger logger = new(new LoggerOptions { Sinks = [sink] });
-        VulkanBackendOptions valid = new() { AppDirectory = _app, Logger = logger };
+
+        // An explicit, loadable loader, so a loader setup that ran before the check would record "preload <path>": the
+        // fake doesn't record BRUTAL's system-loader bind. The two LoaderPath rows replace it with their invalid value.
+        VulkanBackendOptions valid = new() { AppDirectory = _app, Logger = logger, LoaderPath = _explicitLoader };
         ValidationAllowance good = new(1, "known false positive");
         VulkanBackendOptions options = misuse switch
         {
@@ -110,6 +113,7 @@ public sealed class VulkanBackendTests
             _ => throw new ArgumentOutOfRangeException(nameof(misuse), misuse, null),
         };
         FakeLoaderHost host = SystemHost();
+        host.Libraries[_explicitLoader] = ExplicitEntry;
 
         // The parameter is the options record, so the backend's own check threw, not the loader setup's.
         ArgumentException exception = Assert.Throws<ArgumentException>("options", () => VulkanBackend.Create(options, host));
@@ -139,9 +143,13 @@ public sealed class VulkanBackendTests
     {
         Logger logger = new(new LoggerOptions { Sinks = [] });
         logger.Dispose();
-        FakeLoaderHost host = SystemHost();
 
-        Assert.Throws<ObjectDisposedException>(() => VulkanBackend.Create(new VulkanBackendOptions { AppDirectory = _app, Logger = logger }, host));
+        // An explicit, loadable loader, so touching the loader first would record "preload <path>" (see Create_Misuse_Throws).
+        FakeLoaderHost host = SystemHost();
+        host.Libraries[_explicitLoader] = ExplicitEntry;
+        VulkanBackendOptions options = new() { AppDirectory = _app, Logger = logger, LoaderPath = _explicitLoader };
+
+        Assert.Throws<ObjectDisposedException>(() => VulkanBackend.Create(options, host));
         Assert.Empty(host.Effects);
     }
 
