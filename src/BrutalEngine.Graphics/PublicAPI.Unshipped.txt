@@ -1,4 +1,13 @@
 #nullable enable
+BrutalEngine.Graphics.AdapterSelection
+BrutalEngine.Graphics.AdapterSelection.AdapterSelection() -> void
+BrutalEngine.Graphics.AdapterSelection.Equals(BrutalEngine.Graphics.AdapterSelection other) -> bool
+BrutalEngine.Graphics.AdapterType
+BrutalEngine.Graphics.AdapterType.Cpu = 4 -> BrutalEngine.Graphics.AdapterType
+BrutalEngine.Graphics.AdapterType.Discrete = 1 -> BrutalEngine.Graphics.AdapterType
+BrutalEngine.Graphics.AdapterType.Integrated = 2 -> BrutalEngine.Graphics.AdapterType
+BrutalEngine.Graphics.AdapterType.Other = 0 -> BrutalEngine.Graphics.AdapterType
+BrutalEngine.Graphics.AdapterType.Virtual = 3 -> BrutalEngine.Graphics.AdapterType
 BrutalEngine.Graphics.BindGroupHandle
 BrutalEngine.Graphics.BindGroupHandle.BindGroupHandle() -> void
 BrutalEngine.Graphics.BindGroupHandle.Equals(BrutalEngine.Graphics.BindGroupHandle other) -> bool
@@ -19,6 +28,12 @@ BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.DebugLabel.DebugLabel() -> void
 BrutalEngine.Graphics.DebugLabel.Equals(BrutalEngine.Graphics.DebugLabel other) -> bool
 BrutalEngine.Graphics.DebugLabel.IsNull.get -> bool
+BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.None = 0 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.SamplerAnisotropy = 1 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.TextureCompressionAstc = 8 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.TextureCompressionBC = 4 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsFeatures.TimestampQueries = 2 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsPipelineHandle
 BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
 BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
@@ -47,6 +62,8 @@ BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.TextureViewHandle.Equals(BrutalEngine.Graphics.TextureViewHandle other) -> bool
 BrutalEngine.Graphics.TextureViewHandle.IsNull.get -> bool
 BrutalEngine.Graphics.TextureViewHandle.TextureViewHandle() -> void
+override BrutalEngine.Graphics.AdapterSelection.GetHashCode() -> int
+override BrutalEngine.Graphics.AdapterSelection.ToString() -> string!
 override BrutalEngine.Graphics.BindGroupHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BindGroupHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BindGroupHandle.ToString() -> string!
@@ -83,6 +100,13 @@ override BrutalEngine.Graphics.TextureHandle.ToString() -> string!
 override BrutalEngine.Graphics.TextureViewHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.TextureViewHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.TextureViewHandle.ToString() -> string!
+static BrutalEngine.Graphics.AdapterSelection.Auto.get -> BrutalEngine.Graphics.AdapterSelection
+static BrutalEngine.Graphics.AdapterSelection.ByIndex(int index) -> BrutalEngine.Graphics.AdapterSelection
+static BrutalEngine.Graphics.AdapterSelection.ByName(string! nameSubstring) -> BrutalEngine.Graphics.AdapterSelection
+static BrutalEngine.Graphics.AdapterSelection.ByType(BrutalEngine.Graphics.AdapterType type) -> BrutalEngine.Graphics.AdapterSelection
+static BrutalEngine.Graphics.AdapterSelection.TryParse(string? text, out BrutalEngine.Graphics.AdapterSelection selection) -> bool
+static BrutalEngine.Graphics.AdapterSelection.operator !=(BrutalEngine.Graphics.AdapterSelection left, BrutalEngine.Graphics.AdapterSelection right) -> bool
+static BrutalEngine.Graphics.AdapterSelection.operator ==(BrutalEngine.Graphics.AdapterSelection left, BrutalEngine.Graphics.AdapterSelection right) -> bool
 static BrutalEngine.Graphics.BindGroupHandle.operator !=(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupHandle.operator ==(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupLayoutHandle.operator !=(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
@@ -107,3 +131,4 @@ static BrutalEngine.Graphics.TextureHandle.operator !=(BrutalEngine.Graphics.Tex
 static BrutalEngine.Graphics.TextureHandle.operator ==(BrutalEngine.Graphics.TextureHandle left, BrutalEngine.Graphics.TextureHandle right) -> bool
 static BrutalEngine.Graphics.TextureViewHandle.operator !=(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
 static BrutalEngine.Graphics.TextureViewHandle.operator ==(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
+~override BrutalEngine.Graphics.AdapterSelection.Equals(object obj) -> bool
