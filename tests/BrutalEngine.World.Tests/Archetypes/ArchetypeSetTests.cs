@@ -171,6 +171,7 @@ public sealed class ArchetypeSetTests
             InvalidOperationException exception =
                 Assert.Throws<InvalidOperationException>(() => set.GetOrCreate(ArchetypeTestTypes.Ids(small, big)));
             Assert.Contains("Tests.Archetype.C0, Tests.Archetype.C1", exception.Message, StringComparison.Ordinal);
+            _ = Assert.Throws<InvalidOperationException>(() => set.GetOrCreateAdding(bigOnly, small));
             Assert.Equal(count, set.Count);
 
             // No index was used up, and the set still finds and creates archetypes.
@@ -193,9 +194,11 @@ public sealed class ArchetypeSetTests
         {
             _ = ArchetypeTestTypes.Forge(world, 3);
             ArchetypeSet set = world.Archetypes;
-            _ = set.GetOrCreate(ArchetypeTestTypes.Ids(1));
+            Archetype one = set.GetOrCreate(ArchetypeTestTypes.Ids(1));
 
             _ = Assert.Throws<ArgumentOutOfRangeException>(() => set.GetOrCreate(ArchetypeTestTypes.Ids(0, index)));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => set.GetOrCreateAdding(one, index));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => set.GetOrCreateRemoving(one, index));
 
             Assert.Equal(2, set.Count);
             Assert.Equal(2, set.GetOrCreate(ArchetypeTestTypes.Ids(0, 2)).Index);
@@ -223,6 +226,53 @@ public sealed class ArchetypeSetTests
             Assert.Same(first, set.GetOrCreate(ArchetypeTestTypes.Ids(2340, 163, 215, 1190, 1580, 2107)));
             Assert.Same(second, set.GetOrCreate(ArchetypeTestTypes.Ids(4069, 811, 1099, 2434, 3274)));
             Assert.Equal(3, set.Count);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Neighbours_MatchDirectSignature()
+    {
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking }))
+        {
+            _ = ArchetypeTestTypes.Forge(world, 7);
+            ArchetypeSet set = world.Archetypes;
+            Archetype middle = set.GetOrCreate(ArchetypeTestTypes.Ids(1, 3, 5));
+
+            // Added at the front, the middle and the end; removed from each position.
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(0, 1, 3, 5)), set.GetOrCreateAdding(middle, 0));
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(1, 3, 4, 5)), set.GetOrCreateAdding(middle, 4));
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(1, 3, 5, 6)), set.GetOrCreateAdding(middle, 6));
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(3, 5)), set.GetOrCreateRemoving(middle, 1));
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(1, 5)), set.GetOrCreateRemoving(middle, 3));
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(1, 3)), set.GetOrCreateRemoving(middle, 5));
+            Assert.Same(set.Empty, set.GetOrCreateRemoving(set.GetOrCreateAdding(set.Empty, 2), 2));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Neighbours_Misuse_ThrowsAndLeavesSetUnchanged()
+    {
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking }))
+        using (EcsWorld other = new(new WorldOptions { Allocator = tracking }))
+        {
+            _ = ArchetypeTestTypes.Forge(world, 3);
+            ArchetypeSet set = world.Archetypes;
+            Archetype one = set.GetOrCreate(ArchetypeTestTypes.Ids(1));
+            int count = set.Count;
+
+            InvalidOperationException present = Assert.Throws<InvalidOperationException>(() => set.GetOrCreateAdding(one, 1));
+            Assert.Contains("already has component 1", present.Message, StringComparison.Ordinal);
+            InvalidOperationException absent = Assert.Throws<InvalidOperationException>(() => set.GetOrCreateRemoving(one, 2));
+            Assert.Contains("doesn't have component 2", absent.Message, StringComparison.Ordinal);
+            Assert.Equal("source", Assert.Throws<ArgumentException>(() => set.GetOrCreateAdding(other.Archetypes.Empty, 0)).ParamName);
+            Assert.Equal("source", Assert.Throws<ArgumentNullException>(() => set.GetOrCreateRemoving(null!, 0)).ParamName);
+            Assert.Equal(count, set.Count);
         }
 
         tracking.ThrowIfLeaks();
@@ -259,6 +309,8 @@ public sealed class ArchetypeSetTests
 
         Assert.Equal(0, set.Count);
         _ = Assert.Throws<ObjectDisposedException>(() => set.GetOrCreate([]));
+        _ = Assert.Throws<ObjectDisposedException>(() => set.GetOrCreateAdding(archetype, 0));
+        _ = Assert.Throws<ObjectDisposedException>(() => set.GetOrCreateRemoving(archetype, 0));
         _ = Assert.Throws<ObjectDisposedException>(() => set[0]);
         set.Dispose();
     }
