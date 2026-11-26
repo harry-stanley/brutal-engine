@@ -37,6 +37,9 @@ public enum FormatSupport
     /// <summary>Textures of the format can be the destination of a copy.</summary>
     CopyDestination = 128,
 
-    /// <summary>Targets of the format can be multisampled, at the counts in <see cref="GraphicsLimits.ColorSampleCounts"/>.</summary>
+    /// <summary>
+    /// Targets of the format can be multisampled; for a color format, at the counts in
+    /// <see cref="GraphicsLimits.ColorSampleCounts"/>. Depth and stencil sample counts are reported separately.
+    /// </summary>
     Multisample = 256,
 }

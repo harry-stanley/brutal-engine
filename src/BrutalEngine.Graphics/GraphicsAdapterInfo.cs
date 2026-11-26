@@ -12,7 +12,9 @@ namespace BrutalEngine.Graphics;
 /// <para>
 /// Immutable once constructed and safe to read from any thread. <see cref="RejectionReasons"/> must not be changed
 /// after construction: the backend passes a list it never touches again. Equality is the record's: strings compare
-/// ordinally and <see cref="RejectionReasons"/> compares by reference. No member allocates, except
+/// ordinally and <see cref="RejectionReasons"/> compares by reference, so two descriptions of the same adapter built
+/// from separate lists are not equal. Identify an adapter by <see cref="Index"/>, not with <c>==</c>. No member
+/// allocates, except
 /// <see cref="ToString"/>, which formats with the invariant culture.
 /// </para>
 /// </remarks>
