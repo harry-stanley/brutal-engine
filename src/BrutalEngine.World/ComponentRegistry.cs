@@ -20,8 +20,10 @@ namespace BrutalEngine.World;
 /// </para>
 /// <para>
 /// <b>Registration.</b> <see cref="Register{T}"/> takes a type's size and alignment from the type itself, never from
-/// its <see cref="IComponent.Info"/>. Validation of the info, size and alignment against the registration rules lands
-/// separately.
+/// its <see cref="IComponent.Info"/>, and checks them and the info against the registration rules: at most
+/// 1,024 bytes, aligned to at most 64 bytes, a valid info (a schema version of at least 1, a non-empty full name, the
+/// stable id of that name, and size 1 for a tag), and no other registered type with the same stable id. A rejected
+/// registration throws and leaves the registry unchanged.
 /// </para>
 /// <para>
 /// <b>Threading.</b> Owned by its world: every member checks that it is called on the world's owner thread and throws
@@ -36,6 +38,12 @@ namespace BrutalEngine.World;
 /// </remarks>
 public sealed class ComponentRegistry
 {
+    /// <summary>The largest component size, in bytes.</summary>
+    internal const int MaxComponentSize = 1024;
+
+    /// <summary>The largest component alignment, in bytes: the chunk alignment.</summary>
+    internal const int MaxComponentAlignment = 64;
+
     private const int InitialTypeCapacity = 16;
 
     private readonly ThreadAffinity _owner;
@@ -90,9 +98,19 @@ public sealed class ComponentRegistry
     /// </summary>
     /// <typeparam name="T">The component type.</typeparam>
     /// <returns>The type's id in this registry: <see cref="Count"/> before the call, for a new type.</returns>
+    /// <exception cref="ArgumentException">
+    /// <typeparamref name="T"/> is new and breaks a rule: it is over 1,024 bytes or aligned to more than 64 bytes, or
+    /// its <see cref="IComponent.Info"/> has a <see cref="ComponentInfo.SchemaVersion"/> of 0, a null or empty
+    /// <see cref="ComponentInfo.FullName"/>, a <see cref="ComponentInfo.StableId"/> that isn't
+    /// <see cref="StableComponentId.FromFullName"/> of the name, or <see cref="ComponentInfo.IsTag"/> set with a size
+    /// other than 1. The message names the type and the limit or the field. The registry is unchanged.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// <typeparamref name="T"/> is new and the registry already holds <see cref="Capacity"/> types. The message names
-    /// the type and <see cref="WorldOptions.MaxComponentTypes"/>. The registry is unchanged.
+    /// <typeparamref name="T"/> is new and another registered type has its stable id: a different name (a hash
+    /// collision), or the same name with another schema version or tag-ness, or the same name, schema version and
+    /// tag-ness (two types can't share one id, because they could disagree on layout). The message names both. Or the
+    /// registry already holds <see cref="Capacity"/> types; the message names the type and
+    /// <see cref="WorldOptions.MaxComponentTypes"/>. The registry is unchanged.
     /// </exception>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
@@ -111,9 +129,11 @@ public sealed class ComponentRegistry
             return id;
         }
 
-        // TODO(#160): validate the info, size and alignment against the registration rules here.
         ComponentInfo info = T.Info;
-        return Add(ordinal, in info, Unsafe.SizeOf<T>(), AlignmentOf<T>());
+        int size = Unsafe.SizeOf<T>();
+        int alignment = AlignmentOf<T>();
+        Validate(typeof(T), in info, size, alignment);
+        return Add(ordinal, in info, size, alignment);
     }
 
     /// <summary>Looks up the id of <typeparamref name="T"/>, without registering it.</summary>
@@ -176,26 +196,33 @@ public sealed class ComponentRegistry
     }
 
     /// <summary>
-    /// Adds a new type under <paramref name="ordinal"/> as the next dense id, after the capacity check; the registry
-    /// is unchanged when it throws. <see cref="Register{T}"/> calls it; tests also call it directly, to fill a
-    /// registry with more types than they declare.
+    /// Adds a new, validated type under <paramref name="ordinal"/> as the next dense id, after the stable-id and
+    /// capacity checks; the registry is unchanged when it throws. <see cref="Register{T}"/> calls it; tests also call
+    /// it directly, to fill a registry with more types than they declare and to forge a stable-id collision.
     /// </summary>
     /// <param name="ordinal">The type's process-wide ordinal, not yet registered here.</param>
     /// <param name="info">The type's info.</param>
     /// <param name="size">The type's size in bytes.</param>
     /// <param name="alignment">The type's alignment in bytes.</param>
     /// <returns>The new id.</returns>
-    /// <exception cref="InvalidOperationException">The registry already holds <see cref="Capacity"/> types.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Another registered type has <paramref name="info"/>'s stable id, or the registry already holds
+    /// <see cref="Capacity"/> types.
+    /// </exception>
     internal ComponentId Add(int ordinal, in ComponentInfo info, int size, int alignment)
     {
+        if (_idsByStableId.TryGetValue(info.StableId.Value, out int registered))
+        {
+            throw Conflict(_types[registered].Info, in info);
+        }
+
         if (_count == _capacity)
         {
             throw new InvalidOperationException(
                 $"Can't register component {info.FullName}: the registry is full (WorldOptions.MaxComponentTypes is {_capacity}).");
         }
 
-        // First, so a duplicate stable id throws (the dictionary's ArgumentException) before anything changes.
-        // TODO(#160): reject stable-id conflicts with the documented exception before this point.
+        // First of the changes: the stable id is known to be free, so only running out of memory can throw here.
         int index = _count;
         _idsByStableId.Add(info.StableId.Value, index);
 
@@ -216,6 +243,48 @@ public sealed class ComponentRegistry
         return id;
     }
 
+    /// <summary>
+    /// Checks a type's info, size and alignment against the registration rules. <see cref="Register{T}"/> calls it;
+    /// tests also call it directly, for an alignment no ordinary struct reaches.
+    /// </summary>
+    /// <param name="type">The component type, named in the message: its info may be the thing that's wrong.</param>
+    /// <param name="info">The type's info.</param>
+    /// <param name="size">The type's size in bytes.</param>
+    /// <param name="alignment">The type's alignment in bytes.</param>
+    /// <exception cref="ArgumentException">A rule is broken. The message names the type and the limit or field.</exception>
+    internal static void Validate(Type type, in ComponentInfo info, int size, int alignment)
+    {
+        if (size > MaxComponentSize)
+        {
+            throw Invalid(type, $"it is {size} bytes, and components are at most {MaxComponentSize} bytes");
+        }
+
+        if (alignment > MaxComponentAlignment)
+        {
+            throw Invalid(type, $"it is aligned to {alignment} bytes, and components are aligned to at most {MaxComponentAlignment} bytes");
+        }
+
+        if (info.SchemaVersion == 0)
+        {
+            throw Invalid(type, "its ComponentInfo.SchemaVersion is 0, and schema versions start at 1");
+        }
+
+        if (string.IsNullOrEmpty(info.FullName))
+        {
+            throw Invalid(type, "its ComponentInfo.FullName is null or empty");
+        }
+
+        if (info.StableId != StableComponentId.FromFullName(info.FullName))
+        {
+            throw Invalid(type, $"its ComponentInfo.StableId isn't StableComponentId.FromFullName(\"{info.FullName}\")");
+        }
+
+        if (info.IsTag && size != 1)
+        {
+            throw Invalid(type, $"its ComponentInfo.IsTag is set, but it is {size} bytes; a tag has no instance fields, so size 1");
+        }
+    }
+
     /// <summary>Marks the registry unusable; called by the world's <c>Dispose</c>.</summary>
     internal void MarkDisposed() => _disposed = true;
 
@@ -229,6 +298,25 @@ public sealed class ComponentRegistry
         // starts at T's alignment, and the probe's size is that offset plus T's size, which is already a multiple of the
         // alignment. So the difference of the two sizes is the offset of Value.
         => Unsafe.SizeOf<AlignmentProbe<T>>() - Unsafe.SizeOf<T>();
+
+    private static ArgumentException Invalid(Type type, string reason) =>
+        new($"Can't register component type {type.FullName}: {reason}.");
+
+    /// <summary>The exception for a new type whose stable id <paramref name="registered"/> already has.</summary>
+    private static InvalidOperationException Conflict(in ComponentInfo registered, in ComponentInfo info)
+    {
+        string reason = !string.Equals(registered.FullName, info.FullName, StringComparison.Ordinal)
+            ? $"its stable id {info.StableId.Value:X16} collides with registered component {registered.FullName}; rename one of them"
+            : registered.SchemaVersion != info.SchemaVersion
+                ? $"component {registered.FullName} is already registered with schema version {registered.SchemaVersion}, and changing the schema of a registered component isn't supported"
+                : registered.IsTag != info.IsTag
+                    ? $"component {registered.FullName} is already registered as {TagNess(registered.IsTag)}"
+                    : $"a different type named {registered.FullName} is already registered, and two types can't share a stable id";
+        return new InvalidOperationException(
+            $"Can't register component {info.FullName} (schema version {info.SchemaVersion}, {TagNess(info.IsTag)}): {reason}.");
+    }
+
+    private static string TagNess(bool isTag) => isTag ? "a tag" : "a data component";
 
     private bool TryGetId(int ordinal, out ComponentId id)
     {
