@@ -73,7 +73,7 @@ public interface IPlatform : IDisposable
     /// </exception>
     public HeadlessMode Headless { get; }
 
-    /// <summary>The clock for frame timing and event timestamps: <c>PlatformOptions.Clock</c>.</summary>
+    /// <summary>The clock for frame timing and event timestamps: <see cref="PlatformOptions.Clock"/>.</summary>
     /// <remarks>
     /// Defaults to <see cref="TimeProvider.System"/>, which is monotonic, high-resolution and allocation-free; tests
     /// inject their own. Immutable; any thread. Allocates nothing.
@@ -95,8 +95,8 @@ public interface IPlatform : IDisposable
     /// The directory; or <see cref="ErrorKind.Io"/> with the backend's message if it can't be resolved or created.
     /// </returns>
     /// <remarks>
-    /// <c>PlatformOptions.UserDataDirectory</c> replaces it when set. Otherwise it is resolved on the first call, not when
-    /// the platform is created, because the backend creates the directory: a test or tool that never asks never
+    /// <see cref="PlatformOptions.UserDataDirectory"/> replaces it when set. Otherwise it is resolved on the first call,
+    /// not when the platform is created, because the backend creates the directory: a test or tool that never asks never
     /// creates a folder in the user's profile. Later calls return the same value. Main thread only. The first call and
     /// a failure allocate.
     /// </remarks>
@@ -114,10 +114,11 @@ public interface IPlatform : IDisposable
     /// connected.
     /// </returns>
     /// <remarks>Main thread only. Allocates.</remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> or its title is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="options"/> asks for <see cref="WindowMode.ExclusiveFullscreen"/> (use
-    /// <see cref="IWindow.SetExclusiveFullscreen"/>) or for display <c>default(DisplayId)</c>.
+    /// <paramref name="options"/>' title is <see langword="null"/>, or it asks for
+    /// <see cref="WindowMode.ExclusiveFullscreen"/> (use <see cref="IWindow.SetExclusiveFullscreen"/>) or for display
+    /// <c>default(DisplayId)</c>.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// A content-size side is outside 1 to 16384, or a value is outside its enum.
@@ -134,8 +135,8 @@ public interface IPlatform : IDisposable
     /// <remarks>
     /// <para>
     /// Each pump replaces the previous batch, then translates queued events in OS order while the buffer
-    /// (<c>PlatformOptions.EventCapacity</c> and <c>TextCapacityBytes</c>) has room. An event that
-    /// <see cref="WaitForEvents"/> received comes first. When the buffer fills up, the rest stay queued in the OS, in
+    /// (<see cref="PlatformOptions.EventCapacity"/> and <see cref="PlatformOptions.TextCapacityBytes"/>) has room. An
+    /// event that <see cref="WaitForEvents"/> received comes first. When the buffer fills up, the rest stay queued in the OS, in
     /// order, for the next pump (<see cref="PlatformEventBatch.HasDeferredEvents"/>): events are deferred, never dropped.
     /// The one lossy case is a single text event longer than the remaining text space, which is cut at a code-point
     /// boundary.
@@ -181,9 +182,9 @@ public interface IPlatform : IDisposable
 
     /// <summary>The connected displays, the primary one marked with <see cref="DisplayInfo.IsPrimary"/>.</summary>
     /// <remarks>
-    /// A snapshot list, built when the platform is created and rebuilt (allocating) when a display is added or removed,
-    /// or a display's content scale or current mode changes, is pumped. Between those, reading it allocates nothing and
-    /// returns the same list. Main thread only.
+    /// A snapshot list, built when the platform is created and rebuilt (allocating) when a display event is pumped: a
+    /// display added or removed, or its content scale or current mode changed. Between those, reading it allocates
+    /// nothing and returns the same list. Main thread only.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The platform has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the main thread.</exception>
@@ -245,7 +246,8 @@ public interface IPlatform : IDisposable
     /// is headless, so automated runs never block on a dialog; or <see cref="ErrorKind.Native"/> if the OS refused.
     /// </returns>
     /// <remarks>Main thread only. Allocates.</remarks>
-    /// <exception cref="ArgumentNullException"><paramref name="request"/> or its title or message is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="request"/>'s title or message is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="request"/>'s kind isn't a <see cref="MessageBoxKind"/> value.
     /// </exception>
