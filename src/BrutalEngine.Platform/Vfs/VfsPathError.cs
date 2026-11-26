@@ -15,7 +15,7 @@ internal enum VfsPathError
     /// <summary>A <c>..</c> segment.</summary>
     Traversal,
 
-    /// <summary>A <c>\</c> anywhere in the path.</summary>
+    /// <summary>A <c>\</c> in a segment. A <c>\</c> in the scheme is <see cref="InvalidScheme"/>.</summary>
     Backslash,
 
     /// <summary>A character in U+0000 to U+001F, or U+007F.</summary>

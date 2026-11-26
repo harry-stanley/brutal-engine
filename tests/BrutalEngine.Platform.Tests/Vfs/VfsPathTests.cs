@@ -89,6 +89,7 @@ public sealed class VfsPathTests
             { "re_s://a", SchemeRule },
             { "re.s://a", SchemeRule },
             { "re s://a", SchemeRule },
+            { "re\\s://a", SchemeRule },
             { " res://a", SchemeRule },
             { "rés://a", SchemeRule },
             { "abcdefghijklmnopqrstuvwxyz0123456://x", SchemeRule },
