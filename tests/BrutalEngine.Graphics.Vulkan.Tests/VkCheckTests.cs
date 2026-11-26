@@ -22,7 +22,9 @@ public sealed class VkCheckTests
     [Fact]
     public void KindOf_Table_CoversEveryNegativeValueAndTimeout()
     {
-        // Guards the theory's data: a new negative value in BRUTAL's enum is tested as soon as the pin moves.
+        // Guards the theory's data. VkResultCases.Failures is itself built from Enum.GetValues<VkResult>(), so a new
+        // negative value in BRUTAL's enum is tested as soon as the pin moves; the first assertion only catches a
+        // hand edit to Failures that drops a negative value or TIMEOUT.
         VkResult[] required = [.. Enum.GetValues<VkResult>().Where(r => (int)r < 0).Append(VkResult.Timeout).Distinct()];
 
         Assert.All(required, r => Assert.Contains(r, VkResultCases.Failures));
