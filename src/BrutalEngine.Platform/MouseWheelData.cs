@@ -3,15 +3,17 @@ using System.Globalization;
 namespace BrutalEngine.Platform;
 
 /// <summary>The payload of a <c>MouseWheel</c> event: how far the wheel scrolled, and where the pointer was.</summary>
-/// <param name="X">The horizontal scroll amount, in SDL's float wheel units.</param>
-/// <param name="Y">The vertical scroll amount, in SDL's float wheel units.</param>
+/// <param name="X">The horizontal scroll amount, in SDL's float wheel units: positive scrolls right.</param>
+/// <param name="Y">The vertical scroll amount, in SDL's float wheel units: positive scrolls away from the user.</param>
 /// <param name="MouseX">The pointer's horizontal position in the window, in window coordinates.</param>
 /// <param name="MouseY">The pointer's vertical position in the window, in window coordinates.</param>
 /// <remarks>
 /// <para>
-/// The scroll direction SDL reports with each wheel event (<c>SDL_MouseWheelDirection</c>, normal or flipped) is
-/// already applied by the backend, so the payload has no direction field to check. Positions are SDL's float window
-/// coordinates, the same space as the window's <c>Size</c> (docs/design/platform.md section 1).
+/// The amounts always use SDL's normal sign convention: positive <see cref="Y"/> scrolls away from the user and
+/// positive <see cref="X"/> scrolls right. The scroll direction SDL reports with each wheel event
+/// (<c>SDL_MouseWheelDirection</c>, normal or flipped by a "natural scrolling" setting) is already applied by the
+/// backend, which negates flipped amounts back, so the payload has no direction field to check. Positions are SDL's
+/// float window coordinates, the same space as the window's <c>Size</c> (docs/design/platform.md section 1).
 /// </para>
 /// <para>
 /// 16 bytes with no references, so it fits the event's payload at offsets 16 to 31 (docs/design/platform.md,
