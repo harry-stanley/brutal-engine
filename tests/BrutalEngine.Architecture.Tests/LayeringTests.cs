@@ -65,6 +65,23 @@ public sealed class LayeringTests
     }
 
     [Fact]
+    public void GraphicsToPlatform_IsAllowedSameLayerEdge()
+    {
+        Violations.AssertNone(LayeringRule.Name, LayeringRule.Check(EngineLayers.Map, "BrutalEngine.Graphics", ["BrutalEngine.Platform"], "test"));
+        Assert.True(EngineLayers.Map.IsSameLayerEdgeAllowed("BrutalEngine.Graphics", "BrutalEngine.Platform"));
+    }
+
+    [Theory]
+    [InlineData("BrutalEngine.Graphics.Vulkan", "BrutalEngine.Platform")]
+    [InlineData("BrutalEngine.Platform", "BrutalEngine.Graphics")]
+    public void EngineLayers_GraphicsEdgeOnlyAllowsGraphicsToPlatform(string module, string reference)
+    {
+        string violation = Assert.Single(LayeringRule.Check(EngineLayers.Map, module, [reference], "test"));
+
+        Assert.Contains("this same-layer edge isn't listed", violation, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Check_UnknownModule_IsReported()
     {
         string violation = Assert.Single(LayeringRule.Check(_map, "BrutalEngine.Unknown", ["BrutalEngine.Core"], "test"));
