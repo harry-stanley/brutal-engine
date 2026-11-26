@@ -28,6 +28,8 @@ public sealed partial class FakeBackendDeviceTests
         "Execute listing an acquired image twice",
         "Present an image not executed",
         "Present an image twice",
+        "Present an image after its Execute failed",
+        "Present an earlier frame's image after a failed Execute",
         "TryReadTimestamps slot above range",
         "WaitForFrame after Dispose",
     ];
@@ -307,6 +309,22 @@ public sealed partial class FakeBackendDeviceTests
                     _ = device.Present(swapchain, FakeBackendFixture.ExecuteWithImage(device, 0, swapchain));
                 },
                 () => device.Present(swapchain, 0)),
+            "Present an image after its Execute failed" => Then(
+                () =>
+                {
+                    image = OpenAndAcquire(device, swapchain);
+                    FailedExecute(0, image);
+                },
+                () => device.Present(swapchain, image)),
+            "Present an earlier frame's image after a failed Execute" => Then(
+                () =>
+                {
+                    FakeBackendFixture.OpenFrame(device, 0);
+                    image = FakeBackendFixture.ExecuteWithImage(device, 0, swapchain);
+                    FakeBackendFixture.OpenFrame(device, 1);
+                    FailedExecute(1, device.AcquireImage(swapchain, 1).ImageIndex);
+                },
+                () => device.Present(swapchain, image)),
             "TryReadTimestamps slot above range" => () => device.TryReadTimestamps(2, []),
             "WaitForFrame after Dispose" => Then(device.Dispose, () => device.WaitForFrame(0)),
             _ => throw new ArgumentOutOfRangeException(nameof(violation), violation, "Unknown row."),
@@ -322,6 +340,13 @@ public sealed partial class FakeBackendDeviceTests
         {
             FakeBackendFixture.OpenFrame(device, 0);
             return device.AcquireImage(swapchain, 0).ImageIndex;
+        }
+
+        // A scripted submit failure for the open slot's plan, which waits for one acquired image.
+        void FailedExecute(int slot, int acquiredImage)
+        {
+            _fixture.Script.FailNext(FakeBackendOperation.Execute, new EngineError(ErrorKind.Unavailable, "lost"));
+            Assert.True(device.Execute(GraphicsInternals.NewFramePlan(slot, 2, [], [new(swapchain, acquiredImage)])).IsFailure);
         }
     }
 }
