@@ -49,6 +49,8 @@ jobs:
         run: bash .github/scripts/ci-tier-test.sh
       - name: Self-test the merge check
         run: bash .github/scripts/ci-merge-check-test.sh
+      - name: Self-test the GPU-trait discovery
+        run: bash .github/scripts/gpu-tests-test.sh
       - name: Select tier
         id: select
         env:
@@ -193,12 +195,14 @@ jobs:
           path: artifacts/packages/
           if-no-files-found: error
           retention-days: 14
+      # No Vulkan driver here: tests marked [Trait("Category", "Gpu")] run in the vulkan-smoke job instead.
       - name: Test
         run: >-
           dotnet test --solution BrutalEngine.slnx -c Release --no-build
           --results-directory TestResults
           --report-trx
           --coverage --coverage-output-format cobertura
+          -- --filter-not-trait "Category=Gpu"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -235,6 +239,18 @@ jobs:
           project: tests/BrutalEngine.Aot.Smoke
       - name: Set up software Vulkan (lavapipe + validation layers)
         uses: ./.github/actions/setup-software-vulkan
+      # Tests marked [Trait("Category", "Gpu")] need a Vulkan driver, so build-test excludes them and they run here on
+      # lavapipe with the validation layers. The tests run headless on Linux, which has no display (they use SDL's
+      # offscreen driver), and windowed on Windows, in the runner's desktop session. gpu-tests.sh (self-tested by the
+      # tier job) finds the test projects that declare the trait, and fails if one of them runs no Gpu tests.
+      - name: GPU-trait tests
+        run: |
+          set -euo pipefail
+          projects=$(bash .github/scripts/gpu-tests.sh --list)
+          while read -r project; do
+            [ -z "$project" ] || dotnet build "$project" -c Release
+          done <<< "$projects"
+          bash .github/scripts/gpu-tests.sh Release
       - name: Build smoke harness
         run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release --no-restore
       # SMOKE_ARGS is split into words on purpose.
