@@ -126,6 +126,31 @@ public sealed class EcsWorld : IDisposable
     }
 
     /// <summary>
+    /// The number of chunks holding entities, over every archetype. Empty chunks kept in the pool for reuse aren't
+    /// counted: an archetype returns a chunk to the pool as soon as it empties.
+    /// </summary>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// Allocates nothing. Takes time proportional to <see cref="ArchetypeCount"/>: it sums the archetypes' chunk counts.
+    /// Not thread-safe: like every member, it is for the owner thread only.
+    /// </remarks>
+    public int ChunkCount
+    {
+        get
+        {
+            ThrowIfUnusable("EcsWorld.ChunkCount");
+            int chunks = 0;
+            for (int i = 0; i < _archetypes.Count; i++)
+            {
+                chunks += _archetypes[i].Chunks.ChunkCount;
+            }
+
+            return chunks;
+        }
+    }
+
+    /// <summary>
     /// Returns whether <paramref name="entity"/> is alive in this world: issued by it, placed in storage, and not
     /// despawned since. A lookup: it never throws for an entity that isn't alive here.
     /// </summary>
