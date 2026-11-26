@@ -122,6 +122,29 @@ BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.get -> BrutalEngine
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.init -> void
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.get -> ulong
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.init -> void
+BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.Barrier = 0 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.BeginComputePass = 7 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.BeginRenderPass = 5 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.ClearSwapchainImage = 21 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyBufferToBuffer = 1 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyBufferToTexture = 2 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyTextureToBuffer = 3 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.CopyTextureToTexture = 4 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.Dispatch = 18 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.Draw = 16 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.DrawIndexed = 17 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.EndComputePass = 8 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.EndRenderPass = 6 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.PopDebugGroup = 20 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.PushConstants = 15 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.PushDebugGroup = 19 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetBindGroup = 10 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetIndexBuffer = 12 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetPipeline = 9 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetScissor = 14 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetVertexBuffer = 11 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CommandKind.SetViewport = 13 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.FramePlan
 BrutalEngine.Graphics.Backend.FramePlan.Acquired.get -> System.ReadOnlySpan<BrutalEngine.Graphics.Backend.SwapchainImageUse>
 BrutalEngine.Graphics.Backend.FramePlan.Commands.get -> System.ReadOnlySpan<byte>
