@@ -900,7 +900,7 @@ public sealed class BackendObjectTable                  // owned by the front en
 
 **Surfaces and swapchains:**
 
-- **Surfaces.** `CreateSurface` makes the window's one live surface (platform note section 4). The front end passes the same `WindowSurfaceSource` instance for the `CompatibleWindow` as `BackendDeviceRequest.CompatibleSurface`, so for that instance the backend returns the surface it created for adapter selection instead of a second one. `IBackendDevice.Dispose` destroys any surface still alive, including an unused selection surface.
+- **Surfaces.** `CreateSurface` makes the window's one live surface (platform note section 4). The front end passes the same `WindowSurfaceSource` instance for the `CompatibleWindow` as `BackendDeviceRequest.CompatibleSurface`, so the first `CreateSurface` for that instance returns the selection surface, the one the backend created for adapter selection, instead of a second one. `IBackendDevice.Dispose` destroys any surface still alive, including an unused selection surface.
 - **Recreation.** `CreateSwapchain` with a non-zero `OldSwapchain` reuses that swapchain's surface (`Surface` is the same id) and retires the old swapchain. The front end then calls `DestroySwapchain` on the old id whether the create succeeded or failed, as M0 does (`HelloWindowApp.cs:165-168`), after waiting for the device to go idle.
 - **Destruction.** `GraphicsDevice.Destroy(SwapchainHandle)` lands on `DestroySwapchain`, then `DestroySurface`, once the swapchain's frames have completed. Swapchain image texture and view ids from `GetSwapchainImage` are owned by their swapchain: they never go to `Destroy`, and are invalid after `DestroySwapchain`.
 
