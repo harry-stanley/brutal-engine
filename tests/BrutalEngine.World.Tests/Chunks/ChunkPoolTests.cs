@@ -141,6 +141,27 @@ public sealed unsafe class ChunkPoolTests
     }
 
     [Fact]
+    public void Dispose_FreeThrowsPartway_LaterDisposeFreesRest()
+    {
+        TrackingAllocator tracking = NewTracking();
+        CountingAllocator counting = new(tracking) { ThrowOnFreeCall = 2 };
+        ChunkPool pool = new(counting, ChunkBytes);
+        nint[] blocks = [(nint)pool.Rent(), (nint)pool.Rent(), (nint)pool.Rent()];
+        ReturnAll(pool, blocks);
+
+        // The second free throws without freeing: the pool stays undisposed, with the two blocks left still pooled.
+        _ = Assert.Throws<InvalidOperationException>(pool.Dispose);
+        Assert.Equal(2, pool.PooledCount);
+        Assert.Equal(2, tracking.LiveAllocationCount);
+
+        // A later Dispose frees the rest, the block whose free failed included.
+        pool.Dispose();
+        Assert.Equal(0, pool.PooledCount);
+        Assert.Equal(4, counting.FreeCalls);
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void Return_Null_Throws()
     {
         TrackingAllocator tracking = NewTracking();
