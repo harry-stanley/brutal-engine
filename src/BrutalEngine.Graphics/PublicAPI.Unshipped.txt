@@ -20,6 +20,43 @@ BrutalEngine.Graphics.AddressMode.ClampToBorder = 3 -> BrutalEngine.Graphics.Add
 BrutalEngine.Graphics.AddressMode.ClampToEdge = 0 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.MirrorRepeat = 2 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.Repeat = 1 -> BrutalEngine.Graphics.AddressMode
+BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.ColorTarget = 10 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.CopyDestination = 2 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.CopySource = 1 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.DepthRead = 11 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.DepthReadWrite = 12 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.IndexBuffer = 4 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.IndirectBuffer = 5 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.Present = 13 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.SampledRead = 9 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.StorageRead = 7 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.StorageReadWrite = 8 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.Undefined = 0 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.UniformRead = 6 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.VertexBuffer = 3 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceTransition
+BrutalEngine.Graphics.Backend.ResourceTransition.After.get -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceTransition.After.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.AfterStages.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.Backend.ResourceTransition.AfterStages.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.ArrayLayerCount.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.ArrayLayerCount.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseArrayLayer.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseArrayLayer.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseMipLevel.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseMipLevel.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.Before.get -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceTransition.Before.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.BeforeStages.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.Backend.ResourceTransition.BeforeStages.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.IsTexture.get -> bool
+BrutalEngine.Graphics.Backend.ResourceTransition.IsTexture.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.MipLevelCount.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.MipLevelCount.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.Resource.get -> ulong
+BrutalEngine.Graphics.Backend.ResourceTransition.Resource.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.ResourceTransition() -> void
 BrutalEngine.Graphics.Backend.WindowSurfaceSource
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.CreateVulkanSurface(nint instance) -> BrutalEngine.Core.Result<nint>
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.GetRequiredInstanceExtension(int index) -> System.ReadOnlySpan<byte>
