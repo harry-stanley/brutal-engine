@@ -63,7 +63,7 @@ internal sealed unsafe class Archetype : IDisposable
     /// <summary>The archetype's chunks and their change ticks.</summary>
     public ChunkTable Chunks { get; }
 
-    /// <summary>The number of rows in the archetype's chunks: its entities.</summary>
+    /// <summary>The number of rows in the archetype's chunks: its entities. <c>0</c> once disposed.</summary>
     public int RowCount { get; private set; }
 
     /// <summary>
@@ -187,12 +187,14 @@ internal sealed unsafe class Archetype : IDisposable
     public Archetype WithRemoved(ComponentId component) => Neighbour(component.Index, adding: false);
 
     /// <summary>
-    /// Returns the chunk table's blocks to the pool and frees both tables' arrays. Idempotent. The edge table is freed
-    /// even if the chunk table throws.
+    /// Returns the chunk table's blocks to the pool, frees both tables' arrays and sets <see cref="RowCount"/> to
+    /// <c>0</c>. Idempotent. The edge table is freed even if the chunk table throws.
     /// </summary>
     /// <exception cref="ObjectDisposedException">The world's chunk pool was disposed first (see <see cref="ChunkTable.Dispose"/>).</exception>
     public void Dispose()
     {
+        // First, so the count matches the chunk table, which holds no chunks once disposed, even if a dispose throws.
+        RowCount = 0;
         try
         {
             Chunks.Dispose();

@@ -226,6 +226,27 @@ public sealed unsafe class ArchetypeRowTests
         tracking.ThrowIfLeaks();
     }
 
+    [Fact]
+    public void Dispose_ResetsRowCount()
+    {
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        EcsWorld world = NewWorld(tracking);
+        Archetype archetype = TwoColumns(world);
+        for (uint i = 0; i <= archetype.Layout.Capacity; i++)
+        {
+            _ = archetype.AppendRow(new Entity(i, 1), tick: 1);
+        }
+
+        Assert.Equal(archetype.Layout.Capacity + 1, archetype.RowCount);
+
+        // The world disposes the archetype: no chunks and no rows are left.
+        world.Dispose();
+        tracking.ThrowIfLeaks();
+
+        Assert.Equal(0, archetype.RowCount);
+        Assert.Equal(0, archetype.Chunks.ChunkCount);
+    }
+
     [Theory]
     [InlineData(-1, 0)]
     [InlineData(1, 0)]
