@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Platform.Sdl3/BrutalEngine.Platform.Sdl3.csproj" />
+  </ItemGroup>
+</Project>
