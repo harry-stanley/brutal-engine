@@ -6,6 +6,9 @@ using Xunit;
 
 namespace BrutalEngine.Graphics.Vulkan.Tests.Validation;
 
+// Not parallel with other tests: the runtime hands a freed handle's slot to the next GCHandle.Alloc on any thread, so a
+// sink created by a parallel test could receive the released-handle message sent here.
+[Collection(ValidationHandleTests.Name)]
 public sealed class ValidationSinkTests
 {
     [Fact]

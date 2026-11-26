@@ -52,7 +52,10 @@ internal static unsafe class ValidationCallback
     /// <param name="severity">The message's severity.</param>
     /// <param name="types">The message's types.</param>
     /// <param name="data">The message; read only during the call.</param>
-    /// <param name="userData">A sink's <see cref="ValidationSink.UserData"/>; 0 or a freed handle does nothing.</param>
+    /// <param name="userData">
+    /// A sink's <see cref="ValidationSink.UserData"/>; 0 does nothing, and so does a freed handle until the runtime reuses
+    /// its slot (<see cref="ValidationSink.Release"/>).
+    /// </param>
     /// <returns><c>VK_FALSE</c>, always.</returns>
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     internal static Bool32 Invoke(
@@ -69,7 +72,9 @@ internal static unsafe class ValidationCallback
         {
             if (userData is not null)
             {
-                // A freed handle's slot reads as null, so the cast fails and nothing is touched.
+                // A freed handle's slot reads as null only until the runtime reuses it, which can be the very next
+                // allocation; then the cast reaches whatever now owns the slot. Release's contract (only after
+                // vkDestroyInstance returned) means no callback arrives with a freed handle.
                 sink = GCHandle.FromIntPtr((nint)userData).Target as ValidationSink;
                 sink?.Receive(severity, types, data);
             }

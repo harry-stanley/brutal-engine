@@ -68,7 +68,10 @@ internal sealed class ValidationSink
     /// <summary>Gets the number of warning messages.</summary>
     public long Warnings => Interlocked.Read(ref _warnings);
 
-    /// <summary>Gets the number of allow-listed messages, which <see cref="Errors"/> and <see cref="Warnings"/> never count.</summary>
+    /// <summary>
+    /// Gets the number of allow-listed messages. <see cref="Warnings"/> never counts them, and <see cref="Errors"/> counts
+    /// one only when its logging threw (the lost log entry, not the message).
+    /// </summary>
     public long Allowed => Interlocked.Read(ref _allowed);
 
     /// <summary>Gets the messenger's <c>pUserData</c>: <see cref="GCHandle.ToIntPtr"/> of the handle; 0 once released.</summary>
