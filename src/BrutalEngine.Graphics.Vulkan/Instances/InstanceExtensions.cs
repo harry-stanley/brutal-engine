@@ -8,11 +8,11 @@ namespace BrutalEngine.Graphics.Vulkan.Instances;
 
 /// <summary>
 /// Chooses the instance's extensions, layers and flags (docs/design/graphics-vulkan.md section 1, the extension table)
-/// from what the loader and the validation layer offer, and enumerates those offers through the raw global bindings.
+/// from what the loader and the validation layer offer, and enumerates those offers through a <see cref="GlobalCommands.ISource"/>.
 /// </summary>
 /// <remarks>
-/// <see cref="Plan"/> is pure. The enumeration helpers make every call through the device's <see cref="VulkanCallGate"/>,
-/// with the two-call pattern and a bounded retry on <c>VK_INCOMPLETE</c>, because BRUTAL's <c>_Count</c> helpers drop
+/// <see cref="Plan"/> is pure. The enumeration helpers make every call through the device's <see cref="VulkanCallGate"/>
+/// and, around the command itself, the process-wide <see cref="GlobalCommands.Gate"/>, with the two-call pattern and a bounded retry on <c>VK_INCOMPLETE</c>, because BRUTAL's <c>_Count</c> helpers drop
 /// their result (upstream issue draft #18). Creation-time only: they allocate the arrays they return. Not thread-safe
 /// beyond what the gate allows: the device's owner thread calls them.
 /// </remarks>
@@ -102,7 +102,7 @@ internal static class InstanceExtensions
     }
 
     /// <summary>Enumerates what is offered and plans the instance (<see cref="Plan"/>).</summary>
-    /// <typeparam name="TSource">The enumeration; the real one is a struct, so nothing is boxed.</typeparam>
+    /// <typeparam name="TSource">The global commands; the real ones are a struct, so nothing is boxed.</typeparam>
     /// <param name="source">The enumeration.</param>
     /// <param name="options">The instance request.</param>
     /// <param name="gate">The gate every enumeration call passes through.</param>
@@ -112,7 +112,7 @@ internal static class InstanceExtensions
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> or <paramref name="gate"/> is <see langword="null"/>.</exception>
     public static Result<Selection> Select<TSource>(TSource source, InstanceFactory.Options options, VulkanCallGate gate)
-        where TSource : IEnumeration
+        where TSource : GlobalCommands.ISource
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(gate);
@@ -155,21 +155,21 @@ internal static class InstanceExtensions
     /// <param name="gate">The gate both calls pass through.</param>
     /// <returns>The names; or the gate's failure, including <c>VK_INCOMPLETE</c> after <see cref="MaxEnumerationAttempts"/>.</returns>
     public static unsafe Result<string[]> EnumerateExtensions<TSource>(TSource source, string? layerName, VulkanCallGate gate)
-        where TSource : IEnumeration
+        where TSource : GlobalCommands.ISource
     {
         const VulkanCall call = VulkanCall.EnumerateInstanceExtensionProperties;
         VkResult result = VkResult.Incomplete;
         for (int attempt = 0; attempt < MaxEnumerationAttempts && result == VkResult.Incomplete; attempt++)
         {
             int count = 0;
-            result = gate.TryTakeFault(call, out VkResult injected) ? injected : source.EnumerateExtensions(layerName, ref count, []);
+            result = gate.TryTakeFault(call, out VkResult injected) ? injected : GlobalCommands.EnumerateExtensions(source, layerName, ref count, []);
             if (result != VkResult.Success || count == 0)
             {
                 break;
             }
 
             var properties = new VkExtensionProperties[count];
-            result = gate.TryTakeFault(call, out injected) ? injected : source.EnumerateExtensions(layerName, ref count, properties);
+            result = gate.TryTakeFault(call, out injected) ? injected : GlobalCommands.EnumerateExtensions(source, layerName, ref count, properties);
             if (result == VkResult.Success)
             {
                 string[] names = new string[count];
@@ -197,21 +197,21 @@ internal static class InstanceExtensions
     /// <param name="gate">The gate both calls pass through.</param>
     /// <returns>The names; or the gate's failure, including <c>VK_INCOMPLETE</c> after <see cref="MaxEnumerationAttempts"/>.</returns>
     public static unsafe Result<string[]> EnumerateLayers<TSource>(TSource source, VulkanCallGate gate)
-        where TSource : IEnumeration
+        where TSource : GlobalCommands.ISource
     {
         const VulkanCall call = VulkanCall.EnumerateInstanceLayerProperties;
         VkResult result = VkResult.Incomplete;
         for (int attempt = 0; attempt < MaxEnumerationAttempts && result == VkResult.Incomplete; attempt++)
         {
             int count = 0;
-            result = gate.TryTakeFault(call, out VkResult injected) ? injected : source.EnumerateLayers(ref count, []);
+            result = gate.TryTakeFault(call, out VkResult injected) ? injected : GlobalCommands.EnumerateLayers(source, ref count, []);
             if (result != VkResult.Success || count == 0)
             {
                 break;
             }
 
             var properties = new VkLayerProperties[count];
-            result = gate.TryTakeFault(call, out injected) ? injected : source.EnumerateLayers(ref count, properties);
+            result = gate.TryTakeFault(call, out injected) ? injected : GlobalCommands.EnumerateLayers(source, ref count, properties);
             if (result == VkResult.Success)
             {
                 string[] names = new string[count];
@@ -256,64 +256,4 @@ internal static class InstanceExtensions
     /// <param name="Flags">The instance create flags.</param>
     /// <param name="Validation">Whether the validation layer and synchronization validation are enabled.</param>
     internal sealed record Selection(string[] Extensions, string[] Layers, VkInstanceCreateFlags Flags, bool Validation);
-
-    /// <summary>
-    /// The global enumeration calls, so tests can script the loader's lists. Each mirrors its Vulkan command: an empty
-    /// span asks for the count, a non-empty one is filled with up to <c>count</c> entries.
-    /// </summary>
-    internal interface IEnumeration
-    {
-        /// <summary><c>vkEnumerateInstanceExtensionProperties</c>.</summary>
-        /// <param name="layerName">The layer, or <see langword="null"/> for the loader's list.</param>
-        /// <param name="count">In: the span's capacity (ignored for an empty span). Out: the count, or how many were written.</param>
-        /// <param name="properties">Empty to ask for the count; otherwise the entries to fill.</param>
-        /// <returns>The command's result.</returns>
-        public VkResult EnumerateExtensions(string? layerName, ref int count, Span<VkExtensionProperties> properties);
-
-        /// <summary><c>vkEnumerateInstanceLayerProperties</c>.</summary>
-        /// <param name="count">As <see cref="EnumerateExtensions"/>.</param>
-        /// <param name="properties">As <see cref="EnumerateExtensions"/>.</param>
-        /// <returns>The command's result.</returns>
-        public VkResult EnumerateLayers(ref int count, Span<VkLayerProperties> properties);
-    }
-
-    /// <summary>
-    /// The real enumeration, through BRUTAL's raw global bindings
-    /// (<c>Brutal.Vulkan/Generated/PInvoke/VulkanApi/VulkanApi.gen.cs:50-55</c>, <c>:73-77</c>). The loader must already be
-    /// bound: <c>Vulkan.PInvoke</c> doesn't run the <c>Vulkan</c> class's static constructor, which registers BRUTAL's
-    /// import resolver, so a <see cref="VulkanBackend"/> must have been created first.
-    /// </summary>
-    internal readonly struct LoaderEnumeration : IEnumeration
-    {
-        /// <inheritdoc/>
-        public unsafe VkResult EnumerateExtensions(string? layerName, ref int count, Span<VkExtensionProperties> properties)
-        {
-            Span<byte> name = stackalloc byte[VK.MAX_EXTENSION_NAME_SIZE];
-            if (layerName is not null)
-            {
-                // Throws for a name longer than the Vulkan limit; the only caller passes ValidationLayer.
-                name[Encoding.UTF8.GetBytes(layerName, name[..^1])] = 0;
-            }
-
-            // Sound: every pointer is to a pinned local or span that outlives the call, the count says how many entries
-            // properties holds (an empty span pins as null, the count query), and the name is NUL-terminated.
-            fixed (byte* pName = name)
-            fixed (int* pCount = &count)
-            fixed (VkExtensionProperties* pProperties = properties)
-            {
-                return global::Brutal.VulkanApi.Vulkan.PInvoke.vkEnumerateInstanceExtensionProperties(layerName is null ? null : pName, pCount, pProperties);
-            }
-        }
-
-        /// <inheritdoc/>
-        public unsafe VkResult EnumerateLayers(ref int count, Span<VkLayerProperties> properties)
-        {
-            // Sound: as EnumerateExtensions.
-            fixed (int* pCount = &count)
-            fixed (VkLayerProperties* pProperties = properties)
-            {
-                return global::Brutal.VulkanApi.Vulkan.PInvoke.vkEnumerateInstanceLayerProperties(pCount, pProperties);
-            }
-        }
-    }
 }

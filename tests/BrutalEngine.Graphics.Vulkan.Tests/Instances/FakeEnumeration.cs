@@ -11,9 +11,12 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Instances;
 /// span asks for the count; a fill writes up to its capacity and returns <c>VK_INCOMPLETE</c> when more are left; an
 /// unknown layer is <c>VK_ERROR_LAYER_NOT_PRESENT</c>). Each of the next <see cref="GrowthsLeft"/> count queries is
 /// followed by one more entry in the queried list, as when a layer is installed between the two calls, and each of the
-/// next <see cref="ShrinksLeft"/> by one entry fewer, as when one is removed. Every call is recorded.
+/// next <see cref="ShrinksLeft"/> by one entry fewer, as when one is removed. <see cref="CreateInstance"/> never
+/// creates one: it fails as BRUTAL's wrapper does, with <c>VK_ERROR_INITIALIZATION_FAILED</c>. A set
+/// <see cref="LayersFailure"/> fails every layer enumeration with that result. Every call is recorded, and so is every
+/// call made while the calling thread didn't hold <see cref="GlobalCommands.Gate"/>.
 /// </summary>
-internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
+internal sealed class FakeEnumeration : GlobalCommands.ISource
 {
     /// <summary>Gets the extension lists: key <c>""</c> is the loader's own list, any other key a layer's.</summary>
     public Dictionary<string, List<string>> Extensions { get; } = new(StringComparer.Ordinal) { [""] = [] };
@@ -24,13 +27,19 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
 
     public int ShrinksLeft { get; set; }
 
-    /// <summary>Gets the calls in order, e.g. <c>"extensions() count"</c>, <c>"layers fill"</c>.</summary>
+    /// <summary>Gets or sets the result every layer enumeration fails with; <see langword="null"/> lists <see cref="Layers"/>.</summary>
+    public VkResult? LayersFailure { get; set; }
+
+    /// <summary>Gets the calls in order, e.g. <c>"extensions() count"</c>, <c>"layers fill"</c>, <c>"create"</c>.</summary>
     public List<string> Calls { get; } = [];
+
+    /// <summary>Gets the calls made outside <see cref="GlobalCommands.Gate"/>, in order.</summary>
+    public List<string> CallsOutsideGate { get; } = [];
 
     public unsafe VkResult EnumerateExtensions(string? layerName, ref int count, Span<VkExtensionProperties> properties)
     {
         string key = layerName ?? string.Empty;
-        Calls.Add($"extensions({key}) {(properties.IsEmpty ? "count" : "fill")}");
+        Record($"extensions({key}) {(properties.IsEmpty ? "count" : "fill")}");
         if (!Extensions.TryGetValue(key, out List<string>? list))
         {
             return VkResult.ErrorLayerNotPresent;
@@ -55,7 +64,12 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
 
     public unsafe VkResult EnumerateLayers(ref int count, Span<VkLayerProperties> properties)
     {
-        Calls.Add($"layers {(properties.IsEmpty ? "count" : "fill")}");
+        Record($"layers {(properties.IsEmpty ? "count" : "fill")}");
+        if (LayersFailure is VkResult failure)
+        {
+            return failure;
+        }
+
         if (Counted(Layers, ref count, properties.IsEmpty))
         {
             return VkResult.Success;
@@ -71,6 +85,21 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
         }
 
         return count < Layers.Count ? VkResult.Incomplete : VkResult.Success;
+    }
+
+    public Instance CreateInstance(Instance.CreateInfo createInfo)
+    {
+        Record("create");
+        throw new VkResultError(VkResult.ErrorInitializationFailed, "Vulkan call to vkCreateInstance failed with error: VK_ERROR_INITIALIZATION_FAILED");
+    }
+
+    private void Record(string call)
+    {
+        Calls.Add(call);
+        if (!GlobalCommands.Gate.IsHeldByCurrentThread)
+        {
+            CallsOutsideGate.Add(call);
+        }
     }
 
     private bool Counted(List<string> list, ref int count, bool countOnly)
