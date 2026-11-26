@@ -32,7 +32,7 @@ A PR is done when all of these are true:
 - [ ] No leaks (tracking allocators and GPU tracker clean)
 - [ ] Every native status code checked
 - [ ] Public API: intentional, XML-documented, recorded in `PublicAPI.Unshipped.txt`
-- [ ] `CHANGELOG.md` `Unreleased` section updated
+- [ ] `CHANGELOG.md` updated: the `Unreleased` section for the next release, or the Next section below it for the milestone after ([ADR-0016](adr/0016-trunk-based-milestones.md))
 - [ ] Docs and samples updated if user-facing behaviour changed
 
 ## Definition of done for a milestone

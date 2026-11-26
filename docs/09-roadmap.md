@@ -1,6 +1,6 @@
 # 9. Roadmap
 
-v1.0 is delivered through seven milestones. Each one ends with a tagged `0.N` release and a **sample game shipped on Windows and Linux**, the tested targets. macOS is best-effort and unverified from M1 on ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)). Order matters: every milestone builds only on what earlier milestones have finished.
+v1.0 is delivered through seven milestones. Each one ends with a tagged `0.N` release and a **sample game shipped on Windows and Linux**, the tested targets. macOS is best-effort and unverified from M1 on ([ADR-0015](adr/0015-tested-platforms-windows-linux.md)). Order matters: every milestone builds only on what earlier milestones have merged, and each release ships only its own and earlier milestones' packages ([ADR-0016](adr/0016-trunk-based-milestones.md)).
 
 No dates are committed yet. After M0 we'll have real throughput data and can estimate the rest. M0's spikes exist precisely to retire the riskiest unknowns before any large investment.
 
