@@ -552,6 +552,14 @@ BrutalEngine.Platform.TextEventData.Offset.get -> int
 BrutalEngine.Platform.TextEventData.Offset.init -> void
 BrutalEngine.Platform.TextEventData.TextEventData() -> void
 BrutalEngine.Platform.TextEventData.TextEventData(int Offset, int Length) -> void
+BrutalEngine.Platform.Vfs.VfsPath
+BrutalEngine.Platform.Vfs.VfsPath.Combine(string! relative) -> BrutalEngine.Platform.Vfs.VfsPath
+BrutalEngine.Platform.Vfs.VfsPath.Equals(BrutalEngine.Platform.Vfs.VfsPath other) -> bool
+BrutalEngine.Platform.Vfs.VfsPath.IsDefault.get -> bool
+BrutalEngine.Platform.Vfs.VfsPath.Name.get -> string!
+BrutalEngine.Platform.Vfs.VfsPath.RelativePath.get -> string!
+BrutalEngine.Platform.Vfs.VfsPath.Scheme.get -> string!
+BrutalEngine.Platform.Vfs.VfsPath.VfsPath() -> void
 BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.WindowId.Deconstruct(out uint Value) -> void
 BrutalEngine.Platform.WindowId.Equals(BrutalEngine.Platform.WindowId other) -> bool
@@ -629,6 +637,9 @@ override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
 override BrutalEngine.Platform.TextEventData.GetHashCode() -> int
+override BrutalEngine.Platform.Vfs.VfsPath.Equals(object? obj) -> bool
+override BrutalEngine.Platform.Vfs.VfsPath.GetHashCode() -> int
+override BrutalEngine.Platform.Vfs.VfsPath.ToString() -> string!
 override BrutalEngine.Platform.WindowId.GetHashCode() -> int
 override BrutalEngine.Platform.WindowOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.WindowOptions.GetHashCode() -> int
@@ -671,6 +682,10 @@ static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.P
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.TextEventData.operator !=(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
 static BrutalEngine.Platform.TextEventData.operator ==(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
+static BrutalEngine.Platform.Vfs.VfsPath.Parse(string! path) -> BrutalEngine.Platform.Vfs.VfsPath
+static BrutalEngine.Platform.Vfs.VfsPath.TryParse(string? path, out BrutalEngine.Platform.Vfs.VfsPath result) -> bool
+static BrutalEngine.Platform.Vfs.VfsPath.operator !=(BrutalEngine.Platform.Vfs.VfsPath left, BrutalEngine.Platform.Vfs.VfsPath right) -> bool
+static BrutalEngine.Platform.Vfs.VfsPath.operator ==(BrutalEngine.Platform.Vfs.VfsPath left, BrutalEngine.Platform.Vfs.VfsPath right) -> bool
 static BrutalEngine.Platform.WindowId.operator !=(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
 static BrutalEngine.Platform.WindowId.operator ==(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
 static BrutalEngine.Platform.WindowOptions.operator !=(BrutalEngine.Platform.WindowOptions? left, BrutalEngine.Platform.WindowOptions? right) -> bool
