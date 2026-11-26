@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Shared test fixtures (docs/04-repo-layout.md): an in-memory graphics backend for the front end's unit tests. A plain
+    library, so it overrides the Exe that tests/Directory.Build.props gives every project here; never packed or shipped.
+  -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AssemblyName>BrutalEngine.TestUtilities</AssemblyName>
+    <RootNamespace>BrutalEngine.TestUtilities</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Core/BrutalEngine.Core.csproj" />
+    <ProjectReference Include="../../src/BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
+    <!-- Direct, not only through Graphics: the fake platform of the Runtime host's tests joins this project later. -->
+    <ProjectReference Include="../../src/BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
+  </ItemGroup>
+</Project>
