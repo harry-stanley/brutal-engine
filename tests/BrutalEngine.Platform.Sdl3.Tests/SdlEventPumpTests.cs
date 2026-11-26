@@ -866,6 +866,112 @@ public sealed unsafe class SdlEventPumpTests
         Assert.False(pump.DisplaysChanged);
     }
 
+    [Fact]
+    public void Pump_DoesNotAllocate()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        using SdlPlatformWindow window = session.CreateWindow(NoSurfaceWindow).Value;
+        Sdl.PInvoke.FlushEvents(FirstType, LastType);
+
+        // Every kind the translator maps, every window-range and display-range type it ignores, and two other ignored
+        // types, all for the live window and display, so each pump refreshes the window on every window type.
+        SdlEvent[] events = [.. EveryKind(window.Id.Value, Sdl.PInvoke.GetPrimaryDisplay()), .. IgnoredHookTypes(window.Id.Value, Sdl.PInvoke.GetPrimaryDisplay())];
+        SdlEventPump pump = new(1024, 8192, new ScriptedClock(), new LiveWindows(window));
+        bool textInput = window.IsTextInputActive;
+        long checksum = PumpEachWithGetters(pump, window, textInput, events, 1); // warm-up: JIT and first-call costs
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        checksum += PumpEachWithGetters(pump, window, textInput, events, 1000);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+
+        // Every mapped type adds one event per round; the ignored types add none.
+        Assert.Equal(1001L * 29 * 1000, checksum);
+        Assert.Equal(0, pump.RefreshFailureCount);
+        Assert.Equal(0, pump.Buffer.DeferredPumpCount);
+    }
+
+    // Pushes every type of the round, pumps, folds each event through its own view into a checksum, acknowledges the
+    // display flag the round's display events set, then reads every window getter.
+    private static long PumpEachWithGetters(SdlEventPump pump, SdlPlatformWindow window, bool textInput, SdlEvent[] events, int rounds)
+    {
+        long checksum = 0;
+        for (int round = 0; round < rounds; round++)
+        {
+            for (int i = 0; i < events.Length; i++)
+            {
+                SdlEvent sdlEvent = events[i];
+
+                // Sound: sdlEvent is a local of this frame; SDL copies the event into its queue.
+                if (Sdl.PInvoke.PushEvent(&sdlEvent) == 0)
+                {
+                    return -1;
+                }
+            }
+
+            PlatformEventBatch batch = pump.Pump();
+            foreach (ref readonly PlatformEvent platformEvent in batch.Events)
+            {
+                checksum += 1000 + Read(batch, platformEvent);
+            }
+
+            if (!pump.DisplaysChanged)
+            {
+                return -2;
+            }
+
+            pump.AcknowledgeDisplaysChanged();
+            checksum += ReadGetters(window, textInput);
+        }
+
+        return checksum;
+    }
+
+    // Every getter of the window, folded into 0 for this live, visible, windowed window with no surface, so a wrong
+    // read changes the checksum.
+    private static int ReadGetters(SdlPlatformWindow window, bool textInput)
+    {
+        int wrong = window.Id.Value == 0 ? 1 : 0;
+        wrong += window.Size.Width <= 0 || window.PixelSize.Height <= 0 || window.ContentSize.Width <= 0 ? 1 : 0;
+        wrong += window.PixelDensity > 0 && window.DisplayScale > 0 ? 0 : 1;
+        wrong += (window.State & WindowState.Visible) == 0 ? 1 : 0;
+        wrong += window.Mode == WindowMode.Windowed ? 0 : 1;
+        wrong += window.Display.Value == 0 ? 1 : 0;
+        wrong += window.IsTextInputActive != textInput || window.IsRelativeMouseMode ? 1 : 0;
+        wrong += window.VulkanSurface is null && !window.IsDisposed ? 0 : 1;
+        return wrong;
+    }
+
+    // The window-range and display-range types the translator ignores; the hooks still run for them.
+    private static SdlEvent[] IgnoredHookTypes(uint windowId, uint displayId)
+    {
+        SdlEventType[] windowTypes =
+        [
+            SdlEventType.WindowMetalViewResized, SdlEventType.WindowHitTest, SdlEventType.WindowIccprofChanged,
+            SdlEventType.WindowSafeAreaChanged, SdlEventType.WindowEnterFullscreen, SdlEventType.WindowLeaveFullscreen,
+            SdlEventType.WindowHdrStateChanged,
+        ];
+        SdlEventType[] displayTypes =
+        [
+            SdlEventType.DisplayOrientation, SdlEventType.DisplayMoved, SdlEventType.DisplayDesktopModeChanged,
+            SdlEventType.DisplayUsableBoundsChanged,
+        ];
+        List<SdlEvent> events = [];
+        foreach (SdlEventType type in windowTypes)
+        {
+            events.Add(new SdlEvent { window = new SdlWindowEvent { type = type, windowID = windowId } });
+        }
+
+        foreach (SdlEventType type in displayTypes)
+        {
+            events.Add(new SdlEvent { display = new SdlDisplayEvent { type = type, displayID = displayId } });
+        }
+
+        return [.. events];
+    }
+
     private static WindowSize NativeSize(SdlWindow handle)
     {
         int width, height;
