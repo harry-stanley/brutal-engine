@@ -12,9 +12,10 @@ namespace BrutalEngine.Platform.Sdl3;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The setters, the fullscreen
-/// members and the <see cref="IWindow"/> declaration come later; the event pump keeps the snapshot current through
-/// <see cref="RefreshSnapshot"/>.
+/// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The fullscreen members and
+/// the <see cref="IWindow"/> declaration come later; the event pump keeps the snapshot current through
+/// <see cref="RefreshSnapshot"/>. The setters ask SDL for changes; a size change shows in the snapshot on the refresh
+/// after SDL applies it (the event pump refreshes on the resize event).
 /// </para>
 /// <para>
 /// <b>Threads:</b> the thread that creates the window owns it. Every member, <see cref="Dispose"/> included, runs on
@@ -22,8 +23,8 @@ namespace BrutalEngine.Platform.Sdl3;
 /// <see cref="IsDisposed"/> is the exception: the window's surface source reads it from any thread.
 /// </para>
 /// <para>
-/// <b>Allocation:</b> creation allocates (the window, its surface source, error text). The getters and a successful
-/// <see cref="RefreshSnapshot"/> allocate nothing; a failure allocates its message.
+/// <b>Allocation:</b> creation allocates (the window, its surface source, error text). The getters, a successful
+/// <see cref="RefreshSnapshot"/> and the setters that succeed allocate nothing; a failure allocates its message.
 /// </para>
 /// <para>
 /// <b>Ownership:</b> the creator owns the window and disposes it before the video session. Any Vulkan surface made from
@@ -179,6 +180,113 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         }
     }
 
+    /// <summary>Sets the window's title through <c>SDL_SetWindowTitle</c>.</summary>
+    /// <param name="title">The new title.</param>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// Owner thread only. Allocates no managed memory on success: BRUTAL converts the title to UTF-8 in a stack buffer,
+    /// or in native memory freed after the call when the title is long. A failure allocates its message.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="title"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result SetTitle(string title)
+    {
+        ThrowIfUnusable("IWindow.SetTitle");
+        ArgumentNullException.ThrowIfNull(title);
+        return SdlCheck.Check(Sdl.PInvoke.SetWindowTitle(_handle, title), "SDL_SetWindowTitle");
+    }
+
+    /// <summary>
+    /// Asks SDL for a new size in content units: converted to window coordinates with the snapshot's display scale and
+    /// pixel density, as at creation, then set through <c>SDL_SetWindowSize</c>.
+    /// </summary>
+    /// <param name="contentSize">The requested size in content units. Each side must be from 1 to 16384.</param>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// The snapshot (<see cref="Size"/>, <see cref="PixelSize"/>, <see cref="ContentSize"/>) changes on the
+    /// <see cref="RefreshSnapshot"/> after SDL applies the size (the event pump refreshes on the resize event), because
+    /// SDL can apply it asynchronously: on X11 and Wayland a refresh straight after this call can still read the old
+    /// size. Nothing waits for it here. The result can differ from the request by rounding or because the OS clamped
+    /// it. Owner thread only. Allocates nothing on success; a failure allocates its message.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">A side of <paramref name="contentSize"/> is outside 1 to 16384.</exception>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result SetContentSize(WindowSize contentSize)
+    {
+        ThrowIfUnusable("IWindow.SetContentSize");
+        WindowOptionsValidator.ValidateContentSize(contentSize, nameof(contentSize), nameof(contentSize));
+        WindowSize size = ExactWindowSize(contentSize);
+        return SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
+    }
+
+    /// <summary>Turns text input on for this window through <c>SDL_StartTextInput</c>.</summary>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// On success <see cref="IsTextInputActive"/> becomes <see langword="true"/> at once, since text input has no OS
+    /// event; a failure leaves it unchanged. Owner thread only. Allocates nothing on success; a failure allocates its
+    /// message.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result StartTextInput()
+    {
+        ThrowIfUnusable("IWindow.StartTextInput");
+        Result started = SdlCheck.Check(Sdl.PInvoke.StartTextInput(_handle), "SDL_StartTextInput");
+        if (started.IsSuccess)
+        {
+            _isTextInputActive = true;
+        }
+
+        return started;
+    }
+
+    /// <summary>Turns text input off for this window through <c>SDL_StopTextInput</c>.</summary>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// On success <see cref="IsTextInputActive"/> becomes <see langword="false"/> at once; a failure leaves it unchanged.
+    /// Owner thread only. Allocates nothing on success; a failure allocates its message.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result StopTextInput()
+    {
+        ThrowIfUnusable("IWindow.StopTextInput");
+        Result stopped = SdlCheck.Check(Sdl.PInvoke.StopTextInput(_handle), "SDL_StopTextInput");
+        if (stopped.IsSuccess)
+        {
+            _isTextInputActive = false;
+        }
+
+        return stopped;
+    }
+
+    /// <summary>Turns relative mouse mode on or off for this window through <c>SDL_SetWindowRelativeMouseMode</c>.</summary>
+    /// <param name="enabled"><see langword="true"/> to hide and confine the cursor and report motion as deltas.</param>
+    /// <returns>
+    /// Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused (SDL's <c>offscreen</c> driver
+    /// refuses it: "That operation is not supported").
+    /// </returns>
+    /// <remarks>
+    /// On success <see cref="IsRelativeMouseMode"/> becomes <paramref name="enabled"/> at once, since the mode has no OS
+    /// event; a failure leaves it unchanged. Owner thread only. Allocates nothing on success; a failure allocates its
+    /// message.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result SetRelativeMouseMode(bool enabled)
+    {
+        ThrowIfUnusable("IWindow.SetRelativeMouseMode");
+        Result set = SdlCheck.Check(Sdl.PInvoke.SetWindowRelativeMouseMode(_handle, enabled ? (byte)1 : (byte)0), "SDL_SetWindowRelativeMouseMode");
+        if (set.IsSuccess)
+        {
+            _isRelativeMouseMode = enabled;
+        }
+
+        return set;
+    }
+
     /// <summary>
     /// Re-reads the whole snapshot from SDL: sizes, pixel density, display scale, state, mode, display, text input and
     /// relative mouse mode. The event pump calls it on window events.
@@ -327,7 +435,7 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         }
 
         // The window's own scale and density give the exact size; correct the estimate once if it was off.
-        WindowSize exact = ContentSizeModel.ToWindowCoordinates(options.ContentSize, _displayScale, _pixelDensity);
+        WindowSize exact = ExactWindowSize(options.ContentSize);
         if (exact == estimate)
         {
             return snapshot;
@@ -400,6 +508,10 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         _isRelativeMouseMode = Sdl.PInvoke.GetWindowRelativeMouseMode(_handle) != 0;
         return Result.Success;
     }
+
+    // Content units to window coordinates with the window's own display scale and pixel density, from the snapshot.
+    // The one conversion for both creation's exact step and SetContentSize, so the two can't drift apart.
+    private WindowSize ExactWindowSize(WindowSize content) => ContentSizeModel.ToWindowCoordinates(content, _displayScale, _pixelDensity);
 
     // Generic, so reading a value field neither boxes nor allocates. The field is read before the checks, which is
     // harmless: it has no side effect, and a failed check throws before the value is returned.
