@@ -279,7 +279,7 @@ internal static class InstanceExtensions
 
     /// <summary>
     /// The real enumeration, through BRUTAL's raw global bindings
-    /// (<c>Brutal.Vulkan/Generated/PInvoke/VulkanApi/VulkanApi.gen.cs:50-55</c>, <c>:72-75</c>). The loader must already be
+    /// (<c>Brutal.Vulkan/Generated/PInvoke/VulkanApi/VulkanApi.gen.cs:50-55</c>, <c>:73-77</c>). The loader must already be
     /// bound: <c>Vulkan.PInvoke</c> doesn't run the <c>Vulkan</c> class's static constructor, which registers BRUTAL's
     /// import resolver, so a <see cref="VulkanBackend"/> must have been created first.
     /// </summary>
