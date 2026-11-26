@@ -27,8 +27,8 @@ namespace BrutalEngine.Graphics;
 /// </remarks>
 public sealed record GraphicsDeviceOptions
 {
-    // The smallest useful ring holds one 64 by 64 RGBA8 block at the 256-byte row pitch texture copies use
-    // (TextureBufferCopy.RowPitchAlignment); the design note gives no minimum, so the issue set this one.
+    // The design note gives no minimum, so the issue chose 64 KiB: one 128 by 128 RGBA8 block (512-byte rows, a multiple
+    // of the 256-byte TextureBufferCopy.RowPitchAlignment), so a ring always fits a small texture upload.
     private const long MinUploadRingBytesPerFrame = 64 * 1024;
     private const long UploadRingAlignment = 256;
 
