@@ -217,7 +217,7 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
     {
         ThrowIfUnusable("IWindow.SetContentSize");
         WindowOptionsValidator.ValidateContentSize(contentSize, nameof(contentSize), nameof(contentSize));
-        WindowSize size = ContentSizeModel.ToWindowCoordinates(contentSize, _displayScale, _pixelDensity);
+        WindowSize size = ExactWindowSize(contentSize);
         return SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
     }
 
@@ -435,7 +435,7 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         }
 
         // The window's own scale and density give the exact size; correct the estimate once if it was off.
-        WindowSize exact = ContentSizeModel.ToWindowCoordinates(options.ContentSize, _displayScale, _pixelDensity);
+        WindowSize exact = ExactWindowSize(options.ContentSize);
         if (exact == estimate)
         {
             return snapshot;
@@ -508,6 +508,10 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         _isRelativeMouseMode = Sdl.PInvoke.GetWindowRelativeMouseMode(_handle) != 0;
         return Result.Success;
     }
+
+    // Content units to window coordinates with the window's own display scale and pixel density, from the snapshot.
+    // The one conversion for both creation's exact step and SetContentSize, so the two can't drift apart.
+    private WindowSize ExactWindowSize(WindowSize content) => ContentSizeModel.ToWindowCoordinates(content, _displayScale, _pixelDensity);
 
     // Generic, so reading a value field neither boxes nor allocates. The field is read before the checks, which is
     // harmless: it has no side effect, and a failed check throws before the value is returned.
