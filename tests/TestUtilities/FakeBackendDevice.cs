@@ -612,7 +612,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <inheritdoc/>
     /// <exception cref="InvalidOperationException">
     /// Contract violation: the plan's slot isn't open (an Execute without <see cref="BeginFrame"/>, or a second one), its
-    /// acquired images aren't exactly the ones <see cref="AcquireImage"/> handed out in that frame, or a call after disposal.
+    /// acquired images aren't exactly the ones <see cref="AcquireImage"/> handed out in that frame (each plan entry matches
+    /// one acquire, and every acquire is matched), or a call after disposal.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -636,7 +637,7 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
 
         ReadOnlySpan<SwapchainImageUse> acquired = _acquired[slot].AsSpan(0, _acquiredCount[slot]);
-        if (plan.Acquired.Length != acquired.Length || !ContainsAll(acquired, plan.Acquired))
+        if (!MatchesExactly(acquired, plan.Acquired))
         {
             throw Violation($"Execute of slot {slot} whose acquired images aren't the ones acquired in its frame");
         }
@@ -805,14 +806,31 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
     }
 
-    private static bool ContainsAll(ReadOnlySpan<SwapchainImageUse> set, ReadOnlySpan<SwapchainImageUse> items)
+    // Whether the plan lists the frame's acquires exactly, in any order: each plan entry is matched to one acquire not
+    // matched yet, so a duplicated entry fails unless the frame acquired that image twice. Allocates nothing.
+    private static bool MatchesExactly(ReadOnlySpan<SwapchainImageUse> acquired, ReadOnlySpan<SwapchainImageUse> planned)
     {
-        foreach (SwapchainImageUse item in items)
+        if (planned.Length != acquired.Length)
         {
-            if (!set.Contains(item))
+            return false;
+        }
+
+        Span<bool> matched = stackalloc bool[MaxAcquiresPerFrame];
+        matched.Clear();
+        foreach (SwapchainImageUse use in planned)
+        {
+            int i = 0;
+            while (i < acquired.Length && (matched[i] || acquired[i] != use))
+            {
+                i++;
+            }
+
+            if (i == acquired.Length)
             {
                 return false;
             }
+
+            matched[i] = true;
         }
 
         return true;

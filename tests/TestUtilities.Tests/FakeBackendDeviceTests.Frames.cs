@@ -23,6 +23,9 @@ public sealed partial class FakeBackendDeviceTests
         "Execute a slot twice",
         "Execute waiting for an image not acquired",
         "Execute without an image it acquired",
+        "Execute waiting for another image of the swapchain",
+        "Execute waiting for another swapchain's image",
+        "Execute listing an acquired image twice",
         "Present an image not executed",
         "Present an image twice",
         "TryReadTimestamps slot above range",
@@ -237,6 +240,8 @@ public sealed partial class FakeBackendDeviceTests
     private Action FrameViolation(FakeBackendDevice device, string violation)
     {
         (_, _, ulong swapchain) = Presentable(device);
+        int image = 0;
+        ulong second = 0;
         return violation switch
         {
             "WaitForFrame slot below range" => () => device.WaitForFrame(-1),
@@ -271,6 +276,23 @@ public sealed partial class FakeBackendDeviceTests
                     _ = device.AcquireImage(swapchain, 0);
                 },
                 () => device.Execute(Plan(0, 1))),
+            "Execute waiting for another image of the swapchain" => Then(
+                () => image = OpenAndAcquire(device, swapchain),
+                () => device.Execute(GraphicsInternals.NewFramePlan(0, 1, [], [new(swapchain, (image + 1) % 3)]))),
+            "Execute waiting for another swapchain's image" => Then(
+                () =>
+                {
+                    (_, _, second) = Presentable(device);
+                    image = OpenAndAcquire(device, swapchain);
+                },
+                () => device.Execute(GraphicsInternals.NewFramePlan(0, 1, [], [new(second, image)]))),
+            "Execute listing an acquired image twice" => Then(
+                () =>
+                {
+                    image = OpenAndAcquire(device, swapchain);
+                    _ = device.AcquireImage(swapchain, 0);
+                },
+                () => device.Execute(GraphicsInternals.NewFramePlan(0, 1, [], [new(swapchain, image), new(swapchain, image)]))),
             "Present an image not executed" => Then(
                 () =>
                 {
@@ -294,6 +316,12 @@ public sealed partial class FakeBackendDeviceTests
         {
             setup();
             return call;
+        }
+
+        static int OpenAndAcquire(FakeBackendDevice device, ulong swapchain)
+        {
+            FakeBackendFixture.OpenFrame(device, 0);
+            return device.AcquireImage(swapchain, 0).ImageIndex;
         }
     }
 }
