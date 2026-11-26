@@ -39,6 +39,7 @@ public sealed class EcsWorld : IDisposable
     private readonly EntityTable _entities;
     private readonly ComponentRegistry _components;
     private readonly ChunkPool _chunkPool;
+    private readonly ArchetypeSet _archetypes;
     private bool _disposed;
 
     /// <summary>Creates an empty world owned by the calling thread.</summary>
@@ -68,6 +69,10 @@ public sealed class EcsWorld : IDisposable
 
         // Allocates nothing until a block is rented, so it needs no release if the entity table below throws.
         _chunkPool = new ChunkPool(_allocator, options.ChunkBytes);
+
+        // Managed only until an archetype gets its first chunk, so it needs no release if the entity table below
+        // throws. It starts with the empty archetype at index 0.
+        _archetypes = new ArchetypeSet(_allocator, _chunkPool, _components, options.MaxComponentTypes);
 
         // Last, so nothing allocated here needs releasing if an earlier step throws; the table frees its own partial
         // allocation if it throws.
@@ -101,6 +106,22 @@ public sealed class EcsWorld : IDisposable
         {
             ThrowIfUnusable("EcsWorld.Components");
             return _components;
+        }
+    }
+
+    /// <summary>
+    /// The number of archetypes in the world: one per distinct component set its entities have had, plus the empty
+    /// archetype, so at least 1. Archetypes are never destroyed while the world lives, so the count never decreases.
+    /// </summary>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>Allocates nothing. Not thread-safe: like every member, it is for the owner thread only.</remarks>
+    public int ArchetypeCount
+    {
+        get
+        {
+            ThrowIfUnusable("EcsWorld.ArchetypeCount");
+            return _archetypes.Count;
         }
     }
 
@@ -169,8 +190,11 @@ public sealed class EcsWorld : IDisposable
     /// <summary>The world's pool of chunk blocks, which the world owns and frees in <see cref="Dispose"/>.</summary>
     internal ChunkPool ChunkPool => _chunkPool;
 
+    /// <summary>The world's archetypes, which the world owns and disposes in <see cref="Dispose"/> before the chunk pool.</summary>
+    internal ArchetypeSet Archetypes => _archetypes;
+
     /// <summary>
-    /// Frees everything the world allocated, the entity table and pooled chunks included. Idempotent: later calls do
+    /// Frees everything the world allocated, the entity table, the archetypes' chunks and pooled chunks included. Idempotent: later calls do
     /// nothing.
     /// </summary>
     /// <remarks>
@@ -189,7 +213,16 @@ public sealed class EcsWorld : IDisposable
         _disposed = true;
         _components.MarkDisposed();
         _entities.Dispose();
-        _chunkPool.Dispose();
+
+        // Before the pool: the archetypes return their chunks to it.
+        try
+        {
+            _archetypes.Dispose();
+        }
+        finally
+        {
+            _chunkPool.Dispose();
+        }
     }
 
     private void ThrowIfUnusable(string apiName)
