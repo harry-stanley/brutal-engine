@@ -570,6 +570,27 @@ BrutalEngine.Platform.TextEventData.Offset.get -> int
 BrutalEngine.Platform.TextEventData.Offset.init -> void
 BrutalEngine.Platform.TextEventData.TextEventData() -> void
 BrutalEngine.Platform.TextEventData.TextEventData(int Offset, int Length) -> void
+BrutalEngine.Platform.Vfs.IFileSystem
+BrutalEngine.Platform.Vfs.IFileSystem.CreateDirectory(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.IFileSystem.Delete(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.IFileSystem.GetEntryKind(string! relativePath) -> BrutalEngine.Core.Result<BrutalEngine.Platform.Vfs.VfsEntryKind>
+BrutalEngine.Platform.Vfs.IFileSystem.IsReadOnly.get -> bool
+BrutalEngine.Platform.Vfs.IFileSystem.List(string! relativePath) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.Vfs.VfsEntry>!>
+BrutalEngine.Platform.Vfs.IFileSystem.OpenRead(string! relativePath) -> BrutalEngine.Core.Result<System.IO.Stream!>
+BrutalEngine.Platform.Vfs.IFileSystem.ReadAllBytes(string! relativePath) -> BrutalEngine.Core.Result<byte[]!>
+BrutalEngine.Platform.Vfs.IFileSystem.WriteAllBytes(string! relativePath, System.ReadOnlySpan<byte> contents) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.VfsEntry
+BrutalEngine.Platform.Vfs.VfsEntry.Deconstruct(out string! Name, out BrutalEngine.Platform.Vfs.VfsEntryKind Kind, out long Length) -> void
+BrutalEngine.Platform.Vfs.VfsEntry.Equals(BrutalEngine.Platform.Vfs.VfsEntry other) -> bool
+BrutalEngine.Platform.Vfs.VfsEntry.Kind.get -> BrutalEngine.Platform.Vfs.VfsEntryKind
+BrutalEngine.Platform.Vfs.VfsEntry.Length.get -> long
+BrutalEngine.Platform.Vfs.VfsEntry.Name.get -> string!
+BrutalEngine.Platform.Vfs.VfsEntry.VfsEntry() -> void
+BrutalEngine.Platform.Vfs.VfsEntry.VfsEntry(string! Name, BrutalEngine.Platform.Vfs.VfsEntryKind Kind, long Length) -> void
+BrutalEngine.Platform.Vfs.VfsEntryKind
+BrutalEngine.Platform.Vfs.VfsEntryKind.Directory = 2 -> BrutalEngine.Platform.Vfs.VfsEntryKind
+BrutalEngine.Platform.Vfs.VfsEntryKind.File = 1 -> BrutalEngine.Platform.Vfs.VfsEntryKind
+BrutalEngine.Platform.Vfs.VfsEntryKind.None = 0 -> BrutalEngine.Platform.Vfs.VfsEntryKind
 BrutalEngine.Platform.Vfs.VfsPath
 BrutalEngine.Platform.Vfs.VfsPath.Combine(string! relative) -> BrutalEngine.Platform.Vfs.VfsPath
 BrutalEngine.Platform.Vfs.VfsPath.Equals(BrutalEngine.Platform.Vfs.VfsPath other) -> bool
@@ -655,6 +676,8 @@ override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
 override BrutalEngine.Platform.TextEventData.GetHashCode() -> int
+override BrutalEngine.Platform.Vfs.VfsEntry.GetHashCode() -> int
+override BrutalEngine.Platform.Vfs.VfsEntry.ToString() -> string!
 override BrutalEngine.Platform.Vfs.VfsPath.Equals(object? obj) -> bool
 override BrutalEngine.Platform.Vfs.VfsPath.GetHashCode() -> int
 override BrutalEngine.Platform.Vfs.VfsPath.ToString() -> string!
@@ -700,6 +723,8 @@ static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.P
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.TextEventData.operator !=(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
 static BrutalEngine.Platform.TextEventData.operator ==(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
+static BrutalEngine.Platform.Vfs.VfsEntry.operator !=(BrutalEngine.Platform.Vfs.VfsEntry left, BrutalEngine.Platform.Vfs.VfsEntry right) -> bool
+static BrutalEngine.Platform.Vfs.VfsEntry.operator ==(BrutalEngine.Platform.Vfs.VfsEntry left, BrutalEngine.Platform.Vfs.VfsEntry right) -> bool
 static BrutalEngine.Platform.Vfs.VfsPath.Parse(string! path) -> BrutalEngine.Platform.Vfs.VfsPath
 static BrutalEngine.Platform.Vfs.VfsPath.TryParse(string? path, out BrutalEngine.Platform.Vfs.VfsPath result) -> bool
 static BrutalEngine.Platform.Vfs.VfsPath.operator !=(BrutalEngine.Platform.Vfs.VfsPath left, BrutalEngine.Platform.Vfs.VfsPath right) -> bool
@@ -723,6 +748,7 @@ static BrutalEngine.Platform.WindowSize.operator ==(BrutalEngine.Platform.Window
 ~override BrutalEngine.Platform.PlatformEventHeader.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.TextEventData.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.TextEventData.ToString() -> string
+~override BrutalEngine.Platform.Vfs.VfsEntry.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.ToString() -> string
 ~override BrutalEngine.Platform.WindowSize.Equals(object obj) -> bool
