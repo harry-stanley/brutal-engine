@@ -190,12 +190,14 @@ public sealed class EcsWorld : IDisposable
     /// <summary>The world's pool of chunk blocks, which the world owns and frees in <see cref="Dispose"/>.</summary>
     internal ChunkPool ChunkPool => _chunkPool;
 
-    /// <summary>The world's archetypes, which the world owns and disposes in <see cref="Dispose"/> before the chunk pool.</summary>
+    /// <summary>
+    /// The world's archetypes, which the world owns and disposes in <see cref="Dispose"/> before the chunk pool.
+    /// </summary>
     internal ArchetypeSet Archetypes => _archetypes;
 
     /// <summary>
-    /// Frees everything the world allocated, the entity table, the archetypes' chunks and pooled chunks included. Idempotent: later calls do
-    /// nothing.
+    /// Frees everything the world allocated, the entity table, the archetypes' chunks and pooled chunks included.
+    /// Idempotent: later calls do nothing.
     /// </summary>
     /// <remarks>
     /// Afterwards every other member throws <see cref="ObjectDisposedException"/>. The allocator from
