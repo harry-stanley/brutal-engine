@@ -1,11 +1,12 @@
 using System;
+using BrutalEngine.Core;
 using BrutalEngine.Graphics.Validation;
 using CsCheck;
 using Xunit;
 
 namespace BrutalEngine.Graphics.Tests;
 
-/// <summary>The resource validator's buffer and texture rules (docs/design/graphics.md section 5).</summary>
+/// <summary>The resource validator's buffer, texture, view and sampler rules (docs/design/graphics.md section 5).</summary>
 public sealed class ResourceValidatorTests
 {
     private const string DebugName = "probe";
@@ -210,6 +211,211 @@ public sealed class ResourceValidatorTests
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(0, allocated);
+    }
+
+    // A 4-layer texture with a full 9-level chain, so view ranges can be off by one at both ends.
+    private static readonly TextureDescription _viewTarget = _texture with { ArrayLayers = 4, MipLevels = 9 };
+
+    private static readonly TextureViewDescription _view = new()
+    {
+        Texture = new TextureHandle(new Handle(1, 1)),
+        Dimension = TextureViewDimension.Texture2DArray,
+        DebugName = DebugName,
+    };
+
+    private static readonly SamplerDescription _sampler = new() { DebugName = DebugName };
+
+    private static readonly GraphicsLimits _anisotropyLimits = new() { MaxSamplerAnisotropy = 16 };
+
+    public static TheoryData<string> ViewsOutsideTexture() =>
+    [
+        "BaseMipNegative", "BaseMipAtCount", "MipCountZero", "MipCountNegative", "MipCountPastEnd", "MipCountPastEndFromBase",
+        "MipCountMaxValue", "BaseLayerNegative", "BaseLayerAtCount", "LayerCountZero", "LayerCountPastEnd",
+        "LayerCountPastEndFromBase", "LayerCountMaxValue",
+    ];
+
+    [Theory]
+    [MemberData(nameof(ViewsOutsideTexture))]
+    public void View_OutsideTexture_Throws(string rule)
+    {
+        (TextureViewDescription description, string field) = rule switch
+        {
+            "BaseMipNegative" => (_view with { BaseMipLevel = -1 }, "BaseMipLevel"),
+            "BaseMipAtCount" => (_view with { BaseMipLevel = 9 }, "BaseMipLevel"),
+            "MipCountZero" => (_view with { MipLevelCount = 0 }, "MipLevelCount"),
+            "MipCountNegative" => (_view with { MipLevelCount = -1 }, "MipLevelCount"),
+            "MipCountPastEnd" => (_view with { MipLevelCount = 10 }, "MipLevelCount"),
+            "MipCountPastEndFromBase" => (_view with { BaseMipLevel = 8, MipLevelCount = 2 }, "MipLevelCount"),
+            "MipCountMaxValue" => (_view with { BaseMipLevel = 1, MipLevelCount = int.MaxValue }, "MipLevelCount"),
+            "BaseLayerNegative" => (_view with { BaseArrayLayer = -1 }, "BaseArrayLayer"),
+            "BaseLayerAtCount" => (_view with { BaseArrayLayer = 4 }, "BaseArrayLayer"),
+            "LayerCountZero" => (_view with { ArrayLayerCount = 0 }, "ArrayLayerCount"),
+            "LayerCountPastEnd" => (_view with { ArrayLayerCount = 5 }, "ArrayLayerCount"),
+            "LayerCountPastEndFromBase" => (_view with { BaseArrayLayer = 3, ArrayLayerCount = 2 }, "ArrayLayerCount"),
+            "LayerCountMaxValue" => (_view with { BaseArrayLayer = 1, ArrayLayerCount = int.MaxValue }, "ArrayLayerCount"),
+            _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+        };
+
+        AssertRejected(typeof(ArgumentOutOfRangeException), "TextureViewDescription." + field, () => ResourceValidator.Validate(description, _viewTarget));
+    }
+
+    public static TheoryData<string> InvalidViews() => ["Texture2DWithTwoLayers", "DimensionAboveLast", "DimensionNegative"];
+
+    [Theory]
+    [MemberData(nameof(InvalidViews))]
+    public void View_Invalid_Throws(string rule)
+    {
+        (TextureViewDescription description, Type exception, string field) = rule switch
+        {
+            "Texture2DWithTwoLayers" => (
+                _view with { Dimension = TextureViewDimension.Texture2D, ArrayLayerCount = 2 },
+                typeof(ArgumentException),
+                "ArrayLayerCount"),
+            "DimensionAboveLast" => (_view with { Dimension = (TextureViewDimension)2 }, typeof(ArgumentOutOfRangeException), "Dimension"),
+            "DimensionNegative" => (_view with { Dimension = (TextureViewDimension)(-1) }, typeof(ArgumentOutOfRangeException), "Dimension"),
+            _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+        };
+
+        AssertRejected(exception, "TextureViewDescription." + field, () => ResourceValidator.Validate(description, _viewTarget));
+    }
+
+    public static TheoryData<string> ValidViews() =>
+        ["Defaults", "Texture2DOfLastLayer", "EveryMipAndLayer", "LastMip", "ArrayOfOneLayer", "NoDebugName"];
+
+    [Theory]
+    [MemberData(nameof(ValidViews))]
+    public void View_Valid_DoesNotThrow(string row)
+    {
+        TextureViewDescription description = row switch
+        {
+            "Defaults" => new TextureViewDescription { Texture = _view.Texture },
+            "Texture2DOfLastLayer" => _view with { Dimension = TextureViewDimension.Texture2D, BaseArrayLayer = 3 },
+            "EveryMipAndLayer" => _view with { MipLevelCount = 9, ArrayLayerCount = 4 },
+            "LastMip" => _view with { BaseMipLevel = 8 },
+            "ArrayOfOneLayer" => _view with { BaseArrayLayer = 2, ArrayLayerCount = 1 },
+            "NoDebugName" => _view with { DebugName = null },
+            _ => throw new ArgumentOutOfRangeException(nameof(row), row, "Unknown row."),
+        };
+
+        ResourceValidator.Validate(description, _viewTarget);
+    }
+
+    [Fact]
+    public void Sampler_AnisotropyWithoutFeature_ThrowsInvalidOperation()
+    {
+        SamplerDescription description = _sampler with { MaxAnisotropy = 2 };
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => ResourceValidator.Validate(description, _anisotropyLimits, GraphicsFeatures.TimestampQueries));
+
+        Assert.Contains("SamplerDescription.MaxAnisotropy", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SamplerAnisotropy", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("debug name 'probe'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sampler_AnisotropyAboveLimitWithoutFeature_ThrowsInvalidOperation()
+    {
+        // The feature is checked first: without it, the limit means nothing.
+        SamplerDescription description = _sampler with { MaxAnisotropy = 17 };
+
+        Assert.Throws<InvalidOperationException>(() => ResourceValidator.Validate(description, _anisotropyLimits, GraphicsFeatures.None));
+    }
+
+    public static TheoryData<string> InvalidSamplers() =>
+    [
+        "MinFilterAboveLast", "MagFilterAboveLast", "MipmapFilterNegative", "AddressUAboveLast", "AddressVNegative",
+        "BorderColorAboveLast", "CompareAboveLast", "CompareNegative", "AnisotropyZero", "AnisotropyNegativeZero",
+        "AnisotropyNegative", "AnisotropyNaN", "AnisotropyNegativeInfinity", "AnisotropyAboveLimit", "AnisotropyInfinity",
+    ];
+
+    [Theory]
+    [MemberData(nameof(InvalidSamplers))]
+    public void Sampler_Invalid_Throws(string rule)
+    {
+        (SamplerDescription description, string field) = rule switch
+        {
+            "MinFilterAboveLast" => (_sampler with { MinFilter = (Filter)2 }, "MinFilter"),
+            "MagFilterAboveLast" => (_sampler with { MagFilter = (Filter)2 }, "MagFilter"),
+            "MipmapFilterNegative" => (_sampler with { MipmapFilter = (Filter)(-1) }, "MipmapFilter"),
+            "AddressUAboveLast" => (_sampler with { AddressU = (AddressMode)4 }, "AddressU"),
+            "AddressVNegative" => (_sampler with { AddressV = (AddressMode)(-1) }, "AddressV"),
+            "BorderColorAboveLast" => (_sampler with { BorderColor = (BorderColor)3 }, "BorderColor"),
+            "CompareAboveLast" => (_sampler with { Compare = (CompareFunction)8 }, "Compare"),
+            "CompareNegative" => (_sampler with { Compare = (CompareFunction)(-1) }, "Compare"),
+            "AnisotropyZero" => (_sampler with { MaxAnisotropy = 0 }, "MaxAnisotropy"),
+            "AnisotropyNegativeZero" => (_sampler with { MaxAnisotropy = -0f }, "MaxAnisotropy"),
+            "AnisotropyNegative" => (_sampler with { MaxAnisotropy = -1 }, "MaxAnisotropy"),
+            "AnisotropyNaN" => (_sampler with { MaxAnisotropy = float.NaN }, "MaxAnisotropy"),
+            "AnisotropyNegativeInfinity" => (_sampler with { MaxAnisotropy = float.NegativeInfinity }, "MaxAnisotropy"),
+            "AnisotropyAboveLimit" => (_sampler with { MaxAnisotropy = MathF.BitIncrement(16f) }, "MaxAnisotropy"),
+            "AnisotropyInfinity" => (_sampler with { MaxAnisotropy = float.PositiveInfinity }, "MaxAnisotropy"),
+            _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+        };
+
+        AssertRejected(
+            typeof(ArgumentOutOfRangeException),
+            "SamplerDescription." + field,
+            () => ResourceValidator.Validate(description, _anisotropyLimits, GraphicsFeatures.SamplerAnisotropy));
+    }
+
+    public static TheoryData<string> ValidSamplers() =>
+    [
+        "Defaults", "AnisotropyBelowOneWithoutFeature", "AnisotropyOneWithZeroLimit", "AnisotropyAtLimit",
+        "AnisotropySmallestAboveOne", "Linear", "ClampToBorderOpaqueWhite", "CompareAlways", "CompareNever", "NoDebugName",
+    ];
+
+    [Theory]
+    [MemberData(nameof(ValidSamplers))]
+    public void Sampler_Valid_DoesNotThrow(string row)
+    {
+        GraphicsFeatures anisotropic = GraphicsFeatures.SamplerAnisotropy;
+        (SamplerDescription description, GraphicsLimits limits, GraphicsFeatures features) = row switch
+        {
+            "Defaults" => (new SamplerDescription(), _anisotropyLimits, GraphicsFeatures.None),
+            "AnisotropyBelowOneWithoutFeature" => (_sampler with { MaxAnisotropy = 0.5f }, _anisotropyLimits, GraphicsFeatures.None),
+            // Without the feature the adapter may report a limit of 0; anisotropy 1 needs neither.
+            "AnisotropyOneWithZeroLimit" => (_sampler, default(GraphicsLimits), GraphicsFeatures.None),
+            "AnisotropyAtLimit" => (_sampler with { MaxAnisotropy = 16 }, _anisotropyLimits, anisotropic),
+            "AnisotropySmallestAboveOne" => (_sampler with { MaxAnisotropy = MathF.BitIncrement(1f) }, _anisotropyLimits, anisotropic),
+            "Linear" => (_sampler with { MinFilter = Filter.Linear, MagFilter = Filter.Linear, MipmapFilter = Filter.Linear }, _anisotropyLimits, GraphicsFeatures.None),
+            "ClampToBorderOpaqueWhite" => (
+                _sampler with { AddressU = AddressMode.ClampToBorder, AddressV = AddressMode.ClampToBorder, BorderColor = BorderColor.OpaqueWhite },
+                _anisotropyLimits,
+                GraphicsFeatures.None),
+            "CompareAlways" => (_sampler with { Compare = CompareFunction.Always }, _anisotropyLimits, GraphicsFeatures.None),
+            "CompareNever" => (_sampler with { Compare = CompareFunction.Never }, _anisotropyLimits, GraphicsFeatures.None),
+            "NoDebugName" => (_sampler with { DebugName = null }, _anisotropyLimits, GraphicsFeatures.None),
+            _ => throw new ArgumentOutOfRangeException(nameof(row), row, "Unknown row."),
+        };
+
+        ResourceValidator.Validate(description, limits, features);
+    }
+
+    [Fact]
+    public void ValidViewAndSampler_DoNotAllocate()
+    {
+        TextureViewDescription view = _view with { MipLevelCount = 9, ArrayLayerCount = 4 };
+        TextureDescription target = _viewTarget;
+        SamplerDescription sampler = _sampler with { MaxAnisotropy = 8, Compare = CompareFunction.Less };
+        GraphicsLimits limits = _anisotropyLimits;
+        ValidateViewAndSampler(view, target, sampler, limits);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1_000; i++)
+        {
+            ValidateViewAndSampler(view, target, sampler, limits);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+    }
+
+    private static void ValidateViewAndSampler(in TextureViewDescription view, in TextureDescription target, in SamplerDescription sampler, in GraphicsLimits limits)
+    {
+        ResourceValidator.Validate(view, target);
+        ResourceValidator.Validate(sampler, limits, GraphicsFeatures.SamplerAnisotropy);
     }
 
     private static void ValidateBoth(in BufferDescription buffer, in TextureDescription texture, in GraphicsLimits limits)
