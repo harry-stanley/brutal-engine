@@ -417,7 +417,7 @@ M0 proved under NativeAOT, with 0 trim and AOT warnings: BRUTAL's loader resolut
 | VMA: `[LibraryImport("vma")]`, resolved by .NET's default native probing (the package installs no resolver), from `runtimes/<rid>/native` under JIT and the published folder under AOT | G6 | the scenario creates a buffer and maps it |
 | The full device through `GraphicsDevice`: frames, a clear, a readback | G9f | the scenario renders offscreen with validation and checks `GraphicsStatistics.ValidationErrors` is 0 |
 
-The smoke's negative canary stays in the existing raw scenario: the backend's `InjectValidationError` is reachable only through `IBackendDevice` or the front end's internal seam. The backend itself uses no reflection, `Enum.ToString` or runtime code generation (driver names come from a table, section 3). `.github/scripts/ci-tier.sh` already gives `src/BrutalEngine.Graphics*` the full tier (`.github/scripts/ci-tier.sh:12`); G3a adds a self-test case for the new project's path.
+The smoke's negative canary stays in the existing raw scenario: the backend's `InjectValidationError` is reachable only through `IBackendDevice` or the front end's internal seam. The backend itself uses no reflection, `Enum.ToString` or runtime code generation (driver names come from a table, section 3). `.github/scripts/ci-tier.sh` already gives `src/BrutalEngine.Graphics*` the full tier (`.github/scripts/ci-tier.sh:14`); G3a adds a self-test case for the new project's path.
 
 ## 15. Testing
 
