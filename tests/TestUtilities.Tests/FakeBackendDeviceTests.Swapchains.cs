@@ -51,11 +51,13 @@ public sealed partial class FakeBackendDeviceTests
 
         // The selection surface was made with the device, so its id is below every id created since.
         Assert.Throws<InvalidOperationException>(() => device.DestroySurface(firstObject - 1));
-        ulong handedOver = device.CreateSurface(selection).Value;
-        ulong other = device.CreateSurface(FakeBackendFixture.Window()).Value;
 
-        Assert.True(handedOver < firstObject, $"{handedOver} should be the selection surface, made before {firstObject}.");
-        Assert.True(other > firstObject);
+        // Another window asks first: it gets a new surface, and the selection surface waits for the compatible window.
+        ulong other = device.CreateSurface(FakeBackendFixture.Window()).Value;
+        ulong handedOver = device.CreateSurface(selection).Value;
+
+        Assert.True(other > firstObject, $"{other} is another window's surface, so it can't be the selection surface.");
+        Assert.Equal(firstObject - 1, handedOver);
         Assert.Equal(3, device.LiveObjectCount);
         device.DestroySurface(handedOver);
         ulong again = device.CreateSurface(selection).Value;
