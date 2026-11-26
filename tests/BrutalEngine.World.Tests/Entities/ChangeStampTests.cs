@@ -118,11 +118,29 @@ public sealed class ChangeStampTests
             // A move within the last chunk stamps that chunk only.
             world.SetChangeTickForTesting(9);
             Entity b = world.Spawn(new Payload(-1), new Health(-1));
-            _ = world.Spawn(new Payload(-2), new Health(-2));
+            Entity c = world.Spawn(new Payload(-2), new Health(-2));
             world.SetChangeTickForTesting(11);
             world.Despawn(b);
             AssertTicks(archetype, chunk: 0, changed: [7, 7], added: [2, 2]);
             AssertTicks(archetype, chunk: 1, changed: [11, 11], added: [9, 9]);
+
+            // Write stamps the written entity's own chunk, here the second (columns: Payload, then Health).
+            Assert.True(world.Entities.TryGetLocation(c, out EntityRecord location));
+            Assert.Equal(1, location.Chunk);
+            world.SetChangeTickForTesting(13);
+            world.Write<Health>(c).Value = 99;
+            AssertTicks(archetype, chunk: 0, changed: [7, 7], added: [2, 2]);
+            AssertTicks(archetype, chunk: 1, changed: [11, 13], added: [9, 9]);
+
+            // Despawning the last row of a chunk that keeps rows moves nothing, so that chunk isn't stamped either.
+            world.SetChangeTickForTesting(14);
+            Entity d = world.Spawn(new Payload(-3), new Health(-3));
+            AssertTicks(archetype, chunk: 1, changed: [14, 14], added: [14, 14]);
+            world.SetChangeTickForTesting(15);
+            world.Despawn(d);
+            Assert.Equal(1, archetype.Chunks.GetCount(1));
+            AssertTicks(archetype, chunk: 0, changed: [7, 7], added: [2, 2]);
+            AssertTicks(archetype, chunk: 1, changed: [14, 14], added: [14, 14]);
         }
 
         tracking.ThrowIfLeaks();
