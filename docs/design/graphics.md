@@ -977,6 +977,8 @@ Each record in the stream is a `CommandKind` with an unmanaged payload struct of
 | `PushDebugGroup`, `PopDebugGroup` | `DebugGroupCommand`, shared: label (for a pop, the innermost open group's) | none |
 | `ClearSwapchainImage` | `ClearSwapchainImageCommand`: index into `FramePlan.Acquired` (an acquired image no pass wrote) | none |
 
+Each record starts with an 8-byte header (the `CommandKind`, 2 reserved zero bytes, then the record's `Size` as a 4-byte integer), followed by the payload zero-padded to a multiple of 8 bytes, so the trailing elements after it are 8-byte aligned. The header's `Size` is 8 + the payload size rounded up to 8 + the trailing part's bytes, without the final padding, and the next record starts at `Size` rounded up to 8.
+
 Contract rules:
 
 | Topic | Rule |
