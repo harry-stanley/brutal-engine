@@ -122,10 +122,7 @@ internal sealed unsafe class Archetype : IDisposable
     /// <remarks>Allocates nothing and makes no allocator call: an emptied chunk goes back to the pool.</remarks>
     public Entity SwapRemove(int chunk, int row)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(chunk);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(chunk, Chunks.ChunkCount);
-        ArgumentOutOfRangeException.ThrowIfNegative(row);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(row, Chunks.GetCount(chunk));
+        ThrowIfNotLiveRow(chunk, row);
 
         int last = Chunks.ChunkCount - 1;
         int lastRow = Chunks.GetCount(last) - 1;
@@ -156,6 +153,72 @@ internal sealed unsafe class Archetype : IDisposable
 
         RowCount--;
         return moved;
+    }
+
+    /// <summary>
+    /// Copies the value of every data component this archetype shares with <paramref name="target"/> from a row here to
+    /// a row there: the copy half of a move between archetypes. One copy per shared column; columns only one side has
+    /// are left alone.
+    /// </summary>
+    /// <param name="chunk">The source row's chunk, from 0 to the chunk count - 1.</param>
+    /// <param name="row">The source row within the chunk, from 0 to that chunk's row count - 1.</param>
+    /// <param name="target">Another archetype of the same set.</param>
+    /// <param name="targetChunk">The target row's chunk, in <paramref name="target"/>.</param>
+    /// <param name="targetRow">The target row within that chunk, a live row (appended by the caller).</param>
+    /// <exception cref="ArgumentException"><paramref name="target"/> is this archetype or belongs to another set.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A chunk or row isn't a live row of its archetype. Nothing is copied.</exception>
+    /// <remarks>Allocates nothing and makes no allocator call.</remarks>
+    public void CopySharedColumns(int chunk, int row, Archetype target, int targetChunk, int targetRow)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (ReferenceEquals(target, this) || !ReferenceEquals(target.Set, Set))
+        {
+            throw new ArgumentException("The target must be another archetype of the same set.", nameof(target));
+        }
+
+        ThrowIfNotLiveRow(chunk, row);
+        target.ThrowIfNotLiveRow(targetChunk, targetRow);
+
+        byte* source = Chunks.GetData(chunk);
+        byte* destination = target.Chunks.GetData(targetChunk);
+        ReadOnlySpan<int> ids = Signature.Ids;
+        ReadOnlySpan<int> targetIds = target.Signature.Ids;
+
+        // Both id lists are sorted, so one merge pass finds the shared components; each step advances at least one side.
+        int i = 0;
+        int j = 0;
+        while (i < ids.Length && j < targetIds.Length)
+        {
+            if (ids[i] < targetIds[j])
+            {
+                i++;
+            }
+            else if (ids[i] > targetIds[j])
+            {
+                j++;
+            }
+            else
+            {
+                // The same component in both, so both columns hold it, or neither does (a tag).
+                int column = Layout.ColumnOf(i);
+                if (column >= 0)
+                {
+                    int targetColumn = target.Layout.ColumnOf(j);
+                    int size = Layout.Columns[column].Size;
+
+                    // Sound: both rows are live rows of chunks of their archetypes' layouts (checked above), so each
+                    // value lies inside its block, and the rows are in different chunks' blocks, so they don't overlap.
+                    Buffer.MemoryCopy(
+                        source + Layout.ColumnOffsets[column] + ((nint)row * size),
+                        destination + target.Layout.ColumnOffsets[targetColumn] + ((nint)targetRow * size),
+                        size,
+                        size);
+                }
+
+                i++;
+                j++;
+            }
+        }
     }
 
     /// <summary>The archetype's cached add and remove edges: component index to neighbour index.</summary>
@@ -203,6 +266,14 @@ internal sealed unsafe class Archetype : IDisposable
         {
             Edges.Dispose();
         }
+    }
+
+    private void ThrowIfNotLiveRow(int chunk, int row)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(chunk);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(chunk, Chunks.ChunkCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(row);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(row, Chunks.GetCount(chunk));
     }
 
     private Archetype Neighbour(int component, bool adding)
