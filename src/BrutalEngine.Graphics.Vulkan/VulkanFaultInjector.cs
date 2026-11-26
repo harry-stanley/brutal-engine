@@ -21,6 +21,12 @@ namespace BrutalEngine.Graphics.Vulkan;
 /// </remarks>
 internal sealed class VulkanFaultInjector
 {
+    /// <summary>
+    /// The number of <see cref="VulkanCall"/> members. A constant, because the backend uses no reflection
+    /// (docs/design/graphics-vulkan.md section 14); a test pins it to the enum, so a new last member must update it.
+    /// </summary>
+    internal const int CallCount = (int)VulkanCall.SetDebugUtilsObjectName + 1;
+
     // Per call, indexed by member (VulkanCall is contiguous from 0): calls left until the armed fault fires, 0 when
     // none is armed, and the result it returns.
     private readonly int[] _remaining;
@@ -29,9 +35,8 @@ internal sealed class VulkanFaultInjector
     /// <summary>Creates an injector with no armed faults.</summary>
     public VulkanFaultInjector()
     {
-        int calls = Enum.GetValues<VulkanCall>().Length;
-        _remaining = new int[calls];
-        _results = new VkResult[calls];
+        _remaining = new int[CallCount];
+        _results = new VkResult[CallCount];
     }
 
     /// <summary>Arms a fault: the <paramref name="occurrence"/>-th call of <paramref name="call"/> from now returns <paramref name="result"/>.</summary>
@@ -54,7 +59,7 @@ internal sealed class VulkanFaultInjector
 
         if (_remaining[index] != 0)
         {
-            throw new InvalidOperationException($"{call} already has an armed fault that hasn't fired.");
+            throw new InvalidOperationException("The call already has an armed fault that hasn't fired.");
         }
 
         _remaining[index] = occurrence;
@@ -90,5 +95,5 @@ internal sealed class VulkanFaultInjector
     }
 
     private static void ThrowUnknownCall(VulkanCall call) =>
-        throw new ArgumentOutOfRangeException(nameof(call), call, "Not a VulkanCall member.");
+        throw new ArgumentOutOfRangeException(nameof(call), (int)call, "Not a VulkanCall member.");
 }

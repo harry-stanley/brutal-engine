@@ -54,6 +54,13 @@ public sealed class VulkanFaultInjectorTests
     }
 
     [Fact]
+    public void CallCount_MatchesTheEnum()
+    {
+        // The injector sizes its arrays from a constant (the backend uses no reflection); this keeps it in step.
+        Assert.Equal(VulkanFaultInjector.CallCount, _calls.Length);
+    }
+
+    [Fact]
     public void TryTake_NothingArmed_ReturnsFalseForEveryCall()
     {
         VulkanFaultInjector faults = new();

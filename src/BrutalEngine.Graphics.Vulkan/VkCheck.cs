@@ -141,8 +141,8 @@ internal static class VkCheck
     };
 
     private static string ThrowUnknownCall(VulkanCall call) =>
-        throw new ArgumentOutOfRangeException(nameof(call), call, "Not a VulkanCall member.");
+        throw new ArgumentOutOfRangeException(nameof(call), (int)call, "Not a VulkanCall member.");
 
     private static void ThrowSuccessIsNotAnError(VkResult result) =>
-        throw new ArgumentOutOfRangeException(nameof(result), result, "VK_SUCCESS is not a failure.");
+        throw new ArgumentOutOfRangeException(nameof(result), "VK_SUCCESS is not a failure.");
 }
