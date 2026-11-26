@@ -18,8 +18,9 @@ public enum HeadlessMode
 
     /// <summary>
     /// Invisible windows that can have a Vulkan surface, which presents through <c>VK_EXT_headless_surface</c>. Where no
-    /// installed Vulkan driver offers that extension (no Windows driver does today), creating a window with
-    /// <see cref="WindowSurface.Vulkan"/> fails with <see cref="BrutalEngine.Core.ErrorKind.Unsupported"/>.
+    /// installed Vulkan driver offers that extension, creating a window with <see cref="WindowSurface.Vulkan"/> fails
+    /// with <see cref="BrutalEngine.Core.ErrorKind.Unsupported"/>. Neither Windows driver tested, NVIDIA's or Mesa
+    /// lavapipe's, offers it. The rule is about the extension, not the OS.
     /// </summary>
     Offscreen = 1,
 
