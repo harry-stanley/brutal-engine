@@ -14,7 +14,7 @@ namespace BrutalEngine.TestUtilities;
 /// <remarks>
 /// <para>
 /// <b>Contract checks.</b> Misuse the contract says can't reach a backend (an adapter index outside the enumeration, a
-/// rejected adapter, no frames in flight) throws <see cref="InvalidOperationException"/> with a message that starts
+/// rejected adapter, frames in flight outside 1 to 3) throws <see cref="InvalidOperationException"/> with a message that starts
 /// "contract violation:", so front-end tests catch the bug. Null arguments throw <see cref="ArgumentNullException"/>.
 /// </para>
 /// <para>
@@ -72,7 +72,7 @@ public sealed class FakeGraphicsBackend : IGraphicsBackend
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// A contract violation: <paramref name="adapterIndex"/> isn't a scripted adapter, the adapter has rejection reasons, or
-    /// the request's frames in flight is below 1.
+    /// the request's frames in flight isn't from 1 to 3.
     /// </exception>
     /// <remarks>
     /// The checks run first, then a pending <see cref="FakeBackendOperation.CreateDevice"/> failure is taken, which creates
@@ -93,7 +93,7 @@ public sealed class FakeGraphicsBackend : IGraphicsBackend
             throw new InvalidOperationException($"contract violation: CreateDevice on adapter {adapterIndex}, which is rejected.");
         }
 
-        if (request.FramesInFlight < 1)
+        if (request.FramesInFlight is < 1 or > 3)
         {
             throw new InvalidOperationException($"contract violation: CreateDevice with {request.FramesInFlight} frames in flight.");
         }

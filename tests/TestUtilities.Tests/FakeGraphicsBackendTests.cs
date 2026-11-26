@@ -56,7 +56,7 @@ public sealed class FakeGraphicsBackendTests : IDisposable
     }
 
     public static TheoryData<string> Violations() =>
-        ["adapter index -1", "adapter index past the end", "rejected adapter", "no frames in flight"];
+        ["adapter index -1", "adapter index past the end", "rejected adapter", "no frames in flight", "4 frames in flight"];
 
     [Theory]
     [MemberData(nameof(Violations))]
@@ -69,6 +69,7 @@ public sealed class FakeGraphicsBackendTests : IDisposable
             "adapter index past the end" => (2, 2),
             "rejected adapter" => (1, 2),
             "no frames in flight" => (0, 0),
+            "4 frames in flight" => (0, 4),
             _ => throw new ArgumentOutOfRangeException(nameof(violation), violation, "Unknown row."),
         };
 
@@ -77,6 +78,18 @@ public sealed class FakeGraphicsBackendTests : IDisposable
 
         Assert.StartsWith("contract violation: ", exception.Message, StringComparison.Ordinal);
         Assert.Null(_fixture.Backend.LastDevice);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void CreateDevice_FramesInFlightFrom1To3_Succeeds(int framesInFlight)
+    {
+        FakeBackendDevice device = Assert.IsType<FakeBackendDevice>(
+            _fixture.Backend.CreateDevice(_fixture.Request(framesInFlight: framesInFlight), 0, _fixture.Objects).Value);
+
+        Assert.Equal(framesInFlight, device.Request.FramesInFlight);
     }
 
     [Fact]
