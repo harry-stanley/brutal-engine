@@ -134,6 +134,21 @@ public sealed class ChunkLayoutTests
     }
 
     [Theory]
+    [InlineData(-1)]
+    [InlineData(4)]
+    public void ColumnOf_IndexOutsideTypes_Throws(int typeIndex)
+    {
+        // Four types, so 4 is types.Length: one past the last valid index.
+        ComponentType[] types = [Column(0, 4, 4), Tag(1), Column(2, 8, 8), Tag(3)];
+        var layout = ChunkLayout.Compute(types, 16 * 1024);
+
+        ArgumentOutOfRangeException exception = Assert.Throws<ArgumentOutOfRangeException>(() => layout.ColumnOf(typeIndex));
+
+        Assert.Equal("typeIndex", exception.ParamName);
+        Assert.Equal(-1, layout.ColumnOf(types.Length - 1));
+    }
+
+    [Theory]
     [InlineData(0, 1)]
     [InlineData(1025, 1)]
     [InlineData(8, 3)]
