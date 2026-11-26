@@ -13,6 +13,12 @@ internal static class LayeringRule
 {
     public const string Name = "dependencies point to lower layers only";
 
+    /// <summary>
+    /// Checks one module's references against the layer map and returns one message per violation, or an empty list.
+    /// An unknown module is itself a violation; otherwise each distinct engine reference (other than the module itself
+    /// and Roslyn components) must be a known module that isn't a tool, isn't in a higher layer, is in the same layer
+    /// only through a listed edge, and is a backend only when the module is a host or a tool.
+    /// </summary>
     /// <param name="map">The layer map to check against.</param>
     /// <param name="module">The referencing assembly.</param>
     /// <param name="references">Names of the assemblies it references. Non-engine names are ignored.</param>
