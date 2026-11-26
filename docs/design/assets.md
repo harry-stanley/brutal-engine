@@ -229,3 +229,108 @@ sealed class GameAssetsModule(IAssetImporter? importer) : EngineModule(new Modul
 ```
 
 `EngineModule`, `ModuleInfo`, `EngineContext` and `FrameContext` are Runtime's (`docs/design/runtime.md:235-246`, `:217-222`, `:183-200`, `:335-341`); `ModuleFailurePolicy.Fatal` is `ModuleInfo`'s default (`:221`), so a failed `Start` ends start-up; a module whose `Start` failed is never stopped (`:262`), so it disposes what it created itself. Modules that load assets list `DependsOn = ["game.assets"]`. The game passes `importer` from `#if DEBUG` code (section 7). Mounting packs under `res://` for path-based reads is section 6's `AssetPackFileSystem`.
+
+## 4. The loader contract and the import seam
+
+```csharp
+public interface IAssetLoader<T> where T : class
+{
+    AssetKind Kind { get; }
+    AssetLoaderTraits Traits { get; }                       // read once, at registration
+    Result<T> Load(in AssetLoadContext context);
+    void Release(T asset, AssetReleaseReason reason);       // owner thread
+}
+
+public readonly record struct AssetLoaderTraits
+{
+    public AssetLoadThread Thread { get; init; }           // default Worker
+    public AssetContentMode Content { get; init; }         // default Bytes
+    public bool RecreateOnDeviceLoss { get; init; }        // section 9; needs AssetDatabaseOptions.Graphics
+}
+
+public enum AssetLoadThread { Worker = 0, OwnerThread }
+public enum AssetContentMode { Bytes = 0, Stream }
+public enum AssetReleaseReason { Unloaded = 0, Replaced, DeviceLost, DatabaseDisposed }
+
+public readonly ref struct AssetLoadContext
+{
+    public AssetId Id { get; }
+    public AssetKind Kind { get; }
+    public string Name { get; }                             // the source path, or the id's text; for messages and debug names
+    public ReadOnlySpan<byte> Data { get; }                 // Bytes mode: the uncompressed cooked payload; empty in Stream mode
+    public AssetContentSource? Content { get; }             // Stream mode only
+    public ReadOnlySpan<AssetId> Dependencies { get; }      // ascending; every one Loaded
+    public TDep GetDependency<TDep>(AssetId id) where TDep : class;              // InvalidOperationException if not listed or of another type
+    public AssetHandle<TDep> GetDependencyHandle<TDep>(AssetId id) where TDep : class;
+    public CancellationToken CancellationToken { get; }    // cancelled when the request is dropped or the database disposed
+}
+
+public sealed class AssetContentSource             // thread-safe; owned by the database; valid while the asset is loaded
+{
+    public long Length { get; }
+    public Result<Stream> OpenRead();               // a new read-only, seekable stream each call; the caller disposes it;
+                                                    // after the asset is released: ErrorKind.Unavailable (open streams
+                                                    // keep working until their pack is disposed)
+}
+```
+
+- **A loader turns cooked bytes into an object.** In `Bytes` mode the database reads, checks and decompresses the payload (section 6) and passes it in `Data`, valid only during the call: the loader copies what it keeps. In `Stream` mode (long audio) nothing is read up front: the loader keeps the `AssetContentSource` and reads from it later, from any thread; a `Stream` asset must be stored uncompressed (section 6), or the load fails with `InvalidData`. In development mode the source serves the imported bytes from memory.
+- **Threads.** `Worker` loaders run on a database worker and must be thread-safe (several workers may call them at once). `OwnerThread` loaders, which call the graphics device, run in `ProcessCompletions` or `LoadNow`, after the bytes were read on a worker. `Release` always runs on the owner thread. Both may allocate: loads are load-time work.
+- **Dependencies** are all `Loaded` before `Load` is called. The context hands out the loaded objects for immediate use and handles for keeping; the handle needs no reference of its own, because the dependant's reference keeps the dependency alive. When a dependency is swapped, its loaded dependants are loaded again (section 7), so values a loader copied out of a dependency are never stale.
+- **Failures** are the loader's `Result`: `InvalidData` for a bad payload, `Unsupported` for a valid one this device or version can't use, the device's kinds for GPU failures. A loader throws only for its own bugs; an exception from `Load` fails the asset with `ErrorKind.Unspecified` and the exception's message, and is logged at `Error` with the stack.
+- **`Release` reasons:** `Unloaded` (count reached zero), `Replaced` (a hot-reload or recreation swap installed a new object), `DeviceLost` (drop GPU handles without calling the device, section 9), `DatabaseDisposed`. A loader whose objects own nothing makes it a no-op.
+
+The built-in loader for raw bytes, registered by `Create`, also serves tests:
+
+```csharp
+public sealed class BytesAsset { public ReadOnlyMemory<byte> Data { get; } }     // immutable; any thread
+public sealed class BytesLoader : IAssetLoader<BytesAsset>                     // stateless; thread-safe
+{
+    public BytesLoader();
+    public AssetKind Kind { get; }                                             // BLOB
+    public AssetLoaderTraits Traits { get; }                                   // Worker, Bytes
+    public Result<BytesAsset> Load(in AssetLoadContext context);               // copies Data into a new array
+    public void Release(BytesAsset asset, AssetReleaseReason reason);          // no-op
+}
+```
+
+**Input's loader fits as sketched** by the input note (#286, its section 9): `InputMapLoader : IAssetLoader<InputMap>` with `Kind` `INPM`, default traits (`Worker`, `Bytes`), `Load` returning `InputMap.FromJson(context.Data)` (it takes a `ReadOnlySpan<byte>`; its `Result<InputMap>` is the loader's result), no dependencies, and a no-op `Release`. Input registers it from its own assembly through the `Input -> Assets` edge.
+
+### The import seam (development builds)
+
+```csharp
+public interface IAssetImporter                 // implemented by BrutalEngine.Importers (#283); thread-safe
+{
+    Result<IReadOnlyList<AssetSource>> ReadMeta(VirtualFileSystem files, VfsPath metaPath);
+    Result<ImportedAsset> Import(AssetImportRequest request);
+}
+
+public readonly record struct AssetSource(AssetId Id, AssetKind Kind, VfsPath SourcePath);
+
+public sealed record AssetImportRequest
+{
+    public required AssetSource Source { get; init; }
+    public required VfsPath MetaPath { get; init; }
+    public required VirtualFileSystem Files { get; init; }
+    public CancellationToken CancellationToken { get; init; }
+}
+
+public sealed record ImportedAsset
+{
+    public required ReadOnlyMemory<byte> Data { get; init; }          // exactly what a pack entry holds, uncompressed
+    public IReadOnlyList<AssetId> Dependencies { get; init; } = [];
+    public IReadOnlyList<VfsPath> ReadPaths { get; init; } = [];      // every other file the import read (section 7)
+}
+```
+
+- **`ReadMeta`** parses one `.meta` sidecar (its schema is #283's) and returns the assets it declares: usually one, several when one source yields several assets (an Aseprite file's texture and animation). **`Import`** reads the source through the VFS and returns the cooked payload a pack entry would hold for that id, its dependency ids and every other file it read. The cooker writes the same payloads into packs, so both paths share importer code by construction (ADR-0005's consequence).
+- **Threads and failures.** Both members are called from database workers, concurrently when `WorkerCount > 1`, and from the owner thread for `Create`'s initial scan and with `WorkerCount = 0`, so implementations are thread-safe. Expected failures are `Result`s (`InvalidData` for a bad source or `.meta`, the VFS's kinds for I/O); `Data` larger than `MaxAssetBytes` fails the asset with `Unsupported`.
+- **Ownership:** the game creates the importer and keeps it until the database is disposed; the database holds it and never disposes it. Results are owned by the database once returned.
+
+## 5. Asynchronous I/O
+
+- **Workers.** `WorkerCount` dedicated background threads ("BrutalEngine.Assets.Worker 0", ...), started by `Create` and joined by `Dispose`. Each takes the highest-priority runnable request (all dependencies loaded) and reads its stored bytes: from a pack (section 6) or, in development mode, through the importer. It verifies the checksum, decompresses, runs a `Worker` loader, and posts the result to a completion queue the owner thread drains in `ProcessCompletions`. Docs/03 says asset I/O completes on the main thread (`docs/03-architecture.md:84`); this is that thread.
+- **Reads go through the VFS**, synchronously, on the workers: `VirtualFileSystem` and every `IFileSystem` are thread-safe (`docs/design/platform.md:442`), so the asynchronous reads that note promises "with the asset database (M2), behind the same paths" (`:444`) need no Platform change. Pack reads use the pack's own stream (section 6).
+- **`WorkerCount = 0`** starts no thread: `ProcessCompletions` runs queued requests inline, in priority order, before applying completions. Tests and tools use it, because every step then runs on one thread in a fixed order.
+- **Cancellation.** Each request has a `CancellationTokenSource`; the token reaches the importer and the loader. A worker checks it before reading, before decompressing and before loading. Cancelled work is never published.
+- **Bound on in-flight memory.** `InFlightBytes` counts the stored and uncompressed bytes of requests read but not yet applied by `ProcessCompletions`. A worker doesn't start a request that would take it over `MaxInFlightBytes` unless nothing is in flight, so one asset larger than the bound still loads, alone. Pack entries know their sizes before the read; an import's size is counted when it returns. The bound keeps a level's worth of queued loads from holding gigabytes between two frames.
