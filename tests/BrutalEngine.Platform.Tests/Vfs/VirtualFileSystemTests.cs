@@ -139,6 +139,32 @@ public sealed class VirtualFileSystemTests
         Assert.False(vfs.Unmount(scheme));
     }
 
+    public static TheoryData<string, string> QuotedSchemes() => new()
+    {
+        { "RES", "RES" },
+        { "res://a", "res://a" },
+        { "res\u0000", "res\\u0000" },
+        { "\uD800res", "\\uD800res" },
+        { "re\U0001F600s", "re\U0001F600s" },
+        { new string('A', 256), new string('A', 256) },
+        { new string('A', 257), new string('A', 256) + "..." },
+        { new string('A', 255) + "\U0001F600", new string('A', 255) + "\\uD83D..." },
+    };
+
+    [Theory]
+    [MemberData(nameof(QuotedSchemes))]
+    public void Mount_InvalidScheme_QuotesItInTheMessage(string scheme, string quoted)
+    {
+        // Quoted as VfsPath's messages quote input: at most 256 characters, then "...", with control characters and
+        // lone surrogates (including a pair cut at the cap) escaped as \uXXXX.
+        VirtualFileSystem vfs = new();
+
+        ArgumentException exception = Assert.Throws<ArgumentException>(() => vfs.Mount(scheme, new RecordingFileSystem()));
+
+        Assert.StartsWith($"'{quoted}' is not a valid scheme: ", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1 to 32 characters", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void IsMountedAndUnmount_MatchTheSchemeExactly()
     {

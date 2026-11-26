@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using BrutalEngine.Core;
 
@@ -45,6 +47,9 @@ namespace BrutalEngine.Platform.Vfs;
 /// </remarks>
 public sealed class VirtualFileSystem
 {
+    // An invalid scheme's message quotes at most this many characters of it, as VfsPath's messages do.
+    private const int MaxQuotedChars = 256;
+
     private readonly Lock _gate = new();
     private volatile MountPoint[] _mounts = [];
 
@@ -57,7 +62,10 @@ public sealed class VirtualFileSystem
     /// <exception cref="ArgumentNullException">
     /// <paramref name="scheme"/> or <paramref name="fileSystem"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException"><paramref name="scheme"/> isn't a valid scheme.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="scheme"/> isn't a valid scheme. The message quotes it: at most 256 characters, then
+    /// <c>...</c>, with control characters and lone surrogates written as <c>\uXXXX</c>.
+    /// </exception>
     /// <exception cref="InvalidOperationException">Something is already mounted at <paramref name="scheme"/>.</exception>
     public void Mount(string scheme, IFileSystem fileSystem)
     {
@@ -66,7 +74,7 @@ public sealed class VirtualFileSystem
         if (!IsValidScheme(scheme))
         {
             throw new ArgumentException(
-                "A scheme is 1 to 32 characters: a lowercase ASCII letter, then lowercase ASCII letters, digits or '-', without \"://\".",
+                $"'{Quote(scheme)}' is not a valid scheme: it must be 1 to 32 characters, a lowercase ASCII letter, then lowercase ASCII letters, digits or '-', without \"://\".",
                 nameof(scheme));
         }
 
@@ -234,8 +242,45 @@ public sealed class VirtualFileSystem
     /// <returns><see langword="true"/> if <paramref name="scheme"/> is a valid scheme.</returns>
     private static bool IsValidScheme(string scheme) =>
         VfsPath.TryParse(string.Concat(scheme, "://"), out VfsPath root)
+
+        // Defensive: the parser splits at the first ':', so a parse that succeeds already gives this scheme and the
+        // root. These keep the rule true if the parser ever changes.
         && string.Equals(root.Scheme, scheme, StringComparison.Ordinal)
         && root.RelativePath.Length == 0;
+
+    /// <summary>
+    /// The text as an error message quotes it, the way <see cref="VfsPath"/>'s messages do: at most
+    /// <see cref="MaxQuotedChars"/> characters, then <c>...</c>, with control characters and lone surrogates written as
+    /// <c>\uXXXX</c>, so a message stays short and printable.
+    /// </summary>
+    /// <param name="text">The rejected text.</param>
+    /// <returns>The quoted form, without the quotes.</returns>
+    private static string Quote(string text)
+    {
+        ReadOnlySpan<char> shown = text.AsSpan(0, Math.Min(text.Length, MaxQuotedChars));
+        StringBuilder quoted = new(shown.Length + 8);
+        for (int i = 0; i < shown.Length; i++)
+        {
+            char c = shown[i];
+            bool pairStart = char.IsHighSurrogate(c) && i + 1 < shown.Length && char.IsLowSurrogate(shown[i + 1]);
+            bool pairEnd = char.IsLowSurrogate(c) && i > 0 && char.IsHighSurrogate(shown[i - 1]);
+            if (char.IsControl(c) || (char.IsSurrogate(c) && !pairStart && !pairEnd))
+            {
+                quoted.Append(CultureInfo.InvariantCulture, $"\\u{(int)c:X4}");
+            }
+            else
+            {
+                quoted.Append(c);
+            }
+        }
+
+        if (shown.Length < text.Length)
+        {
+            quoted.Append("...");
+        }
+
+        return quoted.ToString();
+    }
 
     private static int IndexOf(MountPoint[] mounts, string scheme)
     {
