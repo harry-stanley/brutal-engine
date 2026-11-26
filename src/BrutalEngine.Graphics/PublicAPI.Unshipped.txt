@@ -20,6 +20,125 @@ BrutalEngine.Graphics.AddressMode.ClampToBorder = 3 -> BrutalEngine.Graphics.Add
 BrutalEngine.Graphics.AddressMode.ClampToEdge = 0 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.MirrorRepeat = 2 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.Repeat = 1 -> BrutalEngine.Graphics.AddressMode
+BrutalEngine.Graphics.Backend.BackendAcquire
+BrutalEngine.Graphics.Backend.BackendAcquire.BackendAcquire() -> void
+BrutalEngine.Graphics.Backend.BackendAcquire.BackendAcquire(BrutalEngine.Graphics.Backend.SwapchainStatus Status, int ImageIndex, int NativeCode) -> void
+BrutalEngine.Graphics.Backend.BackendAcquire.Deconstruct(out BrutalEngine.Graphics.Backend.SwapchainStatus Status, out int ImageIndex, out int NativeCode) -> void
+BrutalEngine.Graphics.Backend.BackendAcquire.Equals(BrutalEngine.Graphics.Backend.BackendAcquire other) -> bool
+BrutalEngine.Graphics.Backend.BackendAcquire.ImageIndex.get -> int
+BrutalEngine.Graphics.Backend.BackendAcquire.ImageIndex.init -> void
+BrutalEngine.Graphics.Backend.BackendAcquire.NativeCode.get -> int
+BrutalEngine.Graphics.Backend.BackendAcquire.NativeCode.init -> void
+BrutalEngine.Graphics.Backend.BackendAcquire.Status.get -> BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.BackendAcquire.Status.init -> void
+BrutalEngine.Graphics.Backend.BackendBuffer
+BrutalEngine.Graphics.Backend.BackendBuffer.BackendBuffer() -> void
+BrutalEngine.Graphics.Backend.BackendBuffer.BackendBuffer(ulong Id, nint MappedPointer) -> void
+BrutalEngine.Graphics.Backend.BackendBuffer.Deconstruct(out ulong Id, out nint MappedPointer) -> void
+BrutalEngine.Graphics.Backend.BackendBuffer.Equals(BrutalEngine.Graphics.Backend.BackendBuffer other) -> bool
+BrutalEngine.Graphics.Backend.BackendBuffer.Id.get -> ulong
+BrutalEngine.Graphics.Backend.BackendBuffer.Id.init -> void
+BrutalEngine.Graphics.Backend.BackendBuffer.MappedPointer.get -> nint
+BrutalEngine.Graphics.Backend.BackendBuffer.MappedPointer.init -> void
+BrutalEngine.Graphics.Backend.BackendMemory
+BrutalEngine.Graphics.Backend.BackendMemory.DeviceLocal = 0 -> BrutalEngine.Graphics.Backend.BackendMemory
+BrutalEngine.Graphics.Backend.BackendMemory.DeviceLocalHostVisiblePreferred = 1 -> BrutalEngine.Graphics.Backend.BackendMemory
+BrutalEngine.Graphics.Backend.BackendMemory.HostReadback = 3 -> BrutalEngine.Graphics.Backend.BackendMemory
+BrutalEngine.Graphics.Backend.BackendMemory.HostUpload = 2 -> BrutalEngine.Graphics.Backend.BackendMemory
+BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.BindGroup = 7 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.BindGroupLayout = 5 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.Buffer = 0 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.ComputePipeline = 9 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.GraphicsPipeline = 8 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.PipelineLayout = 6 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.Sampler = 3 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.ShaderModule = 4 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.Texture = 1 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendObjectKind.TextureView = 2 -> BrutalEngine.Graphics.Backend.BackendObjectKind
+BrutalEngine.Graphics.Backend.BackendPresent
+BrutalEngine.Graphics.Backend.BackendPresent.BackendPresent() -> void
+BrutalEngine.Graphics.Backend.BackendPresent.BackendPresent(BrutalEngine.Graphics.Backend.SwapchainStatus Status, int NativeCode) -> void
+BrutalEngine.Graphics.Backend.BackendPresent.Deconstruct(out BrutalEngine.Graphics.Backend.SwapchainStatus Status, out int NativeCode) -> void
+BrutalEngine.Graphics.Backend.BackendPresent.Equals(BrutalEngine.Graphics.Backend.BackendPresent other) -> bool
+BrutalEngine.Graphics.Backend.BackendPresent.NativeCode.get -> int
+BrutalEngine.Graphics.Backend.BackendPresent.NativeCode.init -> void
+BrutalEngine.Graphics.Backend.BackendPresent.Status.get -> BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.BackendPresent.Status.init -> void
+BrutalEngine.Graphics.Backend.BackendSwapchain
+BrutalEngine.Graphics.Backend.BackendSwapchain.BackendSwapchain() -> void
+BrutalEngine.Graphics.Backend.BackendSwapchain.BackendSwapchain(ulong Id, BrutalEngine.Graphics.SwapchainInfo Info) -> void
+BrutalEngine.Graphics.Backend.BackendSwapchain.Deconstruct(out ulong Id, out BrutalEngine.Graphics.SwapchainInfo Info) -> void
+BrutalEngine.Graphics.Backend.BackendSwapchain.Equals(BrutalEngine.Graphics.Backend.BackendSwapchain other) -> bool
+BrutalEngine.Graphics.Backend.BackendSwapchain.Id.get -> ulong
+BrutalEngine.Graphics.Backend.BackendSwapchain.Id.init -> void
+BrutalEngine.Graphics.Backend.BackendSwapchain.Info.get -> BrutalEngine.Graphics.SwapchainInfo
+BrutalEngine.Graphics.Backend.BackendSwapchain.Info.init -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.BackendSwapchainRequest() -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.BackendSwapchainRequest(ulong Surface, BrutalEngine.Graphics.Backend.WindowSurfaceSource! Source, BrutalEngine.Graphics.SwapchainOptions! Options, ulong OldSwapchain) -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Deconstruct(out ulong Surface, out BrutalEngine.Graphics.Backend.WindowSurfaceSource! Source, out BrutalEngine.Graphics.SwapchainOptions! Options, out ulong OldSwapchain) -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Equals(BrutalEngine.Graphics.Backend.BackendSwapchainRequest other) -> bool
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.OldSwapchain.get -> ulong
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.OldSwapchain.init -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Options.get -> BrutalEngine.Graphics.SwapchainOptions!
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Options.init -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.get -> BrutalEngine.Graphics.Backend.WindowSurfaceSource!
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.init -> void
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.get -> ulong
+BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.init -> void
+BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.ColorTarget = 10 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.CopyDestination = 2 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.CopySource = 1 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.DepthRead = 11 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.DepthReadWrite = 12 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.IndexBuffer = 4 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.IndirectBuffer = 5 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.Present = 13 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.SampledRead = 9 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.StorageRead = 7 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.StorageReadWrite = 8 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.Undefined = 0 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.UniformRead = 6 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceState.VertexBuffer = 3 -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceTransition
+BrutalEngine.Graphics.Backend.ResourceTransition.After.get -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceTransition.After.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.AfterStages.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.Backend.ResourceTransition.AfterStages.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.ArrayLayerCount.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.ArrayLayerCount.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseArrayLayer.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseArrayLayer.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseMipLevel.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.BaseMipLevel.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.Before.get -> BrutalEngine.Graphics.Backend.ResourceState
+BrutalEngine.Graphics.Backend.ResourceTransition.Before.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.BeforeStages.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.Backend.ResourceTransition.BeforeStages.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.IsTexture.get -> bool
+BrutalEngine.Graphics.Backend.ResourceTransition.IsTexture.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.MipLevelCount.get -> int
+BrutalEngine.Graphics.Backend.ResourceTransition.MipLevelCount.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.Resource.get -> ulong
+BrutalEngine.Graphics.Backend.ResourceTransition.Resource.init -> void
+BrutalEngine.Graphics.Backend.ResourceTransition.ResourceTransition() -> void
+BrutalEngine.Graphics.Backend.SwapchainImageUse
+BrutalEngine.Graphics.Backend.SwapchainImageUse.Deconstruct(out ulong Swapchain, out int ImageIndex) -> void
+BrutalEngine.Graphics.Backend.SwapchainImageUse.Equals(BrutalEngine.Graphics.Backend.SwapchainImageUse other) -> bool
+BrutalEngine.Graphics.Backend.SwapchainImageUse.ImageIndex.get -> int
+BrutalEngine.Graphics.Backend.SwapchainImageUse.ImageIndex.init -> void
+BrutalEngine.Graphics.Backend.SwapchainImageUse.Swapchain.get -> ulong
+BrutalEngine.Graphics.Backend.SwapchainImageUse.Swapchain.init -> void
+BrutalEngine.Graphics.Backend.SwapchainImageUse.SwapchainImageUse() -> void
+BrutalEngine.Graphics.Backend.SwapchainImageUse.SwapchainImageUse(ulong Swapchain, int ImageIndex) -> void
+BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.SwapchainStatus.DeviceLost = 4 -> BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.SwapchainStatus.OutOfDate = 2 -> BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.SwapchainStatus.Suboptimal = 1 -> BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.SwapchainStatus.Success = 0 -> BrutalEngine.Graphics.Backend.SwapchainStatus
+BrutalEngine.Graphics.Backend.SwapchainStatus.SurfaceLost = 3 -> BrutalEngine.Graphics.Backend.SwapchainStatus
 BrutalEngine.Graphics.Backend.WindowSurfaceSource
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.CreateVulkanSurface(nint instance) -> BrutalEngine.Core.Result<nint>
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.GetRequiredInstanceExtension(int index) -> System.ReadOnlySpan<byte>
@@ -442,6 +561,18 @@ BrutalEngine.Graphics.TransientUsage.Vertex = 1 -> BrutalEngine.Graphics.Transie
 const BrutalEngine.Graphics.TextureBufferCopy.RowPitchAlignment = 256 -> int
 override BrutalEngine.Graphics.AdapterSelection.GetHashCode() -> int
 override BrutalEngine.Graphics.AdapterSelection.ToString() -> string!
+override BrutalEngine.Graphics.Backend.BackendAcquire.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.BackendAcquire.ToString() -> string!
+override BrutalEngine.Graphics.Backend.BackendBuffer.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.BackendBuffer.ToString() -> string!
+override BrutalEngine.Graphics.Backend.BackendPresent.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.BackendPresent.ToString() -> string!
+override BrutalEngine.Graphics.Backend.BackendSwapchain.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.BackendSwapchain.ToString() -> string!
+override BrutalEngine.Graphics.Backend.BackendSwapchainRequest.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.BackendSwapchainRequest.ToString() -> string!
+override BrutalEngine.Graphics.Backend.SwapchainImageUse.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.SwapchainImageUse.ToString() -> string!
 override BrutalEngine.Graphics.BindGroupHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BindGroupHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BindGroupHandle.ToString() -> string!
@@ -523,6 +654,18 @@ static BrutalEngine.Graphics.AdapterSelection.ByType(BrutalEngine.Graphics.Adapt
 static BrutalEngine.Graphics.AdapterSelection.TryParse(string? text, out BrutalEngine.Graphics.AdapterSelection selection) -> bool
 static BrutalEngine.Graphics.AdapterSelection.operator !=(BrutalEngine.Graphics.AdapterSelection left, BrutalEngine.Graphics.AdapterSelection right) -> bool
 static BrutalEngine.Graphics.AdapterSelection.operator ==(BrutalEngine.Graphics.AdapterSelection left, BrutalEngine.Graphics.AdapterSelection right) -> bool
+static BrutalEngine.Graphics.Backend.BackendAcquire.operator !=(BrutalEngine.Graphics.Backend.BackendAcquire left, BrutalEngine.Graphics.Backend.BackendAcquire right) -> bool
+static BrutalEngine.Graphics.Backend.BackendAcquire.operator ==(BrutalEngine.Graphics.Backend.BackendAcquire left, BrutalEngine.Graphics.Backend.BackendAcquire right) -> bool
+static BrutalEngine.Graphics.Backend.BackendBuffer.operator !=(BrutalEngine.Graphics.Backend.BackendBuffer left, BrutalEngine.Graphics.Backend.BackendBuffer right) -> bool
+static BrutalEngine.Graphics.Backend.BackendBuffer.operator ==(BrutalEngine.Graphics.Backend.BackendBuffer left, BrutalEngine.Graphics.Backend.BackendBuffer right) -> bool
+static BrutalEngine.Graphics.Backend.BackendPresent.operator !=(BrutalEngine.Graphics.Backend.BackendPresent left, BrutalEngine.Graphics.Backend.BackendPresent right) -> bool
+static BrutalEngine.Graphics.Backend.BackendPresent.operator ==(BrutalEngine.Graphics.Backend.BackendPresent left, BrutalEngine.Graphics.Backend.BackendPresent right) -> bool
+static BrutalEngine.Graphics.Backend.BackendSwapchain.operator !=(BrutalEngine.Graphics.Backend.BackendSwapchain left, BrutalEngine.Graphics.Backend.BackendSwapchain right) -> bool
+static BrutalEngine.Graphics.Backend.BackendSwapchain.operator ==(BrutalEngine.Graphics.Backend.BackendSwapchain left, BrutalEngine.Graphics.Backend.BackendSwapchain right) -> bool
+static BrutalEngine.Graphics.Backend.BackendSwapchainRequest.operator !=(BrutalEngine.Graphics.Backend.BackendSwapchainRequest left, BrutalEngine.Graphics.Backend.BackendSwapchainRequest right) -> bool
+static BrutalEngine.Graphics.Backend.BackendSwapchainRequest.operator ==(BrutalEngine.Graphics.Backend.BackendSwapchainRequest left, BrutalEngine.Graphics.Backend.BackendSwapchainRequest right) -> bool
+static BrutalEngine.Graphics.Backend.SwapchainImageUse.operator !=(BrutalEngine.Graphics.Backend.SwapchainImageUse left, BrutalEngine.Graphics.Backend.SwapchainImageUse right) -> bool
+static BrutalEngine.Graphics.Backend.SwapchainImageUse.operator ==(BrutalEngine.Graphics.Backend.SwapchainImageUse left, BrutalEngine.Graphics.Backend.SwapchainImageUse right) -> bool
 static BrutalEngine.Graphics.BindGroupHandle.operator !=(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupHandle.operator ==(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupLayoutHandle.operator !=(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
@@ -582,6 +725,12 @@ static BrutalEngine.Graphics.TextureViewHandle.operator ==(BrutalEngine.Graphics
 static BrutalEngine.Graphics.TextureWrite.operator !=(BrutalEngine.Graphics.TextureWrite left, BrutalEngine.Graphics.TextureWrite right) -> bool
 static BrutalEngine.Graphics.TextureWrite.operator ==(BrutalEngine.Graphics.TextureWrite left, BrutalEngine.Graphics.TextureWrite right) -> bool
 ~override BrutalEngine.Graphics.AdapterSelection.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Backend.BackendAcquire.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Backend.BackendBuffer.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Backend.BackendPresent.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Backend.BackendSwapchain.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.Backend.SwapchainImageUse.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
