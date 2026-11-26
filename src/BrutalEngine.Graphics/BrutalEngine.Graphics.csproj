@@ -10,7 +10,8 @@
 
   <!--
     Properties/AssemblyInfo.cs declares both InternalsVisibleTo attributes (the test project and the conformance suite),
-    each with its reason, so the inherited item from src/Directory.Build.props is removed to avoid a duplicate.
+    each with its reason. The inherited item from src/Directory.Build.props is removed so AssemblyInfo.cs stays the
+    single commented list of friend assemblies.
   -->
   <ItemGroup>
     <InternalsVisibleTo Remove="BrutalEngine.Graphics.Tests" />

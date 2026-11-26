@@ -21,6 +21,12 @@ public sealed class HandleKindTests
         new HandleKind<SamplerHandle>("Sampler", h => new SamplerHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
         new HandleKind<ShaderModuleHandle>("ShaderModule", h => new ShaderModuleHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
         new HandleKind<SwapchainHandle>("Swapchain", h => new SwapchainHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<BindGroupLayoutHandle>("BindGroupLayout", h => new BindGroupLayoutHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<PipelineLayoutHandle>("PipelineLayout", h => new PipelineLayoutHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<BindGroupHandle>("BindGroup", h => new BindGroupHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<GraphicsPipelineHandle>("GraphicsPipeline", h => new GraphicsPipelineHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<ComputePipelineHandle>("ComputePipeline", h => new ComputePipelineHandle(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
+        new HandleKind<DebugLabel>("DebugLabel", h => new DebugLabel(h), x => x.Value, x => x.IsNull, (a, b) => a == b, (a, b) => a != b),
     ];
 
     // Indexes and generations from a tiny range, so equal handles are common; generation 0 is the null handle.
