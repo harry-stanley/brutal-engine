@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics;
 using BrutalEngine.Graphics.Backend;
@@ -34,16 +35,20 @@ namespace BrutalEngine.TestUtilities;
 /// grows.
 /// </para>
 /// <para>
-/// <b>Not yet.</b> The object members throw <see cref="NotSupportedException"/> until they land (#110), the surface and
-/// swapchain members until #235 adds them, and the frame members until #236 does.
+/// <b>Not yet.</b> The surface and swapchain members throw <see cref="NotSupportedException"/> until #235 adds them, and the
+/// frame members until #236 does.
 /// </para>
 /// <para><b>Threading.</b> Not thread-safe, like the contract: the owner thread only.</para>
 /// </remarks>
 public sealed unsafe class FakeBackendDevice : IBackendDevice
 {
+    // The alignment of each mapped block, in bytes.
+    private const nuint MapAlignment = 64;
+
     private readonly FakeBackendScript _script;
     private readonly Dictionary<ulong, ObjectEntry> _live = [];
     private readonly List<FakeBackendCall> _calls = [];
+    private ulong _nextId = 1;
     private long _validationErrors;
     private long _validationWarnings;
     private bool _disposed;
@@ -106,32 +111,116 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public FormatSupport GetFormatSupport(TextureFormat format) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">Contract violation: an undefined format, or a call after disposal.</exception>
+    /// <remarks>Returns the script's <see cref="FakeBackendScript.FormatSupport"/> for the format.</remarks>
+    public FormatSupport GetFormatSupport(TextureFormat format)
+    {
+        ThrowIfDisposed();
+        // A range check, not Enum.IsDefined, which allocates after a GC; a test pins the range to the enum's members.
+        if (format <= TextureFormat.Undefined || format > TextureFormat.Depth32Float)
+        {
+            throw Violation($"GetFormatSupport of {format}, not a defined format");
+        }
+
+        Record(FakeBackendOperation.GetFormatSupport, null, 0);
+        return _script.FormatSupport(format);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: a size below 1, a memory value that isn't a <see cref="BackendMemory"/> member, or a call after
+    /// disposal.
+    /// </exception>
+    public Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory)
+    {
+        ThrowIfDisposed();
+        if (description.Size < 1)
+        {
+            throw Violation($"CreateBuffer of {description.Size} bytes");
+        }
+
+        if ((uint)memory > (uint)BackendMemory.HostReadback)
+        {
+            throw Violation($"CreateBuffer in {memory}, not a BackendMemory member");
+        }
+
+        if (_script.TakeFailure(FakeBackendOperation.CreateBuffer, out EngineError error))
+        {
+            Record(FakeBackendOperation.CreateBuffer, BackendObjectKind.Buffer, 0);
+            return error;
+        }
+
+        nint mapped = 0;
+        if (memory is BackendMemory.HostUpload or BackendMemory.HostReadback)
+        {
+            nuint size = (nuint)description.Size;
+            void* block = Request.Allocator.Allocate(size, MapAlignment);
+            // Sound: the allocator returned a live block of exactly size bytes, which nothing else references yet.
+            NativeMemory.Clear(block, size);
+            mapped = (nint)block;
+        }
+
+        ulong id = Add(FakeBackendOperation.CreateBuffer, BackendObjectKind.Buffer, mapped);
+        return new BackendBuffer(id, mapped);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public Result<ulong> CreateTexture(in TextureDescription description) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">Contract violation: a call after disposal.</exception>
+    public Result<ulong> CreateTexture(in TextureDescription description) =>
+        CreateObject(FakeBackendOperation.CreateTexture, BackendObjectKind.Texture);
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public Result<ulong> CreateTextureView(in TextureViewDescription description) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: the description's texture doesn't resolve to a live texture of this device, or a call after
+    /// disposal.
+    /// </exception>
+    public Result<ulong> CreateTextureView(in TextureViewDescription description)
+    {
+        ThrowIfDisposed();
+        ulong texture = Objects.GetId(description.Texture);
+        if (!IsLive(BackendObjectKind.Texture, texture))
+        {
+            throw Violation($"CreateTextureView of texture id {texture}, not a live texture");
+        }
+
+        return CreateObject(FakeBackendOperation.CreateTextureView, BackendObjectKind.TextureView);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public Result<ulong> CreateSampler(in SamplerDescription description) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">Contract violation: a call after disposal.</exception>
+    public Result<ulong> CreateSampler(in SamplerDescription description) =>
+        CreateObject(FakeBackendOperation.CreateSampler, BackendObjectKind.Sampler);
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">Contract violation: an id that isn't a live object of that kind, or a call after disposal.</exception>
+    public void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name)
+    {
+        ThrowIfDisposed();
+        if (!IsLive(kind, id))
+        {
+            throw Violation($"SetDebugName of {kind} id {id}, not a live {kind}");
+        }
+
+        Record(FakeBackendOperation.SetDebugName, kind, id);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until the object members land (#110).</exception>
-    public void Destroy(BackendObjectKind kind, ulong id) => throw NotYet("#110");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: an id that isn't a live object of that kind (unknown, already destroyed, or another kind), or a
+    /// call after disposal.
+    /// </exception>
+    public void Destroy(BackendObjectKind kind, ulong id)
+    {
+        ThrowIfDisposed();
+        if (!IsLive(kind, id))
+        {
+            throw Violation($"Destroy of {kind} id {id}, not a live {kind}");
+        }
+
+        Free(_live[id]);
+        _ = _live.Remove(id);
+        Record(FakeBackendOperation.Destroy, kind, id);
+    }
 
     /// <inheritdoc/>
     /// <exception cref="NotSupportedException">Always, until #235 adds surfaces.</exception>
@@ -231,6 +320,28 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
 
     private static NotSupportedException NotYet(string issue) =>
         new($"The fake backend device doesn't implement this member yet ({issue} adds it).");
+
+    private Result<ulong> CreateObject(FakeBackendOperation operation, BackendObjectKind kind)
+    {
+        ThrowIfDisposed();
+        if (_script.TakeFailure(operation, out EngineError error))
+        {
+            Record(operation, kind, 0);
+            return error;
+        }
+
+        return Add(operation, kind, 0);
+    }
+
+    private ulong Add(FakeBackendOperation operation, BackendObjectKind kind, nint mapped)
+    {
+        ulong id = _nextId++;
+        _live.Add(id, new ObjectEntry(kind, mapped));
+        Record(operation, kind, id);
+        return id;
+    }
+
+    private bool IsLive(BackendObjectKind kind, ulong id) => _live.TryGetValue(id, out ObjectEntry entry) && entry.Kind == kind;
 
     private void Free(ObjectEntry entry)
     {

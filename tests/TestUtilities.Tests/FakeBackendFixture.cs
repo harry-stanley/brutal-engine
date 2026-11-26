@@ -1,4 +1,5 @@
 using System;
+using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.Graphics;
@@ -35,6 +36,14 @@ internal sealed class FakeBackendFixture : IDisposable
 
     public FakeBackendDevice CreateDevice(bool validation = false) =>
         Assert.IsType<FakeBackendDevice>(Backend.CreateDevice(Request(validation), 0, Objects).Value);
+
+    /// <summary>Records a texture id in the table under a new handle, as the front end does, and returns a view of it.</summary>
+    public TextureViewDescription ViewOf(ulong textureId, uint handleIndex)
+    {
+        var handle = new Handle(handleIndex, 1);
+        GraphicsInternals.SetEntry(Objects, BackendObjectKind.Texture, handle, textureId);
+        return new TextureViewDescription { Texture = GraphicsInternals.NewTextureHandle(handle) };
+    }
 
     public void Dispose()
     {
