@@ -12,9 +12,10 @@ namespace BrutalEngine.Graphics.Recording;
 /// <remarks>
 /// <para>
 /// <b>Records.</b> Each <c>Append</c> writes one record at the end of <see cref="Written"/>: the header, the payload
-/// padded to 8 bytes, the trailing part, and zero bytes up to the next multiple of 8. Every padding byte is written as
-/// zero, so the same appends always produce the same bytes. The writer doesn't check that the payload type matches
-/// the kind: the encoders choose both, and the reader checks them.
+/// padded to 8 bytes, the trailing part, and zero bytes up to the next multiple of 8. Every padding byte the record
+/// layout adds is written as zero; padding inside the caller's structs (the payload and the trailing elements) is copied
+/// as given, like their other bytes. The writer doesn't check that the payload type matches the kind: the encoders
+/// choose both, and the reader checks them.
 /// </para>
 /// <para>
 /// <b>Memory.</b> One block from the allocator given to the constructor, which the writer doesn't own. The block grows
