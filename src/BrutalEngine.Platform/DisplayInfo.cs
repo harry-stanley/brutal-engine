@@ -33,10 +33,22 @@ public sealed record DisplayInfo
     public required DisplayRect UsableBounds { get; init; }
 
     /// <summary>
-    /// The display's content scale: how many pixels one content unit takes on it, for example 2.0 at 200 % on Windows.
-    /// Required.
+    /// The display's scale setting, in window coordinates: how many window coordinates one content unit takes on it, for
+    /// example 2.0 at 200 % on Windows. Pixel density isn't included. Required.
     /// </summary>
-    /// <remarks>A new window's content size is converted with it (see <see cref="WindowOptions.ContentSize"/>).</remarks>
+    /// <remarks>
+    /// <para>
+    /// It equals pixels per content unit only where window coordinates are pixels (Windows and X11). Where they are
+    /// points, pixel density is left out: SDL's documentation gives 1.0 for a 2x macOS display, although one content unit
+    /// there takes 2 pixels with high pixel density (cited from SDL, not run here). For pixels per content unit, use the
+    /// window's <see cref="IWindow.DisplayScale"/>, which SDL documents as <see cref="IWindow.PixelDensity"/> times the
+    /// display's content scale.
+    /// </para>
+    /// <para>
+    /// The backend estimates a new window's size in window coordinates as content units times this, before it reads the
+    /// window's own scale (see <see cref="WindowOptions.ContentSize"/>).
+    /// </para>
+    /// </remarks>
     public required float ContentScale { get; init; }
 
     /// <summary>The display's current mode: the desktop's resolution and refresh rate. Required.</summary>
