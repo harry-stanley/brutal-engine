@@ -35,6 +35,7 @@ BrutalEngine.World.ComponentType.Info.init -> void
 BrutalEngine.World.ComponentType.Size.get -> int
 BrutalEngine.World.ComponentType.Size.init -> void
 BrutalEngine.World.EcsWorld
+BrutalEngine.World.EcsWorld.ArchetypeCount.get -> int
 BrutalEngine.World.EcsWorld.Components.get -> BrutalEngine.World.ComponentRegistry!
 BrutalEngine.World.EcsWorld.Dispose() -> void
 BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -> void
