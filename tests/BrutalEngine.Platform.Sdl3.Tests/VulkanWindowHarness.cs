@@ -95,6 +95,8 @@ internal sealed unsafe class VulkanWindowHarness : IDisposable, SdlVulkanSurface
     /// <summary>Calls vkGetPhysicalDeviceSurfaceCapabilitiesKHR on the first physical device: a surface it accepts is usable.</summary>
     public VkResult QueryCapabilities(nint surface)
     {
+        // Sound: count, device and capabilities are locals of this frame, which outlives both calls, and count is 1, so
+        // the driver writes at most one handle into device.
         int count = 1;
         VkPhysicalDevice device;
         VkResult enumerated = _table.vkEnumeratePhysicalDevices.Invoke(_instance, &count, &device);
@@ -105,12 +107,15 @@ internal sealed unsafe class VulkanWindowHarness : IDisposable, SdlVulkanSurface
     }
 
     /// <summary>Destroys a surface the source created, with vkDestroySurfaceKHR from the instance, as a backend would.</summary>
+    // Sound: the only pointer is the null allocator, which Vulkan accepts; tests destroy their surface before Dispose
+    // destroys the instance.
     public void DestroySurface(nint surface) => _table.vkDestroySurfaceKHR.Invoke(_instance, new VkSurfaceKHR(surface), null);
 
     public void Dispose()
     {
         if (!_instance.IsNull())
         {
+            // Sound: the only pointer is the null allocator, which Vulkan accepts, and the instance is live.
             _table.vkDestroyInstance.Invoke(_instance, null);
             _instance = default;
         }
