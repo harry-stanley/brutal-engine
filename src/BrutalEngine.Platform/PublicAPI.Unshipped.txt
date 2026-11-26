@@ -78,6 +78,45 @@ BrutalEngine.Platform.IWindow.StartTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.State.get -> BrutalEngine.Platform.WindowState
 BrutalEngine.Platform.IWindow.StopTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.VulkanSurface.get -> BrutalEngine.Platform.IVulkanSurfaceSource?
+BrutalEngine.Platform.KeyEventData
+BrutalEngine.Platform.KeyEventData.Deconstruct(out BrutalEngine.Platform.Scancode Scancode, out BrutalEngine.Platform.Keycode Keycode, out BrutalEngine.Platform.KeyModifiers Modifiers, out bool IsRepeat) -> void
+BrutalEngine.Platform.KeyEventData.Equals(BrutalEngine.Platform.KeyEventData other) -> bool
+BrutalEngine.Platform.KeyEventData.IsRepeat.get -> bool
+BrutalEngine.Platform.KeyEventData.IsRepeat.init -> void
+BrutalEngine.Platform.KeyEventData.KeyEventData() -> void
+BrutalEngine.Platform.KeyEventData.KeyEventData(BrutalEngine.Platform.Scancode Scancode, BrutalEngine.Platform.Keycode Keycode, BrutalEngine.Platform.KeyModifiers Modifiers, bool IsRepeat) -> void
+BrutalEngine.Platform.KeyEventData.Keycode.get -> BrutalEngine.Platform.Keycode
+BrutalEngine.Platform.KeyEventData.Keycode.init -> void
+BrutalEngine.Platform.KeyEventData.Modifiers.get -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyEventData.Modifiers.init -> void
+BrutalEngine.Platform.KeyEventData.Scancode.get -> BrutalEngine.Platform.Scancode
+BrutalEngine.Platform.KeyEventData.Scancode.init -> void
+BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Alt = BrutalEngine.Platform.KeyModifiers.LeftAlt | BrutalEngine.Platform.KeyModifiers.RightAlt -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Caps = 8192 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Control = BrutalEngine.Platform.KeyModifiers.LeftControl | BrutalEngine.Platform.KeyModifiers.RightControl -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Gui = BrutalEngine.Platform.KeyModifiers.LeftGui | BrutalEngine.Platform.KeyModifiers.RightGui -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftAlt = 256 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftControl = 64 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftGui = 1024 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftShift = 1 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Level5 = 4 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Mode = 16384 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.None = 0 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Num = 4096 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightAlt = 512 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightControl = 128 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightGui = 2048 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightShift = 2 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Scroll = 32768 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Shift = BrutalEngine.Platform.KeyModifiers.LeftShift | BrutalEngine.Platform.KeyModifiers.RightShift -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.Keycode
+BrutalEngine.Platform.Keycode.Character.get -> System.Text.Rune
+BrutalEngine.Platform.Keycode.Equals(BrutalEngine.Platform.Keycode other) -> bool
+BrutalEngine.Platform.Keycode.IsCharacter.get -> bool
+BrutalEngine.Platform.Keycode.Keycode() -> void
+BrutalEngine.Platform.Keycode.Keycode(uint value) -> void
+BrutalEngine.Platform.Keycode.Value.get -> uint
 BrutalEngine.Platform.MessageBoxKind
 BrutalEngine.Platform.MessageBoxKind.Error = 2 -> BrutalEngine.Platform.MessageBoxKind
 BrutalEngine.Platform.MessageBoxKind.Information = 0 -> BrutalEngine.Platform.MessageBoxKind
@@ -95,6 +134,61 @@ BrutalEngine.Platform.MessageBoxRequest.Parent.get -> BrutalEngine.Platform.IWin
 BrutalEngine.Platform.MessageBoxRequest.Parent.init -> void
 BrutalEngine.Platform.MessageBoxRequest.Title.get -> string!
 BrutalEngine.Platform.MessageBoxRequest.Title.init -> void
+BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.Left = 1 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.Middle = 2 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.None = 0 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.Right = 3 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.X1 = 4 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.X2 = 5 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButtonData
+BrutalEngine.Platform.MouseButtonData.Button.get -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButtonData.Button.init -> void
+BrutalEngine.Platform.MouseButtonData.Clicks.get -> byte
+BrutalEngine.Platform.MouseButtonData.Clicks.init -> void
+BrutalEngine.Platform.MouseButtonData.Deconstruct(out BrutalEngine.Platform.MouseButton Button, out byte Clicks, out float X, out float Y) -> void
+BrutalEngine.Platform.MouseButtonData.Equals(BrutalEngine.Platform.MouseButtonData other) -> bool
+BrutalEngine.Platform.MouseButtonData.MouseButtonData() -> void
+BrutalEngine.Platform.MouseButtonData.MouseButtonData(BrutalEngine.Platform.MouseButton Button, byte Clicks, float X, float Y) -> void
+BrutalEngine.Platform.MouseButtonData.X.get -> float
+BrutalEngine.Platform.MouseButtonData.X.init -> void
+BrutalEngine.Platform.MouseButtonData.Y.get -> float
+BrutalEngine.Platform.MouseButtonData.Y.init -> void
+BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.Left = 1 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.Middle = 2 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.None = 0 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.Right = 4 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.X1 = 8 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.X2 = 16 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseMotionData
+BrutalEngine.Platform.MouseMotionData.Buttons.get -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseMotionData.Buttons.init -> void
+BrutalEngine.Platform.MouseMotionData.Deconstruct(out float X, out float Y, out float DeltaX, out float DeltaY, out BrutalEngine.Platform.MouseButtons Buttons) -> void
+BrutalEngine.Platform.MouseMotionData.DeltaX.get -> float
+BrutalEngine.Platform.MouseMotionData.DeltaX.init -> void
+BrutalEngine.Platform.MouseMotionData.DeltaY.get -> float
+BrutalEngine.Platform.MouseMotionData.DeltaY.init -> void
+BrutalEngine.Platform.MouseMotionData.Equals(BrutalEngine.Platform.MouseMotionData other) -> bool
+BrutalEngine.Platform.MouseMotionData.MouseMotionData() -> void
+BrutalEngine.Platform.MouseMotionData.MouseMotionData(float X, float Y, float DeltaX, float DeltaY, BrutalEngine.Platform.MouseButtons Buttons) -> void
+BrutalEngine.Platform.MouseMotionData.X.get -> float
+BrutalEngine.Platform.MouseMotionData.X.init -> void
+BrutalEngine.Platform.MouseMotionData.Y.get -> float
+BrutalEngine.Platform.MouseMotionData.Y.init -> void
+BrutalEngine.Platform.MouseWheelData
+BrutalEngine.Platform.MouseWheelData.Deconstruct(out float X, out float Y, out float MouseX, out float MouseY) -> void
+BrutalEngine.Platform.MouseWheelData.Equals(BrutalEngine.Platform.MouseWheelData other) -> bool
+BrutalEngine.Platform.MouseWheelData.MouseWheelData() -> void
+BrutalEngine.Platform.MouseWheelData.MouseWheelData(float X, float Y, float MouseX, float MouseY) -> void
+BrutalEngine.Platform.MouseWheelData.MouseX.get -> float
+BrutalEngine.Platform.MouseWheelData.MouseX.init -> void
+BrutalEngine.Platform.MouseWheelData.MouseY.get -> float
+BrutalEngine.Platform.MouseWheelData.MouseY.init -> void
+BrutalEngine.Platform.MouseWheelData.X.get -> float
+BrutalEngine.Platform.MouseWheelData.X.init -> void
+BrutalEngine.Platform.MouseWheelData.Y.get -> float
+BrutalEngine.Platform.MouseWheelData.Y.init -> void
 BrutalEngine.Platform.PlatformOptions
 BrutalEngine.Platform.PlatformOptions.<Clone>$() -> BrutalEngine.Platform.PlatformOptions!
 BrutalEngine.Platform.PlatformOptions.Application.get -> string!
@@ -376,6 +470,15 @@ BrutalEngine.Platform.SystemCursor.ResizeNs = 8 -> BrutalEngine.Platform.SystemC
 BrutalEngine.Platform.SystemCursor.ResizeNwse = 5 -> BrutalEngine.Platform.SystemCursor
 BrutalEngine.Platform.SystemCursor.Text = 1 -> BrutalEngine.Platform.SystemCursor
 BrutalEngine.Platform.SystemCursor.Wait = 2 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.TextEventData
+BrutalEngine.Platform.TextEventData.Deconstruct(out int Offset, out int Length) -> void
+BrutalEngine.Platform.TextEventData.Equals(BrutalEngine.Platform.TextEventData other) -> bool
+BrutalEngine.Platform.TextEventData.Length.get -> int
+BrutalEngine.Platform.TextEventData.Length.init -> void
+BrutalEngine.Platform.TextEventData.Offset.get -> int
+BrutalEngine.Platform.TextEventData.Offset.init -> void
+BrutalEngine.Platform.TextEventData.TextEventData() -> void
+BrutalEngine.Platform.TextEventData.TextEventData(int Offset, int Length) -> void
 BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.WindowId.Deconstruct(out uint Value) -> void
 BrutalEngine.Platform.WindowId.Equals(BrutalEngine.Platform.WindowId other) -> bool
@@ -433,12 +536,22 @@ override BrutalEngine.Platform.DisplayMode.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayMode.ToString() -> string!
 override BrutalEngine.Platform.DisplayRect.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayRect.ToString() -> string!
+override BrutalEngine.Platform.KeyEventData.GetHashCode() -> int
+override BrutalEngine.Platform.Keycode.GetHashCode() -> int
+override BrutalEngine.Platform.Keycode.ToString() -> string!
 override BrutalEngine.Platform.MessageBoxRequest.Equals(object? obj) -> bool
 override BrutalEngine.Platform.MessageBoxRequest.GetHashCode() -> int
 override BrutalEngine.Platform.MessageBoxRequest.ToString() -> string!
+override BrutalEngine.Platform.MouseButtonData.GetHashCode() -> int
+override BrutalEngine.Platform.MouseButtonData.ToString() -> string!
+override BrutalEngine.Platform.MouseMotionData.GetHashCode() -> int
+override BrutalEngine.Platform.MouseMotionData.ToString() -> string!
+override BrutalEngine.Platform.MouseWheelData.GetHashCode() -> int
+override BrutalEngine.Platform.MouseWheelData.ToString() -> string!
 override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
+override BrutalEngine.Platform.TextEventData.GetHashCode() -> int
 override BrutalEngine.Platform.WindowId.GetHashCode() -> int
 override BrutalEngine.Platform.WindowOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.WindowOptions.GetHashCode() -> int
@@ -452,10 +565,23 @@ static BrutalEngine.Platform.DisplayMode.operator !=(BrutalEngine.Platform.Displ
 static BrutalEngine.Platform.DisplayMode.operator ==(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
 static BrutalEngine.Platform.DisplayRect.operator !=(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
 static BrutalEngine.Platform.DisplayRect.operator ==(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
+static BrutalEngine.Platform.KeyEventData.operator !=(BrutalEngine.Platform.KeyEventData left, BrutalEngine.Platform.KeyEventData right) -> bool
+static BrutalEngine.Platform.KeyEventData.operator ==(BrutalEngine.Platform.KeyEventData left, BrutalEngine.Platform.KeyEventData right) -> bool
+static BrutalEngine.Platform.Keycode.FromScancode(BrutalEngine.Platform.Scancode scancode) -> BrutalEngine.Platform.Keycode
+static BrutalEngine.Platform.Keycode.operator !=(BrutalEngine.Platform.Keycode left, BrutalEngine.Platform.Keycode right) -> bool
+static BrutalEngine.Platform.Keycode.operator ==(BrutalEngine.Platform.Keycode left, BrutalEngine.Platform.Keycode right) -> bool
 static BrutalEngine.Platform.MessageBoxRequest.operator !=(BrutalEngine.Platform.MessageBoxRequest? left, BrutalEngine.Platform.MessageBoxRequest? right) -> bool
 static BrutalEngine.Platform.MessageBoxRequest.operator ==(BrutalEngine.Platform.MessageBoxRequest? left, BrutalEngine.Platform.MessageBoxRequest? right) -> bool
+static BrutalEngine.Platform.MouseButtonData.operator !=(BrutalEngine.Platform.MouseButtonData left, BrutalEngine.Platform.MouseButtonData right) -> bool
+static BrutalEngine.Platform.MouseButtonData.operator ==(BrutalEngine.Platform.MouseButtonData left, BrutalEngine.Platform.MouseButtonData right) -> bool
+static BrutalEngine.Platform.MouseMotionData.operator !=(BrutalEngine.Platform.MouseMotionData left, BrutalEngine.Platform.MouseMotionData right) -> bool
+static BrutalEngine.Platform.MouseMotionData.operator ==(BrutalEngine.Platform.MouseMotionData left, BrutalEngine.Platform.MouseMotionData right) -> bool
+static BrutalEngine.Platform.MouseWheelData.operator !=(BrutalEngine.Platform.MouseWheelData left, BrutalEngine.Platform.MouseWheelData right) -> bool
+static BrutalEngine.Platform.MouseWheelData.operator ==(BrutalEngine.Platform.MouseWheelData left, BrutalEngine.Platform.MouseWheelData right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
+static BrutalEngine.Platform.TextEventData.operator !=(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
+static BrutalEngine.Platform.TextEventData.operator ==(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
 static BrutalEngine.Platform.WindowId.operator !=(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
 static BrutalEngine.Platform.WindowId.operator ==(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
 static BrutalEngine.Platform.WindowOptions.operator !=(BrutalEngine.Platform.WindowOptions? left, BrutalEngine.Platform.WindowOptions? right) -> bool
@@ -466,6 +592,14 @@ static BrutalEngine.Platform.WindowSize.operator ==(BrutalEngine.Platform.Window
 ~override BrutalEngine.Platform.DisplayId.ToString() -> string
 ~override BrutalEngine.Platform.DisplayMode.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.DisplayRect.Equals(object obj) -> bool
+~override BrutalEngine.Platform.KeyEventData.Equals(object obj) -> bool
+~override BrutalEngine.Platform.KeyEventData.ToString() -> string
+~override BrutalEngine.Platform.Keycode.Equals(object obj) -> bool
+~override BrutalEngine.Platform.MouseButtonData.Equals(object obj) -> bool
+~override BrutalEngine.Platform.MouseMotionData.Equals(object obj) -> bool
+~override BrutalEngine.Platform.MouseWheelData.Equals(object obj) -> bool
+~override BrutalEngine.Platform.TextEventData.Equals(object obj) -> bool
+~override BrutalEngine.Platform.TextEventData.ToString() -> string
 ~override BrutalEngine.Platform.WindowId.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.ToString() -> string
 ~override BrutalEngine.Platform.WindowSize.Equals(object obj) -> bool
