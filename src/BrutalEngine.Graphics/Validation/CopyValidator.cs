@@ -13,7 +13,7 @@ namespace BrutalEngine.Graphics.Validation;
 /// <para>
 /// A violation throws <see cref="ArgumentException"/>, or <see cref="ArgumentOutOfRangeException"/> for a value out of
 /// its range (including a flag outside its enum's members). Each exception's <see cref="ArgumentException.ParamName"/>
-/// is the device method's parameter that holds the value (<c>copy</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
+/// is the device method's parameter that holds the value (<c>copy</c>, <c>write</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
 /// <c>byteCount</c> or <c>usage</c>), and its message names the type or method, the field, the value, any computed
 /// bound, and the debug name of the buffer or texture the field refers to. A buffer-texture copy's
 /// <see cref="TextureBufferCopy.BytesPerRow"/> and <see cref="TextureBufferCopy.BufferOffset"/> describe the buffer's
@@ -150,6 +150,127 @@ internal static class CopyValidator
         if (copy.Texture.Aspect == TextureAspect.Depth)
         {
             ThrowInvalid(nameof(copy), nameof(TextureBufferCopy), "Texture.Aspect", "must not be Depth: depth can be copied to buffers but never from them", texture.DebugName);
+        }
+    }
+
+    /// <summary>Checks a texture write against the texture it writes and the length of its data.</summary>
+    /// <param name="write">The write to check.</param>
+    /// <param name="target">The description of the texture written; already valid.</param>
+    /// <param name="dataLength">The length of the data, in bytes. Data longer than the rows need is allowed.</param>
+    /// <exception cref="ArgumentException">
+    /// The texture lacks <see cref="TextureUsage.CopyDestination"/>, has a depth format, or has more than one sample; or
+    /// the aspect isn't <see cref="TextureAspect.Color"/> (parameter <c>write</c>).
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The aspect is outside its enum; the mip level, layer or region lies outside the texture; or
+    /// <see cref="TextureWrite.BytesPerRow"/> is negative, or neither 0 nor at least the region's row size (parameter
+    /// <c>write</c>). Or the data is shorter than <c>BytesPerRow * (Region.Height - 1) + Region.Width * texel size</c>
+    /// bytes (parameter <c>data</c>).
+    /// </exception>
+    public static void ValidateWriteTexture(in TextureWrite write, in TextureDescription target, int dataLength)
+    {
+        const string Type = nameof(TextureWrite);
+        CheckTextureUsage(nameof(write), Type, nameof(TextureWrite.Target), target, TextureUsage.CopyDestination);
+        if (TextureFormatInfo.IsDepth(target.Format))
+        {
+            ThrowInvalid(
+                nameof(write),
+                Type,
+                nameof(TextureWrite.Target),
+                string.Create(CultureInfo.InvariantCulture, $"must be a color texture, but has the depth format {target.Format}: WriteTexture takes color formats only"),
+                target.DebugName);
+        }
+
+        CheckSingleSample(nameof(write), Type, nameof(TextureWrite.Target), target);
+        CheckLocation(nameof(write), Type, nameof(TextureWrite.Target), write.Target, target);
+        CheckRegion(nameof(write), Type, nameof(TextureWrite.Region), write.Region, write.Target.MipLevel, target);
+
+        // The region lies inside its mip level, so Width is at most int.MaxValue and this can't overflow a long.
+        long rowBytes = (long)write.Region.Width * TextureFormatInfo.TexelSize(target.Format);
+        if (write.BytesPerRow < 0 || (write.BytesPerRow != 0 && write.BytesPerRow < rowBytes))
+        {
+            ThrowOutOfRange(
+                nameof(write),
+                Type,
+                nameof(TextureWrite.BytesPerRow),
+                string.Create(CultureInfo.InvariantCulture, $"must be 0 (tight rows) or at least Region.Width times the texel size ({rowBytes})"),
+                write.BytesPerRow,
+                target.DebugName);
+        }
+
+        // BytesPerRow and Height are ints, so the product is below 2^62 and the sum below 2^63.
+        long bytesPerRow = write.BytesPerRow == 0 ? rowBytes : write.BytesPerRow;
+        long required = (bytesPerRow * (write.Region.Height - 1)) + rowBytes;
+        if (dataLength < required)
+        {
+            ThrowOutOfRange(
+                "data",
+                Type,
+                "data.Length",
+                string.Create(CultureInfo.InvariantCulture, $"must be at least BytesPerRow * (Region.Height - 1) + Region.Width * texel size ({required})"),
+                dataLength,
+                target.DebugName);
+        }
+    }
+
+    /// <summary>Checks a texture-to-texture copy against both textures.</summary>
+    /// <param name="copy">The copy to check.</param>
+    /// <param name="source">The description of the texture copied from; already valid.</param>
+    /// <param name="destination">
+    /// The description of the texture copied to; already valid, and the same as <paramref name="source"/> when both
+    /// locations name one texture.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// The source lacks <see cref="TextureUsage.CopySource"/> or the destination <see cref="TextureUsage.CopyDestination"/>;
+    /// the formats differ; either texture has more than one sample; an aspect doesn't match the format; or both
+    /// locations are the same subresource (texture, mip level and layer) and the regions overlap. Depth textures can be
+    /// copied this way.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// An aspect is outside its enum, or a mip level, layer or region lies outside its texture. The destination region
+    /// is <c>(DestinationX, DestinationY, SourceRegion.Width, SourceRegion.Height)</c>.
+    /// </exception>
+    public static void Validate(in TextureCopy copy, in TextureDescription source, in TextureDescription destination)
+    {
+        const string Type = nameof(TextureCopy);
+        CheckTextureUsage(nameof(copy), Type, nameof(TextureCopy.Source), source, TextureUsage.CopySource);
+        CheckTextureUsage(nameof(copy), Type, nameof(TextureCopy.Destination), destination, TextureUsage.CopyDestination);
+        if (source.Format != destination.Format)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureCopy.Destination),
+                string.Create(CultureInfo.InvariantCulture, $"must have the source's format ({source.Format}), but has {destination.Format}"),
+                destination.DebugName);
+        }
+
+        CheckSingleSample(nameof(copy), Type, nameof(TextureCopy.Source), source);
+        CheckSingleSample(nameof(copy), Type, nameof(TextureCopy.Destination), destination);
+        CheckLocation(nameof(copy), Type, nameof(TextureCopy.Source), copy.Source, source);
+        CheckLocation(nameof(copy), Type, nameof(TextureCopy.Destination), copy.Destination, destination);
+        TextureRegion from = copy.SourceRegion;
+        CheckRegion(nameof(copy), Type, nameof(TextureCopy.SourceRegion), from, copy.Source.MipLevel, source);
+        int mip = copy.Destination.MipLevel;
+        CheckSpan(nameof(copy), Type, null, nameof(TextureCopy.DestinationX), "SourceRegion.Width", copy.DestinationX, from.Width, MipSize(destination.Width, mip), "width", destination.DebugName);
+        CheckSpan(nameof(copy), Type, null, nameof(TextureCopy.DestinationY), "SourceRegion.Height", copy.DestinationY, from.Height, MipSize(destination.Height, mip), "height", destination.DebugName);
+
+        // Each region was checked inside its own mip level above, so no end can overflow, whether or not the
+        // subresources match.
+        if (copy.Source.Texture == copy.Destination.Texture
+            && copy.Source.MipLevel == copy.Destination.MipLevel
+            && copy.Source.ArrayLayer == copy.Destination.ArrayLayer
+            && from.X < copy.DestinationX + from.Width
+            && copy.DestinationX < from.X + from.Width
+            && from.Y < copy.DestinationY + from.Height
+            && copy.DestinationY < from.Y + from.Height)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureCopy.Destination),
+                string.Create(CultureInfo.InvariantCulture, $"must not overlap the source region within the same subresource, but the region at ({copy.DestinationX}, {copy.DestinationY}) overlaps {from}"),
+                source.DebugName);
         }
     }
 
