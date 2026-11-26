@@ -20,8 +20,8 @@ namespace BrutalEngine.Platform;
 /// <b>Sizes</b> come in three units (docs/design/platform.md, "Window coordinates, pixels and content units"):
 /// <see cref="Size"/> in the OS's window coordinates, <see cref="PixelSize"/> in pixels, and <see cref="ContentSize"/>
 /// in content units, where UI and gameplay lay out. Scale once, from pixels: render content at content units times
-/// <see cref="DisplayScale"/> pixels. Multiplying <see cref="Size"/> by <see cref="DisplayScale"/> scales twice where
-/// window coordinates are points (macOS, Wayland).
+/// <see cref="DisplayScale"/> pixels. Laying out in <see cref="Size"/> units and also scaling by
+/// <see cref="DisplayScale"/> doubles the scale on macOS and Wayland, so nothing lays out in <see cref="Size"/>.
 /// </para>
 /// <para>
 /// <b>Threads:</b> every member, <see cref="IDisposable.Dispose"/> included, is main thread only (the thread that created
