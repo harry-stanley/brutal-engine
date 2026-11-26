@@ -7,7 +7,7 @@ using Xunit;
 namespace BrutalEngine.Graphics.Tests;
 
 /// <summary>The copy rules of docs/design/graphics.md section 6: one row per rule, each with a passing and a failing case.</summary>
-public sealed class CopyValidatorTests
+public sealed partial class CopyValidatorTests
 {
     private const string DebugName = "probe";
 
@@ -39,13 +39,22 @@ public sealed class CopyValidatorTests
         "WriteBuffer.Usage", "WriteBuffer.DataEmpty", "WriteBuffer.DataNegative", "WriteBuffer.OffsetNegative", "WriteBuffer.OffsetMinValue",
         "WriteBuffer.OffsetAtEnd", "WriteBuffer.OffsetPastEnd", "WriteBuffer.OffsetMaxValue", "WriteBuffer.RangeInside", "WriteBuffer.Unaligned",
         "Transient.ByteCountZero", "Transient.ByteCountNegative", "Transient.ByteCountMinValue", "Transient.UsageNone",
-        "Transient.UsageUndefinedFlag", "Transient.UsageSignBit",
+        "Transient.UsageUndefinedFlag", "Transient.UsageSignBit", .. _textureRules,
     ];
 
     [Theory]
     [MemberData(nameof(Rules))]
     public void Rule_Passes_And_Fails(string rule)
     {
+        // The texture rows name the resource each failure must cite, because their texture and buffer are named apart.
+        if (Array.IndexOf(_textureRules, rule) >= 0)
+        {
+            (Action texturePass, Action textureFail, Type textureException, string textureParam, string textureField, string name) = TextureRow(rule);
+            texturePass();
+            AssertRejected(textureException, textureParam, textureField, textureFail, name);
+            return;
+        }
+
         Type outOfRange = typeof(ArgumentOutOfRangeException);
         Type invalid = typeof(ArgumentException);
         BufferDescription noCopySource = _buffer with { Usage = BufferUsage.Vertex | BufferUsage.CopyDestination };
@@ -142,6 +151,7 @@ public sealed class CopyValidatorTests
     public static TheoryData<string> HugeOffsets() =>
     [
         "SourceOffsetNearMax", "DestinationOffsetNearMax", "SizeNearMax", "SourceAndSizeNearMax", "WriteOffsetNearMax", "WriteOffsetAtMax",
+        "TextureBufferOffsetNearMax", "TextureToTextureOffsetNearMax", "TextureRowPitchTimesHeight",
     ];
 
     // Every row lies inside a long.MaxValue-byte buffer except for its last few bytes, so offset + size would wrap to a
@@ -159,7 +169,7 @@ public sealed class CopyValidatorTests
             "SourceAndSizeNearMax" => (CopyHuge(_copy with { SourceOffset = NearMax, DestinationOffset = 0, Size = NearMax }), "copy", "BufferCopy.Size"),
             "WriteOffsetNearMax" => (Write(_huge, NearMax, 8), "data", "WriteBuffer.data.Length"),
             "WriteOffsetAtMax" => (Write(_huge, long.MaxValue, 1), "data", "WriteBuffer.data.Length"),
-            _ => throw new ArgumentOutOfRangeException(nameof(row), row, "Unknown row."),
+            _ => TextureHugeOffsetRow(row),
         };
 
         AssertRejected(typeof(ArgumentOutOfRangeException), param, field, validate);
@@ -321,6 +331,8 @@ public sealed class CopyValidatorTests
         CopyValidator.Validate(copy, buffer, buffer);
         CopyValidator.ValidateWriteBuffer(buffer, 3, 1021);
         CopyValidator.ValidateTransientAllocation(256, TransientUsage.Vertex | TransientUsage.Uniform);
+        CopyValidator.ValidateCopyToBuffer(_textureBufferCopy, _texture, buffer);
+        CopyValidator.ValidateCopyToTexture(_textureBufferCopy, buffer, _texture);
     }
 
     // The rules in exact integer arithmetic (Int128 holds every sum of two longs), written from the table rather than
@@ -359,7 +371,7 @@ public sealed class CopyValidatorTests
 
     private static Action Transient(long byteCount, TransientUsage usage) => () => CopyValidator.ValidateTransientAllocation(byteCount, usage);
 
-    private static void AssertRejected(Type exceptionType, string paramName, string field, Action validate)
+    private static void AssertRejected(Type exceptionType, string paramName, string field, Action validate, string debugName = DebugName)
     {
         // Exact type: an ArgumentOutOfRangeException where an ArgumentException is documented fails, and vice versa.
         var exception = (ArgumentException)Assert.Throws(exceptionType, validate);
@@ -368,7 +380,7 @@ public sealed class CopyValidatorTests
         Assert.Contains(field, exception.Message, StringComparison.Ordinal);
         if (!field.StartsWith("AllocateTransient.", StringComparison.Ordinal))
         {
-            Assert.Contains("debug name 'probe'", exception.Message, StringComparison.Ordinal);
+            Assert.Contains($"debug name '{debugName}'", exception.Message, StringComparison.Ordinal);
         }
     }
 }

@@ -15,7 +15,9 @@ namespace BrutalEngine.Graphics.Validation;
 /// its range (including a flag outside its enum's members). Each exception's <see cref="ArgumentException.ParamName"/>
 /// is the device method's parameter that holds the value (<c>copy</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
 /// <c>byteCount</c> or <c>usage</c>), and its message names the type or method, the field, the value, any computed
-/// bound, and the debug name of the buffer the field refers to.
+/// bound, and the debug name of the buffer or texture the field refers to. A buffer-texture copy's
+/// <see cref="TextureBufferCopy.BytesPerRow"/> and <see cref="TextureBufferCopy.BufferOffset"/> describe the buffer's
+/// rows, so their messages name the buffer.
 /// </para>
 /// <para>
 /// The descriptions are inputs: the device resolves the handles (and throws for stale ones) before calling, so each
@@ -98,6 +100,57 @@ internal static class CopyValidator
         }
 
         CheckRange(nameof(offset), Type, nameof(offset), "data", Length, offset, dataLength, target, "target");
+    }
+
+    /// <summary>Checks a texture-to-buffer copy against the texture and the buffer.</summary>
+    /// <param name="copy">The copy to check.</param>
+    /// <param name="texture">The description of the texture copied from; already valid.</param>
+    /// <param name="buffer">The description of the buffer copied to; already valid.</param>
+    /// <exception cref="ArgumentException">
+    /// The texture lacks <see cref="TextureUsage.CopySource"/> or the buffer <see cref="BufferUsage.CopyDestination"/>;
+    /// the texture has more than one sample; the aspect doesn't match the format; <see cref="TextureBufferCopy.BytesPerRow"/>
+    /// isn't a multiple of <see cref="TextureBufferCopy.RowPitchAlignment"/>; or <see cref="TextureBufferCopy.BufferOffset"/>
+    /// isn't a multiple of the texel size and of 4.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The aspect is outside its enum; the mip level, layer or region lies outside the texture;
+    /// <see cref="TextureBufferCopy.BytesPerRow"/> is below the region's row size; or the buffer offset is negative or
+    /// leaves too few bytes for the rows.
+    /// </exception>
+    public static void ValidateCopyToBuffer(in TextureBufferCopy copy, in TextureDescription texture, in BufferDescription buffer)
+    {
+        CheckTextureUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Texture), texture, TextureUsage.CopySource);
+        CheckUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Buffer), buffer, BufferUsage.CopyDestination);
+        CheckTextureBufferCopy(copy, texture, buffer);
+    }
+
+    /// <summary>Checks a buffer-to-texture copy against the buffer and the texture.</summary>
+    /// <param name="copy">The copy to check.</param>
+    /// <param name="buffer">The description of the buffer copied from; already valid.</param>
+    /// <param name="texture">The description of the texture copied to; already valid.</param>
+    /// <exception cref="ArgumentException">
+    /// The buffer lacks <see cref="BufferUsage.CopySource"/> or the texture <see cref="TextureUsage.CopyDestination"/>;
+    /// the texture has more than one sample; the aspect doesn't match the format, or is <see cref="TextureAspect.Depth"/>
+    /// (depth is copied to buffers, never from them); <see cref="TextureBufferCopy.BytesPerRow"/> isn't a multiple of
+    /// <see cref="TextureBufferCopy.RowPitchAlignment"/>; or <see cref="TextureBufferCopy.BufferOffset"/> isn't a
+    /// multiple of the texel size and of 4.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The aspect is outside its enum; the mip level, layer or region lies outside the texture;
+    /// <see cref="TextureBufferCopy.BytesPerRow"/> is below the region's row size; or the buffer offset is negative or
+    /// leaves too few bytes for the rows.
+    /// </exception>
+    public static void ValidateCopyToTexture(in TextureBufferCopy copy, in BufferDescription buffer, in TextureDescription texture)
+    {
+        CheckUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Buffer), buffer, BufferUsage.CopySource);
+        CheckTextureUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Texture), texture, TextureUsage.CopyDestination);
+        CheckTextureBufferCopy(copy, texture, buffer);
+
+        // A deliberate simplification (docs/design/graphics.md section 6): WebGPU forbids this for Depth32Float only.
+        if (copy.Texture.Aspect == TextureAspect.Depth)
+        {
+            ThrowInvalid(nameof(copy), nameof(TextureBufferCopy), "Texture.Aspect", "must not be Depth: depth can be copied to buffers but never from them", texture.DebugName);
+        }
     }
 
     /// <summary>Checks a transient allocation request's size and usage.</summary>
@@ -186,6 +239,184 @@ internal static class CopyValidator
         }
     }
 
+    // The rules a TextureBufferCopy has in both directions, after the usages: the texture side, then the buffer rows.
+    private static void CheckTextureBufferCopy(in TextureBufferCopy copy, in TextureDescription texture, in BufferDescription buffer)
+    {
+        const string Type = nameof(TextureBufferCopy);
+        CheckSingleSample(nameof(copy), Type, nameof(TextureBufferCopy.Texture), texture);
+        CheckLocation(nameof(copy), Type, nameof(TextureBufferCopy.Texture), copy.Texture, texture);
+        CheckRegion(nameof(copy), Type, nameof(TextureBufferCopy.Region), copy.Region, copy.Texture.MipLevel, texture);
+
+        int texelSize = TextureFormatInfo.TexelSize(texture.Format);
+
+        // The region lies inside its mip level, so Width is at most int.MaxValue and this can't overflow a long.
+        long rowBytes = (long)copy.Region.Width * texelSize;
+        if (copy.BytesPerRow < rowBytes)
+        {
+            ThrowOutOfRange(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BytesPerRow),
+                string.Create(CultureInfo.InvariantCulture, $"must be at least Region.Width times the texel size ({rowBytes})"),
+                copy.BytesPerRow,
+                buffer.DebugName);
+        }
+
+        if (copy.BytesPerRow % TextureBufferCopy.RowPitchAlignment != 0)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BytesPerRow),
+                string.Create(CultureInfo.InvariantCulture, $"must be a multiple of {TextureBufferCopy.RowPitchAlignment}, but is {copy.BytesPerRow}"),
+                buffer.DebugName);
+        }
+
+        if (copy.BufferOffset < 0)
+        {
+            ThrowOutOfRange(nameof(copy), Type, nameof(TextureBufferCopy.BufferOffset), "must be at least 0", copy.BufferOffset, buffer.DebugName);
+        }
+
+        // Texel sizes are powers of two, so a multiple of the larger of 4 and the texel size is a multiple of both.
+        long offsetAlignment = Math.Max(BufferCopyAlignment, texelSize);
+        if (copy.BufferOffset % offsetAlignment != 0)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BufferOffset),
+                string.Create(CultureInfo.InvariantCulture, $"must be a multiple of the texel size and of 4 ({offsetAlignment}), but is {copy.BufferOffset}"),
+                buffer.DebugName);
+        }
+
+        // BytesPerRow and Height are positive ints, so the product is below 2^62 and the sum below 2^63. The offset is
+        // non-negative and the size positive, so Size - BufferOffset can't overflow either: no sum with the offset is formed.
+        long required = ((long)copy.BytesPerRow * (copy.Region.Height - 1)) + rowBytes;
+        long available = buffer.Size - copy.BufferOffset;
+        if (required > available)
+        {
+            ThrowOutOfRange(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BufferOffset),
+                string.Create(CultureInfo.InvariantCulture, $"must leave the {required} bytes the rows need (BytesPerRow * (Region.Height - 1) + Region.Width * texel size) before the buffer's end ({buffer.Size})"),
+                copy.BufferOffset,
+                buffer.DebugName);
+        }
+    }
+
+    private static void CheckTextureUsage(string paramName, string type, string field, in TextureDescription texture, TextureUsage required)
+    {
+        if ((texture.Usage & required) == 0)
+        {
+            ThrowInvalid(
+                paramName,
+                type,
+                field,
+                string.Create(CultureInfo.InvariantCulture, $"must be a texture with {required} usage, but has {texture.Usage}"),
+                texture.DebugName);
+        }
+    }
+
+    // Vulkan copies only single-sampled images to and from buffers (VUID-vkCmdCopyBufferToImage-dstImage-07973).
+    private static void CheckSingleSample(string paramName, string type, string field, in TextureDescription texture)
+    {
+        if (texture.SampleCount != 1)
+        {
+            ThrowInvalid(
+                paramName,
+                type,
+                field,
+                string.Create(CultureInfo.InvariantCulture, $"must be a texture with one sample, but has {texture.SampleCount}"),
+                texture.DebugName);
+        }
+    }
+
+    // A location's aspect, mip level and layer against its texture. The prefix names the location's field, joined to
+    // the location's own field only on the throw path.
+    private static void CheckLocation(string paramName, string type, string prefix, in TextureLocation location, in TextureDescription texture)
+    {
+        if ((uint)location.Aspect > (uint)TextureAspect.Depth)
+        {
+            ThrowOutOfRange(paramName, type, prefix, nameof(TextureLocation.Aspect), "isn't a TextureAspect member", (long)location.Aspect, texture.DebugName);
+        }
+
+        if (location.MipLevel < 0 || location.MipLevel >= texture.MipLevels)
+        {
+            ThrowOutOfRange(
+                paramName,
+                type,
+                prefix,
+                nameof(TextureLocation.MipLevel),
+                string.Create(CultureInfo.InvariantCulture, $"must be from 0 to the texture's mip levels minus 1 ({texture.MipLevels - 1})"),
+                location.MipLevel,
+                texture.DebugName);
+        }
+
+        if (location.ArrayLayer < 0 || location.ArrayLayer >= texture.ArrayLayers)
+        {
+            ThrowOutOfRange(
+                paramName,
+                type,
+                prefix,
+                nameof(TextureLocation.ArrayLayer),
+                string.Create(CultureInfo.InvariantCulture, $"must be from 0 to the texture's layers minus 1 ({texture.ArrayLayers - 1})"),
+                location.ArrayLayer,
+                texture.DebugName);
+        }
+
+        bool depth = TextureFormatInfo.IsDepth(texture.Format);
+        if (depth != (location.Aspect == TextureAspect.Depth))
+        {
+            ThrowInvalid(
+                paramName,
+                type,
+                prefix,
+                nameof(TextureLocation.Aspect),
+                string.Create(CultureInfo.InvariantCulture, $"must be {(depth ? TextureAspect.Depth : TextureAspect.Color)} for the texture's {texture.Format} format, but is {location.Aspect}"),
+                texture.DebugName);
+        }
+    }
+
+    // A region inside its mip level; the mip level is already in range.
+    private static void CheckRegion(string paramName, string type, string prefix, in TextureRegion region, int mipLevel, in TextureDescription texture)
+    {
+        CheckSpan(paramName, type, prefix, nameof(TextureRegion.X), nameof(TextureRegion.Width), region.X, region.Width, MipSize(texture.Width, mipLevel), "width", texture.DebugName);
+        CheckSpan(paramName, type, prefix, nameof(TextureRegion.Y), nameof(TextureRegion.Height), region.Y, region.Height, MipSize(texture.Height, mipLevel), "height", texture.DebugName);
+    }
+
+    // A span [origin, origin + size) of 0..extent on one axis: the origin inside, the size at least 1 and not past the end.
+    private static void CheckSpan(string paramName, string type, string? prefix, string originField, string sizeField, int origin, int size, int extent, string axis, string? debugName)
+    {
+        if (origin < 0 || origin >= extent)
+        {
+            ThrowOutOfRange(
+                paramName,
+                type,
+                prefix,
+                originField,
+                string.Create(CultureInfo.InvariantCulture, $"must be from 0 to the mip level's {axis} minus 1 ({extent - 1})"),
+                origin,
+                debugName);
+        }
+
+        // extent - origin can't overflow: extent is positive and origin is in [0, extent).
+        if (size < 1 || size > extent - origin)
+        {
+            ThrowOutOfRange(
+                paramName,
+                type,
+                prefix,
+                sizeField,
+                string.Create(CultureInfo.InvariantCulture, $"must be from 1 to the mip level's {axis} after {originField} ({extent - origin})"),
+                size,
+                debugName);
+        }
+    }
+
+    // One side of a mip level: halved per level, never below 1. The level is in [0, MipLevels), at most 30.
+    private static int MipSize(int size, int mipLevel) => Math.Max(1, size >> mipLevel);
+
     [DoesNotReturn]
     private static void ThrowOutOfRange<T>(string paramName, string type, string field, string requirement, T actual, string? debugName) =>
         throw new ArgumentOutOfRangeException(paramName, Message(type, field, requirement, actual, debugName));
@@ -195,6 +426,16 @@ internal static class CopyValidator
         throw new ArgumentException(
             string.Create(CultureInfo.InvariantCulture, $"{type}.{field} {requirement} ({Describe(debugName)})."),
             paramName);
+
+    [DoesNotReturn]
+    private static void ThrowOutOfRange<T>(string paramName, string type, string? prefix, string field, string requirement, T actual, string? debugName) =>
+        ThrowOutOfRange(paramName, type, Join(prefix, field), requirement, actual, debugName);
+
+    [DoesNotReturn]
+    private static void ThrowInvalid(string paramName, string type, string prefix, string field, string requirement, string? debugName) =>
+        ThrowInvalid(paramName, type, Join(prefix, field), requirement, debugName);
+
+    private static string Join(string? prefix, string field) => prefix is null ? field : string.Concat(prefix, ".", field);
 
     private static string Message<T>(string type, string field, string requirement, T actual, string? debugName) =>
         string.Create(CultureInfo.InvariantCulture, $"{type}.{field} {requirement}, but is {actual} ({Describe(debugName)}).");
