@@ -218,7 +218,7 @@ public readonly record struct KeyEventData(Scancode Scancode, Keycode Keycode, K
 public readonly record struct TextEventData(int Offset, int Length);
 public readonly record struct MouseMotionData(float X, float Y, float DeltaX, float DeltaY, MouseButtons Buttons);
 public readonly record struct MouseButtonData(MouseButton Button, byte Clicks, float X, float Y);
-public readonly record struct MouseWheelData(float X, float Y, float MouseX, float MouseY); // "natural" direction already applied
+public readonly record struct MouseWheelData(float X, float Y, float MouseX, float MouseY); // SDL's normal direction: flipped amounts are negated back, so +Y scrolls away from the user and +X right
 ```
 
 Payloads, by kind (offsets are within the 40-byte event):

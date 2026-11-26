@@ -153,7 +153,7 @@ internal static class SdlEventTranslator
     /// The same value, including values without a member; <see cref="Scancode.Unknown"/> if it doesn't fit in a
     /// <see langword="ushort"/>.
     /// </returns>
-    internal static Scancode ToScancode(SdlScancode scancode) =>
+    private static Scancode ToScancode(SdlScancode scancode) =>
         (uint)scancode <= ushort.MaxValue ? (Scancode)(ushort)scancode : Scancode.Unknown;
 
     // DisplayContentScaleChanged has its own case.
