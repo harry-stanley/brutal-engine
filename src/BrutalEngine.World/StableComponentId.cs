@@ -10,8 +10,8 @@ namespace BrutalEngine.World;
 /// <param name="Value">The hash.</param>
 /// <remarks>
 /// <para>
-/// Serialised data names component types by stable id, never by the dense <c>ComponentId</c> a registry
-/// issues. The schema version is kept separately in <c>ComponentInfo.SchemaVersion</c>, so a type keeps its
+/// Serialised data names component types by stable id, never by the dense <see cref="ComponentId"/> a registry
+/// issues. The schema version is kept separately in <see cref="ComponentInfo.SchemaVersion"/>, so a type keeps its
 /// stable id when its layout changes. The component generator computes the same value at compile time; both pin the
 /// same known vectors in tests.
 /// </para>
