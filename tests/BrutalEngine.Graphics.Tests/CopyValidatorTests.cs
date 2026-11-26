@@ -7,7 +7,7 @@ using Xunit;
 namespace BrutalEngine.Graphics.Tests;
 
 /// <summary>The copy rules of docs/design/graphics.md section 6: one row per rule, each with a passing and a failing case.</summary>
-public sealed class CopyValidatorTests
+public sealed partial class CopyValidatorTests
 {
     private const string DebugName = "probe";
 
@@ -39,7 +39,7 @@ public sealed class CopyValidatorTests
         "WriteBuffer.Usage", "WriteBuffer.DataEmpty", "WriteBuffer.DataNegative", "WriteBuffer.OffsetNegative", "WriteBuffer.OffsetMinValue",
         "WriteBuffer.OffsetAtEnd", "WriteBuffer.OffsetPastEnd", "WriteBuffer.OffsetMaxValue", "WriteBuffer.RangeInside", "WriteBuffer.Unaligned",
         "Transient.ByteCountZero", "Transient.ByteCountNegative", "Transient.ByteCountMinValue", "Transient.UsageNone",
-        "Transient.UsageUndefinedFlag", "Transient.UsageSignBit",
+        "Transient.UsageUndefinedFlag", "Transient.UsageSignBit", .. _textureRules,
     ];
 
     [Theory]
@@ -132,7 +132,7 @@ public sealed class CopyValidatorTests
                 Transient(1, TransientUsage.Vertex | (TransientUsage)32),
                 outOfRange, "usage", "AllocateTransient.usage"),
             "Transient.UsageSignBit" => (Transient(1, TransientUsage.Storage), Transient(1, (TransientUsage)int.MinValue), outOfRange, "usage", "AllocateTransient.usage"),
-            _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+            _ => TextureRow(rule),
         };
 
         pass();
@@ -321,6 +321,8 @@ public sealed class CopyValidatorTests
         CopyValidator.Validate(copy, buffer, buffer);
         CopyValidator.ValidateWriteBuffer(buffer, 3, 1021);
         CopyValidator.ValidateTransientAllocation(256, TransientUsage.Vertex | TransientUsage.Uniform);
+        CopyValidator.ValidateCopyToBuffer(_textureBufferCopy, _texture, buffer);
+        CopyValidator.ValidateCopyToTexture(_textureBufferCopy, buffer, _texture);
     }
 
     // The rules in exact integer arithmetic (Int128 holds every sum of two longs), written from the table rather than
