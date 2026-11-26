@@ -11,6 +11,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 ### Added
 
 - `BrutalEngine.Graphics`, the render interface package, with a typed GPU handle per object kind: `BufferHandle`, `TextureHandle`, `TextureViewHandle`, `SamplerHandle`, `ShaderModuleHandle`, `SwapchainHandle`, `BindGroupLayoutHandle`, `PipelineLayoutHandle`, `BindGroupHandle`, `GraphicsPipelineHandle`, `ComputePipelineHandle`, and `DebugLabel` for interned pass and debug group names. Each is a non-owning value over a generational Core `Handle`; `default` is the null handle, and a handle of one kind never converts to another ([render interface design](docs/design/graphics.md#1-object-model-handles-ownership-and-destruction)).
+- `BrutalEngine.Graphics.Vulkan`, the Vulkan backend package, with no public API yet. It starts with the backend's status mapping: every `VkResult` becomes an `ErrorKind` (out of memory, device lost as `Unavailable`, timeout, unsupported, invalid shader, otherwise `Native`), always with the code in `NativeCode`, and shader-module and pipeline creation failures become `InvalidData` ([Vulkan backend design](docs/design/graphics-vulkan.md#13-status-checking)).
 
 ### Breaking
 

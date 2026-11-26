@@ -54,7 +54,7 @@ internal static class PackageClosureRule
         {
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object
-                || !root.TryGetProperty("dependencies", out JsonElement sections)
+                || !root.TryGetProperty("dependencies"u8, out JsonElement sections)
                 || sections.ValueKind != JsonValueKind.Object)
             {
                 throw new InvalidDataException($"{moduleName}: {LockFileName} has no \"dependencies\" object.");
@@ -139,7 +139,7 @@ internal static class PackageClosureRule
 
     private static string ResolvedVersion(JsonElement package) =>
         package.ValueKind == JsonValueKind.Object
-            && package.TryGetProperty("resolved", out JsonElement resolved)
+            && package.TryGetProperty("resolved"u8, out JsonElement resolved)
             && resolved.ValueKind == JsonValueKind.String
             ? resolved.GetString()!
             : "(no resolved version)";
