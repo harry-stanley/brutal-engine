@@ -7,12 +7,12 @@ namespace BrutalEngine.Platform;
 /// <para>
 /// The bits are SDL 3's <c>SDL_MouseButtonFlags</c>: the bit for a <see cref="MouseButton"/> is
 /// <c>1 &lt;&lt; (button - 1)</c>, so <see cref="Left"/> is 1 and <see cref="X2"/> is 16. A backend translates SDL's
-/// state with a cast.
+/// state with a cast, which narrows: SDL's state is a 32-bit mask, so the bits of buttons 9 and above are dropped.
 /// </para>
 /// <para>
-/// Backed by a <see langword="byte"/>, so <see cref="MouseMotionData"/> fits the event payload. Bits without a member
-/// can still arrive from a backend; ignore them. The values are fixed: new members are only ever added, never
-/// renumbered.
+/// Backed by a <see langword="byte"/>, so <see cref="MouseMotionData"/> fits the event payload. Only bits 5-7
+/// (buttons 6-8) can arrive from a backend without a member; ignore them. The values are fixed: new members are only
+/// ever added, never renumbered.
 /// </para>
 /// </remarks>
 [Flags]
