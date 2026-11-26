@@ -136,6 +136,30 @@ public sealed class ArchetypeSignatureTests
         Assert.False(first.Matches(secondIds));
     }
 
+    [Fact]
+    public void Lookups_DoNotAllocate()
+    {
+        int[] request = [64, 3, 127, 3, 0, 64];
+        int[] scratch = new int[request.Length];
+        var signature = ArchetypeSignature.Create([0, 3, 64, 127], MaskBits);
+        var same = ArchetypeSignature.Create([0, 3, 64, 127], MaskBits);
+        var other = ArchetypeSignature.Create([0, 3, 64, 126], MaskBits);
+
+        // Warm up every path, so the measured window holds no first-call work.
+        int found = Lookups(request, scratch, signature, same, other);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1_000; i++)
+        {
+            found += Lookups(request, scratch, signature, same, other);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(5 * 1_001, found);
+        Assert.Equal(0, allocated);
+    }
+
     // Expected values from a separate Python implementation of the same definition: per id, hash = (hash ^ id) *
     // 16777619 mod 2^32 from 2166136261, then the MurmurHash3 fmix32 finaliser, read as a signed 32-bit int.
     [Theory]
@@ -147,6 +171,26 @@ public sealed class ArchetypeSignatureTests
     {
         Assert.Equal(expected, ArchetypeSignature.ComputeHash(ids));
         Assert.Equal(expected, ArchetypeSignature.Create(ids, 4096).Hash);
+    }
+
+    // Normalises a copy of the unsorted request and looks it up the way the archetype set does, returning how many of
+    // the five checks found what they should (5 every time).
+    private static int Lookups(
+        int[] request,
+        int[] scratch,
+        ArchetypeSignature signature,
+        ArchetypeSignature same,
+        ArchetypeSignature other)
+    {
+        request.CopyTo(scratch, 0);
+        ReadOnlySpan<int> sorted = scratch.AsSpan(0, ArchetypeSignature.Normalize(scratch));
+        int found = 0;
+        found += ArchetypeSignature.ComputeHash(sorted) == signature.Hash ? 1 : 0;
+        found += signature.Matches(sorted) ? 1 : 0;
+        found += signature.Contains(127) && !signature.Contains(126) ? 1 : 0;
+        found += signature.Equals(same) ? 1 : 0;
+        found += signature.Equals(other) ? 0 : 1;
+        return found;
     }
 
     // Fisher-Yates with a xorshift generator, so a sample's order is a function of its seed.
