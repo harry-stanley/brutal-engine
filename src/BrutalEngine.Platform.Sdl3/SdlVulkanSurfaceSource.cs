@@ -7,7 +7,7 @@ namespace BrutalEngine.Platform.Sdl3;
 
 /// <summary>
 /// The Vulkan surface source of one SDL window (docs/design/platform.md section 4): SDL's required instance
-/// extensions, copied once into storage it owns.
+/// extensions, copied once into storage it owns, and surface creation through the raw, status-returning SDL call.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,23 +17,29 @@ namespace BrutalEngine.Platform.Sdl3;
 /// </para>
 /// <para>
 /// <b>Threads:</b> the extension getters run on any thread; they read immutable arrays and the owner's disposed
-/// flag.
+/// flag. <see cref="CreateVulkanSurface"/> is main thread only, checked with the owner's <see cref="ThreadAffinity"/>.
 /// </para>
 /// <para>
 /// <b>Allocation:</b> <see cref="Create"/> allocates the source and its two arrays (or the error); the getters
-/// allocate nothing.
+/// allocate nothing; <see cref="CreateVulkanSurface"/> allocates only on failure (the error message) or misuse.
 /// </para>
 /// </remarks>
-internal sealed class SdlVulkanSurfaceSource
+internal sealed class SdlVulkanSurfaceSource : IVulkanSurfaceSource
 {
+    private const string CreateSurfaceName = "IVulkanSurfaceSource.CreateVulkanSurface";
+
+    private readonly SdlWindow _window;
+    private readonly ThreadAffinity _mainThread;
     private readonly IOwner _owner;
 
     // Every name back to back, without NUL terminators. Name i is _names[_offsets[i].._offsets[i + 1]].
     private readonly byte[] _names;
     private readonly int[] _offsets;
 
-    private SdlVulkanSurfaceSource(IOwner owner, byte[] names, int[] offsets)
+    private SdlVulkanSurfaceSource(SdlWindow window, ThreadAffinity mainThread, IOwner owner, byte[] names, int[] offsets)
     {
+        _window = window;
+        _mainThread = mainThread;
         _owner = owner;
         _names = names;
         _offsets = offsets;
@@ -62,6 +68,7 @@ internal sealed class SdlVulkanSurfaceSource
 
     /// <summary>Creates the source for an SDL window and copies SDL's required instance extensions.</summary>
     /// <param name="window">The SDL window, created with <c>SDL_WINDOW_VULKAN</c> and owned by <paramref name="owner"/>.</param>
+    /// <param name="mainThread">The platform's main thread, the only one <see cref="CreateVulkanSurface"/> runs on.</param>
     /// <param name="owner">The window object, asked whether it has been disposed.</param>
     /// <returns>
     /// The source, or <see cref="ErrorKind.Native"/> with SDL's text if <c>SDL_Vulkan_GetInstanceExtensions</c>
@@ -75,7 +82,7 @@ internal sealed class SdlVulkanSurfaceSource
     /// <exception cref="ArgumentException">
     /// <paramref name="window"/> is a null handle, or a window created without <c>SDL_WINDOW_VULKAN</c>.
     /// </exception>
-    public static unsafe Result<SdlVulkanSurfaceSource> Create(SdlWindow window, IOwner owner)
+    public static unsafe Result<SdlVulkanSurfaceSource> Create(SdlWindow window, ThreadAffinity mainThread, IOwner owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
         if (window.IsNull())
@@ -114,7 +121,7 @@ internal sealed class SdlVulkanSurfaceSource
             MemoryMarshal.CreateReadOnlySpanFromNullTerminated(names[i]).CopyTo(copy.AsSpan(offsets[i]));
         }
 
-        return new SdlVulkanSurfaceSource(owner, copy, offsets);
+        return new SdlVulkanSurfaceSource(window, mainThread, owner, copy, offsets);
     }
 
     /// <inheritdoc/>
@@ -125,6 +132,24 @@ internal sealed class SdlVulkanSurfaceSource
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, offsets.Length - 1);
         return _names.AsSpan(offsets[index], offsets[index + 1] - offsets[index]);
+    }
+
+    /// <inheritdoc/>
+    public unsafe Result<nint> CreateVulkanSurface(nint instance)
+    {
+        _mainThread.ThrowIfNotCurrentThread(CreateSurfaceName);
+        ThrowIfDisposed();
+        if (instance == 0)
+        {
+            throw new ArgumentException("The VkInstance handle is 0.", nameof(instance));
+        }
+
+        nint surface = 0;
+
+        // Sound: the window is alive (its owner isn't disposed, checked above on the main thread, the only thread that
+        // disposes it), and surface is a stack local that SDL writes before returning. No allocation callbacks (0).
+        Result status = SdlCheck.Check(Sdl.PInvoke.Vulkan_CreateSurface(_window, instance, 0, &surface), "SDL_Vulkan_CreateSurface");
+        return status.IsFailure ? status.Error : surface;
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_owner.IsDisposed, this);

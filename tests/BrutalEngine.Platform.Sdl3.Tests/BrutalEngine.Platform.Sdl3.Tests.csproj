@@ -8,7 +8,9 @@
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
+  <!-- Ahwoo.Brutal.Vulkan only for the Gpu tests' scaffolding: the VkInstance that receives a surface. -->
   <ItemGroup>
     <ProjectReference Include="../../src/BrutalEngine.Platform.Sdl3/BrutalEngine.Platform.Sdl3.csproj" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan" />
   </ItemGroup>
 </Project>
