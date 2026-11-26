@@ -39,11 +39,16 @@ public sealed class SdlVideoSessionTests
             {
                 failure = exception;
             }
-        });
+        })
+        {
+            // A background thread, so a worker hung in SDL can't keep the test host alive after the bounded join.
+            IsBackground = true,
+        };
 
         worker.Start();
-        worker.Join();
 
+        // Bounded, so a hang inside SDL fails the test instead of hanging the test host.
+        Assert.True(worker.Join(TimeSpan.FromSeconds(30)), "The worker thread didn't finish within 30 s.");
         Assert.Null(failure);
         Assert.Equal("dummy", driver);
         Assert.Equal(HeadlessMode.NoSurface, headless);
