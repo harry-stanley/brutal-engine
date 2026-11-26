@@ -54,6 +54,10 @@ internal static class EngineLayers
             new("BrutalEngine.Graphics.Vulkan", "BrutalEngine.Graphics"),
             new("BrutalEngine.Audio.Sdl3", "BrutalEngine.Audio"),
 
+            // The render interface creates swapchains for Platform windows through IVulkanSurfaceSource
+            // (docs/design/platform.md section 4).
+            new("BrutalEngine.Graphics", "BrutalEngine.Platform"),
+
             // Rendering2D draws text (3.1 diagram, 3.9 -> 3.12).
             new("BrutalEngine.Rendering2D", "BrutalEngine.Text"),
 

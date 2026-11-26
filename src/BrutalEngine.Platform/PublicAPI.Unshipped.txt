@@ -1,0 +1,93 @@
+#nullable enable
+BrutalEngine.Platform.DisplayId
+BrutalEngine.Platform.DisplayId.Deconstruct(out uint Value) -> void
+BrutalEngine.Platform.DisplayId.DisplayId() -> void
+BrutalEngine.Platform.DisplayId.DisplayId(uint Value) -> void
+BrutalEngine.Platform.DisplayId.Equals(BrutalEngine.Platform.DisplayId other) -> bool
+BrutalEngine.Platform.DisplayId.Value.get -> uint
+BrutalEngine.Platform.DisplayId.Value.init -> void
+BrutalEngine.Platform.DisplayMode
+BrutalEngine.Platform.DisplayMode.Display.get -> BrutalEngine.Platform.DisplayId
+BrutalEngine.Platform.DisplayMode.Display.init -> void
+BrutalEngine.Platform.DisplayMode.DisplayMode() -> void
+BrutalEngine.Platform.DisplayMode.Equals(BrutalEngine.Platform.DisplayMode other) -> bool
+BrutalEngine.Platform.DisplayMode.Height.get -> int
+BrutalEngine.Platform.DisplayMode.Height.init -> void
+BrutalEngine.Platform.DisplayMode.PixelDensity.get -> float
+BrutalEngine.Platform.DisplayMode.PixelDensity.init -> void
+BrutalEngine.Platform.DisplayMode.RefreshRate.get -> float
+BrutalEngine.Platform.DisplayMode.RefreshRate.init -> void
+BrutalEngine.Platform.DisplayMode.Width.get -> int
+BrutalEngine.Platform.DisplayMode.Width.init -> void
+BrutalEngine.Platform.IVulkanSurfaceSource
+BrutalEngine.Platform.IVulkanSurfaceSource.CreateVulkanSurface(nint instance) -> BrutalEngine.Core.Result<nint>
+BrutalEngine.Platform.IVulkanSurfaceSource.GetRequiredInstanceExtension(int index) -> System.ReadOnlySpan<byte>
+BrutalEngine.Platform.IVulkanSurfaceSource.RequiredInstanceExtensionCount.get -> int
+BrutalEngine.Platform.IWindow
+BrutalEngine.Platform.IWindow.ContentSize.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.IWindow.Display.get -> BrutalEngine.Platform.DisplayId
+BrutalEngine.Platform.IWindow.DisplayScale.get -> float
+BrutalEngine.Platform.IWindow.Id.get -> BrutalEngine.Platform.WindowId
+BrutalEngine.Platform.IWindow.IsRelativeMouseMode.get -> bool
+BrutalEngine.Platform.IWindow.IsTextInputActive.get -> bool
+BrutalEngine.Platform.IWindow.Mode.get -> BrutalEngine.Platform.WindowMode
+BrutalEngine.Platform.IWindow.PixelDensity.get -> float
+BrutalEngine.Platform.IWindow.PixelSize.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.IWindow.SetContentSize(BrutalEngine.Platform.WindowSize contentSize) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetExclusiveFullscreen(BrutalEngine.Platform.DisplayMode mode) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetMode(BrutalEngine.Platform.WindowMode mode) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetRelativeMouseMode(bool enabled) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.SetTitle(string! title) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.Size.get -> BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.IWindow.StartTextInput() -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.State.get -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.IWindow.StopTextInput() -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IWindow.VulkanSurface.get -> BrutalEngine.Platform.IVulkanSurfaceSource?
+BrutalEngine.Platform.WindowId
+BrutalEngine.Platform.WindowId.Deconstruct(out uint Value) -> void
+BrutalEngine.Platform.WindowId.Equals(BrutalEngine.Platform.WindowId other) -> bool
+BrutalEngine.Platform.WindowId.Value.get -> uint
+BrutalEngine.Platform.WindowId.Value.init -> void
+BrutalEngine.Platform.WindowId.WindowId() -> void
+BrutalEngine.Platform.WindowId.WindowId(uint Value) -> void
+BrutalEngine.Platform.WindowMode
+BrutalEngine.Platform.WindowMode.BorderlessFullscreen = 1 -> BrutalEngine.Platform.WindowMode
+BrutalEngine.Platform.WindowMode.ExclusiveFullscreen = 2 -> BrutalEngine.Platform.WindowMode
+BrutalEngine.Platform.WindowMode.Windowed = 0 -> BrutalEngine.Platform.WindowMode
+BrutalEngine.Platform.WindowSize
+BrutalEngine.Platform.WindowSize.Deconstruct(out int Width, out int Height) -> void
+BrutalEngine.Platform.WindowSize.Equals(BrutalEngine.Platform.WindowSize other) -> bool
+BrutalEngine.Platform.WindowSize.Height.get -> int
+BrutalEngine.Platform.WindowSize.Height.init -> void
+BrutalEngine.Platform.WindowSize.Width.get -> int
+BrutalEngine.Platform.WindowSize.Width.init -> void
+BrutalEngine.Platform.WindowSize.WindowSize() -> void
+BrutalEngine.Platform.WindowSize.WindowSize(int Width, int Height) -> void
+BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.InputFocus = 8 -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.Maximized = 4 -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.Minimized = 2 -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.MouseFocus = 16 -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.None = 0 -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.Occluded = 32 -> BrutalEngine.Platform.WindowState
+BrutalEngine.Platform.WindowState.Visible = 1 -> BrutalEngine.Platform.WindowState
+override BrutalEngine.Platform.DisplayId.GetHashCode() -> int
+override BrutalEngine.Platform.DisplayMode.GetHashCode() -> int
+override BrutalEngine.Platform.DisplayMode.ToString() -> string!
+override BrutalEngine.Platform.WindowId.GetHashCode() -> int
+override BrutalEngine.Platform.WindowSize.GetHashCode() -> int
+static BrutalEngine.Platform.DisplayId.operator !=(BrutalEngine.Platform.DisplayId left, BrutalEngine.Platform.DisplayId right) -> bool
+static BrutalEngine.Platform.DisplayId.operator ==(BrutalEngine.Platform.DisplayId left, BrutalEngine.Platform.DisplayId right) -> bool
+static BrutalEngine.Platform.DisplayMode.operator !=(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
+static BrutalEngine.Platform.DisplayMode.operator ==(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
+static BrutalEngine.Platform.WindowId.operator !=(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
+static BrutalEngine.Platform.WindowId.operator ==(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
+static BrutalEngine.Platform.WindowSize.operator !=(BrutalEngine.Platform.WindowSize left, BrutalEngine.Platform.WindowSize right) -> bool
+static BrutalEngine.Platform.WindowSize.operator ==(BrutalEngine.Platform.WindowSize left, BrutalEngine.Platform.WindowSize right) -> bool
+~override BrutalEngine.Platform.DisplayId.Equals(object obj) -> bool
+~override BrutalEngine.Platform.DisplayId.ToString() -> string
+~override BrutalEngine.Platform.DisplayMode.Equals(object obj) -> bool
+~override BrutalEngine.Platform.WindowId.Equals(object obj) -> bool
+~override BrutalEngine.Platform.WindowId.ToString() -> string
+~override BrutalEngine.Platform.WindowSize.Equals(object obj) -> bool
+~override BrutalEngine.Platform.WindowSize.ToString() -> string

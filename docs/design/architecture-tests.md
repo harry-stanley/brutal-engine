@@ -44,6 +44,7 @@ Allowed same-layer edges, each with the doc that justifies it:
 | Edge | Reason |
 |------|--------|
 | Platform.Sdl3 → Platform, Graphics.Vulkan → Graphics, Audio.Sdl3 → Audio | a backend implements its abstraction |
+| Graphics → Platform | the render interface creates swapchains for Platform windows through `IVulkanSurfaceSource` ([platform](platform.md#4-vulkan-surface-source)) |
 | Rendering2D → Text | Rendering2D draws text (3.1 diagram, 3.9) |
 | Tilemaps → Physics2D | tilemaps generate collision shapes into Physics2D (3.14) |
 | Particles → Physics2D | particles collide against Physics2D (3.18) |
