@@ -7,10 +7,12 @@ namespace BrutalEngine.Platform;
 /// <para>
 /// The record only describes the window; it doesn't check its values. The backend validates them when it creates the
 /// window. A <see langword="null"/> options object throws <see cref="ArgumentNullException"/>. A
-/// <see langword="null"/> <see cref="Title"/>, or a <see cref="Mode"/> of <see cref="WindowMode.ExclusiveFullscreen"/>,
-/// throws <see cref="ArgumentException"/>. A <see cref="ContentSize"/> side outside its range, or an undefined enum
-/// value, throws <see cref="ArgumentOutOfRangeException"/>. A <see cref="Display"/> that doesn't exist (it was unplugged
-/// since it was listed) is an expected failure, <see cref="BrutalEngine.Core.ErrorKind.NotFound"/>, not an exception.
+/// <see langword="null"/> <see cref="Title"/>, a <see cref="Mode"/> of <see cref="WindowMode.ExclusiveFullscreen"/>, or a
+/// <see cref="Display"/> of <c>default(DisplayId)</c> throws <see cref="ArgumentException"/>. A
+/// <see cref="ContentSize"/> side outside its range, or an undefined enum value, throws
+/// <see cref="ArgumentOutOfRangeException"/>. A non-zero <see cref="Display"/> that names no connected display (it was
+/// unplugged since it was listed) is an expected failure, <see cref="BrutalEngine.Core.ErrorKind.NotFound"/>, not an
+/// exception.
 /// </para>
 /// <para>
 /// Equality compares every property. An immutable record: the window copies what it needs when it is created, so a
@@ -69,5 +71,11 @@ public sealed record WindowOptions
     public WindowSurface Surface { get; init; } = WindowSurface.Vulkan;
 
     /// <summary>The display to open the window on. Default <see langword="null"/>: the primary display.</summary>
+    /// <remarks>
+    /// <c>default(DisplayId)</c> (value 0) names no display, so it is misuse: creating the window throws
+    /// <see cref="ArgumentException"/>, as passing <c>default(DisplayMode)</c> to
+    /// <see cref="IWindow.SetExclusiveFullscreen"/> does. A non-zero id with no connected display (unplugged since it was
+    /// listed) is an expected failure: creation fails with <see cref="BrutalEngine.Core.ErrorKind.NotFound"/>.
+    /// </remarks>
     public DisplayId? Display { get; init; }
 }
