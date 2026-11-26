@@ -128,7 +128,9 @@ public sealed class ComponentRegistry
     /// collision), or the same name with another schema version or tag-ness, or the same name, schema version and
     /// tag-ness (two types can't share one id, because they could disagree on layout). The message names both, and
     /// <typeparamref name="T"/>'s CLR type and assembly. Or the registry already holds <see cref="Capacity"/> types; the
-    /// message names the type and <see cref="WorldOptions.MaxComponentTypes"/>. The registry is unchanged.
+    /// message names the type and <see cref="WorldOptions.MaxComponentTypes"/>. Or <typeparamref name="T"/> is used for
+    /// the first time and the process has handed out every component ordinal (about 2 billion: one per type, plus one
+    /// per lost first-use race between threads), which can't happen in practice. The registry is unchanged.
     /// </exception>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
