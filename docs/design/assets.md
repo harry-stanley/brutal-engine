@@ -334,3 +334,152 @@ public sealed record ImportedAsset
 - **`WorkerCount = 0`** starts no thread: `ProcessCompletions` runs queued requests inline, in priority order, before applying completions. Tests and tools use it, because every step then runs on one thread in a fixed order.
 - **Cancellation.** Each request has a `CancellationTokenSource`; the token reaches the importer and the loader. A worker checks it before reading, before decompressing and before loading. Cancelled work is never published.
 - **Bound on in-flight memory.** `InFlightBytes` counts the stored and uncompressed bytes of requests read but not yet applied by `ProcessCompletions`. A worker doesn't start a request that would take it over `MaxInFlightBytes` unless nothing is in flight, so one asset larger than the bound still loads, alone. Pack entries know their sizes before the read; an import's size is counted when it returns. The bound keeps a level's worth of queued loads from holding gigabytes between two frames.
+
+## 6. The pack format
+
+A pack is one file (by convention `<name>.bepack`) holding cooked assets. Everything is little-endian, offsets are from the start of the file, and the layout is fully determined by the contents, so the same assets always give the same bytes. The cooker (#283) writes packs; a reference writer in the tests writes them independently (section 12).
+
+```text
+[header: 64 bytes][entries: EntryCount x 64 bytes][dependency ids: DependencyCount x 16 bytes][paths: PathTableLength bytes]
+[zero padding to a multiple of 16][entry 0 data][zero padding to 16][entry 1 data] ... [last entry data]   <- end of file
+```
+
+**Header** (64 bytes at offset 0):
+
+| Offset | Size | Field | Rule |
+|-------:|-----:|-------|------|
+| 0 | 8 | Magic | `89 42 45 50 4B 0D 0A 1A` (`\x89BEPK\r\n\x1a`): the high byte catches 7-bit transfers, the CR LF pair line-ending conversion, `1A` DOS `type` |
+| 8 | 4 | FormatVersion | `u32`, 1 |
+| 12 | 4 | Flags | `u32`, 0 |
+| 16 | 8 | FileLength | `u64`, the file's length in bytes |
+| 24 | 4 | EntryCount | `u32`, at most 1,048,576 |
+| 28 | 4 | DependencyCount | `u32`, the dependency ids in the table, at most 16,777,216 |
+| 32 | 4 | PathTableLength | `u32`, at most 67,108,864 |
+| 36 | 4 | TocCrc32 | `u32`, CRC-32 of the bytes from 64 to the end of the path table |
+| 40 | 8 | DataStart | `u64`, the end of the path table rounded up to a multiple of 16 |
+| 48 | 12 | Reserved | 0 |
+| 60 | 4 | HeaderCrc32 | `u32`, CRC-32 of bytes 0-59 |
+
+**Entry** (64 bytes each, sorted by `AssetId`, strictly ascending):
+
+| Offset | Size | Field | Rule |
+|-------:|-----:|-------|------|
+| 0 | 16 | Id | canonical bytes (section 1), not all zero |
+| 16 | 4 | Kind | `u32`, four ASCII bytes of `[A-Za-z0-9]` |
+| 20 | 1 | Compression | 0 none, 1 Deflate (raw RFC 1951, `DeflateStream`), 2 Brotli (RFC 7932, `BrotliDecoder`) |
+| 21 | 3 | Reserved | 0 |
+| 24 | 8 | DataOffset | `u64`: `DataStart` for the first entry, then the previous entry's end rounded up to a multiple of 16 |
+| 32 | 8 | StoredLength | `u64`, bytes in the file; equals `Length` when Compression is 0 |
+| 40 | 8 | Length | `u64`, uncompressed bytes; 0 only with Compression 0 |
+| 48 | 4 | DataCrc32 | `u32`, CRC-32 of the stored bytes |
+| 52 | 4 | FirstDependency | `u32`, index into the dependency table: the sum of the previous entries' `DependencyCount` |
+| 56 | 2 | DependencyCount | `u16` |
+| 58 | 2 | PathLength | `u16`, at most 1,024; 0 means the asset has no path |
+| 60 | 4 | PathOffset | `u32`, into the path table: the sum of the previous entries' `PathLength` |
+
+- **Dependency table:** each entry's ids, ascending, without duplicates, none equal to the entry's own id or all zero. An id need not be in the same pack (packs can depend on each other).
+- **Path table:** UTF-8, no terminators. A path is the asset's source path relative to `res://`, already normalised: `VfsPath.TryParse("res://" + path)` succeeds and its `RelativePath` equals the path (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:605-612`; the rules are in [platform note section 5](platform.md#5-virtual-file-system)). Paths are unique within a pack, and no path is a directory prefix of another (`a` and `a/b`).
+- **Data:** the last entry's data ends at `FileLength`; padding bytes are zero. Entries are in id order, so the order of data in the file is fixed too.
+- **CRC-32** is the zlib and PNG polynomial (reflected `0xEDB88320`, initial value and final XOR `0xFFFFFFFF`; `"123456789"` gives `0xCBF43926`), a small table-driven function in Assets, because the BCL's `Crc32` is in the separate `System.IO.Hashing` package. It catches truncation and bit rot, not tampering.
+- **Compression is chosen per entry by the cooker** (docs/03 3.13, docs/02's Deflate and Brotli, `docs/02-tech-stack.md:70`); the reader accepts any valid stream. Already-compressed payloads (Ogg) and streamed entries are stored with 0.
+
+### Versions
+
+`FormatVersion` 1 is the only version. 0 is never written: `InvalidData`. Above 1: `Unsupported`, "pack format 2 is newer than this runtime reads (1); update the engine or re-cook with its cooker". A future version 2 reader decides whether to read version 1 and says so when it is written; there is no minor version, because every reader rule above is exact. A non-zero `Flags` or reserved byte is `InvalidData`: version 1 defines none, and a later version that does bumps `FormatVersion`. Each kind's payload carries its own version (section 9's textures; the owning note for the others).
+
+### What the reader checks, in order
+
+1. The stream is seekable and at least 64 bytes long (otherwise `Unsupported`, `InvalidData`). The header is read into a stack buffer: magic, version, `HeaderCrc32`, flags and reserved bytes, `FileLength` equal to the stream's length, each count within its limit.
+2. `TocEnd = 64 + 64 x EntryCount + 16 x DependencyCount + PathTableLength`, computed in 64 bits, is at most `FileLength`, and `DataStart` is `TocEnd` rounded up to 16 and at most `FileLength`. Only then is the table of contents allocated (at most 64 MiB + 256 MiB + 64 MiB by the limits, and never more than the file) and read, and `TocCrc32` checked.
+3. Every entry: ids ascending, kind characters, compression and reserved bytes, `DataOffset` exactly as specified, `DataOffset + StoredLength <= FileLength`, `Length` and `StoredLength` at most `Array.MaxLength` (2,147,483,591), the dependency and path ranges exactly as specified and inside their tables, each path valid UTF-8, normalised and unique. The last entry ends at `FileLength` (or `DataStart == FileLength` with no entries).
+4. On each read (not at open): `DataCrc32` over the stored bytes, then decompression into a buffer of exactly `Length` bytes that must be filled exactly: `BrotliDecoder.TryDecompress` must succeed with `Length` written, and a `DeflateStream` must deliver `Length` bytes and then end. More or fewer is `InvalidData`, so a decompression bomb can't allocate past the declared `Length`, which the database has already checked against `MaxAssetBytes`.
+
+Every failure is a `Result` with `InvalidData` (or `Unsupported` for a version or an unseekable stream), naming the pack and the field: "game.bepack: entry 12 DataOffset 4096, expected 4112". The pack is never partly opened.
+
+### A worked example
+
+Two entries: `11111111-2222-4333-8444-555555555555`, kind `BLOB`, path `hello.txt`, the 12 bytes `Hello, pack!` stored uncompressed; and `aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee`, kind `BLOB`, path `greet/b.bin`, 32 bytes of `A` stored as 5 bytes of raw Deflate, depending on the first. The table of contents ends at 228, so data starts at 240; the second entry's data starts at 252 rounded up, 256; the file is 261 bytes.
+
+```text
+0000  89 42 45 50 4b 0d 0a 1a 01 00 00 00 00 00 00 00   magic; version 1; flags 0
+0010  05 01 00 00 00 00 00 00 02 00 00 00 01 00 00 00   FileLength 261; EntryCount 2; DependencyCount 1
+0020  14 00 00 00 63 8c 66 b7 f0 00 00 00 00 00 00 00   PathTableLength 20; TocCrc32 b7668c63; DataStart 240
+0030  00 00 00 00 00 00 00 00 00 00 00 00 d7 75 34 64   reserved; HeaderCrc32 643475d7
+0040  11 11 11 11 22 22 43 33 84 44 55 55 55 55 55 55   entry 0: id
+0050  42 4c 4f 42 00 00 00 00 f0 00 00 00 00 00 00 00   BLOB; none; DataOffset 240
+0060  0c 00 00 00 00 00 00 00 0c 00 00 00 00 00 00 00   StoredLength 12; Length 12
+0070  7e e8 76 e1 00 00 00 00 00 00 09 00 00 00 00 00   DataCrc32 e176e87e; deps 0 + 0; path 9 bytes at 0
+0080  aa aa aa aa bb bb 4c cc 8d dd ee ee ee ee ee ee   entry 1: id
+0090  42 4c 4f 42 01 00 00 00 00 01 00 00 00 00 00 00   BLOB; Deflate; DataOffset 256
+00a0  05 00 00 00 00 00 00 00 20 00 00 00 00 00 00 00   StoredLength 5; Length 32
+00b0  9a 78 33 8d 00 00 00 00 01 00 0b 00 09 00 00 00   DataCrc32 8d33789a; deps 0 + 1; path 11 bytes at 9
+00c0  11 11 11 11 22 22 43 33 84 44 55 55 55 55 55 55   dependency table: entry 1 depends on entry 0
+00d0  68 65 6c 6c 6f 2e 74 78 74 67 72 65 65 74 2f 62   paths: "hello.txt" "greet/b
+00e0  2e 62 69 6e 00 00 00 00 00 00 00 00 00 00 00 00   .bin"; padding to 240
+00f0  48 65 6c 6c 6f 2c 20 70 61 63 6b 21 00 00 00 00   entry 0 data "Hello, pack!"; padding to 256
+0100  73 74 c4 0f 00                                    entry 1 data: raw Deflate of 32 x "A"
+```
+
+### Reading packs
+
+```csharp
+namespace BrutalEngine.Assets.Packs;
+
+public sealed class AssetPack : IDisposable          // thread-safe; owns its stream
+{
+    public static Result<AssetPack> Open(VirtualFileSystem files, VfsPath path);
+    public static Result<AssetPack> Open(Stream stream, string name);   // takes the stream: disposed on failure too
+    public string Name { get; }                       // the path's text, or name; for messages
+    public int EntryCount { get; }
+    public AssetPackEntry GetEntry(int index);        // ArgumentOutOfRangeException
+    public ReadOnlySpan<AssetId> GetDependencies(int index);
+    public bool TryFind(AssetId id, out int index);   // binary search; no allocation
+    public bool TryFindPath(string path, out int index);
+    public Result ReadContent(int index, Span<byte> destination);   // destination.Length == Length, else ArgumentException
+    public Result<Stream> OpenContent(int index);     // Compression 0 only (else Unsupported); a read-only seekable view
+    public void Dispose();
+}
+
+public readonly record struct AssetPackEntry
+{
+    public AssetId Id { get; init; }
+    public AssetKind Kind { get; init; }
+    public PackCompression Compression { get; init; }
+    public long Length { get; init; }
+    public long StoredLength { get; init; }
+    public string? Path { get; init; }                // null when PathLength is 0
+}
+
+public enum PackCompression : byte { None = 0, Deflate = 1, Brotli = 2 }
+```
+
+- **Open** runs the checks above and builds the path index; it allocates the table of contents, the dependency ids and the path strings, once. `GetEntry`, `GetDependencies` and `TryFind` allocate nothing.
+- **Reads are thread-safe:** the pack keeps the one stream it opened and serialises each seek-and-read under its own lock; checksums and decompression run outside it. `ReadContent` allocates nothing beyond the decoder's state for compressed entries; `OpenContent` returns a view whose reads take the same lock, so a streamed music track and the workers share the file. The stream from `VirtualFileSystem.OpenRead` (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:621`) must be seekable, as the directory and in-memory file systems' streams are.
+- **Dispose** closes the stream; reads and open views fail with `ObjectDisposedException` afterwards. The caller disposes a pack after unmounting it from every database and file system.
+
+### Packs under `res://`
+
+```csharp
+public sealed class AssetPackFileSystem : IFileSystem    // read-only; thread-safe; owns nothing
+{
+    public static Result<AssetPackFileSystem> Create(AssetPackFileSystemOptions options);
+    public bool IsReadOnly { get; }                                    // true
+    public Result<VfsEntryKind> GetEntryKind(string relativePath);
+    public Result<byte[]> ReadAllBytes(string relativePath);
+    public Result<Stream> OpenRead(string relativePath);
+    public Result<IReadOnlyList<VfsEntry>> List(string relativePath);
+    public Result WriteAllBytes(string relativePath, ReadOnlySpan<byte> contents);   // Unsupported
+    public Result Delete(string relativePath);                                        // Unsupported
+    public Result CreateDirectory(string relativePath);                               // Unsupported
+}
+
+public sealed record AssetPackFileSystemOptions
+{
+    public required IReadOnlyList<AssetPack> Packs { get; init; }
+    public IFileSystem? Fallback { get; init; }    // loose files, e.g. a DirectoryFileSystem over the application directory
+}
+```
+
+- **Paths** are the entries' paths; directories are implied by them. `ReadAllBytes` returns the uncompressed payload in a new array, `OpenRead` the entry's view (uncompressed entries) or a read-only `MemoryStream` over the payload, `GetEntryKind` and `List` answer from the index (sorted ordinally, `Length` the uncompressed size), and writes, deletes and `CreateDirectory` fail with `Unsupported`, as for any read-only mount (`docs/design/platform.md:430`). It implements Platform's `IFileSystem` exactly as merged (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:573-581`).
+- **Fallback:** a path no pack holds is passed to `Fallback`; `List` merges both, and pack entries win on equal names. Without a fallback, it is `NotFound`. A path in two packs, or one that is a file in one pack and a directory in another, fails `Create` with `InvalidData`.
+- **Mounting.** In a release build the game opens its packs through the host's `res://` (the application directory, `docs/design/platform.md:421`), then replaces that mount: `files.Unmount("res")`, then `files.Mount("res", packFileSystem)` with a fallback over the same directory (`DirectoryFileSystem`, `:437`), so `res://` reads see packed files first and loose files second (`VirtualFileSystem.Mount`/`Unmount`, `src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:620`, `:623`). The open packs keep their streams across the remount. When Runtime implements step 90 it does this itself.
