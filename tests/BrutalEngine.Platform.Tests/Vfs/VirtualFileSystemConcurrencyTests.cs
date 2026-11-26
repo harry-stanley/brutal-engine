@@ -45,7 +45,6 @@ public sealed class VirtualFileSystemConcurrencyTests
         ConcurrentQueue<Exception> failures = new();
         using Barrier barrier = new(Readers + 1);
         int mounterDone = 0;
-        int[] reads = new int[Readers];
         List<Thread> threads =
         [
             new(() => Guard(failures, () =>
@@ -77,7 +76,6 @@ public sealed class VirtualFileSystemConcurrencyTests
 
         for (int r = 0; r < Readers; r++)
         {
-            int reader = r;
             threads.Add(new Thread(() => Guard(failures, () =>
             {
                 barrier.SignalAndWait(cancellation);
@@ -94,8 +92,6 @@ public sealed class VirtualFileSystemConcurrencyTests
                     i++;
                 }
                 while (Volatile.Read(ref mounterDone) == 0);
-
-                reads[reader] = i;
             })));
         }
 
@@ -110,7 +106,6 @@ public sealed class VirtualFileSystemConcurrencyTests
         }
 
         Assert.Empty(failures);
-        Assert.All(reads, count => Assert.True(count > 0));
 
         // The mounter's last cycle unmounted "b" and left every filler mounted.
         Assert.False(vfs.IsMounted("b"));
