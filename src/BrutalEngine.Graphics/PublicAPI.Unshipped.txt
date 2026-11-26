@@ -28,12 +28,70 @@ BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.DebugLabel.DebugLabel() -> void
 BrutalEngine.Graphics.DebugLabel.Equals(BrutalEngine.Graphics.DebugLabel other) -> bool
 BrutalEngine.Graphics.DebugLabel.IsNull.get -> bool
+BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.Blendable = 8 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.ColorTarget = 4 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.CopyDestination = 128 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.CopySource = 64 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.DepthStencilTarget = 16 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.Filterable = 2 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.Multisample = 256 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.None = 0 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.Sampled = 1 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.FormatSupport.Storage = 32 -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.GraphicsAdapterInfo
+BrutalEngine.Graphics.GraphicsAdapterInfo.<Clone>$() -> BrutalEngine.Graphics.GraphicsAdapterInfo!
+BrutalEngine.Graphics.GraphicsAdapterInfo.ApiVersion.get -> string!
+BrutalEngine.Graphics.GraphicsAdapterInfo.ApiVersion.init -> void
+BrutalEngine.Graphics.GraphicsAdapterInfo.Driver.get -> string!
+BrutalEngine.Graphics.GraphicsAdapterInfo.Driver.init -> void
+BrutalEngine.Graphics.GraphicsAdapterInfo.Equals(BrutalEngine.Graphics.GraphicsAdapterInfo? other) -> bool
+BrutalEngine.Graphics.GraphicsAdapterInfo.GraphicsAdapterInfo() -> void
+BrutalEngine.Graphics.GraphicsAdapterInfo.Index.get -> int
+BrutalEngine.Graphics.GraphicsAdapterInfo.Index.init -> void
+BrutalEngine.Graphics.GraphicsAdapterInfo.Name.get -> string!
+BrutalEngine.Graphics.GraphicsAdapterInfo.Name.init -> void
+BrutalEngine.Graphics.GraphicsAdapterInfo.RejectionReasons.get -> System.Collections.Generic.IReadOnlyList<string!>!
+BrutalEngine.Graphics.GraphicsAdapterInfo.RejectionReasons.init -> void
+BrutalEngine.Graphics.GraphicsAdapterInfo.Type.get -> BrutalEngine.Graphics.AdapterType
+BrutalEngine.Graphics.GraphicsAdapterInfo.Type.init -> void
+BrutalEngine.Graphics.GraphicsCapabilities
+BrutalEngine.Graphics.GraphicsCapabilities.<Clone>$() -> BrutalEngine.Graphics.GraphicsCapabilities!
+BrutalEngine.Graphics.GraphicsCapabilities.Equals(BrutalEngine.Graphics.GraphicsCapabilities? other) -> bool
+BrutalEngine.Graphics.GraphicsCapabilities.Features.get -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsCapabilities.Features.init -> void
+BrutalEngine.Graphics.GraphicsCapabilities.GraphicsCapabilities() -> void
+BrutalEngine.Graphics.GraphicsCapabilities.Limits.get -> BrutalEngine.Graphics.GraphicsLimits
+BrutalEngine.Graphics.GraphicsCapabilities.Limits.init -> void
 BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.None = 0 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.SamplerAnisotropy = 1 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.TextureCompressionAstc = 8 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.TextureCompressionBC = 4 -> BrutalEngine.Graphics.GraphicsFeatures
 BrutalEngine.Graphics.GraphicsFeatures.TimestampQueries = 2 -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.GraphicsLimits
+BrutalEngine.Graphics.GraphicsLimits.ColorSampleCounts.get -> BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.GraphicsLimits.ColorSampleCounts.init -> void
+BrutalEngine.Graphics.GraphicsLimits.Equals(BrutalEngine.Graphics.GraphicsLimits other) -> bool
+BrutalEngine.Graphics.GraphicsLimits.GraphicsLimits() -> void
+BrutalEngine.Graphics.GraphicsLimits.MaxBindGroups.get -> int
+BrutalEngine.Graphics.GraphicsLimits.MaxBindGroups.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MaxColorTargets.get -> int
+BrutalEngine.Graphics.GraphicsLimits.MaxColorTargets.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MaxPushConstantBytes.get -> int
+BrutalEngine.Graphics.GraphicsLimits.MaxPushConstantBytes.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MaxSamplerAnisotropy.get -> float
+BrutalEngine.Graphics.GraphicsLimits.MaxSamplerAnisotropy.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MaxTextureArrayLayers.get -> int
+BrutalEngine.Graphics.GraphicsLimits.MaxTextureArrayLayers.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MaxTextureDimension2D.get -> int
+BrutalEngine.Graphics.GraphicsLimits.MaxTextureDimension2D.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MinStorageBufferOffsetAlignment.get -> long
+BrutalEngine.Graphics.GraphicsLimits.MinStorageBufferOffsetAlignment.init -> void
+BrutalEngine.Graphics.GraphicsLimits.MinUniformBufferOffsetAlignment.get -> long
+BrutalEngine.Graphics.GraphicsLimits.MinUniformBufferOffsetAlignment.init -> void
+BrutalEngine.Graphics.GraphicsLimits.TimestampPeriodNanoseconds.get -> double
+BrutalEngine.Graphics.GraphicsLimits.TimestampPeriodNanoseconds.init -> void
 BrutalEngine.Graphics.GraphicsPipelineHandle
 BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
 BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
@@ -42,6 +100,13 @@ BrutalEngine.Graphics.PipelineLayoutHandle
 BrutalEngine.Graphics.PipelineLayoutHandle.Equals(BrutalEngine.Graphics.PipelineLayoutHandle other) -> bool
 BrutalEngine.Graphics.PipelineLayoutHandle.IsNull.get -> bool
 BrutalEngine.Graphics.PipelineLayoutHandle.PipelineLayoutHandle() -> void
+BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.SampleCounts.None = 0 -> BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.SampleCounts.X1 = 1 -> BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.SampleCounts.X16 = 16 -> BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.SampleCounts.X2 = 2 -> BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.SampleCounts.X4 = 4 -> BrutalEngine.Graphics.SampleCounts
+BrutalEngine.Graphics.SampleCounts.X8 = 8 -> BrutalEngine.Graphics.SampleCounts
 BrutalEngine.Graphics.SamplerHandle
 BrutalEngine.Graphics.SamplerHandle.Equals(BrutalEngine.Graphics.SamplerHandle other) -> bool
 BrutalEngine.Graphics.SamplerHandle.IsNull.get -> bool
@@ -79,6 +144,14 @@ override BrutalEngine.Graphics.ComputePipelineHandle.ToString() -> string!
 override BrutalEngine.Graphics.DebugLabel.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.DebugLabel.GetHashCode() -> int
 override BrutalEngine.Graphics.DebugLabel.ToString() -> string!
+override BrutalEngine.Graphics.GraphicsAdapterInfo.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.GraphicsAdapterInfo.GetHashCode() -> int
+override BrutalEngine.Graphics.GraphicsAdapterInfo.ToString() -> string!
+override BrutalEngine.Graphics.GraphicsCapabilities.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.GraphicsCapabilities.GetHashCode() -> int
+override BrutalEngine.Graphics.GraphicsCapabilities.ToString() -> string!
+override BrutalEngine.Graphics.GraphicsLimits.GetHashCode() -> int
+override BrutalEngine.Graphics.GraphicsLimits.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.GraphicsPipelineHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsPipelineHandle.ToString() -> string!
@@ -117,6 +190,12 @@ static BrutalEngine.Graphics.ComputePipelineHandle.operator !=(BrutalEngine.Grap
 static BrutalEngine.Graphics.ComputePipelineHandle.operator ==(BrutalEngine.Graphics.ComputePipelineHandle left, BrutalEngine.Graphics.ComputePipelineHandle right) -> bool
 static BrutalEngine.Graphics.DebugLabel.operator !=(BrutalEngine.Graphics.DebugLabel left, BrutalEngine.Graphics.DebugLabel right) -> bool
 static BrutalEngine.Graphics.DebugLabel.operator ==(BrutalEngine.Graphics.DebugLabel left, BrutalEngine.Graphics.DebugLabel right) -> bool
+static BrutalEngine.Graphics.GraphicsAdapterInfo.operator !=(BrutalEngine.Graphics.GraphicsAdapterInfo? left, BrutalEngine.Graphics.GraphicsAdapterInfo? right) -> bool
+static BrutalEngine.Graphics.GraphicsAdapterInfo.operator ==(BrutalEngine.Graphics.GraphicsAdapterInfo? left, BrutalEngine.Graphics.GraphicsAdapterInfo? right) -> bool
+static BrutalEngine.Graphics.GraphicsCapabilities.operator !=(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
+static BrutalEngine.Graphics.GraphicsCapabilities.operator ==(BrutalEngine.Graphics.GraphicsCapabilities? left, BrutalEngine.Graphics.GraphicsCapabilities? right) -> bool
+static BrutalEngine.Graphics.GraphicsLimits.operator !=(BrutalEngine.Graphics.GraphicsLimits left, BrutalEngine.Graphics.GraphicsLimits right) -> bool
+static BrutalEngine.Graphics.GraphicsLimits.operator ==(BrutalEngine.Graphics.GraphicsLimits left, BrutalEngine.Graphics.GraphicsLimits right) -> bool
 static BrutalEngine.Graphics.GraphicsPipelineHandle.operator !=(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
 static BrutalEngine.Graphics.GraphicsPipelineHandle.operator ==(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
 static BrutalEngine.Graphics.PipelineLayoutHandle.operator !=(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
@@ -132,3 +211,4 @@ static BrutalEngine.Graphics.TextureHandle.operator ==(BrutalEngine.Graphics.Tex
 static BrutalEngine.Graphics.TextureViewHandle.operator !=(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
 static BrutalEngine.Graphics.TextureViewHandle.operator ==(BrutalEngine.Graphics.TextureViewHandle left, BrutalEngine.Graphics.TextureViewHandle right) -> bool
 ~override BrutalEngine.Graphics.AdapterSelection.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
