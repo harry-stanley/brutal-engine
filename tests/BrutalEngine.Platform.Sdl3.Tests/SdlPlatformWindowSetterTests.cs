@@ -45,8 +45,8 @@ public sealed unsafe class SdlPlatformWindowSetterTests
             case "SetContentSize":
                 AssertSuccess(window.SetContentSize(new WindowSize(400, 300)));
 
-                // The dummy driver's display is at scale 1, so the window coordinates equal the content size. The
-                // snapshot changes on the next refresh, not before.
+                // The dummy driver's display is at scale 1, so the window coordinates equal the content size. Dummy
+                // applies the size at once, so the next refresh reads it; the snapshot doesn't change before that.
                 Assert.Equal(new WindowSize(400, 300), NativeSize(handle));
                 Assert.Equal(NoSurface.ContentSize, window.ContentSize);
                 AssertSuccess(window.RefreshSnapshot());

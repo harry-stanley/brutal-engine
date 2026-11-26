@@ -14,7 +14,8 @@ namespace BrutalEngine.Platform.Sdl3;
 /// <para>
 /// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The fullscreen members and
 /// the <see cref="IWindow"/> declaration come later; the event pump keeps the snapshot current through
-/// <see cref="RefreshSnapshot"/>, and the setters ask SDL for changes that the snapshot reports once refreshed.
+/// <see cref="RefreshSnapshot"/>. The setters ask SDL for changes; a size change shows in the snapshot on the refresh
+/// after SDL applies it (the event pump refreshes on the resize event).
 /// </para>
 /// <para>
 /// <b>Threads:</b> the thread that creates the window owns it. Every member, <see cref="Dispose"/> included, runs on
@@ -203,10 +204,11 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
     /// <param name="contentSize">The requested size in content units. Each side must be from 1 to 16384.</param>
     /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
     /// <remarks>
-    /// The snapshot (<see cref="Size"/>, <see cref="PixelSize"/>, <see cref="ContentSize"/>) changes on the next
-    /// <see cref="RefreshSnapshot"/>, because SDL can apply the size asynchronously; the result can differ from the
-    /// request by rounding or because the OS clamped it. Owner thread only. Allocates nothing on success; a failure
-    /// allocates its message.
+    /// The snapshot (<see cref="Size"/>, <see cref="PixelSize"/>, <see cref="ContentSize"/>) changes on the
+    /// <see cref="RefreshSnapshot"/> after SDL applies the size (the event pump refreshes on the resize event), because
+    /// SDL can apply it asynchronously: on X11 and Wayland a refresh straight after this call can still read the old
+    /// size. Nothing waits for it here. The result can differ from the request by rounding or because the OS clamped
+    /// it. Owner thread only. Allocates nothing on success; a failure allocates its message.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">A side of <paramref name="contentSize"/> is outside 1 to 16384.</exception>
     /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
