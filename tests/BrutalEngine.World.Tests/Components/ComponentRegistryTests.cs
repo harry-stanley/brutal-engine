@@ -203,6 +203,83 @@ public sealed class ComponentRegistryTests
         tracking.ThrowIfLeaks();
     }
 
+    [Theory]
+    [InlineData(nameof(ComponentRegistry.Table.Types))]
+    [InlineData(nameof(ComponentRegistry.Table.IdsByOrdinal))]
+    public void Register_GrowthThrows_LeavesRegistryUnchanged(string table)
+    {
+        ComponentRegistry.Table failing = Enum.Parse<ComponentRegistry.Table>(table);
+        TrackingAllocator tracking = NewTracking();
+        using (EcsWorld world = NewWorld(tracking))
+        {
+            ComponentRegistry registry = world.Components;
+
+            // Fill the type table exactly, so the next new type grows it. Adding the largest ordinal first makes the
+            // ordinal map exactly that long, so the next new type, with a fresh and so larger ordinal, grows it too.
+            int[] ordinals = new int[ComponentRegistry.InitialTypeCapacity];
+            for (int i = 0; i < ordinals.Length; i++)
+            {
+                ordinals[i] = ComponentOrdinal.Reserve();
+            }
+
+            Array.Reverse(ordinals);
+            var before = new ComponentType[ordinals.Length];
+            for (int i = 0; i < ordinals.Length; i++)
+            {
+                ComponentInfo filler = InfoFor($"Tests.Grown{i}");
+                before[i] = registry.GetComponentType(registry.Add(ordinals[i], in filler, 4, 4));
+            }
+
+            int ordinal = ComponentOrdinal.Reserve();
+            ComponentInfo info = InfoFor("Tests.GrowthFails");
+            List<ComponentRegistry.Table> grown = [];
+            registry.BeforeGrowth = growing =>
+            {
+                grown.Add(growing);
+                if (growing == failing)
+                {
+                    throw new InsufficientMemoryException("Simulated: the table can't grow.");
+                }
+            };
+
+            _ = Assert.Throws<InsufficientMemoryException>(() => registry.Add(ordinal, in info, 8, 8));
+
+            // The type table grows first, so when the ordinal map fails, the grown type table must be invisible.
+            ComponentRegistry.Table[] expectedGrowths = failing == ComponentRegistry.Table.Types
+                ? [ComponentRegistry.Table.Types]
+                : [ComponentRegistry.Table.Types, ComponentRegistry.Table.IdsByOrdinal];
+            Assert.Equal(expectedGrowths, grown);
+
+            // Nothing changed: the count, the stable-id map, the type table and the ordinal map.
+            Assert.Equal(ordinals.Length, registry.Count);
+            Assert.False(registry.TryGetId(info.StableId, out _));
+            Assert.False(registry.TryGetId(ordinal, out _));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => registry.GetComponentType(new ComponentId(ordinals.Length)));
+            for (int i = 0; i < ordinals.Length; i++)
+            {
+                Assert.Equal(before[i], registry.GetComponentType(new ComponentId(i)));
+                Assert.True(registry.TryGetId(ordinals[i], out ComponentId byOrdinal));
+                Assert.Equal(i, byOrdinal.Index);
+                Assert.True(registry.TryGetId(before[i].Info.StableId, out ComponentId byStableId));
+                Assert.Equal(i, byStableId.Index);
+            }
+
+            // Once memory is back, the same type registers as the next id, and so does a real one after it.
+            registry.BeforeGrowth = null;
+            ComponentId added = registry.Add(ordinal, in info, 8, 8);
+            Assert.Equal(ordinals.Length, added.Index);
+            Assert.True(registry.TryGetId(info.StableId, out ComponentId addedByStableId));
+            Assert.Equal(added, addedByStableId);
+            Assert.True(registry.TryGetId(ordinal, out ComponentId addedByOrdinal));
+            Assert.Equal(added, addedByOrdinal);
+            Assert.Equal(new ComponentType(added, info, 8, 8), registry.GetComponentType(added));
+            Assert.Equal(ordinals.Length + 1, registry.Register<Position>().Index);
+            Assert.Equal(ordinals.Length + 2, registry.Count);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     [Fact]
     public void GetComponentType_IndexAtLeastCount_ThrowsArgumentOutOfRange()
     {
