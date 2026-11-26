@@ -479,8 +479,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// </exception>
     /// <remarks>
     /// Takes a pending status (<see cref="FakeBackendScript.SwapchainStatusNext"/>); otherwise succeeds. Each acquired image is
-    /// the one after the swapchain's previous one. Allocates nothing, except when recording the call grows
-    /// <see cref="Calls"/>.
+    /// the one after the swapchain's previous one. Allocates nothing while <see cref="FakeBackendScript.RecordCalls"/> is off;
+    /// with it on, recording the call grows <see cref="Calls"/>.
     /// </remarks>
     public BackendAcquire AcquireImage(ulong swapchain, int frameSlot)
     {
@@ -516,8 +516,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// disposal.
     /// </exception>
     /// <remarks>
-    /// Takes a pending status (<see cref="FakeBackendScript.SwapchainStatusNext"/>); otherwise succeeds. Allocates nothing,
-    /// except when recording the call grows <see cref="Calls"/>.
+    /// Takes a pending status (<see cref="FakeBackendScript.SwapchainStatusNext"/>); otherwise succeeds. Allocates nothing
+    /// while <see cref="FakeBackendScript.RecordCalls"/> is off; with it on, recording the call grows <see cref="Calls"/>.
     /// </remarks>
     public BackendPresent Present(ulong swapchain, int imageIndex)
     {
