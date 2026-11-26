@@ -30,8 +30,13 @@ namespace BrutalEngine.World;
 /// needs a chunk, and keeps emptied chunks for reuse until <see cref="TrimMemory"/> or <see cref="Dispose"/>.
 /// Reading <see cref="Name"/> allocates nothing.
 /// </para>
+/// <para>
+/// <b>Entities.</b> <see cref="Spawn()"/> and <see cref="Despawn"/> add and remove entities directly; misuse (a null,
+/// stale or pending entity) throws before anything changes. Spawning and despawning allocate no managed memory, and
+/// once the entity table and the chunk pool have grown to the churn's size they make no allocator calls either.
+/// </para>
 /// </remarks>
-public sealed class EcsWorld : IDisposable
+public sealed partial class EcsWorld : IDisposable
 {
     private readonly ThreadAffinity _owner;
     private readonly string _name;
