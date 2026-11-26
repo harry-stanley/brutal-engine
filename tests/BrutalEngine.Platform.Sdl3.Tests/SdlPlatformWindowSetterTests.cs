@@ -19,7 +19,8 @@ public sealed unsafe class SdlPlatformWindowSetterTests
 
     private static WindowOptions NoSurface { get; } = new() { Title = "Platform.Sdl3.Tests", ContentSize = new(320, 200), Surface = WindowSurface.None };
 
-    public static TheoryData<string> Setters { get; } = new("SetTitle", "SetContentSize");
+    public static TheoryData<string> Setters { get; } = new(
+        "SetTitle", "SetContentSize", "StartTextInput", "StopTextInput", "SetRelativeMouseMode on", "SetRelativeMouseMode off");
 
     // Each setter's misuse rows: disposal, the wrong thread, and the thread checked before disposal. The argument rows
     // pin that the thread and disposal are checked before the argument.
@@ -53,9 +54,74 @@ public sealed unsafe class SdlPlatformWindowSetterTests
                 Assert.Equal(new WindowSize(400, 300), window.ContentSize);
                 break;
 
+            case "StartTextInput":
+                Assert.False(window.IsTextInputActive);
+                AssertSuccess(window.StartTextInput());
+
+                // Text input has no OS event: the getter changes as soon as the setter succeeds.
+                Assert.True(window.IsTextInputActive);
+                Assert.NotEqual(0, Sdl.PInvoke.TextInputActive(handle));
+                AssertSuccess(window.RefreshSnapshot());
+                Assert.True(window.IsTextInputActive);
+                break;
+
+            case "StopTextInput":
+                Assert.NotEqual(0, Sdl.PInvoke.StartTextInput(handle));
+                AssertSuccess(window.RefreshSnapshot());
+                Assert.True(window.IsTextInputActive);
+                AssertSuccess(window.StopTextInput());
+                Assert.False(window.IsTextInputActive);
+                Assert.Equal(0, Sdl.PInvoke.TextInputActive(handle));
+                AssertSuccess(window.RefreshSnapshot());
+                Assert.False(window.IsTextInputActive);
+                break;
+
+            case "SetRelativeMouseMode on":
+                Assert.False(window.IsRelativeMouseMode);
+                AssertSuccess(window.SetRelativeMouseMode(true));
+
+                // Relative mouse mode has no OS event either.
+                Assert.True(window.IsRelativeMouseMode);
+                Assert.NotEqual(0, Sdl.PInvoke.GetWindowRelativeMouseMode(handle));
+                AssertSuccess(window.RefreshSnapshot());
+                Assert.True(window.IsRelativeMouseMode);
+                break;
+
+            case "SetRelativeMouseMode off":
+                Assert.NotEqual(0, Sdl.PInvoke.SetWindowRelativeMouseMode(handle, 1));
+                AssertSuccess(window.RefreshSnapshot());
+                Assert.True(window.IsRelativeMouseMode);
+                AssertSuccess(window.SetRelativeMouseMode(false));
+                Assert.False(window.IsRelativeMouseMode);
+                Assert.Equal(0, Sdl.PInvoke.GetWindowRelativeMouseMode(handle));
+                AssertSuccess(window.RefreshSnapshot());
+                Assert.False(window.IsRelativeMouseMode);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(setter), setter, "Unknown setter.");
         }
+    }
+
+    [Fact]
+    public void RefusedSetter_ReturnsFailedResult()
+    {
+        // SDL's offscreen driver has no relative mouse mode (observed on Windows and Linux); the dummy driver accepts it.
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = Start(HeadlessMode.Offscreen);
+        using SdlPlatformWindow window = session.CreateWindow(NoSurface).Value;
+        Sdl.PInvoke.ClearError();
+
+        Result result = window.SetRelativeMouseMode(true);
+
+        Assert.True(result.TryGetError(out EngineError error));
+        Assert.Equal(ErrorKind.Native, error.Kind);
+        Assert.Equal("SDL_SetWindowRelativeMouseMode failed: That operation is not supported", error.Message);
+
+        // A refused setter leaves the flag as it was.
+        Assert.False(window.IsRelativeMouseMode);
+        AssertSuccess(window.RefreshSnapshot());
+        Assert.False(window.IsRelativeMouseMode);
     }
 
     [Theory]
@@ -125,7 +191,7 @@ public sealed unsafe class SdlPlatformWindowSetterTests
     private static TheoryData<string, string, Type> BuildMisuseRows()
     {
         TheoryData<string, string, Type> rows = [];
-        foreach (string setter in new[] { "SetTitle", "SetContentSize" })
+        foreach (string setter in new[] { "SetTitle", "SetContentSize", "StartTextInput", "StopTextInput", "SetRelativeMouseMode" })
         {
             rows.Add(setter, Disposed, typeof(ObjectDisposedException));
             rows.Add(setter, WrongThread, typeof(WrongThreadException));
@@ -163,6 +229,9 @@ public sealed unsafe class SdlPlatformWindowSetterTests
                 "height 16385" => new WindowSize(400, 16385),
                 _ => new WindowSize(400, 300),
             }),
+            "StartTextInput" => window.StartTextInput(),
+            "StopTextInput" => window.StopTextInput(),
+            "SetRelativeMouseMode" => window.SetRelativeMouseMode(true),
             _ => throw new ArgumentOutOfRangeException(nameof(setter), setter, "Unknown setter."),
         };
     }
@@ -174,6 +243,10 @@ public sealed unsafe class SdlPlatformWindowSetterTests
         failures += window.SetTitle(_longTitle).IsSuccess ? 0 : 1;
         failures += window.SetContentSize(large).IsSuccess ? 0 : 1;
         failures += window.SetContentSize(small).IsSuccess ? 0 : 1;
+        failures += window.StartTextInput().IsSuccess ? 0 : 1;
+        failures += window.StopTextInput().IsSuccess ? 0 : 1;
+        failures += window.SetRelativeMouseMode(true).IsSuccess ? 0 : 1;
+        failures += window.SetRelativeMouseMode(false).IsSuccess ? 0 : 1;
         return failures;
     }
 

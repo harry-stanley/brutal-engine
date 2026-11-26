@@ -219,6 +219,72 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         return SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
     }
 
+    /// <summary>Turns text input on for this window through <c>SDL_StartTextInput</c>.</summary>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// On success <see cref="IsTextInputActive"/> becomes <see langword="true"/> at once, since text input has no OS
+    /// event; a failure leaves it unchanged. Owner thread only. Allocates nothing on success; a failure allocates its
+    /// message.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result StartTextInput()
+    {
+        ThrowIfUnusable("IWindow.StartTextInput");
+        Result started = SdlCheck.Check(Sdl.PInvoke.StartTextInput(_handle), "SDL_StartTextInput");
+        if (started.IsSuccess)
+        {
+            _isTextInputActive = true;
+        }
+
+        return started;
+    }
+
+    /// <summary>Turns text input off for this window through <c>SDL_StopTextInput</c>.</summary>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// On success <see cref="IsTextInputActive"/> becomes <see langword="false"/> at once; a failure leaves it unchanged.
+    /// Owner thread only. Allocates nothing on success; a failure allocates its message.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result StopTextInput()
+    {
+        ThrowIfUnusable("IWindow.StopTextInput");
+        Result stopped = SdlCheck.Check(Sdl.PInvoke.StopTextInput(_handle), "SDL_StopTextInput");
+        if (stopped.IsSuccess)
+        {
+            _isTextInputActive = false;
+        }
+
+        return stopped;
+    }
+
+    /// <summary>Turns relative mouse mode on or off for this window through <c>SDL_SetWindowRelativeMouseMode</c>.</summary>
+    /// <param name="enabled"><see langword="true"/> to hide and confine the cursor and report motion as deltas.</param>
+    /// <returns>
+    /// Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused (SDL's <c>offscreen</c> driver
+    /// refuses it: "That operation is not supported").
+    /// </returns>
+    /// <remarks>
+    /// On success <see cref="IsRelativeMouseMode"/> becomes <paramref name="enabled"/> at once, since the mode has no OS
+    /// event; a failure leaves it unchanged. Owner thread only. Allocates nothing on success; a failure allocates its
+    /// message.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public Result SetRelativeMouseMode(bool enabled)
+    {
+        ThrowIfUnusable("IWindow.SetRelativeMouseMode");
+        Result set = SdlCheck.Check(Sdl.PInvoke.SetWindowRelativeMouseMode(_handle, enabled ? (byte)1 : (byte)0), "SDL_SetWindowRelativeMouseMode");
+        if (set.IsSuccess)
+        {
+            _isRelativeMouseMode = enabled;
+        }
+
+        return set;
+    }
+
     /// <summary>
     /// Re-reads the whole snapshot from SDL: sizes, pixel density, display scale, state, mode, display, text input and
     /// relative mouse mode. The event pump calls it on window events.
