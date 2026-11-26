@@ -34,6 +34,9 @@ public sealed class EntityMisuseTests
 
         /// <summary><see cref="EcsWorld.TryGet{T}"/>.</summary>
         TryGet,
+
+        /// <summary><see cref="EcsWorld.Write{T}"/>.</summary>
+        Write,
     }
 
     /// <summary>The misuse a row makes.</summary>
@@ -94,6 +97,13 @@ public sealed class EntityMisuseTests
     [InlineData(Member.TryGet, Misuse.Pending, typeof(InvalidOperationException))]
     [InlineData(Member.TryGet, Misuse.Disposed, typeof(ObjectDisposedException))]
     [InlineData(Member.TryGet, Misuse.WrongThread, typeof(WrongThreadException))]
+    [InlineData(Member.Write, Misuse.Null, typeof(ArgumentException))]
+    [InlineData(Member.Write, Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(Member.Write, Misuse.Retired, typeof(StaleHandleException))]
+    [InlineData(Member.Write, Misuse.OutOfRange, typeof(StaleHandleException))]
+    [InlineData(Member.Write, Misuse.Pending, typeof(InvalidOperationException))]
+    [InlineData(Member.Write, Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Member.Write, Misuse.WrongThread, typeof(WrongThreadException))]
     [InlineData(Member.SpawnWithComponents, Misuse.Disposed, typeof(ObjectDisposedException))]
     [InlineData(Member.SpawnWithComponents, Misuse.WrongThread, typeof(WrongThreadException))]
     public void Table(Member member, Misuse misuse, Type expected)
@@ -180,6 +190,11 @@ public sealed class EntityMisuseTests
     [InlineData(Member.Get, "tag")]
     [InlineData(Member.Get, "absent tag")]
     [InlineData(Member.Get, "unregistered tag")]
+    [InlineData(Member.Write, "missing")]
+    [InlineData(Member.Write, "unregistered")]
+    [InlineData(Member.Write, "tag")]
+    [InlineData(Member.Write, "absent tag")]
+    [InlineData(Member.Write, "unregistered tag")]
     [InlineData(Member.TryGet, "tag")]
     [InlineData(Member.TryGet, "absent tag")]
     [InlineData(Member.TryGet, "unregistered tag")]
@@ -190,6 +205,7 @@ public sealed class EntityMisuseTests
         {
             Entity tagged = world.Spawn(new Position(1, 2), default(Marker));
             Entity plain = world.Spawn(new Health(3));
+            world.SetChangeTickForTesting(4);
             int types = world.Components.Count;
             (Entity target, string component, Action call) = (member, rule) switch
             {
@@ -198,6 +214,11 @@ public sealed class EntityMisuseTests
                 (Member.Get, "tag") => (tagged, "Marker", () => _ = world.Get<Marker>(tagged)),
                 (Member.Get, "absent tag") => (plain, "Marker", () => _ = world.Get<Marker>(plain)),
                 (Member.Get, _) => (plain, "UnusedTag", () => _ = world.Get<UnusedTag>(plain)),
+                (Member.Write, "missing") => (plain, "Position", () => _ = world.Write<Position>(plain)),
+                (Member.Write, "unregistered") => (plain, "Unused", () => _ = world.Write<Unused>(plain)),
+                (Member.Write, "tag") => (tagged, "Marker", () => _ = world.Write<Marker>(tagged)),
+                (Member.Write, "absent tag") => (plain, "Marker", () => _ = world.Write<Marker>(plain)),
+                (Member.Write, _) => (plain, "UnusedTag", () => _ = world.Write<UnusedTag>(plain)),
                 (_, "tag") => (tagged, "Marker", () => _ = world.TryGet(tagged, out Marker _)),
                 (_, "absent tag") => (plain, "Marker", () => _ = world.TryGet(plain, out Marker _)),
                 _ => (plain, "UnusedTag", (Action)(() => _ = world.TryGet(plain, out UnusedTag _))),
@@ -207,8 +228,21 @@ public sealed class EntityMisuseTests
 
             Assert.Contains(target.ToString(), exception.Message, StringComparison.Ordinal);
             Assert.Contains($"Entities.{component}", exception.Message, StringComparison.Ordinal);
+
+            // Which rule fired: a tag is rejected as a tag, not as a missing component.
+            Assert.Equal(rule.EndsWith("tag", StringComparison.Ordinal), exception.Message.Contains("is a tag", StringComparison.Ordinal));
             Assert.Equal(types, world.Components.Count);
             Assert.Equal(new Position(1, 2), world.Get<Position>(tagged));
+
+            // Nothing was stamped: every chunk's Changed ticks are still the spawn tick.
+            for (int i = 0; i < world.ArchetypeCount; i++)
+            {
+                Storage.ChunkTable chunks = world.Archetypes[i].Chunks;
+                for (int chunk = 0; chunk < chunks.ChunkCount; chunk++)
+                {
+                    Assert.All(chunks.GetChanged(chunk).ToArray(), tick => Assert.Equal(1u, tick));
+                }
+            }
         }
 
         tracking.ThrowIfLeaks();
@@ -238,6 +272,9 @@ public sealed class EntityMisuseTests
                 break;
             case Member.TryGet:
                 _ = world.TryGet(target, out Position _);
+                break;
+            case Member.Write:
+                _ = world.Write<Position>(target);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(member), member, "No such member.");

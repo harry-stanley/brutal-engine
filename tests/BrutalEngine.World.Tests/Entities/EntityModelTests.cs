@@ -25,11 +25,11 @@ public sealed class EntityModelTests
 
     /// <summary>
     /// Five samples of 4,000 random steps: spawns with a random set of up to four components (data and a tag),
-    /// despawns, reads (Has, Get and TryGet of a random type, present or not) and stale access, against a dictionary
-    /// model with its own first-in, first-out slot queue and dense rows per component set. After every step the world's
-    /// count, each archetype's rows and chunk count, each alive entity's record, stored row id, Has answers and component
-    /// values agree with the model. Each sample grows past one chunk at a high spawn share, then shrinks at a low one,
-    /// so rows move within and between chunks.
+    /// despawns, reads (Has, Get and TryGet of a random type, present or not), writes through Write (to a type present
+    /// or not) and stale access, against a dictionary model with its own first-in, first-out slot queue and dense rows
+    /// per component set. After every step the world's count, each archetype's rows and chunk count, each alive
+    /// entity's record, stored row id, Has answers and component values agree with the model. Each sample grows past
+    /// one chunk at a high spawn share, then shrinks at a low one, so rows move within and between chunks.
     /// </summary>
     [Fact]
     public void RandomOperations_MatchModel()
@@ -71,9 +71,13 @@ public sealed class EntityModelTests
                 model.Despawn(entity);
                 ok = !world.IsAlive(entity);
             }
-            else if (action < 8 || model.Despawned.Count == 0)
+            else if (action < 7 || model.Despawned.Count == 0)
             {
                 ok = MatchesRead(world, model, model.PickAlive(pick / 10), pick / 1000);
+            }
+            else if (action < 8)
+            {
+                ok = Writes(world, model, model.PickAlive(pick / 10), pick / 1000, seed: -step);
             }
             else
             {
@@ -141,8 +145,9 @@ public sealed class EntityModelTests
     /// <summary>One read of a random type on an alive entity: Has, Get (which throws for a missing type) or TryGet.</summary>
     private static bool MatchesRead(EcsWorld world, Model model, Entity entity, int pick)
     {
-        (int mask, int seed) = model.Alive[entity];
+        (int mask, int[] seeds) = model.Alive[entity];
         int bit = 1 << (pick % 4);
+        int seed = bit == MarkerBit ? 0 : seeds[SeedIndex(bit)];
         bool has = (mask & bit) != 0;
         switch (pick / 4 % 3)
         {
@@ -168,14 +173,51 @@ public sealed class EntityModelTests
         }
     }
 
+    /// <summary>
+    /// One write of a random type on an alive entity through Write: a new value for a data component it has, or an
+    /// exception for one it lacks or a tag.
+    /// </summary>
+    private static bool Writes(EcsWorld world, Model model, Entity entity, int pick, int seed)
+    {
+        int bit = 1 << (pick % 4);
+        if ((model.Alive[entity].Mask & bit) == 0 || bit == MarkerBit)
+        {
+            Action write = bit switch
+            {
+                PositionBit => () => world.Write<Position>(entity),
+                HealthBit => () => world.Write<Health>(entity),
+                PayloadBit => () => world.Write<Payload>(entity),
+                _ => () => world.Write<Marker>(entity),
+            };
+            return Record.Exception(write) is InvalidOperationException;
+        }
+
+        switch (bit)
+        {
+            case PositionBit:
+                world.Write<Position>(entity) = NewPosition(seed);
+                break;
+            case HealthBit:
+                world.Write<Health>(entity) = NewHealth(seed);
+                break;
+            default:
+                world.Write<Payload>(entity) = new Payload(seed);
+                break;
+        }
+
+        model.Write(entity, bit, seed);
+        return true;
+    }
+
     /// <summary>A despawned entity throws StaleHandleException naming its handle from every member.</summary>
     private static bool StaleAccessThrows(EcsWorld world, Entity stale, int pick)
     {
-        Action access = (pick % 4) switch
+        Action access = (pick % 5) switch
         {
             0 => () => world.Despawn(stale),
             1 => () => world.Has<Position>(stale),
             2 => () => world.Get<Health>(stale),
+            3 => () => world.Write<Health>(stale),
             _ => () => world.TryGet(stale, out Position _),
         };
         return Record.Exception(access) is StaleHandleException exception
@@ -204,7 +246,7 @@ public sealed class EntityModelTests
                 if (!world.Entities.TryGetLocation(entity, out EntityRecord record)
                     || record.Archetype != archetype.Index || record.Chunk != i / capacity || record.Row != i % capacity
                     || EntityTestSupport.EntityAt(archetype, i / capacity, i % capacity) != entity
-                    || !EntityMatches(world, entity, mask, model.Alive[entity].Seed))
+                    || !EntityMatches(world, entity, mask, model.Alive[entity].Seeds))
                 {
                     return false;
                 }
@@ -214,12 +256,13 @@ public sealed class EntityModelTests
         return true;
     }
 
-    private static bool EntityMatches(EcsWorld world, Entity entity, int mask, int seed)
+    private static bool EntityMatches(EcsWorld world, Entity entity, int mask, int[] seeds)
     {
         for (int bit = 1; bit <= MarkerBit; bit <<= 1)
         {
             bool has = (mask & bit) != 0;
-            if (HasOf(world, entity, bit) != has || (has && bit != MarkerBit && !ValuesMatch(world, entity, bit, seed)))
+            if (HasOf(world, entity, bit) != has
+                || (has && bit != MarkerBit && !ValuesMatch(world, entity, bit, seeds[SeedIndex(bit)])))
             {
                 return false;
             }
@@ -259,13 +302,20 @@ public sealed class EntityModelTests
         _ => EntityComponents.Same(world.Get<Payload>(entity), new Payload(seed)),
     };
 
+    private static int SeedIndex(int bit) => bit switch
+    {
+        PositionBit => 0,
+        HealthBit => 1,
+        _ => 2,
+    };
+
     private static Position NewPosition(int seed) => new(seed, -seed);
 
     private static Health NewHealth(int seed) => new(seed * 3);
 
     /// <summary>
     /// The reference model: slot generations with a first-in, first-out free queue, each alive entity's component set
-    /// and value seed, and each component set's dense rows, where a removal moves the last row into the hole.
+    /// and value seeds, and each component set's dense rows, where a removal moves the last row into the hole.
     /// </summary>
     private sealed class Model
     {
@@ -273,8 +323,11 @@ public sealed class EntityModelTests
         private readonly Queue<int> _free = new();
         private readonly List<Entity> _alive = [];
 
-        /// <summary>Alive entities: their component set (a mask of the component bits) and value seed.</summary>
-        public Dictionary<Entity, (int Mask, int Seed)> Alive { get; } = [];
+        /// <summary>
+        /// Alive entities: their component set (a mask of the component bits) and the seed of each data component's
+        /// value (Position, Health, Payload).
+        /// </summary>
+        public Dictionary<Entity, (int Mask, int[] Seeds)> Alive { get; } = [];
 
         /// <summary>Each component set's rows, in storage order.</summary>
         public Dictionary<int, List<Entity>> Rows { get; } = [];
@@ -297,7 +350,7 @@ public sealed class EntityModelTests
             }
 
             var entity = new Entity((uint)index, _generations[index]);
-            Alive.Add(entity, (mask, seed));
+            Alive.Add(entity, (mask, [seed, seed, seed]));
             _alive.Add(entity);
             if (!Rows.TryGetValue(mask, out List<Entity>? rows))
             {
@@ -308,6 +361,8 @@ public sealed class EntityModelTests
             rows.Add(entity);
             return entity;
         }
+
+        public void Write(Entity entity, int bit, int seed) => Alive[entity].Seeds[SeedIndex(bit)] = seed;
 
         public void Despawn(Entity entity)
         {
