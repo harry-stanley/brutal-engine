@@ -18,26 +18,31 @@ public sealed class SpawnAllocationTests
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
         {
-            // More than a chunk, so the churn opens and returns chunks; a shuffled despawn order, so rows move.
+            // More than a chunk, so the churn opens and returns chunks; a shuffled despawn order, so rows move. One
+            // entity with a component stays alive and is written every round.
             int count = world.Archetypes.Empty.Layout.Capacity + 100;
             var entities = new Entity[count];
             int[] order = Shuffled(count, seed: 12345);
+            Entity kept = world.Spawn(new Health(0));
 
             // Warm up: grow the entity table and the chunk arrays, fill the chunk pool, and JIT every path.
             Churn(world, entities, order);
             Churn(world, entities, order);
+            world.Write<Health>(kept).Value++;
 
             long nativeAllocations = tracking.TotalAllocationCount;
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int round = 0; round < Rounds; round++)
             {
                 Churn(world, entities, order);
+                world.Write<Health>(kept).Value++;
             }
 
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
             Assert.Equal(0, allocated);
             Assert.Equal(nativeAllocations, tracking.TotalAllocationCount);
-            Assert.Equal(0, world.EntityCount);
+            Assert.Equal(1, world.EntityCount);
+            Assert.Equal(Rounds + 1, world.Get<Health>(kept).Value);
         }
 
         tracking.ThrowIfLeaks();
@@ -95,6 +100,7 @@ public sealed class SpawnAllocationTests
         foreach (Entity entity in entities)
         {
             checksum += world.Get<Health>(entity).Value;
+            world.Write<Health>(entity).Value += 1;
             checksum += world.Has<Marker>(entity) ? 1 : 0;
             checksum += world.TryGet(entity, out Position position) ? (long)position.X : 0;
             checksum += world.TryGet(entity, out Unused unused) ? unused.Value : 0;

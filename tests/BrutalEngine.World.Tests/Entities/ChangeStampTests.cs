@@ -1,3 +1,4 @@
+using System;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.World.Storage;
 using Xunit;
@@ -6,12 +7,13 @@ namespace BrutalEngine.World.Tests.Entities;
 
 /// <summary>
 /// The change ticks the direct API stamps in each chunk (docs/design/world.md, sections 4 and 5): spawning stamps
-/// <c>Changed</c> and <c>Added</c> for every column of the row's chunk; reads stamp nothing.
+/// <c>Changed</c> and <c>Added</c> for every column of the row's chunk, <c>Write</c> stamps its component's
+/// <c>Changed</c> tick, a despawn stamps <c>Changed</c> in the chunk that received the moved row, and reads stamp nothing.
 /// </summary>
 public sealed class ChangeStampTests
 {
     [Fact]
-    public void Get_DoesNotStamp_Spawn_StampsBoth()
+    public void GetNoStamp_WriteStamps_SpawnStampsBoth()
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
@@ -32,10 +34,22 @@ public sealed class ChangeStampTests
             _ = world.Has<Health>(first);
             AssertTicks(archetype, chunk: 0, changed: [5, 5], added: [5, 5]);
 
+            // Write stamps only its own column's Changed tick (columns follow registration order: Position, Health),
+            // and the reference it returns writes the row.
+            world.Write<Health>(first).Value = 30;
+            AssertTicks(archetype, chunk: 0, changed: [5, 9], added: [5, 5]);
+            Assert.Equal(30, world.Get<Health>(first).Value);
+
+            // A write that throws stamps nothing.
+            world.SetChangeTickForTesting(10);
+            _ = Assert.Throws<InvalidOperationException>(() => world.Write<Payload>(first));
+            AssertTicks(archetype, chunk: 0, changed: [5, 9], added: [5, 5]);
+
             // A spawn into the existing chunk stamps every column of it.
+            world.SetChangeTickForTesting(12);
             Entity second = world.Spawn(new Health(4), new Position(5, 6), default(Marker));
             Assert.Equal(archetype.Index, ArchetypeOf(world, second).Index);
-            AssertTicks(archetype, chunk: 0, changed: [9, 9], added: [9, 9]);
+            AssertTicks(archetype, chunk: 0, changed: [12, 12], added: [12, 12]);
         }
 
         tracking.ThrowIfLeaks();
@@ -67,6 +81,48 @@ public sealed class ChangeStampTests
             _ = world.Spawn(new Payload(-2));
             AssertTicks(archetype, chunk: 0, changed: [3], added: [3]);
             AssertTicks(archetype, chunk: 1, changed: [11], added: [11]);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Despawn_StampsReceivingChunk()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // A full first chunk and two rows in a second, all at tick 2.
+            world.SetChangeTickForTesting(2);
+            Entity first = world.Spawn(new Payload(0), new Health(0));
+            Archetype archetype = ArchetypeOf(world, first);
+            var entities = new Entity[archetype.Layout.Capacity + 2];
+            entities[0] = first;
+            for (int i = 1; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Payload(i), new Health(i));
+            }
+
+            // The second chunk's last row moves into the first chunk: only the first chunk's Changed ticks move.
+            world.SetChangeTickForTesting(7);
+            world.Despawn(entities[3]);
+            AssertTicks(archetype, chunk: 0, changed: [7, 7], added: [2, 2]);
+            AssertTicks(archetype, chunk: 1, changed: [2, 2], added: [2, 2]);
+
+            // Despawning the last row moves nothing, so nothing is stamped (its emptied chunk goes back to the pool).
+            world.SetChangeTickForTesting(8);
+            world.Despawn(entities[^2]);
+            Assert.Equal(1, archetype.Chunks.ChunkCount);
+            AssertTicks(archetype, chunk: 0, changed: [7, 7], added: [2, 2]);
+
+            // A move within the last chunk stamps that chunk only.
+            world.SetChangeTickForTesting(9);
+            Entity b = world.Spawn(new Payload(-1), new Health(-1));
+            _ = world.Spawn(new Payload(-2), new Health(-2));
+            world.SetChangeTickForTesting(11);
+            world.Despawn(b);
+            AssertTicks(archetype, chunk: 0, changed: [7, 7], added: [2, 2]);
+            AssertTicks(archetype, chunk: 1, changed: [11, 11], added: [9, 9]);
         }
 
         tracking.ThrowIfLeaks();

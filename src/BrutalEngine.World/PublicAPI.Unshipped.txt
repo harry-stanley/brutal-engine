@@ -54,6 +54,7 @@ BrutalEngine.World.EcsWorld.Spawn<T1, T2>(in T1 c1, in T2 c2) -> BrutalEngine.Wo
 BrutalEngine.World.EcsWorld.Spawn<T1>(in T1 c1) -> BrutalEngine.World.Entity
 BrutalEngine.World.EcsWorld.TrimMemory() -> void
 BrutalEngine.World.EcsWorld.TryGet<T>(BrutalEngine.World.Entity entity, out T value) -> bool
+BrutalEngine.World.EcsWorld.Write<T>(BrutalEngine.World.Entity entity) -> T
 BrutalEngine.World.Entity
 BrutalEngine.World.Entity.Entity() -> void
 BrutalEngine.World.Entity.Entity(uint index, uint generation) -> void

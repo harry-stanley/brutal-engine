@@ -5,7 +5,7 @@ using BrutalEngine.World.Storage;
 
 namespace BrutalEngine.World;
 
-// The direct entity API: spawning, despawning and counting entities, and reading their components
+// The direct entity API: spawning, despawning and counting entities, and reading and writing their components
 // (docs/design/world.md, section 2).
 public sealed partial class EcsWorld
 {
@@ -85,7 +85,8 @@ public sealed partial class EcsWorld
     /// <para>
     /// Every exception is thrown before anything changes. The archetype's last row moves into the despawned row's
     /// place, so the moved entity's location changes (references into chunks are invalidated by any structural
-    /// change), and a chunk that empties goes back to the world's chunk pool. The slot is reused by a later spawn with
+    /// change), and the chunk that received it has the <c>Changed</c> tick of every column stamped with the world's
+    /// current change tick. A chunk that empties goes back to the world's chunk pool. The slot is reused by a later spawn with
     /// an advanced generation, or retired once its generation reaches <see cref="uint.MaxValue"/>.
     /// </para>
     /// <para>
@@ -102,8 +103,10 @@ public sealed partial class EcsWorld
         Entity moved = archetype.SwapRemove(record.Chunk, record.Row);
         if (!moved.IsNull)
         {
-            // The archetype's last row filled the hole, so its entity now lives where the despawned one did.
+            // The archetype's last row filled the hole, so its entity now lives where the despawned one did, and data
+            // arrived in that chunk: every column's Changed tick moves to the current tick.
             _entities.Move((int)moved.Index, record.Chunk, record.Row);
+            archetype.Chunks.GetChanged(record.Chunk).Fill(_changeTick);
         }
 
         _entities.Free((int)entity.Index);
@@ -332,6 +335,48 @@ public sealed partial class EcsWorld
             throw MissingComponent<T>(entity);
         }
 
+        return ref ValueAt<T>(archetype, record.Chunk, record.Row, column);
+    }
+
+    /// <summary>
+    /// Returns a writable reference to <paramref name="entity"/>'s <typeparamref name="T"/> value, in its chunk, and
+    /// stamps <typeparamref name="T"/>'s <c>Changed</c> tick in that chunk.
+    /// </summary>
+    /// <typeparam name="T">A data component type (not a tag) that the entity has.</typeparam>
+    /// <param name="entity">An alive entity of this world.</param>
+    /// <returns>
+    /// A reference to the value in the entity's row. It is valid until the next structural change to the world (a
+    /// spawn, a despawn, or adding or removing a component), which may move rows; using it after that is undefined.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="entity"/> is <see cref="Entity.Null"/>.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="entity"/> is stale: despawned, its slot retired, or its index outside this world's table.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="entity"/> is pending; or it doesn't have <typeparamref name="T"/> (including when the type isn't
+    /// registered with this world); or <typeparamref name="T"/> is a tag, which has no data. The message names the
+    /// entity and the component. Nothing is stamped.
+    /// </exception>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// The stamp is the world's current change tick, set on the call, whether or not the value is then changed, and it
+    /// covers the whole chunk: change filters see the chunk, and consumers re-check its rows. Use
+    /// <see cref="Get{T}"/> to read without stamping. Allocates nothing, except the exception when it throws.
+    /// </remarks>
+    public ref T Write<T>(Entity entity)
+        where T : unmanaged, IComponent
+    {
+        ThrowIfUnusable("EcsWorld.Write");
+        EntityRecord record = _entities.Validate(entity);
+        Archetype archetype = _archetypes[record.Archetype];
+        int column = ColumnFor<T>(entity, archetype, "EcsWorld.Write");
+        if (column == MissingColumn)
+        {
+            throw MissingComponent<T>(entity);
+        }
+
+        archetype.Chunks.GetChanged(record.Chunk)[column] = _changeTick;
         return ref ValueAt<T>(archetype, record.Chunk, record.Row, column);
     }
 
