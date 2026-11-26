@@ -11,9 +11,10 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Instances;
 /// span asks for the count; a fill writes up to its capacity and returns <c>VK_INCOMPLETE</c> when more are left; an
 /// unknown layer is <c>VK_ERROR_LAYER_NOT_PRESENT</c>). Each of the next <see cref="GrowthsLeft"/> count queries is
 /// followed by one more entry in the queried list, as when a layer is installed between the two calls, and each of the
-/// next <see cref="ShrinksLeft"/> by one entry fewer, as when one is removed. Every call is recorded.
+/// next <see cref="ShrinksLeft"/> by one entry fewer, as when one is removed. <see cref="CreateInstance"/> never
+/// creates one: it fails as BRUTAL's wrapper does, with <c>VK_ERROR_INITIALIZATION_FAILED</c>. Every call is recorded.
 /// </summary>
-internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
+internal sealed class FakeEnumeration : GlobalCommands.ISource
 {
     /// <summary>Gets the extension lists: key <c>""</c> is the loader's own list, any other key a layer's.</summary>
     public Dictionary<string, List<string>> Extensions { get; } = new(StringComparer.Ordinal) { [""] = [] };
@@ -24,7 +25,7 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
 
     public int ShrinksLeft { get; set; }
 
-    /// <summary>Gets the calls in order, e.g. <c>"extensions() count"</c>, <c>"layers fill"</c>.</summary>
+    /// <summary>Gets the calls in order, e.g. <c>"extensions() count"</c>, <c>"layers fill"</c>, <c>"create"</c>.</summary>
     public List<string> Calls { get; } = [];
 
     public unsafe VkResult EnumerateExtensions(string? layerName, ref int count, Span<VkExtensionProperties> properties)
@@ -71,6 +72,12 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
         }
 
         return count < Layers.Count ? VkResult.Incomplete : VkResult.Success;
+    }
+
+    public Instance CreateInstance(Instance.CreateInfo createInfo)
+    {
+        Calls.Add("create");
+        throw new VkResultError(VkResult.ErrorInitializationFailed, "Vulkan call to vkCreateInstance failed with error: VK_ERROR_INITIALIZATION_FAILED");
     }
 
     private bool Counted(List<string> list, ref int count, bool countOnly)

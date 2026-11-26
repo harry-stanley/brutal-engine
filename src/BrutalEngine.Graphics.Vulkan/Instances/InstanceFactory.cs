@@ -11,7 +11,8 @@ namespace BrutalEngine.Graphics.Vulkan.Instances;
 /// <summary>
 /// Creates the device's <see cref="VulkanInstance"/> (docs/design/graphics-vulkan.md section 1): enumerates what is
 /// offered, plans the extensions, layers and flags (<see cref="InstanceExtensions"/>), then creates the instance through
-/// BRUTAL's <c>Vulkan.CreateInstance</c>, the only way to get BRUTAL's instance function table.
+/// BRUTAL's <c>Vulkan.CreateInstance</c>, the only way to get BRUTAL's instance function table. All three are global
+/// commands, made through a <see cref="GlobalCommands.ISource"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -48,24 +49,24 @@ internal static class InstanceFactory
     /// <exception cref="ArgumentNullException"><paramref name="options"/> or <paramref name="gate"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">An allow-list entry has no reason.</exception>
     public static Result<VulkanInstance> Create(Options options, VulkanCallGate gate) =>
-        Create(options, gate, default(InstanceExtensions.LoaderEnumeration));
+        Create(options, gate, default(GlobalCommands.LoaderSource));
 
-    /// <summary><see cref="Create(Options, VulkanCallGate)"/> over a given enumeration.</summary>
-    /// <typeparam name="TSource">The enumeration.</typeparam>
+    /// <summary><see cref="Create(Options, VulkanCallGate)"/> over given global commands.</summary>
+    /// <typeparam name="TSource">The global commands.</typeparam>
     /// <param name="options">The request.</param>
     /// <param name="gate">The device's gate.</param>
-    /// <param name="source">The enumeration.</param>
+    /// <param name="source">The global commands.</param>
     /// <returns>As <see cref="Create(Options, VulkanCallGate)"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> or <paramref name="gate"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">An allow-list entry has no reason.</exception>
     internal static Result<VulkanInstance> Create<TSource>(Options options, VulkanCallGate gate, TSource source)
-        where TSource : InstanceExtensions.IEnumeration
+        where TSource : GlobalCommands.ISource
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(gate);
         Result<InstanceExtensions.Selection> selected = InstanceExtensions.Select(source, options, gate);
         return selected.TryGetValue(out InstanceExtensions.Selection? selection)
-            ? Create(selection, options, gate)
+            ? Create(selection, options, gate, source)
             : selected.Error;
     }
 
@@ -95,7 +96,20 @@ internal static class InstanceFactory
     /// A validated <paramref name="selection"/> doesn't enable <c>VK_EXT_debug_utils</c> (<see cref="InstanceExtensions.Plan"/>
     /// always does), or an allow-list entry has no reason; both thrown before any native call.
     /// </exception>
-    internal static unsafe Result<VulkanInstance> Create(InstanceExtensions.Selection selection, Options options, VulkanCallGate gate)
+    internal static Result<VulkanInstance> Create(InstanceExtensions.Selection selection, Options options, VulkanCallGate gate) =>
+        Create(selection, options, gate, default(GlobalCommands.LoaderSource));
+
+    /// <summary><see cref="Create(InstanceExtensions.Selection, Options, VulkanCallGate)"/> over given global commands.</summary>
+    /// <typeparam name="TSource">The global commands.</typeparam>
+    /// <param name="selection">The extensions, layers and flags; with validation, the sink and messenger too.</param>
+    /// <param name="options">The application name and, with validation, the sink's log category and allow-list.</param>
+    /// <param name="gate">The device's gate.</param>
+    /// <param name="source">The global commands; <c>vkCreateInstance</c> is made through it.</param>
+    /// <returns>As <see cref="Create(InstanceExtensions.Selection, Options, VulkanCallGate)"/>.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">As <see cref="Create(InstanceExtensions.Selection, Options, VulkanCallGate)"/>.</exception>
+    internal static unsafe Result<VulkanInstance> Create<TSource>(InstanceExtensions.Selection selection, Options options, VulkanCallGate gate, TSource source)
+        where TSource : GlobalCommands.ISource
     {
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(options);
@@ -123,7 +137,7 @@ internal static class InstanceFactory
         Instance instance;
 
         // Sound: the name is pinned and NUL-terminated, and the features struct, its one-entry array and the messenger
-        // description are stack locals; all of them outlive Vulkan.CreateInstance, and the loader copies what it keeps.
+        // description are stack locals; all of them outlive the creation, and the loader copies what it keeps.
         // The chain is the features, then the messenger description. GPU-assisted and best-practices validation stay
         // off: they aren't enabled, and both are off by default.
         fixed (byte* pName = name)
@@ -131,7 +145,7 @@ internal static class InstanceFactory
             VkValidationFeaturesEXT features = new() { Next = &messengerInfo, EnabledValidationFeatureCount = 1, EnabledValidationFeatures = &synchronization };
             try
             {
-                instance = global::Brutal.VulkanApi.Vulkan.CreateInstance(new Instance.CreateInfo
+                instance = source.CreateInstance(new Instance.CreateInfo
                 {
                     AppInfo = new VkApplicationInfo { ApplicationName = pName, ApiVersion = VK.API_VERSION_1_3 },
                     Flags = selection.Flags,
