@@ -86,7 +86,9 @@ internal sealed unsafe class ChunkTable : IDisposable
     /// <remarks>
     /// The block comes from the pool, which asks the allocator only when it holds none; the arrays are reallocated
     /// only when full. If growing fails after the block was rented, the block goes back to the pool, so a later call
-    /// reuses it.
+    /// reuses it. Growth swaps the new arrays in before it frees the old ones: if the allocator's free throws, the
+    /// exception propagates with the table already on the grown arrays and every chunk kept, but no chunk added (the
+    /// block goes back to the pool); the old arrays not yet freed leak.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The table is disposed.</exception>
     /// <exception cref="OutOfMemoryException">The allocator can't provide the block or the grown arrays. The table is unchanged.</exception>
@@ -194,7 +196,8 @@ internal sealed unsafe class ChunkTable : IDisposable
     /// <remarks>
     /// The pool must not be disposed yet. If it is, the return throws <see cref="ObjectDisposedException"/>; the
     /// arrays are still freed and the table is still disposed, but the blocks stay allocated (a tracking allocator
-    /// reports them as leaks).
+    /// reports them as leaks). If the allocator's free throws, the exception propagates and the table is still
+    /// disposed, holding no array; the arrays not yet freed leak, and a later Dispose frees nothing again.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">The pool was disposed before the table.</exception>
     public void Dispose()
@@ -204,10 +207,15 @@ internal sealed unsafe class ChunkTable : IDisposable
             return;
         }
 
+        // Detach everything before any call that can throw, so no freed array stays reachable from the table.
         _disposed = true;
         ChunkEntry* entries = _entries;
+        uint* changed = _changed;
+        uint* added = _added;
         int count = _count;
         _entries = null;
+        _changed = null;
+        _added = null;
         _count = 0;
         _capacity = 0;
         try
@@ -220,9 +228,7 @@ internal sealed unsafe class ChunkTable : IDisposable
         }
         finally
         {
-            FreeArrays(entries, _changed, _added);
-            _changed = null;
-            _added = null;
+            FreeArrays(entries, changed, added);
         }
     }
 
@@ -266,11 +272,16 @@ internal sealed unsafe class ChunkTable : IDisposable
             }
         }
 
-        FreeArrays(_entries, _changed, _added);
+        // Swap first: if a free of an old array throws, the table is already consistent on the new arrays, and the old
+        // ones left unfreed are unreachable, so they leak but are never used or freed twice.
+        ChunkEntry* oldEntries = _entries;
+        uint* oldChanged = _changed;
+        uint* oldAdded = _added;
         _entries = entries;
         _changed = changed;
         _added = added;
         _capacity = capacity;
+        FreeArrays(oldEntries, oldChanged, oldAdded);
     }
 
     private void FreeArrays(ChunkEntry* entries, uint* changed, uint* added)

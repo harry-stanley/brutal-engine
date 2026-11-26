@@ -171,6 +171,62 @@ public sealed unsafe class ChunkTableTests
         tracking.ThrowIfLeaks();
     }
 
+    /// <summary>
+    /// Growth has swapped in the new arrays and freed the old entry array when the free of the old Changed array
+    /// throws: the table must keep every chunk on the grown arrays, not keep a freed entry array and leak the new ones.
+    /// </summary>
+    [Fact]
+    public void AddChunk_FreeOfOldArrayThrows_TableUsesGrownArrays()
+    {
+        TrackingAllocator tracking = NewTracking();
+        TestAllocator allocator = new(tracking);
+        ChunkPool pool = new(allocator, ChunkBytes);
+        ChunkTable table = new(allocator, pool, columnCount: 3);
+        nint[] data = new nint[ChunkTable.InitialCapacity];
+        for (int i = 0; i < data.Length; i++)
+        {
+            _ = table.AddChunk(Tick(i));
+            table.SetCount(i, i + 1);
+            table.GetChanged(i)[0] = Tick(i) + 1;
+            data[i] = (nint)table.GetData(i);
+        }
+
+        allocator.FailFreeAfter = 1;
+        _ = Assert.Throws<InvalidOperationException>(() => table.AddChunk(99));
+
+        // The injected failure fired, and the table already uses the grown arrays with every chunk intact.
+        Assert.Equal(-1, allocator.FailFreeAfter);
+        Assert.Equal(2 * ChunkTable.InitialCapacity, table.Capacity);
+        Assert.Equal(data.Length, table.ChunkCount);
+        for (int i = 0; i < data.Length; i++)
+        {
+            Assert.Equal(data[i], (nint)table.GetData(i));
+            Assert.Equal(i + 1, table.GetCount(i));
+            Assert.Equal([Tick(i) + 1, Tick(i), Tick(i)], table.GetChanged(i).ToArray());
+            Assert.Equal([Tick(i), Tick(i), Tick(i)], table.GetAdded(i).ToArray());
+        }
+
+        // No chunk was added: the block went back to the pool, and the next add reuses it without growing.
+        Assert.Equal(data.Length, pool.RentedCount);
+        Assert.Equal(1, pool.PooledCount);
+        int allocateCalls = allocator.AllocateCalls;
+        Assert.Equal(data.Length, table.AddChunk(99));
+        Assert.Equal(allocateCalls, allocator.AllocateCalls);
+
+        // Disposal frees the grown arrays once each; only the two old tick arrays whose frees failed or never ran leak.
+        table.Dispose();
+        pool.Dispose();
+        NativeAllocationInfo[] leaked = tracking.GetLiveAllocations();
+        Assert.Equal(2, leaked.Length);
+        foreach (NativeAllocationInfo allocation in leaked)
+        {
+            Assert.Equal((nuint)(ChunkTable.InitialCapacity * 3 * sizeof(uint)), allocation.ByteCount);
+            tracking.Free((void*)allocation.Address);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     [Fact]
     public void RemoveLastChunk_ReturnsBlockToPool()
     {
@@ -283,6 +339,44 @@ public sealed unsafe class ChunkTableTests
         _ = Assert.Throws<ObjectDisposedException>(() => table.AddChunk(2));
 
         tracking.Free(block);
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Dispose_FreeThrows_TableDisposedAndNothingFreedTwice()
+    {
+        TrackingAllocator tracking = NewTracking();
+        TestAllocator allocator = new(tracking);
+        ChunkPool pool = new(allocator, ChunkBytes);
+        ChunkTable table = new(allocator, pool, columnCount: 2);
+        _ = table.AddChunk(1);
+        _ = table.AddChunk(2);
+
+        // The entry array is freed, then the free of the Changed array throws.
+        allocator.FailFreeAfter = 1;
+        _ = Assert.Throws<InvalidOperationException>(table.Dispose);
+        Assert.Equal(-1, allocator.FailFreeAfter);
+
+        // The blocks went back before the frees, and the table is disposed.
+        Assert.Equal(0, pool.RentedCount);
+        Assert.Equal(2, pool.PooledCount);
+        Assert.Equal(0, table.ChunkCount);
+        Assert.Equal(0, table.Capacity);
+        _ = Assert.Throws<ObjectDisposedException>(() => table.AddChunk(3));
+
+        // A later Dispose frees nothing again; the two tick arrays not freed leak, as documented.
+        int freeCalls = allocator.FreeCalls;
+        table.Dispose();
+        Assert.Equal(freeCalls, allocator.FreeCalls);
+        pool.Dispose();
+        NativeAllocationInfo[] leaked = tracking.GetLiveAllocations();
+        Assert.Equal(2, leaked.Length);
+        foreach (NativeAllocationInfo allocation in leaked)
+        {
+            Assert.Equal((nuint)(ChunkTable.InitialCapacity * 2 * sizeof(uint)), allocation.ByteCount);
+            tracking.Free((void*)allocation.Address);
+        }
+
         tracking.ThrowIfLeaks();
     }
 
@@ -406,8 +500,9 @@ public sealed unsafe class ChunkTableTests
 
     /// <summary>
     /// Passes calls through, counts them, fills every new allocation with 0xA5 so uninitialised memory is
-    /// recognisable, and throws <see cref="InsufficientMemoryException"/> (an out-of-memory exception) once a set
-    /// number of allocations succeed.
+    /// recognisable, throws <see cref="InsufficientMemoryException"/> (an out-of-memory exception) once a set
+    /// number of allocations succeed, and throws <see cref="InvalidOperationException"/> without freeing once a set
+    /// number of frees succeed.
     /// </summary>
     private sealed class TestAllocator(INativeAllocator inner) : INativeAllocator
     {
@@ -415,6 +510,9 @@ public sealed unsafe class ChunkTableTests
         public int FailAfter { get; set; } = -1;
 
         public int AllocateCalls { get; private set; }
+
+        /// <summary>Frees that still succeed before one throws without freeing; -1 never throws.</summary>
+        public int FailFreeAfter { get; set; } = -1;
 
         public int FreeCalls { get; private set; }
 
@@ -440,6 +538,17 @@ public sealed unsafe class ChunkTableTests
         public void Free(void* memory)
         {
             FreeCalls++;
+            if (FailFreeAfter == 0)
+            {
+                FailFreeAfter = -1;
+                throw new InvalidOperationException("Injected free failure.");
+            }
+
+            if (FailFreeAfter > 0)
+            {
+                FailFreeAfter--;
+            }
+
             inner.Free(memory);
         }
     }
