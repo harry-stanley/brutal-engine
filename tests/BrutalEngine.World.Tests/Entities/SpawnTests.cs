@@ -6,7 +6,7 @@ using Xunit;
 
 namespace BrutalEngine.World.Tests.Entities;
 
-/// <summary>Spawning and despawning entities through the world's direct API.</summary>
+/// <summary>Spawning and despawning entities, with and without components, through the world's direct API.</summary>
 public sealed class SpawnTests
 {
     [Fact]
@@ -268,6 +268,249 @@ public sealed class SpawnTests
         }
 
         tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// Spawns with 0 to 4 components store each value, readable with Get and TryGet, in the archetype of exactly those
+    /// components; Has is true for them and false for the rest. Two entities per arity, so the second row is checked too.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void SpawnWithComponents_ValuesReadable(int count)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Entity first = SpawnWith(world, count, seed: 10);
+            Entity second = SpawnWith(world, count, seed: 20);
+
+            Assert.Equal(2, world.EntityCount);
+            Assert.Equal(count == 0 ? 1 : 2, world.ArchetypeCount);
+            Assert.Equal(count, world.Components.Count);
+            AssertValues(world, first, count, seed: 10);
+            AssertValues(world, second, count, seed: 20);
+            Assert.True(world.Entities.TryGetLocation(second, out EntityRecord record));
+            Assert.Equal(1, record.Row);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void SpawnWithComponents_TypeOrder_SameArchetype()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Entity a = world.Spawn(new Position(1, 2), new Health(3), default(Marker));
+            Entity b = world.Spawn(default(Marker), new Health(4), new Position(5, 6));
+
+            Assert.Equal(2, world.ArchetypeCount);
+            Assert.True(world.Entities.TryGetLocation(a, out EntityRecord ra));
+            Assert.True(world.Entities.TryGetLocation(b, out EntityRecord rb));
+            Assert.Equal(ra.Archetype, rb.Archetype);
+            Assert.Equal(4, world.Get<Health>(b).Value);
+            Assert.Equal(new Position(5, 6), world.Get<Position>(b));
+            Assert.True(world.Has<Marker>(b));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Despawn_WithComponents_MovedRowKeepsValues()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // More than a chunk of Payload rows, so the last row comes from the second chunk.
+            Archetype archetype = world.Archetypes.GetOrCreate([world.Components.Register<Payload>(), world.Components.Register<Health>()]);
+            int capacity = archetype.Layout.Capacity;
+            var entities = new Entity[capacity + 1];
+            for (int i = 0; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Payload(i * 100), new Health(i));
+            }
+
+            world.Despawn(entities[3]);
+
+            Entity moved = entities[capacity];
+            Assert.True(world.Entities.TryGetLocation(moved, out EntityRecord record));
+            Assert.Equal(0, record.Chunk);
+            Assert.Equal(3, record.Row);
+            Assert.Equal(capacity, world.Get<Health>(moved).Value);
+            Assert.True(EntityComponents.Same(new Payload(capacity * 100), world.Get<Payload>(moved)));
+            Assert.Equal(4, world.Get<Health>(entities[4]).Value);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// Every way to give a type twice, at each arity: the first check of the call, so the types aren't registered, no
+    /// archetype is created and no slot is taken. The parameter named is the later occurrence.
+    /// </summary>
+    [Theory]
+    [InlineData(2, "c2", "Position")]
+    [InlineData(30, "c2", "Position")]
+    [InlineData(31, "c3", "Position")]
+    [InlineData(32, "c3", "Position")]
+    [InlineData(40, "c2", "Health")]
+    [InlineData(41, "c4", "Health")]
+    [InlineData(42, "c4", "Health")]
+    [InlineData(43, "c4", "Health")]
+    [InlineData(44, "c3", "Health")]
+    [InlineData(45, "c3", "Health")]
+    public void Spawn_DuplicateType_ThrowsBeforeAnyEffect(int shape, string paramName, string typeName)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Action spawn = shape switch
+            {
+                2 => () => world.Spawn(new Position(1, 1), new Position(2, 2)),
+                30 => () => world.Spawn(new Position(1, 1), new Position(2, 2), new Health(1)),
+                40 => () => world.Spawn(new Health(1), new Health(2), new Payload(1), default(Marker)),
+                45 => () => world.Spawn(new Health(1), new Payload(1), new Health(2), default(Marker)),
+                31 => () => world.Spawn(new Position(1, 1), new Health(1), new Position(2, 2)),
+                32 => () => world.Spawn(new Health(1), new Position(1, 1), new Position(2, 2)),
+                41 => () => world.Spawn(new Health(1), new Payload(1), default(Marker), new Health(2)),
+                42 => () => world.Spawn(new Payload(1), new Health(1), default(Marker), new Health(2)),
+                43 => () => world.Spawn(new Payload(1), default(Marker), new Health(1), new Health(2)),
+                _ => () => world.Spawn(new Payload(1), new Health(1), new Health(2), default(Marker)),
+            };
+            long allocations = tracking.TotalAllocationCount;
+
+            ArgumentException exception = Assert.Throws<ArgumentException>(spawn);
+
+            Assert.Equal(paramName, exception.ParamName);
+            Assert.Contains($"Entities.{typeName} more than once", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(0, world.Components.Count);
+            Assert.Equal(1, world.ArchetypeCount);
+            Assert.Equal(0, world.Entities.SlotCount);
+            Assert.Equal(allocations, tracking.TotalAllocationCount);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void SpawnWithComponents_RowTooWide_ThrowsBeforeTakingSlot()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => world.Spawn(new Huge(1)));
+
+            // The registration stays (registrations are permanent); no archetype, slot or row was added.
+            Assert.Contains(Huge.Info.FullName, exception.Message, StringComparison.Ordinal);
+            Assert.True(world.Components.TryGetId<Huge>(out _));
+            Assert.Equal(1, world.ArchetypeCount);
+            Assert.Equal(0, world.Entities.SlotCount);
+            Assert.Equal(0, world.EntityCount);
+            Assert.Equal(new Entity(0, 1), world.Spawn(new Health(1)));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void SpawnWithComponents_AllocationFails_RollsBack()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        FailingAllocator allocator = new(tracking);
+        using (EcsWorld world = EntityTestSupport.NewWorld(allocator))
+        {
+            Entity first = world.Spawn(new Health(7));
+            allocator.FailNext = true;
+
+            // A new archetype's first chunk fails: the archetype stays (archetypes are permanent), the entity doesn't.
+            _ = Assert.Throws<InsufficientMemoryException>(() => world.Spawn(new Position(1, 2), new Health(3)));
+
+            Assert.False(allocator.FailNext);
+            Assert.Equal(3, world.ArchetypeCount);
+            Assert.Equal(1, world.EntityCount);
+            Assert.Equal(1, world.ChunkCount);
+            Assert.Equal(0, world.Entities.PendingCount);
+            Assert.Equal(7, world.Get<Health>(first).Value);
+
+            Entity next = world.Spawn(new Position(4, 5), new Health(6));
+            Assert.Equal(new Entity(1, 2), next);
+            Assert.Equal(new Position(4, 5), world.Get<Position>(next));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void HasGetTryGet_ComponentRules()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Entity tagged = world.Spawn(new Health(5), default(Marker));
+            Entity plain = world.Spawn(new Position(1, 2));
+            int registered = world.Components.Count;
+
+            // Has: true for data and tags the entity has; false for a registered type it lacks and for unregistered
+            // types, which it doesn't register.
+            Assert.True(world.Has<Health>(tagged));
+            Assert.True(world.Has<Marker>(tagged));
+            Assert.False(world.Has<Position>(tagged));
+            Assert.False(world.Has<Marker>(plain));
+            Assert.False(world.Has<Unused>(plain));
+            Assert.False(world.Has<UnusedTag>(plain));
+            Assert.Equal(registered, world.Components.Count);
+
+            // TryGet: false and default for a missing or unregistered data type.
+            Assert.True(world.TryGet(tagged, out Health health));
+            Assert.Equal(5, health.Value);
+            Assert.False(world.TryGet(plain, out Health missing));
+            Assert.Equal(default(Health), missing);
+            Assert.False(world.TryGet(plain, out Unused unused));
+            Assert.Equal(default(Unused), unused);
+            Assert.Equal(registered, world.Components.Count);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    private static Entity SpawnWith(EcsWorld world, int count, int seed) => count switch
+    {
+        0 => world.Spawn(),
+        1 => world.Spawn(new Position(seed, seed + 1)),
+        2 => world.Spawn(new Position(seed, seed + 1), new Health(seed + 2)),
+        3 => world.Spawn(new Position(seed, seed + 1), new Health(seed + 2), new Payload(seed + 3)),
+        _ => world.Spawn(new Position(seed, seed + 1), new Health(seed + 2), new Payload(seed + 3), default(Marker)),
+    };
+
+    private static void AssertValues(EcsWorld world, Entity entity, int count, int seed)
+    {
+        Assert.True(world.IsAlive(entity));
+        Assert.Equal(count >= 1, world.Has<Position>(entity));
+        Assert.Equal(count >= 2, world.Has<Health>(entity));
+        Assert.Equal(count >= 3, world.Has<Payload>(entity));
+        Assert.Equal(count >= 4, world.Has<Marker>(entity));
+        if (count >= 1)
+        {
+            Assert.Equal(new Position(seed, seed + 1), world.Get<Position>(entity));
+            Assert.True(world.TryGet(entity, out Position position));
+            Assert.Equal(new Position(seed, seed + 1), position);
+        }
+
+        if (count >= 2)
+        {
+            Assert.Equal(seed + 2, world.Get<Health>(entity).Value);
+        }
+
+        if (count >= 3)
+        {
+            Assert.True(EntityComponents.Same(new Payload(seed + 3), world.Get<Payload>(entity)));
+        }
     }
 
     private static void AssertLocation(EcsWorld world, Entity entity, int chunk, int row)
