@@ -139,6 +139,28 @@ public sealed class VirtualFileSystemTests
         Assert.False(vfs.Unmount(scheme));
     }
 
+    [Fact]
+    public void IsMountedAndUnmount_MatchTheSchemeExactly()
+    {
+        // Paths always have lowercase schemes, so routing alone can't show a case-insensitive match; these members
+        // take any text, and only the exact scheme names the mount.
+        VirtualFileSystem vfs = new();
+        RecordingFileSystem res = new();
+        vfs.Mount("res", res);
+
+        foreach (string lookAlike in new[] { "RES", "Res", "rES", "res ", " res", "re", "res2", "res://" })
+        {
+            Assert.False(vfs.IsMounted(lookAlike), lookAlike);
+            Assert.False(vfs.Unmount(lookAlike), lookAlike);
+        }
+
+        Assert.True(vfs.IsMounted("res"));
+        Assert.True(vfs.ReadAllBytes(VfsPath.Parse("res://a/b.bin")).IsSuccess);
+        Assert.Equal(["ReadAllBytes a/b.bin"], res.Calls);
+        Assert.True(vfs.Unmount("res"));
+        Assert.False(vfs.IsMounted("res"));
+    }
+
     [Theory]
     [InlineData("r")]
     [InlineData("res")]
