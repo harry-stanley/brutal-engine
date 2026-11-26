@@ -1,4 +1,32 @@
 #nullable enable
+BrutalEngine.World.ComponentId
+BrutalEngine.World.ComponentId.ComponentId() -> void
+BrutalEngine.World.ComponentId.Equals(BrutalEngine.World.ComponentId other) -> bool
+BrutalEngine.World.ComponentId.Index.get -> int
+BrutalEngine.World.ComponentInfo
+BrutalEngine.World.ComponentInfo.ComponentInfo() -> void
+BrutalEngine.World.ComponentInfo.Equals(BrutalEngine.World.ComponentInfo other) -> bool
+BrutalEngine.World.ComponentInfo.FullName.get -> string!
+BrutalEngine.World.ComponentInfo.FullName.init -> void
+BrutalEngine.World.ComponentInfo.IsTag.get -> bool
+BrutalEngine.World.ComponentInfo.IsTag.init -> void
+BrutalEngine.World.ComponentInfo.SchemaVersion.get -> uint
+BrutalEngine.World.ComponentInfo.SchemaVersion.init -> void
+BrutalEngine.World.ComponentInfo.StableId.get -> BrutalEngine.World.StableComponentId
+BrutalEngine.World.ComponentInfo.StableId.init -> void
+BrutalEngine.World.ComponentType
+BrutalEngine.World.ComponentType.Alignment.get -> int
+BrutalEngine.World.ComponentType.Alignment.init -> void
+BrutalEngine.World.ComponentType.ComponentType() -> void
+BrutalEngine.World.ComponentType.ComponentType(BrutalEngine.World.ComponentId Id, BrutalEngine.World.ComponentInfo Info, int Size, int Alignment) -> void
+BrutalEngine.World.ComponentType.Deconstruct(out BrutalEngine.World.ComponentId Id, out BrutalEngine.World.ComponentInfo Info, out int Size, out int Alignment) -> void
+BrutalEngine.World.ComponentType.Equals(BrutalEngine.World.ComponentType other) -> bool
+BrutalEngine.World.ComponentType.Id.get -> BrutalEngine.World.ComponentId
+BrutalEngine.World.ComponentType.Id.init -> void
+BrutalEngine.World.ComponentType.Info.get -> BrutalEngine.World.ComponentInfo
+BrutalEngine.World.ComponentType.Info.init -> void
+BrutalEngine.World.ComponentType.Size.get -> int
+BrutalEngine.World.ComponentType.Size.init -> void
 BrutalEngine.World.EcsWorld
 BrutalEngine.World.EcsWorld.Dispose() -> void
 BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -> void
@@ -13,6 +41,15 @@ BrutalEngine.World.Entity.Generation.get -> uint
 BrutalEngine.World.Entity.Index.get -> uint
 BrutalEngine.World.Entity.IsNull.get -> bool
 BrutalEngine.World.Entity.RawValue.get -> ulong
+BrutalEngine.World.IComponent
+BrutalEngine.World.IComponent.Info.get -> BrutalEngine.World.ComponentInfo
+BrutalEngine.World.StableComponentId
+BrutalEngine.World.StableComponentId.Deconstruct(out ulong Value) -> void
+BrutalEngine.World.StableComponentId.Equals(BrutalEngine.World.StableComponentId other) -> bool
+BrutalEngine.World.StableComponentId.StableComponentId() -> void
+BrutalEngine.World.StableComponentId.StableComponentId(ulong Value) -> void
+BrutalEngine.World.StableComponentId.Value.get -> ulong
+BrutalEngine.World.StableComponentId.Value.init -> void
 BrutalEngine.World.WorldOptions
 BrutalEngine.World.WorldOptions.<Clone>$() -> BrutalEngine.World.WorldOptions!
 BrutalEngine.World.WorldOptions.Allocator.get -> BrutalEngine.Core.Memory.INativeAllocator?
@@ -33,15 +70,36 @@ BrutalEngine.World.WorldOptions.MaxHierarchyDepth.init -> void
 BrutalEngine.World.WorldOptions.Name.get -> string!
 BrutalEngine.World.WorldOptions.Name.init -> void
 BrutalEngine.World.WorldOptions.WorldOptions() -> void
+override BrutalEngine.World.ComponentId.GetHashCode() -> int
+override BrutalEngine.World.ComponentInfo.GetHashCode() -> int
+override BrutalEngine.World.ComponentType.GetHashCode() -> int
 override BrutalEngine.World.Entity.Equals(object? obj) -> bool
 override BrutalEngine.World.Entity.GetHashCode() -> int
 override BrutalEngine.World.Entity.ToString() -> string!
+override BrutalEngine.World.StableComponentId.GetHashCode() -> int
 override BrutalEngine.World.WorldOptions.Equals(object? obj) -> bool
 override BrutalEngine.World.WorldOptions.GetHashCode() -> int
 override BrutalEngine.World.WorldOptions.ToString() -> string!
+static BrutalEngine.World.ComponentId.operator !=(BrutalEngine.World.ComponentId left, BrutalEngine.World.ComponentId right) -> bool
+static BrutalEngine.World.ComponentId.operator ==(BrutalEngine.World.ComponentId left, BrutalEngine.World.ComponentId right) -> bool
+static BrutalEngine.World.ComponentInfo.operator !=(BrutalEngine.World.ComponentInfo left, BrutalEngine.World.ComponentInfo right) -> bool
+static BrutalEngine.World.ComponentInfo.operator ==(BrutalEngine.World.ComponentInfo left, BrutalEngine.World.ComponentInfo right) -> bool
+static BrutalEngine.World.ComponentType.operator !=(BrutalEngine.World.ComponentType left, BrutalEngine.World.ComponentType right) -> bool
+static BrutalEngine.World.ComponentType.operator ==(BrutalEngine.World.ComponentType left, BrutalEngine.World.ComponentType right) -> bool
 static BrutalEngine.World.Entity.FromRawValue(ulong rawValue) -> BrutalEngine.World.Entity
 static BrutalEngine.World.Entity.Null.get -> BrutalEngine.World.Entity
 static BrutalEngine.World.Entity.operator !=(BrutalEngine.World.Entity left, BrutalEngine.World.Entity right) -> bool
 static BrutalEngine.World.Entity.operator ==(BrutalEngine.World.Entity left, BrutalEngine.World.Entity right) -> bool
+static BrutalEngine.World.StableComponentId.FromFullName(System.ReadOnlySpan<char> fullName) -> BrutalEngine.World.StableComponentId
+static BrutalEngine.World.StableComponentId.operator !=(BrutalEngine.World.StableComponentId left, BrutalEngine.World.StableComponentId right) -> bool
+static BrutalEngine.World.StableComponentId.operator ==(BrutalEngine.World.StableComponentId left, BrutalEngine.World.StableComponentId right) -> bool
 static BrutalEngine.World.WorldOptions.operator !=(BrutalEngine.World.WorldOptions? left, BrutalEngine.World.WorldOptions? right) -> bool
 static BrutalEngine.World.WorldOptions.operator ==(BrutalEngine.World.WorldOptions? left, BrutalEngine.World.WorldOptions? right) -> bool
+~override BrutalEngine.World.ComponentId.Equals(object obj) -> bool
+~override BrutalEngine.World.ComponentId.ToString() -> string
+~override BrutalEngine.World.ComponentInfo.Equals(object obj) -> bool
+~override BrutalEngine.World.ComponentInfo.ToString() -> string
+~override BrutalEngine.World.ComponentType.Equals(object obj) -> bool
+~override BrutalEngine.World.ComponentType.ToString() -> string
+~override BrutalEngine.World.StableComponentId.Equals(object obj) -> bool
+~override BrutalEngine.World.StableComponentId.ToString() -> string
