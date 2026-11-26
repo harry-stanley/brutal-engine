@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Text;
 using BrutalEngine.Core;
 
@@ -269,6 +270,9 @@ public sealed class BackendObjectTable
 
         public bool TryGet(Handle handle, out TValue value)
         {
+            // A free slot stores raw 0, the null handle's value, so the compare below would match null; every caller
+            // (GetLabel, Remove, Find) rejects the null handle first.
+            Debug.Assert(!handle.IsNull, "Slots.TryGet must never see the null handle.");
             uint index = handle.Index;
             if (index < (uint)_handles.Length && _handles[index] == handle.RawValue)
             {
