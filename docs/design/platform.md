@@ -54,7 +54,7 @@ public interface IWindow : IDisposable
     WindowId Id { get; }                        // matches PlatformEvent.Window
     WindowSize Size { get; }                    // SDL window coordinates: pixels on Windows and X11, points on macOS and Wayland
     WindowSize PixelSize { get; }               // drawable pixels
-    WindowSize ContentSize { get; }             // PixelSize / DisplayScale, rounded: the UI layout space
+    WindowSize ContentSize { get; }             // PixelSize / DisplayScale, rounded to nearest (midpoint away from zero): the UI layout space
     float PixelDensity { get; }                 // PixelSize / Size
     float DisplayScale { get; }                 // SDL's content scale, relative to pixels
     WindowState State { get; }
@@ -108,9 +108,9 @@ There are three sizes, because SDL's window coordinates mean different things on
 |--------|---------|-----------|
 | `Size` | The window in SDL's window coordinates, the space of mouse positions and `WindowResized`. Their unit is the OS's: pixels on Windows and X11, points on macOS and Wayland | `SDL_GetWindowSize` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:6330`) |
 | `PixelSize` | The drawable size in pixels: what the swapchain uses | `SDL_GetWindowSizeInPixels` (`:6386`) |
-| `PixelDensity` | `PixelSize / Size`: 1.0 on Windows at any scale setting, 2.0 on a Retina display | `SDL_GetWindowPixelDensity` (`:6091`) |
-| `DisplayScale` | SDL's content scale, relative to pixels: how many pixels one unit of content takes (2.0 at 200 % on Windows, and on a Retina display) | `SDL_GetWindowDisplayScale` (`:6101`) |
-| `ContentSize` | `PixelSize / DisplayScale`, rounded: the window in **content units**, where UI and gameplay lay out | derived |
+| `PixelDensity` | `PixelSize / Size`: 1.0 on Windows at any scale setting, 2.0 on a Retina display with `HighPixelDensity` | `SDL_GetWindowPixelDensity` (`:6091`) |
+| `DisplayScale` | SDL's content scale, relative to pixels: how many pixels one unit of content takes (2.0 at 200 % on Windows, and on a Retina display with `HighPixelDensity`) | `SDL_GetWindowDisplayScale` (`:6101`) |
+| `ContentSize` | `PixelSize / DisplayScale` per side, rounded to the nearest integer with midpoints away from zero: the window in **content units**, where UI and gameplay lay out | derived |
 | `DisplayInfo.ContentScale` | The display's content scale | `SDL_GetDisplayContentScale` (`:5990`) |
 
 SDL's high-DPI documentation gives this example, a 3840x2160 display at 200 %:
@@ -122,7 +122,7 @@ SDL's high-DPI documentation gives this example, a 3840x2160 display at 200 %:
 
 Rules:
 
-- **Scale once, from pixels.** UI and layout work in content units and render at content × `DisplayScale` pixels. Multiplying `Size` by `DisplayScale` scales twice on macOS, so nothing does that.
+- **Scale once, from pixels.** UI and layout work in content units and render at content × `DisplayScale` pixels. Laying out in `Size` units and also scaling by `DisplayScale` doubles the scale on macOS and Wayland, so nothing lays out in `Size`.
 - **Converting positions:** pixels = window coordinates × `PixelDensity`; content units = pixels / `DisplayScale`.
 - **Window sizes are requested in content units.** `WindowOptions.ContentSize` and `SetContentSize` take content units, so a 1280x720 window has the same physical size on every OS at the same scale setting. The backend converts with window coordinates = content × `DisplayScale` / `PixelDensity`. At creation it estimates with the target display's `ContentScale` (`SDL_GetDisplayContentScale`), then reads the new window's own `DisplayScale` and `PixelDensity` and resizes once if the estimate was off, rounding to whole window coordinates. `ContentSize` reports the result, which can differ from the request by rounding or because the OS clamped it.
 - **Not run yet.** These semantics come from SDL's documentation. The probe behind this note ran at scale 1.0 only, where all three spaces coincide. P3 verifies them on Windows and Linux at a scale other than 1 (Windows locally at 150 % and 200 %; Linux where a runner or machine allows, otherwise in manual QA, [section 12](#12-testing)). The macOS row stays unverified: macOS is best-effort, with no CI ([ADR-0015](../adr/0015-tested-platforms-windows-linux.md)).
