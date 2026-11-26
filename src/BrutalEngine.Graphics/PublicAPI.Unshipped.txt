@@ -40,6 +40,28 @@ BrutalEngine.Graphics.Backend.BackendBuffer.Id.get -> ulong
 BrutalEngine.Graphics.Backend.BackendBuffer.Id.init -> void
 BrutalEngine.Graphics.Backend.BackendBuffer.MappedPointer.get -> nint
 BrutalEngine.Graphics.Backend.BackendBuffer.MappedPointer.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.<Clone>$() -> BrutalEngine.Graphics.Backend.BackendDeviceRequest!
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Allocator.get -> BrutalEngine.Core.Memory.INativeAllocator!
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Allocator.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.ApplicationName.get -> string!
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.ApplicationName.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.BackendDeviceRequest() -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.CompatibleSurface.get -> BrutalEngine.Graphics.Backend.WindowSurfaceSource?
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.CompatibleSurface.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Equals(BrutalEngine.Graphics.Backend.BackendDeviceRequest? other) -> bool
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.FramesInFlight.get -> int
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.FramesInFlight.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.GpuTimeout.get -> System.TimeSpan
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.GpuTimeout.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Logger.get -> BrutalEngine.Core.Logging.Logger!
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Logger.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.OptionalFeatures.get -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.OptionalFeatures.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.RequiredFeatures.get -> BrutalEngine.Graphics.GraphicsFeatures
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.RequiredFeatures.init -> void
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Validation.get -> bool
+BrutalEngine.Graphics.Backend.BackendDeviceRequest.Validation.init -> void
 BrutalEngine.Graphics.Backend.BackendMemory
 BrutalEngine.Graphics.Backend.BackendMemory.DeviceLocal = 0 -> BrutalEngine.Graphics.Backend.BackendMemory
 BrutalEngine.Graphics.Backend.BackendMemory.DeviceLocalHostVisiblePreferred = 1 -> BrutalEngine.Graphics.Backend.BackendMemory
@@ -100,6 +122,42 @@ BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.get -> BrutalEngine
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.init -> void
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.get -> ulong
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.init -> void
+BrutalEngine.Graphics.Backend.FramePlan
+BrutalEngine.Graphics.Backend.FramePlan.Acquired.get -> System.ReadOnlySpan<BrutalEngine.Graphics.Backend.SwapchainImageUse>
+BrutalEngine.Graphics.Backend.FramePlan.Commands.get -> System.ReadOnlySpan<byte>
+BrutalEngine.Graphics.Backend.FramePlan.FrameNumber.get -> long
+BrutalEngine.Graphics.Backend.FramePlan.FramePlan() -> void
+BrutalEngine.Graphics.Backend.FramePlan.FrameSlot.get -> int
+BrutalEngine.Graphics.Backend.IBackendDevice
+BrutalEngine.Graphics.Backend.IBackendDevice.AcquireImage(ulong swapchain, int frameSlot) -> BrutalEngine.Graphics.Backend.BackendAcquire
+BrutalEngine.Graphics.Backend.IBackendDevice.Adapter.get -> BrutalEngine.Graphics.GraphicsAdapterInfo!
+BrutalEngine.Graphics.Backend.IBackendDevice.BeginFrame(int frameSlot) -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.Backend.IBackendDevice.Capabilities.get -> BrutalEngine.Graphics.GraphicsCapabilities!
+BrutalEngine.Graphics.Backend.IBackendDevice.CreateBuffer(in BrutalEngine.Graphics.BufferDescription description, BrutalEngine.Graphics.Backend.BackendMemory memory) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.Backend.BackendBuffer>
+BrutalEngine.Graphics.Backend.IBackendDevice.CreateSampler(in BrutalEngine.Graphics.SamplerDescription description) -> BrutalEngine.Core.Result<ulong>
+BrutalEngine.Graphics.Backend.IBackendDevice.CreateSurface(BrutalEngine.Graphics.Backend.WindowSurfaceSource! source) -> BrutalEngine.Core.Result<ulong>
+BrutalEngine.Graphics.Backend.IBackendDevice.CreateSwapchain(in BrutalEngine.Graphics.Backend.BackendSwapchainRequest request) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.Backend.BackendSwapchain>
+BrutalEngine.Graphics.Backend.IBackendDevice.CreateTexture(in BrutalEngine.Graphics.TextureDescription description) -> BrutalEngine.Core.Result<ulong>
+BrutalEngine.Graphics.Backend.IBackendDevice.CreateTextureView(in BrutalEngine.Graphics.TextureViewDescription description) -> BrutalEngine.Core.Result<ulong>
+BrutalEngine.Graphics.Backend.IBackendDevice.Destroy(BrutalEngine.Graphics.Backend.BackendObjectKind kind, ulong id) -> void
+BrutalEngine.Graphics.Backend.IBackendDevice.DestroySurface(ulong surface) -> void
+BrutalEngine.Graphics.Backend.IBackendDevice.DestroySwapchain(ulong swapchain) -> void
+BrutalEngine.Graphics.Backend.IBackendDevice.Execute(in BrutalEngine.Graphics.Backend.FramePlan plan) -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.Backend.IBackendDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.Backend.IBackendDevice.GetSwapchainImage(ulong swapchain, int imageIndex, out ulong texture, out ulong view) -> void
+BrutalEngine.Graphics.Backend.IBackendDevice.InjectValidationError() -> void
+BrutalEngine.Graphics.Backend.IBackendDevice.IsFrameComplete(int frameSlot) -> BrutalEngine.Core.Result<bool>
+BrutalEngine.Graphics.Backend.IBackendDevice.Present(ulong swapchain, int imageIndex) -> BrutalEngine.Graphics.Backend.BackendPresent
+BrutalEngine.Graphics.Backend.IBackendDevice.SetDebugName(BrutalEngine.Graphics.Backend.BackendObjectKind kind, ulong id, System.ReadOnlySpan<byte> utf8Name) -> void
+BrutalEngine.Graphics.Backend.IBackendDevice.TryReadTimestamps(int frameSlot, System.Span<ulong> ticks) -> bool
+BrutalEngine.Graphics.Backend.IBackendDevice.ValidationErrors.get -> long
+BrutalEngine.Graphics.Backend.IBackendDevice.ValidationWarnings.get -> long
+BrutalEngine.Graphics.Backend.IBackendDevice.WaitForFrame(int frameSlot) -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.Backend.IBackendDevice.WaitIdle() -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.Backend.IGraphicsBackend
+BrutalEngine.Graphics.Backend.IGraphicsBackend.CreateDevice(BrutalEngine.Graphics.Backend.BackendDeviceRequest! request, int adapterIndex, BrutalEngine.Graphics.Backend.BackendObjectTable! objects) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.Backend.IBackendDevice!>
+BrutalEngine.Graphics.Backend.IGraphicsBackend.EnumerateAdapters(BrutalEngine.Graphics.Backend.BackendDeviceRequest! request) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Graphics.GraphicsAdapterInfo!>!>
+BrutalEngine.Graphics.Backend.IGraphicsBackend.Name.get -> string!
 BrutalEngine.Graphics.Backend.ResourceState
 BrutalEngine.Graphics.Backend.ResourceState.ColorTarget = 10 -> BrutalEngine.Graphics.Backend.ResourceState
 BrutalEngine.Graphics.Backend.ResourceState.CopyDestination = 2 -> BrutalEngine.Graphics.Backend.ResourceState
@@ -578,6 +636,9 @@ override BrutalEngine.Graphics.Backend.BackendAcquire.GetHashCode() -> int
 override BrutalEngine.Graphics.Backend.BackendAcquire.ToString() -> string!
 override BrutalEngine.Graphics.Backend.BackendBuffer.GetHashCode() -> int
 override BrutalEngine.Graphics.Backend.BackendBuffer.ToString() -> string!
+override BrutalEngine.Graphics.Backend.BackendDeviceRequest.Equals(object? obj) -> bool
+override BrutalEngine.Graphics.Backend.BackendDeviceRequest.GetHashCode() -> int
+override BrutalEngine.Graphics.Backend.BackendDeviceRequest.ToString() -> string!
 override BrutalEngine.Graphics.Backend.BackendPresent.GetHashCode() -> int
 override BrutalEngine.Graphics.Backend.BackendPresent.ToString() -> string!
 override BrutalEngine.Graphics.Backend.BackendSwapchain.GetHashCode() -> int
@@ -671,6 +732,8 @@ static BrutalEngine.Graphics.Backend.BackendAcquire.operator !=(BrutalEngine.Gra
 static BrutalEngine.Graphics.Backend.BackendAcquire.operator ==(BrutalEngine.Graphics.Backend.BackendAcquire left, BrutalEngine.Graphics.Backend.BackendAcquire right) -> bool
 static BrutalEngine.Graphics.Backend.BackendBuffer.operator !=(BrutalEngine.Graphics.Backend.BackendBuffer left, BrutalEngine.Graphics.Backend.BackendBuffer right) -> bool
 static BrutalEngine.Graphics.Backend.BackendBuffer.operator ==(BrutalEngine.Graphics.Backend.BackendBuffer left, BrutalEngine.Graphics.Backend.BackendBuffer right) -> bool
+static BrutalEngine.Graphics.Backend.BackendDeviceRequest.operator !=(BrutalEngine.Graphics.Backend.BackendDeviceRequest? left, BrutalEngine.Graphics.Backend.BackendDeviceRequest? right) -> bool
+static BrutalEngine.Graphics.Backend.BackendDeviceRequest.operator ==(BrutalEngine.Graphics.Backend.BackendDeviceRequest? left, BrutalEngine.Graphics.Backend.BackendDeviceRequest? right) -> bool
 static BrutalEngine.Graphics.Backend.BackendPresent.operator !=(BrutalEngine.Graphics.Backend.BackendPresent left, BrutalEngine.Graphics.Backend.BackendPresent right) -> bool
 static BrutalEngine.Graphics.Backend.BackendPresent.operator ==(BrutalEngine.Graphics.Backend.BackendPresent left, BrutalEngine.Graphics.Backend.BackendPresent right) -> bool
 static BrutalEngine.Graphics.Backend.BackendSwapchain.operator !=(BrutalEngine.Graphics.Backend.BackendSwapchain left, BrutalEngine.Graphics.Backend.BackendSwapchain right) -> bool
