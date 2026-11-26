@@ -12,7 +12,8 @@ namespace BrutalEngine.Architecture.Tests;
 /// <summary>
 /// ADR-0016's ship gate: every engine library's csproj declares <c>BrutalEngineMilestone</c>, the milestone that first
 /// ships it, and never sets <c>IsPackable</c>, which src/Directory.Build.targets derives from the milestone. A library
-/// packs only when its milestone is at most <c>BrutalEngineReleaseMilestone</c> (src/Directory.Build.props).
+/// packs only when its milestone is at most <c>BrutalEngineReleaseMilestone</c>, which only src/Directory.Build.props
+/// sets: a csproj that set it would move the line for itself alone.
 /// </summary>
 /// <remarks>
 /// A milestone is 1 to 9 decimal digits, set once, unconditionally. src/Directory.Build.targets and
@@ -22,7 +23,8 @@ namespace BrutalEngine.Architecture.Tests;
 /// </remarks>
 internal static partial class ShipGateRule
 {
-    public const string Name = "every engine library declares one integer BrutalEngineMilestone and never sets IsPackable";
+    public const string Name =
+        "every engine library declares one integer BrutalEngineMilestone and never sets IsPackable or BrutalEngineReleaseMilestone";
 
     public const string MilestoneProperty = "BrutalEngineMilestone";
 
@@ -44,6 +46,7 @@ internal static partial class ShipGateRule
         Dictionary<string, int> milestones = new(StringComparer.Ordinal);
         List<string> milestoneViolations = [];
         List<string> isPackableViolations = [];
+        List<string> releaseMilestoneViolations = [];
         foreach (ProjectFile project in projects)
         {
             string prefix = $"{project.Name} ({project.Path}): ";
@@ -64,6 +67,13 @@ internal static partial class ShipGateRule
                     $"{prefix}sets IsPackable. src/Directory.Build.targets derives it from {MilestoneProperty} (ADR-0016): remove it.");
             }
 
+            if (Properties(document, ReleaseMilestoneProperty).Count != 0)
+            {
+                releaseMilestoneViolations.Add(
+                    $"{prefix}sets {ReleaseMilestoneProperty}. Only src/Directory.Build.props sets it, for every library at once "
+                    + $"(ADR-0016): remove it, and set {MilestoneProperty} to the milestone that first ships this library.");
+            }
+
             string? problem = ReadMilestone(document, MilestoneProperty, out int milestone);
             if (problem is null)
             {
@@ -75,7 +85,7 @@ internal static partial class ShipGateRule
             }
         }
 
-        return new Report(milestones, milestoneViolations, isPackableViolations);
+        return new Report(milestones, milestoneViolations, isPackableViolations, releaseMilestoneViolations);
     }
 
     /// <summary>Reads <c>BrutalEngineReleaseMilestone</c> from the text of src/Directory.Build.props.</summary>
@@ -155,10 +165,14 @@ internal static partial class ShipGateRule
     /// One line per project whose milestone is missing, spelled in another case, repeated, conditional or not an integer.
     /// </param>
     /// <param name="IsPackableViolations">One line per project that sets IsPackable itself, in any case.</param>
+    /// <param name="ReleaseMilestoneViolations">
+    /// One line per project that sets <c>BrutalEngineReleaseMilestone</c> itself, in any case or under any condition.
+    /// </param>
     internal sealed record Report(
         IReadOnlyDictionary<string, int> Milestones,
         IReadOnlyList<string> MilestoneViolations,
-        IReadOnlyList<string> IsPackableViolations)
+        IReadOnlyList<string> IsPackableViolations,
+        IReadOnlyList<string> ReleaseMilestoneViolations)
     {
         /// <summary>The projects that pack when <paramref name="releaseMilestone"/> is released, in ordinal name order.</summary>
         /// <exception cref="ArgumentOutOfRangeException"><paramref name="releaseMilestone"/> is negative.</exception>

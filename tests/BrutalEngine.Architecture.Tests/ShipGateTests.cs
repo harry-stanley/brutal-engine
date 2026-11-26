@@ -32,6 +32,15 @@ public sealed class ShipGateTests
     }
 
     [Fact]
+    public void EngineLibraries_NeverSetReleaseMilestone()
+    {
+        ShipGateRule.Report report = CheckRepository();
+
+        Assert.Contains("BrutalEngine.Core", report.Milestones.Keys);
+        Violations.AssertNone(ShipGateRule.Name, report.ReleaseMilestoneViolations);
+    }
+
+    [Fact]
     public void Expected_ReleaseMilestone1_IsTheSixM0AndM1Libraries()
     {
         // Libraries of milestone 0 or 1 created later (Runtime, DebugOverlay) join this list in the PR that adds them.
@@ -162,6 +171,26 @@ public sealed class ShipGateTests
         string violation = Assert.Single(report.IsPackableViolations);
         Assert.StartsWith($"Fixture.Packable ({FixturePath("Fixture.Packable")}): sets IsPackable.", violation, StringComparison.Ordinal);
         Assert.Empty(report.MilestoneViolations);
+    }
+
+    [Theory]
+    [InlineData("BrutalEngineReleaseMilestone", false)]
+    [InlineData("brutalEngineReleaseMilestone", false)]
+    [InlineData("BrutalEngineReleaseMilestone", true)]
+    public void Check_ProjectSettingReleaseMilestone_ReportsTheCsproj(string elementName, bool conditioned)
+    {
+        // Each of these overrides the release milestone for this library alone, so it would silently stop packing.
+        ShipGateRule.Report report = CheckFixtures(
+            ("Fixture.Clean", ShipGateFixtures.WithMilestone("1")),
+            ("Fixture.Unpacked", ShipGateFixtures.SettingReleaseMilestoneAs(elementName, conditioned)));
+
+        string violation = Assert.Single(report.ReleaseMilestoneViolations);
+        Assert.StartsWith(
+            $"Fixture.Unpacked ({FixturePath("Fixture.Unpacked")}): sets BrutalEngineReleaseMilestone.", violation, StringComparison.Ordinal);
+        Assert.Contains("src/Directory.Build.props", violation, StringComparison.Ordinal);
+        Assert.Empty(report.MilestoneViolations);
+        Assert.Empty(report.IsPackableViolations);
+        Assert.Equal(1, report.Milestones["Fixture.Unpacked"]);
     }
 
     [Fact]

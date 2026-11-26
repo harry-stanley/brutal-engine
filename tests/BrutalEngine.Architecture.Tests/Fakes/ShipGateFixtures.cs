@@ -49,6 +49,24 @@ internal static class ShipGateFixtures
     }
 
     /// <summary>
+    /// A library with a valid milestone that sets <c>BrutalEngineReleaseMilestone</c> to 0, spelled
+    /// <paramref name="elementName"/>. MSBuild reads any case, and the csproj's value overrides src/Directory.Build.props
+    /// for this library alone, so it would stop packing.
+    /// </summary>
+    public static string SettingReleaseMilestoneAs(string elementName, bool conditioned)
+    {
+        string condition = conditioned ? " Condition=\"'$(Configuration)' == 'Release'\"" : "";
+        return $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <BrutalEngineMilestone>1</BrutalEngineMilestone>
+                <{elementName}{condition}>0</{elementName}>
+              </PropertyGroup>
+            </Project>
+            """;
+    }
+
+    /// <summary>
     /// The milestone declared twice, the second time in lower camel case: MSBuild evaluates the last one, 2, while a
     /// case-sensitive reader sees only the first, 1.
     /// </summary>
