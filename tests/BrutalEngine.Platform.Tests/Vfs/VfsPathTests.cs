@@ -268,18 +268,20 @@ public sealed class VfsPathTests
     }
 
     [Theory]
+    [InlineData(254, true)]
     [InlineData(255, true)]
     [InlineData(256, false)]
     public void SegmentLimit_AtBoundary_CountsEveryEncodingWidth(int bytes, bool valid)
     {
-        // 255 bytes: 63 emoji (252 bytes) + one CJK character (3); 256: one more byte as 'a'.
+        // 255 bytes: 63 emoji (252 bytes) + one CJK character (3); 256: one more byte as 'a'; 254: 63 emoji + one
+        // two-byte character.
         StringBuilder segment = new();
         for (int i = 0; i < 63; i++)
         {
             segment.Append(Emoji);
         }
 
-        segment.Append(Cjk);
+        segment.Append(bytes == 254 ? '\u00E9' : Cjk);
         if (bytes == 256)
         {
             segment.Append('a');
