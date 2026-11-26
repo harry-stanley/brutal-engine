@@ -54,6 +54,24 @@ BrutalEngine.Platform.HeadlessMode
 BrutalEngine.Platform.HeadlessMode.NoSurface = 2 -> BrutalEngine.Platform.HeadlessMode
 BrutalEngine.Platform.HeadlessMode.None = 0 -> BrutalEngine.Platform.HeadlessMode
 BrutalEngine.Platform.HeadlessMode.Offscreen = 1 -> BrutalEngine.Platform.HeadlessMode
+BrutalEngine.Platform.IPlatform
+BrutalEngine.Platform.IPlatform.BackendName.get -> string!
+BrutalEngine.Platform.IPlatform.BaseDirectory.get -> string!
+BrutalEngine.Platform.IPlatform.Clock.get -> System.TimeProvider!
+BrutalEngine.Platform.IPlatform.CreateWindow(BrutalEngine.Platform.WindowOptions! options) -> BrutalEngine.Core.Result<BrutalEngine.Platform.IWindow!>
+BrutalEngine.Platform.IPlatform.Displays.get -> System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.DisplayInfo!>!
+BrutalEngine.Platform.IPlatform.Events.get -> BrutalEngine.Platform.PlatformEventBatch
+BrutalEngine.Platform.IPlatform.GetClipboardText() -> BrutalEngine.Core.Result<string!>
+BrutalEngine.Platform.IPlatform.GetFullscreenModes(BrutalEngine.Platform.DisplayId display) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.DisplayMode>!>
+BrutalEngine.Platform.IPlatform.GetUserDataDirectory() -> BrutalEngine.Core.Result<string!>
+BrutalEngine.Platform.IPlatform.Headless.get -> BrutalEngine.Platform.HeadlessMode
+BrutalEngine.Platform.IPlatform.PumpEvents() -> BrutalEngine.Platform.PlatformEventBatch
+BrutalEngine.Platform.IPlatform.SetClipboardText(string! text) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IPlatform.SetCursor(BrutalEngine.Platform.SystemCursor cursor) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IPlatform.SetCursorVisible(bool visible) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IPlatform.ShowMessageBox(BrutalEngine.Platform.MessageBoxRequest! request) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.IPlatform.VideoDriver.get -> string!
+BrutalEngine.Platform.IPlatform.WaitForEvents(System.TimeSpan timeout) -> bool
 BrutalEngine.Platform.IVulkanSurfaceSource
 BrutalEngine.Platform.IVulkanSurfaceSource.CreateVulkanSurface(nint instance) -> BrutalEngine.Core.Result<nint>
 BrutalEngine.Platform.IVulkanSurfaceSource.GetRequiredInstanceExtension(int index) -> System.ReadOnlySpan<byte>
