@@ -11,8 +11,8 @@ namespace BrutalEngine.Graphics.Vulkan.Instances;
 /// from what the loader and the validation layer offer, and enumerates those offers through a <see cref="GlobalCommands.ISource"/>.
 /// </summary>
 /// <remarks>
-/// <see cref="Plan"/> is pure. The enumeration helpers make every call through the device's <see cref="VulkanCallGate"/>,
-/// with the two-call pattern and a bounded retry on <c>VK_INCOMPLETE</c>, because BRUTAL's <c>_Count</c> helpers drop
+/// <see cref="Plan"/> is pure. The enumeration helpers make every call through the device's <see cref="VulkanCallGate"/>
+/// and, around the command itself, the process-wide <see cref="GlobalCommands.Gate"/>, with the two-call pattern and a bounded retry on <c>VK_INCOMPLETE</c>, because BRUTAL's <c>_Count</c> helpers drop
 /// their result (upstream issue draft #18). Creation-time only: they allocate the arrays they return. Not thread-safe
 /// beyond what the gate allows: the device's owner thread calls them.
 /// </remarks>
@@ -162,14 +162,14 @@ internal static class InstanceExtensions
         for (int attempt = 0; attempt < MaxEnumerationAttempts && result == VkResult.Incomplete; attempt++)
         {
             int count = 0;
-            result = gate.TryTakeFault(call, out VkResult injected) ? injected : source.EnumerateExtensions(layerName, ref count, []);
+            result = gate.TryTakeFault(call, out VkResult injected) ? injected : GlobalCommands.EnumerateExtensions(source, layerName, ref count, []);
             if (result != VkResult.Success || count == 0)
             {
                 break;
             }
 
             var properties = new VkExtensionProperties[count];
-            result = gate.TryTakeFault(call, out injected) ? injected : source.EnumerateExtensions(layerName, ref count, properties);
+            result = gate.TryTakeFault(call, out injected) ? injected : GlobalCommands.EnumerateExtensions(source, layerName, ref count, properties);
             if (result == VkResult.Success)
             {
                 string[] names = new string[count];
@@ -204,14 +204,14 @@ internal static class InstanceExtensions
         for (int attempt = 0; attempt < MaxEnumerationAttempts && result == VkResult.Incomplete; attempt++)
         {
             int count = 0;
-            result = gate.TryTakeFault(call, out VkResult injected) ? injected : source.EnumerateLayers(ref count, []);
+            result = gate.TryTakeFault(call, out VkResult injected) ? injected : GlobalCommands.EnumerateLayers(source, ref count, []);
             if (result != VkResult.Success || count == 0)
             {
                 break;
             }
 
             var properties = new VkLayerProperties[count];
-            result = gate.TryTakeFault(call, out injected) ? injected : source.EnumerateLayers(ref count, properties);
+            result = gate.TryTakeFault(call, out injected) ? injected : GlobalCommands.EnumerateLayers(source, ref count, properties);
             if (result == VkResult.Success)
             {
                 string[] names = new string[count];

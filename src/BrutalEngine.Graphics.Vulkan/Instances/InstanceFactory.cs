@@ -32,6 +32,12 @@ namespace BrutalEngine.Graphics.Vulkan.Instances;
 /// loader. Creation-time only, on the device's owner thread; allocates the selection, BRUTAL's sets, the sink and the
 /// instance.
 /// </para>
+/// <para>
+/// Devices may be created on several threads at once: every enumeration and <c>vkCreateInstance</c> runs inside the
+/// process-wide <see cref="GlobalCommands.Gate"/>, one at a time, because overlapping them crashes some loader and driver
+/// combinations (the NVIDIA proprietary driver on Linux). A creation waits while another thread makes a global command.
+/// The rest of creation, and <see cref="VulkanInstance.Dispose"/>, run outside it.
+/// </para>
 /// </remarks>
 internal static class InstanceFactory
 {
@@ -145,7 +151,7 @@ internal static class InstanceFactory
             VkValidationFeaturesEXT features = new() { Next = &messengerInfo, EnabledValidationFeatureCount = 1, EnabledValidationFeatures = &synchronization };
             try
             {
-                instance = source.CreateInstance(new Instance.CreateInfo
+                instance = GlobalCommands.CreateInstance(source, new Instance.CreateInfo
                 {
                     AppInfo = new VkApplicationInfo { ApplicationName = pName, ApiVersion = VK.API_VERSION_1_3 },
                     Flags = selection.Flags,
