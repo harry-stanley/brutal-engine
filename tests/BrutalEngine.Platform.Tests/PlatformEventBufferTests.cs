@@ -220,6 +220,26 @@ public sealed class PlatformEventBufferTests
         Assert.Equal(1, buffer.TruncatedTextCount);
     }
 
+    [Theory]
+    [InlineData("a")]
+    [InlineData("é")]
+    [InlineData("€")]
+    [InlineData("😀")]
+    public void AddText_ExactFit_StoresWholeTextUncounted(string sequence)
+    {
+        PlatformEventBuffer buffer = new(MinEvents, MinText);
+        buffer.AddText(_window, 1, Ascii(1000));
+        byte[] encoded = Encoding.UTF8.GetBytes(sequence);
+        byte[] text = [.. Ascii(MinText - 1000 - encoded.Length), .. encoded];
+
+        buffer.AddText(_window, 2, text);
+        PlatformEventBatch batch = buffer.AsBatch();
+
+        Assert.Equal(text, batch.GetText(batch.Events[1]).ToArray());
+        Assert.Equal(0, buffer.TruncatedTextCount);
+        Assert.False(buffer.HasRoom);
+    }
+
     [Fact]
     public void AddText_NothingFits_AddsEmptyTextAndCounts()
     {
@@ -393,7 +413,17 @@ public sealed class PlatformEventBufferTests
             (1, Gen.Const(new Op(OpKind.Clear, default, default, 0, []))),
             (1, Gen.Const(new Op(OpKind.MarkDeferred, default, default, 0, []))));
 
-        op.Array[0, 200].Sample(ops =>
+        // Adds only, mostly events, more of them than the buffer holds: put between two random runs, they fill the buffer
+        // in every sample, so the property always checks the full state too (an Add or AddText on a full buffer).
+        var fill = Gen.Frequency(
+            (8, _genEvent.Select(e => new Op(OpKind.Add, e, default, 0, []))),
+            (1, Gen.Select(Gen.UInt, Gen.Long, _genText, (w, t, text) =>
+                new Op(OpKind.AddText, default, new WindowId(w), t, text))));
+        var sequences = Gen.Select(
+            op.Array[0, 200], fill.Array[MinEvents + 1, MinEvents + 8], op.Array[0, 100],
+            (before, filling, after) => (Op[])[.. before, .. filling, .. after]);
+
+        sequences.Sample(ops =>
         {
             PlatformEventBuffer buffer = new(MinEvents, MinText);
             Model model = new();
