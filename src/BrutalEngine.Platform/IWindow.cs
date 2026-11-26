@@ -13,8 +13,10 @@ namespace BrutalEngine.Platform;
 /// <b>Getters are snapshots</b> taken when the window is created and updated only by the platform's event pump, so they
 /// stay consistent for a whole frame, make no native call and allocate nothing. <b>Setters</b> ask the OS and return a
 /// <see cref="Result"/>, because the OS may refuse (<see cref="ErrorKind.Native"/> with the backend's message). The
-/// snapshot changes when the resulting event is pumped, since the OS applies some changes asynchronously. Setters
-/// allocate nothing when they succeed, except where a member says otherwise; a failure allocates its error message.
+/// snapshot changes when the resulting event is pumped, since the OS applies some changes asynchronously. Two getters
+/// are the exception: <see cref="IsTextInputActive"/> and <see cref="IsRelativeMouseMode"/> have no OS event, so they
+/// change when their setter succeeds. Setters allocate nothing when they succeed, except where a member says otherwise;
+/// a failure allocates its error message.
 /// </para>
 /// <para>
 /// <b>Sizes</b> come in three units (docs/design/platform.md, "Window coordinates, pixels and content units"):
