@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>BrutalEngine SDL 3 platform backend: windows, input and displays through BRUTAL's SDL bindings.</Description>
+    <PackageTags>gamedev;game-engine;2d;brutal;platform;sdl3</PackageTags>
+  </PropertyGroup>
+
+  <!--
+    InternalsVisibleTo for BrutalEngine.Platform.Sdl3.Tests is inherited from src/Directory.Build.props.
+    Ahwoo.Brutal.Sdl brings Microsoft.Extensions.ObjectPool transitively; it is pinned centrally (ADR-0011).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
+    <PackageReference Include="Ahwoo.Brutal.Sdl" />
+  </ItemGroup>
+</Project>

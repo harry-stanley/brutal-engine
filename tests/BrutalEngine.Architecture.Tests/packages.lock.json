@@ -61,6 +61,14 @@
           "Microsoft.Extensions.Logging.Console": "10.0.0"
         }
       },
+      "Ahwoo.BRUTAL.Interop": {
+        "type": "Transitive",
+        "resolved": "2026.10.2",
+        "contentHash": "zkw974UmzSw35DpsPcqttmE4JsvqFrMfweQ0TiKDchtjAFSK1W1BDUrSJm6Xd73gz7YiqSBW533D5S4EOLH4Hw==",
+        "dependencies": {
+          "Ahwoo.BRUTAL.Core": "2026.10.4"
+        }
+      },
       "Ahwoo.BRUTAL.Logging": {
         "type": "Transitive",
         "resolved": "2026.10.3",
@@ -92,6 +100,11 @@
           "Microsoft.Extensions.Logging": "10.0.0",
           "Microsoft.Extensions.Logging.Console": "10.0.0"
         }
+      },
+      "Ahwoo.BRUTAL.Sdl.Native": {
+        "type": "Transitive",
+        "resolved": "2026.10.3",
+        "contentHash": "jdznWQL6CTKd30scd9IEB7CLsCtT4AuFWWhpjfYPqj2woUe5QnNarMKnziY95zpTtmgYCX0vIxLXiY+zOXNziQ=="
       },
       "Ahwoo.BRUTAL.Strings": {
         "type": "Transitive",
@@ -316,10 +329,29 @@
           "BrutalEngine.Core": "[1.0.0, )"
         }
       },
+      "brutalengine.platform.sdl3": {
+        "type": "Project",
+        "dependencies": {
+          "Ahwoo.Brutal.Sdl": "[2026.10.3, )",
+          "BrutalEngine.Platform": "[1.0.0, )"
+        }
+      },
       "brutalengine.world": {
         "type": "Project",
         "dependencies": {
           "BrutalEngine.Core": "[1.0.0, )"
+        }
+      },
+      "Ahwoo.BRUTAL.Sdl": {
+        "type": "CentralTransitive",
+        "requested": "[2026.10.3, )",
+        "resolved": "2026.10.3",
+        "contentHash": "GVNfXjwE8rMakreNxpUqfT9MiZPIOqc1XWj5PtlZa4DbO7jiKy9xBcUfnxFkFbItCoELbEod3PYnJubXNCyc0g==",
+        "dependencies": {
+          "Ahwoo.BRUTAL.Core": "2026.10.4",
+          "Ahwoo.BRUTAL.Interop": "2026.10.2",
+          "Ahwoo.BRUTAL.Logging": "2026.10.3",
+          "Ahwoo.BRUTAL.Sdl.Native": "2026.10.3"
         }
       },
       "Ahwoo.BRUTAL.Vulkan": {
