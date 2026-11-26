@@ -7,6 +7,11 @@
     <OutputType>Library</OutputType>
     <AssemblyName>BrutalEngine.TestUtilities</AssemblyName>
     <RootNamespace>BrutalEngine.TestUtilities</RootNamespace>
+    <!--
+      tests/Directory.Build.props turns CS1591 off because test projects need no XML docs. This is a shared library whose
+      public members other test projects call, so the compiler enforces their docs here: CS1591 is taken back out.
+    -->
+    <NoWarn>$(NoWarn.Replace('CS1591', ''))</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
