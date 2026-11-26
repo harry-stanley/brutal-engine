@@ -1,0 +1,211 @@
+using System;
+using System.Linq;
+using BrutalEngine.World.Storage;
+using CsCheck;
+using Xunit;
+
+namespace BrutalEngine.World.Tests.Archetypes;
+
+public sealed class ArchetypeSignatureTests
+{
+    // Two mask words, with ids on both sides of the word boundary at 64.
+    private const int MaskBits = 128;
+
+    [Fact]
+    public void OrderIndependent()
+    {
+        // A component set, then the same set repeated and shuffled: ids near the word boundary and at both ends of the
+        // mask are drawn often.
+        var genId = Gen.OneOf(Gen.Int[0, MaskBits - 1], Gen.Int[60, 67], Gen.Const(0), Gen.Const(MaskBits - 1));
+        Gen.Select(genId.Array[0, 12], Gen.Int[0, 3], Gen.UInt).Sample((ids, repeats, seed) =>
+        {
+            int[] distinct = [.. ids.Distinct().Order()];
+            int[] variant = Shuffle([.. ids, .. ids.Take(repeats)], seed);
+
+            var direct = ArchetypeSignature.Create(distinct, MaskBits);
+            var normalized = ArchetypeSignature.Create(variant.AsSpan(0, ArchetypeSignature.Normalize(variant)), MaskBits);
+
+            // The same signature, holding the sorted distinct ids, and the mask has exactly their bits.
+            Assert.Equal(direct, normalized);
+            Assert.Equal(direct.Hash, normalized.Hash);
+            Assert.Equal(distinct, normalized.Ids.ToArray());
+            ulong[] mask = new ulong[MaskBits / 64];
+            foreach (int id in distinct)
+            {
+                mask[id / 64] |= 1UL << (id % 64);
+            }
+
+            Assert.Equal(mask, normalized.Mask.ToArray());
+            for (int id = -1; id <= MaskBits; id++)
+            {
+                Assert.Equal(distinct.Contains(id), normalized.Contains(id));
+            }
+        }, iter: 1000);
+    }
+
+    [Theory]
+    [InlineData(new int[0], new int[0])]
+    [InlineData(new[] { 7 }, new[] { 7 })]
+    [InlineData(new[] { 5, 1, 5, 3, 1 }, new[] { 1, 3, 5 })]
+    [InlineData(new[] { 2, 2, 2 }, new[] { 2 })]
+    [InlineData(new[] { 64, 63, 0, 127 }, new[] { 0, 63, 64, 127 })]
+    public void Normalize_SortsAndRemovesRepeats(int[] ids, int[] expected)
+    {
+        int count = ArchetypeSignature.Normalize(ids);
+
+        Assert.Equal(expected, ids[..count]);
+    }
+
+    [Theory]
+    [InlineData(new[] { 2, 1 })]
+    [InlineData(new[] { 1, 1 })]
+    public void Create_NotStrictlyAscending_Throws(int[] ids) =>
+        Assert.Throws<ArgumentException>(() => ArchetypeSignature.Create(ids, 64));
+
+    [Theory]
+    [InlineData(-1, 64)]
+    [InlineData(64, 64)]
+    [InlineData(int.MinValue, 128)]
+    public void Create_IdOutsideMask_Throws(int id, int maskBits) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => ArchetypeSignature.Create([0, id], maskBits));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-64)]
+    [InlineData(65)]
+    public void Create_MaskBitsNotMultipleOf64_Throws(int maskBits) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => ArchetypeSignature.Create([0], maskBits));
+
+    [Fact]
+    public void Create_CopiesIds()
+    {
+        int[] ids = [1, 2];
+        var signature = ArchetypeSignature.Create(ids, 64);
+        ids[0] = 0;
+
+        Assert.Equal([1, 2], signature.Ids.ToArray());
+    }
+
+    [Fact]
+    public void Equality_ComparesIds()
+    {
+        var a = ArchetypeSignature.Create([1, 2], 64);
+        var same = ArchetypeSignature.Create([1, 2], 128);
+        var other = ArchetypeSignature.Create([1, 3], 64);
+
+        Assert.True(a.Equals(same));
+        Assert.True(a.Equals((object)same));
+        Assert.Equal(a.GetHashCode(), same.GetHashCode());
+        Assert.False(a.Equals(other));
+        Assert.False(a.Equals(ArchetypeSignature.Create([1], 64)));
+        Assert.False(a.Equals(null));
+        Assert.True(a.Matches([1, 2]));
+        Assert.False(a.Matches([1, 3]));
+        Assert.False(a.Matches([1, 2, 3]));
+    }
+
+    [Fact]
+    public void Equality_HashCollision_ComparesIds()
+    {
+        // Two sets with the same hash, found by a birthday search with a separate Python implementation of the hash
+        // (934726784 for both), so only the ids can tell them apart.
+        var first = ArchetypeSignature.Create([163, 215, 1190, 1580, 2107, 2340], 4096);
+        var second = ArchetypeSignature.Create([811, 1099, 2434, 3274, 4069], 4096);
+
+        Assert.Equal(934726784, first.Hash);
+        Assert.Equal(first.Hash, second.Hash);
+        Assert.False(first.Equals(second));
+        Assert.False(second.Equals((object)first));
+    }
+
+    [Fact]
+    public void Equality_SameLengthHashCollision_ComparesIds()
+    {
+        // Two sets of four ids with the same hash (798018277 for both in a separate Python implementation of the
+        // hash), so neither the hash nor the count can tell them apart: only the ids can.
+        int[] firstIds = [2541, 3416, 3860, 3975];
+        int[] secondIds = [1678, 2405, 2423, 3690];
+        var first = ArchetypeSignature.Create(firstIds, 4096);
+        var second = ArchetypeSignature.Create(secondIds, 4096);
+
+        Assert.Equal(798018277, ArchetypeSignature.ComputeHash(firstIds));
+        Assert.Equal(798018277, ArchetypeSignature.ComputeHash(secondIds));
+        Assert.Equal(first.Count, second.Count);
+        Assert.False(first.Equals(second));
+        Assert.False(second.Equals((object)first));
+        Assert.False(first.Matches(secondIds));
+    }
+
+    [Fact]
+    public void Lookups_DoNotAllocate()
+    {
+        int[] request = [64, 3, 127, 3, 0, 64];
+        int[] scratch = new int[request.Length];
+        var signature = ArchetypeSignature.Create([0, 3, 64, 127], MaskBits);
+        var same = ArchetypeSignature.Create([0, 3, 64, 127], MaskBits);
+        var other = ArchetypeSignature.Create([0, 3, 64, 126], MaskBits);
+
+        // Warm up every path, so the measured window holds no first-call work.
+        int found = Lookups(request, scratch, signature, same, other);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1_000; i++)
+        {
+            found += Lookups(request, scratch, signature, same, other);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(5 * 1_001, found);
+        Assert.Equal(0, allocated);
+    }
+
+    // Expected values from a separate Python implementation of the same definition: per id, hash = (hash ^ id) *
+    // 16777619 mod 2^32 from 2166136261, then the MurmurHash3 fmix32 finaliser, read as a signed 32-bit int.
+    [Theory]
+    [InlineData(new int[0], -1421968373)]
+    [InlineData(new[] { 0 }, 91794203)]
+    [InlineData(new[] { 1, 2, 3 }, 1315153499)]
+    [InlineData(new[] { 5, 64, 4095 }, 674419680)]
+    public void ComputeHash_KnownVectors(int[] ids, int expected)
+    {
+        Assert.Equal(expected, ArchetypeSignature.ComputeHash(ids));
+        Assert.Equal(expected, ArchetypeSignature.Create(ids, 4096).Hash);
+    }
+
+    // Normalises a copy of the unsorted request and looks it up the way the archetype set does, returning how many of
+    // the five checks found what they should (5 every time).
+    private static int Lookups(
+        int[] request,
+        int[] scratch,
+        ArchetypeSignature signature,
+        ArchetypeSignature same,
+        ArchetypeSignature other)
+    {
+        request.CopyTo(scratch, 0);
+        ReadOnlySpan<int> sorted = scratch.AsSpan(0, ArchetypeSignature.Normalize(scratch));
+        int found = 0;
+        found += ArchetypeSignature.ComputeHash(sorted) == signature.Hash ? 1 : 0;
+        found += signature.Matches(sorted) ? 1 : 0;
+        found += signature.Contains(127) && !signature.Contains(126) ? 1 : 0;
+        found += signature.Equals(same) ? 1 : 0;
+        found += signature.Equals(other) ? 0 : 1;
+        return found;
+    }
+
+    // Fisher-Yates with a xorshift generator, so a sample's order is a function of its seed.
+    private static int[] Shuffle(int[] ids, uint seed)
+    {
+        uint state = seed | 1;
+        for (int i = ids.Length - 1; i > 0; i--)
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            int j = (int)(state % (uint)(i + 1));
+            (ids[i], ids[j]) = (ids[j], ids[i]);
+        }
+
+        return ids;
+    }
+}
