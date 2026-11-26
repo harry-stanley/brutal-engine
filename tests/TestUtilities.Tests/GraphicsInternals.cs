@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.CompilerServices;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics;
@@ -17,6 +18,11 @@ internal static class GraphicsInternals
     /// <summary><c>TextureHandle(Handle value)</c>.</summary>
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
     public static extern TextureHandle NewTextureHandle(Handle value);
+
+    /// <summary><c>FramePlan(int frameSlot, long frameNumber, ReadOnlySpan&lt;byte&gt; commands, ReadOnlySpan&lt;SwapchainImageUse&gt; acquired)</c>.</summary>
+    [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+    public static extern FramePlan NewFramePlan(
+        int frameSlot, long frameNumber, ReadOnlySpan<byte> commands, ReadOnlySpan<SwapchainImageUse> acquired);
 
     /// <summary><c>WindowSurfaceSource(IWindow window, IVulkanSurfaceSource source)</c>.</summary>
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]

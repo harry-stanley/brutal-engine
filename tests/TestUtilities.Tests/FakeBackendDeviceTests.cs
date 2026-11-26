@@ -109,6 +109,7 @@ public sealed partial class FakeBackendDeviceTests : IDisposable
         "WaitIdle after Dispose",
         "Destroy after Dispose",
         .. _swapchainViolations,
+        .. _frameViolations,
     ];
 
     [Theory]
@@ -140,6 +141,7 @@ public sealed partial class FakeBackendDeviceTests : IDisposable
             "CreateTexture after Dispose" => AfterDispose(() => device.CreateTexture(FakeBackendFixture.Texture())),
             "WaitIdle after Dispose" => AfterDispose(() => device.WaitIdle()),
             "Destroy after Dispose" => AfterDispose(() => device.Destroy(BackendObjectKind.Buffer, buffer)),
+            _ when Array.IndexOf(_frameViolations, violation) >= 0 => FrameViolation(device, violation),
             _ => SwapchainViolation(device, violation),
         };
         int callsBefore = device.Calls.Count;
@@ -276,26 +278,6 @@ public sealed partial class FakeBackendDeviceTests : IDisposable
         Assert.Equal((3L, 3L), (device.ValidationErrors, device.ValidationWarnings));
         Assert.Throws<ArgumentOutOfRangeException>(() => device.AddValidationMessages(-1, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => device.AddValidationMessages(0, -1));
-    }
-
-    public static TheoryData<string> LaterMembers() => ["WaitForFrame", "IsFrameComplete", "BeginFrame", "Execute", "TryReadTimestamps"];
-
-    [Theory]
-    [MemberData(nameof(LaterMembers))]
-    public void LaterMember_ThrowsNotSupported(string member)
-    {
-        FakeBackendDevice device = _fixture.CreateDevice();
-        Action call = member switch
-        {
-            "WaitForFrame" => () => device.WaitForFrame(0),
-            "IsFrameComplete" => () => device.IsFrameComplete(0),
-            "BeginFrame" => () => device.BeginFrame(0),
-            "Execute" => () => device.Execute(default),
-            "TryReadTimestamps" => () => device.TryReadTimestamps(0, []),
-            _ => throw new ArgumentOutOfRangeException(nameof(member), member, "Unknown row."),
-        };
-
-        Assert.Throws<NotSupportedException>(call);
     }
 
     private Result Invoke(

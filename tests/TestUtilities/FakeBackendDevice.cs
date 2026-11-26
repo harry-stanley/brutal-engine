@@ -23,8 +23,9 @@ namespace BrutalEngine.TestUtilities;
 /// texture; <see cref="GetFormatSupport"/> takes only a defined format other than <see cref="TextureFormat.Undefined"/>; a
 /// window has at most one live surface, a surface at most one swapchain that isn't retired, and only a surface without
 /// swapchains is destroyed; a swapchain is created for a window that isn't minimised, from its surface's own source; a
-/// retired swapchain is only read or destroyed; image indices and frame slots are in range; and nothing but
-/// <see cref="Dispose"/> is called after disposal. The fake can't tell which frames used an object (that needs the command reader), so it doesn't check that a
+/// retired swapchain is only read or destroyed; image indices and frame slots are in range; frames follow the slot order
+/// below, and a plan's acquired images are exactly those its frame acquired; and nothing but <see cref="Dispose"/> is
+/// called after disposal. The fake can't tell which frames used an object (that needs the command reader), so it doesn't check that a
 /// destroyed object's frames completed. Nor does it check that the front end destroys every view before its texture: both
 /// checks come with #118.
 /// </para>
@@ -35,8 +36,11 @@ namespace BrutalEngine.TestUtilities;
 /// <see cref="Core.Memory.TrackingAllocator"/> to see leaks.
 /// </para>
 /// <para>
-/// <b>Recording.</b> Every call that passes its checks is appended to <see cref="Calls"/>, which allocates when the list
-/// grows.
+/// <b>Recording.</b> While <see cref="FakeBackendScript.RecordCalls"/> is on, every call that passes its checks is
+/// appended to <see cref="Calls"/>, which allocates when the list grows; while <see cref="FakeBackendScript.RecordPlans"/>
+/// is on, <see cref="Execute"/> copies its plan into <see cref="Plans"/>. With both off, <see cref="WaitForFrame"/>,
+/// <see cref="IsFrameComplete"/>, <see cref="BeginFrame"/>, <see cref="AcquireImage"/>, <see cref="Execute"/>,
+/// <see cref="Present"/> and <see cref="CompleteFrame"/> allocate nothing (measured by the fake's own tests).
 /// </para>
 /// <para>
 /// <b>Surfaces and swapchains.</b> With a <see cref="BackendDeviceRequest.CompatibleSurface"/>, the device makes the
@@ -46,8 +50,11 @@ namespace BrutalEngine.TestUtilities;
 /// acquire or present.
 /// </para>
 /// <para>
-/// <b>Not yet.</b> The frame members throw <see cref="NotSupportedException"/> until #236 adds them, with the frame-order
-/// checks of <see cref="AcquireImage"/> and <see cref="Present"/>.
+/// <b>Frames.</b> A slot is closed, then waited for (<see cref="WaitForFrame"/>), then open (<see cref="BeginFrame"/>),
+/// where <see cref="AcquireImage"/> may run, until <see cref="Execute"/> closes it. An executed frame stays pending until a
+/// test calls <see cref="CompleteFrame"/>, or <see cref="WaitForFrame"/> or <see cref="WaitIdle"/> completes it; only the
+/// last executed frame's images can be presented, once each. The command stream isn't decoded: that waits for the command
+/// reader (#230).
 /// </para>
 /// <para><b>Threading.</b> Not thread-safe, like the contract: the owner thread only.</para>
 /// </remarks>
@@ -56,11 +63,23 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     // The alignment of each mapped block, in bytes.
     private const nuint MapAlignment = 64;
 
+    // The images one frame can acquire: one per window, far more windows than any test opens.
+    private const int MaxAcquiresPerFrame = 16;
+
     private readonly FakeBackendScript _script;
     private readonly Dictionary<ulong, ObjectEntry> _live = [];
     private readonly Dictionary<ulong, SurfaceState> _surfaces = [];
     private readonly Dictionary<ulong, SwapchainState> _swapchains = [];
     private readonly List<FakeBackendCall> _calls = [];
+    private readonly List<RecordedPlan> _plans = [];
+    private readonly SlotState[] _slots;
+    private readonly bool[] _pending;
+    private readonly long[] _executed;
+    private readonly SwapchainImageUse[][] _acquired;
+    private readonly int[] _acquiredCount;
+    private readonly SwapchainImageUse[] _presentable = new SwapchainImageUse[MaxAcquiresPerFrame];
+    private int _presentableCount;
+    private bool _validationErrorArmed;
     private ulong _nextId = 1;
     private long _validationErrors;
     private long _validationWarnings;
@@ -74,6 +93,18 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         Request = request;
         Adapter = adapter;
         Capabilities = script.Capabilities;
+        int frames = request.FramesInFlight;
+        _slots = new SlotState[frames];
+        _pending = new bool[frames];
+        _executed = new long[frames];
+        Array.Fill(_executed, -1);
+        _acquired = new SwapchainImageUse[frames][];
+        _acquiredCount = new int[frames];
+        for (int i = 0; i < frames; i++)
+        {
+            _acquired[i] = new SwapchainImageUse[MaxAcquiresPerFrame];
+        }
+
         if (request.CompatibleSurface is not null)
         {
             _selectionSurface = _nextId++;
@@ -113,6 +144,9 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
     }
 
+    /// <summary>A copy of each plan <see cref="Execute"/> received while <see cref="FakeBackendScript.RecordPlans"/> was on, in order.</summary>
+    public IReadOnlyList<RecordedPlan> Plans => _plans;
+
     /// <summary>Whether <see cref="Dispose"/> has run.</summary>
     public bool IsDisposed => _disposed;
 
@@ -124,12 +158,23 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     public GraphicsCapabilities Capabilities { get; }
 
     /// <inheritdoc/>
-    /// <remarks>Grows only by <see cref="AddValidationMessages"/> until #236 makes <see cref="Execute"/> report an injected error.</remarks>
+    /// <remarks>Grows by one at the <see cref="Execute"/> after <see cref="InjectValidationError"/>, and by <see cref="AddValidationMessages"/>.</remarks>
     public long ValidationErrors => _validationErrors;
 
     /// <inheritdoc/>
     /// <remarks>Grows only by <see cref="AddValidationMessages"/>.</remarks>
     public long ValidationWarnings => _validationWarnings;
+
+    /// <summary>Makes the GPU "finish" the frame last submitted from a slot.</summary>
+    /// <param name="frameSlot">The slot, below the request's frames in flight.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="frameSlot"/> isn't a slot of this device.</exception>
+    /// <remarks>Does nothing for a slot with nothing pending, and after disposal. Not recorded. Allocates nothing.</remarks>
+    public void CompleteFrame(int frameSlot)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(frameSlot);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(frameSlot, _pending.Length);
+        _pending[frameSlot] = false;
+    }
 
     /// <summary>Makes the "validation layer" report messages, as if the device's work had broken a usage rule.</summary>
     /// <param name="errors">The number of error messages to add.</param>
@@ -441,9 +486,15 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     {
         ThrowIfDisposed();
         SwapchainState state = LiveSwapchain(swapchain, "AcquireImage", unretired: true);
-        if ((uint)frameSlot >= (uint)Request.FramesInFlight)
+        CheckSlot(frameSlot, "AcquireImage");
+        if (_slots[frameSlot] != SlotState.Open)
         {
-            throw Violation($"AcquireImage for frame slot {frameSlot}, outside the {Request.FramesInFlight} frames in flight");
+            throw Violation($"AcquireImage for slot {frameSlot}, whose frame isn't open");
+        }
+
+        if (_acquiredCount[frameSlot] == MaxAcquiresPerFrame)
+        {
+            throw new InvalidOperationException($"The fake backend supports {MaxAcquiresPerFrame} acquires per frame.");
         }
 
         Record(FakeBackendOperation.AcquireImage, null, swapchain, frameSlot);
@@ -455,6 +506,7 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
 
         int image = state.NextImage;
         state.NextImage = (image + 1) % state.ImageCount;
+        _acquired[frameSlot][_acquiredCount[frameSlot]++] = new SwapchainImageUse(swapchain, image);
         return new BackendAcquire(status, image, nativeCode);
     }
 
@@ -471,46 +523,193 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     {
         ThrowIfDisposed();
         CheckImage(LiveSwapchain(swapchain, "Present", unretired: true), imageIndex, "Present");
+        int presentable = _presentable.AsSpan(0, _presentableCount).IndexOf(new SwapchainImageUse(swapchain, imageIndex));
+        if (presentable < 0)
+        {
+            throw Violation($"Present of image {imageIndex} of swapchain {swapchain}, which the last Execute didn't leave presentable");
+        }
+
+        // Each image is presented once: move the last presentable image into its place.
+        _presentable[presentable] = _presentable[--_presentableCount];
         Record(FakeBackendOperation.Present, null, swapchain);
         _ = _script.TakeStatus(FakeBackendOperation.Present, out SwapchainStatus status, out int nativeCode);
         return new BackendPresent(status, nativeCode);
     }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public Result WaitForFrame(int frameSlot) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: a slot outside the request's frames in flight, a slot whose frame is open, or a call after
+    /// disposal.
+    /// </exception>
+    /// <remarks>
+    /// Takes a pending <see cref="FakeBackendOperation.WaitForFrame"/> failure, which leaves the slot closed. Otherwise the
+    /// slot's pending frame completes (a real GPU finishes eventually; script a timeout to model one that doesn't), and
+    /// <see cref="BeginFrame"/> may follow. Allocates nothing.
+    /// </remarks>
+    public Result WaitForFrame(int frameSlot)
+    {
+        ThrowIfDisposed();
+        CheckSlot(frameSlot, "WaitForFrame");
+        if (_slots[frameSlot] == SlotState.Open)
+        {
+            throw Violation($"WaitForFrame of slot {frameSlot}, whose frame is open");
+        }
+
+        Record(FakeBackendOperation.WaitForFrame, null, 0, frameSlot);
+        if (_script.TakeFailure(FakeBackendOperation.WaitForFrame, out EngineError error))
+        {
+            _slots[frameSlot] = SlotState.Closed;
+            return error;
+        }
+
+        _pending[frameSlot] = false;
+        _slots[frameSlot] = SlotState.Waited;
+        return Result.Success;
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public Result<bool> IsFrameComplete(int frameSlot) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">Contract violation: a slot out of range, or a call after disposal.</exception>
+    /// <remarks>
+    /// Takes a pending <see cref="FakeBackendOperation.IsFrameComplete"/> failure; otherwise reports whether the slot's last
+    /// submitted frame completed (<see cref="CompleteFrame"/>, <see cref="WaitForFrame"/> or <see cref="WaitIdle"/>).
+    /// Allocates nothing.
+    /// </remarks>
+    public Result<bool> IsFrameComplete(int frameSlot)
+    {
+        ThrowIfDisposed();
+        CheckSlot(frameSlot, "IsFrameComplete");
+        Record(FakeBackendOperation.IsFrameComplete, null, 0, frameSlot);
+        return _script.TakeFailure(FakeBackendOperation.IsFrameComplete, out EngineError error) ? error : !_pending[frameSlot];
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public Result BeginFrame(int frameSlot) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: a slot out of range, a slot whose last call wasn't a successful <see cref="WaitForFrame"/>, or a
+    /// call after disposal.
+    /// </exception>
+    /// <remarks>Takes a pending <see cref="FakeBackendOperation.BeginFrame"/> failure, which leaves the slot closed. Allocates nothing.</remarks>
+    public Result BeginFrame(int frameSlot)
+    {
+        ThrowIfDisposed();
+        CheckSlot(frameSlot, "BeginFrame");
+        if (_slots[frameSlot] != SlotState.Waited)
+        {
+            throw Violation($"BeginFrame of slot {frameSlot} without a successful WaitForFrame first");
+        }
+
+        Record(FakeBackendOperation.BeginFrame, null, 0, frameSlot);
+        if (_script.TakeFailure(FakeBackendOperation.BeginFrame, out EngineError error))
+        {
+            _slots[frameSlot] = SlotState.Closed;
+            return error;
+        }
+
+        _slots[frameSlot] = SlotState.Open;
+        _acquiredCount[frameSlot] = 0;
+        return Result.Success;
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public Result Execute(in FramePlan plan) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: the plan's slot isn't open (an Execute without <see cref="BeginFrame"/>, or a second one), its
+    /// acquired images aren't exactly the ones <see cref="AcquireImage"/> handed out in that frame, or a call after disposal.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Closes the slot. Takes a pending <see cref="FakeBackendOperation.Execute"/> failure, which submits nothing: the slot
+    /// stays complete and no image becomes presentable. Otherwise the frame is pending until it completes, the plan's
+    /// images become presentable (replacing the previous frame's), and an injected validation error is reported.
+    /// </para>
+    /// <para>
+    /// With <see cref="FakeBackendScript.RecordPlans"/> on, the plan is copied into <see cref="Plans"/>, which allocates;
+    /// with it and <see cref="FakeBackendScript.RecordCalls"/> off, nothing is allocated.
+    /// </para>
+    /// </remarks>
+    public Result Execute(in FramePlan plan)
+    {
+        ThrowIfDisposed();
+        int slot = plan.FrameSlot;
+        CheckSlot(slot, "Execute");
+        if (_slots[slot] != SlotState.Open)
+        {
+            throw Violation($"Execute of slot {slot}, whose frame isn't open");
+        }
+
+        ReadOnlySpan<SwapchainImageUse> acquired = _acquired[slot].AsSpan(0, _acquiredCount[slot]);
+        if (plan.Acquired.Length != acquired.Length || !ContainsAll(acquired, plan.Acquired))
+        {
+            throw Violation($"Execute of slot {slot} whose acquired images aren't the ones acquired in its frame");
+        }
+
+        Record(FakeBackendOperation.Execute, null, 0, slot);
+        if (_script.RecordPlans)
+        {
+            _plans.Add(new RecordedPlan(plan));
+        }
+
+        _slots[slot] = SlotState.Closed;
+        _presentableCount = 0;
+        if (_script.TakeFailure(FakeBackendOperation.Execute, out EngineError error))
+        {
+            return error;
+        }
+
+        acquired.CopyTo(_presentable);
+        _presentableCount = acquired.Length;
+        _pending[slot] = true;
+        _executed[slot] = plan.FrameNumber;
+        if (_validationErrorArmed)
+        {
+            _validationErrorArmed = false;
+            _validationErrors++;
+        }
+
+        return Result.Success;
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public bool TryReadTimestamps(int frameSlot, Span<ulong> ticks) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">Contract violation: a slot out of range, or a call after disposal.</exception>
+    /// <remarks>
+    /// When the slot's last submitted frame completed and <see cref="GraphicsFeatures.TimestampQueries"/> is enabled, writes
+    /// <see cref="FakeBackendScript.TimestampTicks"/> for that frame's number and each index. Allocates nothing.
+    /// </remarks>
+    public bool TryReadTimestamps(int frameSlot, Span<ulong> ticks)
+    {
+        ThrowIfDisposed();
+        CheckSlot(frameSlot, "TryReadTimestamps");
+        Record(FakeBackendOperation.TryReadTimestamps, null, 0, frameSlot);
+        long frame = _executed[frameSlot];
+        if (frame < 0 || _pending[frameSlot] || (Capabilities.Features & GraphicsFeatures.TimestampQueries) == 0)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < ticks.Length; i++)
+        {
+            ticks[i] = _script.TimestampTicks(frame, i);
+        }
+
+        return true;
+    }
 
     /// <inheritdoc/>
     /// <exception cref="InvalidOperationException">Contract violation: a call after disposal.</exception>
-    /// <remarks>Takes a pending <see cref="FakeBackendOperation.WaitIdle"/> failure; otherwise succeeds at once.</remarks>
+    /// <remarks>Takes a pending <see cref="FakeBackendOperation.WaitIdle"/> failure; otherwise completes every pending frame.</remarks>
     public Result WaitIdle()
     {
         ThrowIfDisposed();
         Record(FakeBackendOperation.WaitIdle, null, 0);
-        return _script.TakeFailure(FakeBackendOperation.WaitIdle, out EngineError error) ? error : Result.Success;
+        if (_script.TakeFailure(FakeBackendOperation.WaitIdle, out EngineError error))
+        {
+            return error;
+        }
+
+        Array.Clear(_pending);
+        return Result.Success;
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Checks the device and records the call; the next <see cref="Execute"/> reports the error in
-    /// <see cref="ValidationErrors"/> once #236 adds frames.
-    /// </remarks>
+    /// <remarks>The next successful <see cref="Execute"/> reports one error in <see cref="ValidationErrors"/>.</remarks>
     public void InjectValidationError()
     {
         ThrowIfDisposed();
@@ -520,6 +719,7 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
                 "InjectValidationError needs a device created with validation: without a layer to catch it, the violation would prove nothing.");
         }
 
+        _validationErrorArmed = true;
         Record(FakeBackendOperation.InjectValidationError, null, 0);
     }
 
@@ -546,9 +746,6 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     }
 
     private static InvalidOperationException Violation(string rule) => new($"contract violation: {rule}.");
-
-    private static NotSupportedException NotYet(string issue) =>
-        new($"The fake backend device doesn't implement this member yet ({issue} adds it).");
 
     private Result<ulong> CreateObject(FakeBackendOperation operation, BackendObjectKind kind)
     {
@@ -608,8 +805,34 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
     }
 
-    private void Record(FakeBackendOperation operation, BackendObjectKind? kind, ulong id, int frameSlot = -1) =>
-        _calls.Add(new FakeBackendCall(operation, kind, id, frameSlot));
+    private static bool ContainsAll(ReadOnlySpan<SwapchainImageUse> set, ReadOnlySpan<SwapchainImageUse> items)
+    {
+        foreach (SwapchainImageUse item in items)
+        {
+            if (!set.Contains(item))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void CheckSlot(int frameSlot, string member)
+    {
+        if ((uint)frameSlot >= (uint)_slots.Length)
+        {
+            throw Violation($"{member} of frame slot {frameSlot}, outside the {_slots.Length} frames in flight");
+        }
+    }
+
+    private void Record(FakeBackendOperation operation, BackendObjectKind? kind, ulong id, int frameSlot = -1)
+    {
+        if (_script.RecordCalls)
+        {
+            _calls.Add(new FakeBackendCall(operation, kind, id, frameSlot));
+        }
+    }
 
     private void ThrowIfDisposed()
     {
@@ -624,6 +847,14 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// image's texture or view (0 otherwise).
     /// </summary>
     private readonly record struct ObjectEntry(BackendObjectKind Kind, nint Mapped, ulong Swapchain = 0);
+
+    /// <summary>Where a frame slot is: closed, waited for (<see cref="BeginFrame"/> may follow), or open.</summary>
+    private enum SlotState
+    {
+        Closed,
+        Waited,
+        Open,
+    }
 
     /// <summary>A surface: its window's source, and whether the front end has received its id.</summary>
     private sealed class SurfaceState(WindowSurfaceSource source)

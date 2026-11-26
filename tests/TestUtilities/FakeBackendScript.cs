@@ -30,6 +30,7 @@ public sealed class FakeBackendScript
     private GraphicsCapabilities _capabilities = DefaultCapabilities;
     private Func<TextureFormat, Support> _formatSupport = DefaultFormatSupport;
     private Func<BackendSwapchainRequest, SwapchainInfo> _swapchainInfo = DefaultSwapchainInfo;
+    private Func<long, int, ulong> _timestampTicks = DefaultTimestampTicks;
 
     /// <summary>Creates a script with one suitable adapter (<see cref="CreateAdapter"/> at index 0) and the defaults.</summary>
     public FakeBackendScript() => Adapters = [CreateAdapter(0)];
@@ -94,6 +95,29 @@ public sealed class FakeBackendScript
         set => _swapchainInfo = value ?? throw new ArgumentNullException(nameof(value));
     }
 
+    /// <summary>
+    /// Whether devices append each call to <see cref="FakeBackendDevice.Calls"/>; on at first. Turn it off, with
+    /// <see cref="RecordPlans"/>, before measuring the front end's allocations: recording allocates as the list grows.
+    /// </summary>
+    public bool RecordCalls { get; set; } = true;
+
+    /// <summary>
+    /// Whether <see cref="FakeBackendDevice.Execute"/> copies each plan into <see cref="FakeBackendDevice.Plans"/>; off at
+    /// first. Copying allocates.
+    /// </summary>
+    public bool RecordPlans { get; set; }
+
+    /// <summary>
+    /// The tick <see cref="FakeBackendDevice.TryReadTimestamps"/> reports for a frame number and query index;
+    /// <see cref="DefaultTimestampTicks"/> at first. It must not allocate if the test measures allocations.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value is <see langword="null"/>.</exception>
+    public Func<long, int, ulong> TimestampTicks
+    {
+        get => _timestampTicks;
+        set => _timestampTicks = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
     /// <summary>Describes a suitable fake adapter: a discrete GPU named "Fake GPU &lt;index&gt;" with no rejection reasons.</summary>
     /// <param name="index">The adapter's position in <see cref="Adapters"/>.</param>
     /// <param name="rejectionReasons">Why the adapter can't serve the request; none by default.</param>
@@ -141,6 +165,12 @@ public sealed class FakeBackendScript
         TextureFormat format = request.Options.Format == SwapchainFormat.Srgb ? TextureFormat.Bgra8UnormSrgb : TextureFormat.Bgra8Unorm;
         return new SwapchainInfo(request.Source.PixelWidth, request.Source.PixelHeight, format, request.Options.PresentMode, 3, true);
     }
+
+    /// <summary>The ticks a new script reports: 1000 per query index, so each labelled pass takes 1000 ticks.</summary>
+    /// <param name="frameNumber">The frame's number.</param>
+    /// <param name="queryIndex">The query index.</param>
+    /// <returns>The tick count.</returns>
+    public static ulong DefaultTimestampTicks(long frameNumber, int queryIndex) => (ulong)queryIndex * 1000;
 
     /// <summary>Makes the next call of an operation fail with an error, once; the call after it behaves normally again.</summary>
     /// <param name="operation">

@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Background (concurrent) garbage collection off, so the allocation tests measure exactly, as in BrutalEngine.Core.Tests:
+    a background collection voids every thread's allocation context without taking the unused tail off that thread's
+    count, so GC.GetAllocatedBytesForCurrentThread jumps on a thread that allocated nothing. AllocationMeasurementTests
+    guards it; docs/05-testing-strategy.md, "Allocation tests", explains it.
+  -->
   <PropertyGroup>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <AssemblyName>BrutalEngine.TestUtilities.Tests</AssemblyName>
     <RootNamespace>BrutalEngine.TestUtilities.Tests</RootNamespace>
   </PropertyGroup>
