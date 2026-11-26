@@ -142,6 +142,7 @@ public sealed partial class CopyValidatorTests
     public static TheoryData<string> HugeOffsets() =>
     [
         "SourceOffsetNearMax", "DestinationOffsetNearMax", "SizeNearMax", "SourceAndSizeNearMax", "WriteOffsetNearMax", "WriteOffsetAtMax",
+        "TextureBufferOffsetNearMax", "TextureToTextureOffsetNearMax", "TextureRowPitchTimesHeight",
     ];
 
     // Every row lies inside a long.MaxValue-byte buffer except for its last few bytes, so offset + size would wrap to a
@@ -159,7 +160,7 @@ public sealed partial class CopyValidatorTests
             "SourceAndSizeNearMax" => (CopyHuge(_copy with { SourceOffset = NearMax, DestinationOffset = 0, Size = NearMax }), "copy", "BufferCopy.Size"),
             "WriteOffsetNearMax" => (Write(_huge, NearMax, 8), "data", "WriteBuffer.data.Length"),
             "WriteOffsetAtMax" => (Write(_huge, long.MaxValue, 1), "data", "WriteBuffer.data.Length"),
-            _ => throw new ArgumentOutOfRangeException(nameof(row), row, "Unknown row."),
+            _ => TextureHugeOffsetRow(row),
         };
 
         AssertRejected(typeof(ArgumentOutOfRangeException), param, field, validate);

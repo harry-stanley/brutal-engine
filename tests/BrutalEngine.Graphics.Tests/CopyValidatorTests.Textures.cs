@@ -46,6 +46,10 @@ public sealed partial class CopyValidatorTests
         "Region.HeightPastEnd", "Region.HeightMaxValue", "Region.LastMipIsOneByOne", "Region.MipHalvesWidth", "Region.MipHalvesHeight",
         "ToBuffer.TextureUsage", "ToBuffer.BufferUsage", "ToBuffer.Multisampled", "ToTexture.BufferUsage", "ToTexture.TextureUsage",
         "ToTexture.Multisampled", "ToTexture.DepthAspect", "ToTexture.Location",
+        "TextureBuffer.BytesPerRowBelowRow", "TextureBuffer.BytesPerRowNegative", "TextureBuffer.BytesPerRowMaxValue",
+        "TextureBuffer.BytesPerRowAligned", "TextureBuffer.BufferOffsetNegative", "TextureBuffer.BufferOffsetMinValue",
+        "TextureBuffer.BufferOffsetAlignedToFour", "TextureBuffer.BufferOffsetAlignedToTexel", "TextureBuffer.BufferHoldsRows",
+        "TextureBuffer.BufferOffsetPastEnd", "TextureBuffer.BufferOffsetMaxValue",
     ];
 
     [Theory]
@@ -58,6 +62,36 @@ public sealed partial class CopyValidatorTests
 
         CopyValidator.ValidateCopyToBuffer(copy, depth, _buffer);
         AssertRejected(typeof(ArgumentException), "copy", "TextureBufferCopy.Texture.Aspect", () => CopyValidator.ValidateCopyToTexture(copy, _buffer, depth));
+    }
+
+    [Theory]
+    [InlineData(64)]
+    [InlineData(128)]
+    [InlineData(255)]
+    [InlineData(257)]
+    [InlineData(384)]
+    [InlineData(511)]
+    public void RowPitch_Not256Multiple_Throws(int bytesPerRow)
+    {
+        // Each pitch holds the region's 64-byte rows, so only the multiple-of-256 rule rejects it, in both directions.
+        TextureBufferCopy copy = _textureBufferCopy with { BytesPerRow = bytesPerRow };
+
+        AssertRejected(typeof(ArgumentException), "copy", "TextureBufferCopy.BytesPerRow", () => CopyValidator.ValidateCopyToBuffer(copy, _texture, _buffer));
+        AssertRejected(typeof(ArgumentException), "copy", "TextureBufferCopy.BytesPerRow", () => CopyValidator.ValidateCopyToTexture(copy, _buffer, _texture));
+    }
+
+    [Theory]
+    [InlineData(256)]
+    [InlineData(512)]
+    [InlineData(768)]
+    public void RowPitch_256Multiple_Passes(int bytesPerRow)
+    {
+        // A 4,096-byte buffer holds the 4 rows at each pitch: at 768, 3 * 768 + 64 = 2,368 bytes.
+        BufferDescription buffer = _buffer with { Size = 4096 };
+        TextureBufferCopy copy = _textureBufferCopy with { BytesPerRow = bytesPerRow };
+
+        CopyValidator.ValidateCopyToBuffer(copy, _texture, buffer);
+        CopyValidator.ValidateCopyToTexture(copy, buffer, _texture);
     }
 
     private static (Action Pass, Action Fail, Type Exception, string Param, string Field) TextureRow(string rule)
@@ -128,7 +162,54 @@ public sealed partial class CopyValidatorTests
             // The location rules hold in this direction too.
             "ToTexture.Location" => (ToTexture(AtMip(6, 1, 1)), ToTexture(AtMip(6, 1, 1) with { Region = new TextureRegion(0, 1, 1, 1) }), outOfRange, "copy", "TextureBufferCopy.Region.Y"),
 
+            // 64 Rgba8 texels make a 256-byte row: a pitch of exactly that passes, and 0 is below it.
+            "TextureBuffer.BytesPerRowBelowRow" => (
+                ToBuffer(t with { Region = r with { Width = 64 }, BytesPerRow = 256 }),
+                ToBuffer(t with { Region = r with { Width = 64 }, BytesPerRow = 0 }),
+                outOfRange, "copy", "TextureBufferCopy.BytesPerRow"),
+            "TextureBuffer.BytesPerRowNegative" => (ToBuffer(t), ToBuffer(t with { BytesPerRow = -256 }), outOfRange, "copy", "TextureBufferCopy.BytesPerRow"),
+            "TextureBuffer.BytesPerRowMaxValue" => (ToBuffer(t), ToBuffer(t with { BytesPerRow = int.MaxValue }), invalid, "copy", "TextureBufferCopy.BytesPerRow"),
+            "TextureBuffer.BytesPerRowAligned" => (ToBuffer(t with { BytesPerRow = 256 }), ToBuffer(t with { BytesPerRow = 128 }), invalid, "copy", "TextureBufferCopy.BytesPerRow"),
+            "TextureBuffer.BufferOffsetNegative" => (ToBuffer(t), ToBuffer(t with { BufferOffset = -4 }), outOfRange, "copy", "TextureBufferCopy.BufferOffset"),
+            "TextureBuffer.BufferOffsetMinValue" => (ToBuffer(t), ToBuffer(t with { BufferOffset = long.MinValue }), outOfRange, "copy", "TextureBufferCopy.BufferOffset"),
+            // R8 texels are 1 byte, so 4 is the alignment; Rgba32Float texels are 16 bytes, so 16 is.
+            "TextureBuffer.BufferOffsetAlignedToFour" => (
+                ToBuffer(t with { BufferOffset = 4 }, _texture with { Format = TextureFormat.R8Unorm }),
+                ToBuffer(t with { BufferOffset = 2 }, _texture with { Format = TextureFormat.R8Unorm }),
+                invalid, "copy", "TextureBufferCopy.BufferOffset"),
+            "TextureBuffer.BufferOffsetAlignedToTexel" => (
+                ToBuffer(t with { Region = r with { Width = 4 }, BufferOffset = 16 }, _texture with { Format = TextureFormat.Rgba32Float }),
+                ToBuffer(t with { Region = r with { Width = 4 }, BufferOffset = 8 }, _texture with { Format = TextureFormat.Rgba32Float }),
+                invalid, "copy", "TextureBufferCopy.BufferOffset"),
+            // 192 + 832 ends exactly at the buffer's end; 196 is one aligned step over.
+            "TextureBuffer.BufferHoldsRows" => (ToBuffer(t with { BufferOffset = 192 }), ToBuffer(t with { BufferOffset = 196 }), outOfRange, "copy", "TextureBufferCopy.BufferOffset"),
+            "TextureBuffer.BufferOffsetPastEnd" => (ToBuffer(t with { BufferOffset = 192 }), ToBuffer(t with { BufferOffset = 1028 }), outOfRange, "copy", "TextureBufferCopy.BufferOffset"),
+            // long.MaxValue - 3 is the largest multiple of 4, so the buffer-size rule (not alignment) rejects it.
+            "TextureBuffer.BufferOffsetMaxValue" => (ToBuffer(t), ToBuffer(t with { BufferOffset = long.MaxValue - 3 }), outOfRange, "copy", "TextureBufferCopy.BufferOffset"),
             _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+        };
+    }
+
+    // Rows whose offset or row pitch is near the type's maximum: a sum with the offset or an int product would wrap.
+    private static (Action Validate, string Param, string Field) TextureHugeOffsetRow(string row)
+    {
+        // A texture tall enough that BytesPerRow * (Height - 1) passes int.MaxValue: in int it wraps, in long it doesn't.
+        TextureDescription tall = _texture with { Width = 64, Height = 65536, ArrayLayers = 1, MipLevels = 1 };
+        TextureBufferCopy tallCopy = _textureBufferCopy with { Region = new TextureRegion(0, 0, 64, 65536), BytesPerRow = int.MaxValue - 255 };
+        return row switch
+        {
+            // 2^63 - 16 is a multiple of every texel size; the rows' 832 bytes don't fit in the 15 left.
+            "TextureBufferOffsetNearMax" => (
+                () => CopyValidator.ValidateCopyToBuffer(_textureBufferCopy with { BufferOffset = long.MaxValue - 15 }, _texture, _huge),
+                "copy", "TextureBufferCopy.BufferOffset"),
+            "TextureToTextureOffsetNearMax" => (
+                () => CopyValidator.ValidateCopyToTexture(_textureBufferCopy with { BufferOffset = long.MaxValue - 15 }, _huge, _texture),
+                "copy", "TextureBufferCopy.BufferOffset"),
+            // (2^31 - 256) * 65535 + 256 bytes, about 2^47, against a 2^40-byte buffer.
+            "TextureRowPitchTimesHeight" => (
+                () => CopyValidator.ValidateCopyToBuffer(tallCopy, tall, _buffer with { Size = 1L << 40 }),
+                "copy", "TextureBufferCopy.BufferOffset"),
+            _ => throw new ArgumentOutOfRangeException(nameof(row), row, "Unknown row."),
         };
     }
 
@@ -137,8 +218,12 @@ public sealed partial class CopyValidatorTests
     {
         ArgumentOutOfRangeException width = Assert.Throws<ArgumentOutOfRangeException>(
             () => CopyValidator.ValidateCopyToBuffer(AtMip(1, 33, 1), _texture, _buffer));
+        ArgumentOutOfRangeException rows = Assert.Throws<ArgumentOutOfRangeException>(
+            () => CopyValidator.ValidateCopyToBuffer(_textureBufferCopy with { BufferOffset = 196 }, _texture, _buffer));
 
         Assert.Contains("width after X (32), but is 33", width.Message, StringComparison.Ordinal);
+        Assert.Contains("the 832 bytes the rows need", rows.Message, StringComparison.Ordinal);
+        Assert.Contains("buffer's end (1024), but is 196", rows.Message, StringComparison.Ordinal);
     }
 
     private static TextureBufferCopy AtMip(int mip, int width, int height) => _textureBufferCopy with

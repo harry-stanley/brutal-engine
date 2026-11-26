@@ -106,16 +106,20 @@ internal static class CopyValidator
     /// <param name="buffer">The description of the buffer copied to; already valid.</param>
     /// <exception cref="ArgumentException">
     /// The texture lacks <see cref="TextureUsage.CopySource"/> or the buffer <see cref="BufferUsage.CopyDestination"/>;
-    /// the texture has more than one sample; or the aspect doesn't match the format.
+    /// the texture has more than one sample; the aspect doesn't match the format; <see cref="TextureBufferCopy.BytesPerRow"/>
+    /// isn't a multiple of <see cref="TextureBufferCopy.RowPitchAlignment"/>; or <see cref="TextureBufferCopy.BufferOffset"/>
+    /// isn't a multiple of the texel size and of 4.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The aspect is outside its enum, or the mip level, layer or region lies outside the texture.
+    /// The aspect is outside its enum; the mip level, layer or region lies outside the texture;
+    /// <see cref="TextureBufferCopy.BytesPerRow"/> is below the region's row size; or the buffer offset is negative or
+    /// leaves too few bytes for the rows.
     /// </exception>
     public static void ValidateCopyToBuffer(in TextureBufferCopy copy, in TextureDescription texture, in BufferDescription buffer)
     {
         CheckTextureUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Texture), texture, TextureUsage.CopySource);
         CheckUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Buffer), buffer, BufferUsage.CopyDestination);
-        CheckTextureBufferCopy(copy, texture);
+        CheckTextureBufferCopy(copy, texture, buffer);
     }
 
     /// <summary>Checks a buffer-to-texture copy against the buffer and the texture.</summary>
@@ -124,17 +128,21 @@ internal static class CopyValidator
     /// <param name="texture">The description of the texture copied to; already valid.</param>
     /// <exception cref="ArgumentException">
     /// The buffer lacks <see cref="BufferUsage.CopySource"/> or the texture <see cref="TextureUsage.CopyDestination"/>;
-    /// the texture has more than one sample; or the aspect doesn't match the format, or is <see cref="TextureAspect.Depth"/>
-    /// (depth is copied to buffers, never from them).
+    /// the texture has more than one sample; the aspect doesn't match the format, or is <see cref="TextureAspect.Depth"/>
+    /// (depth is copied to buffers, never from them); <see cref="TextureBufferCopy.BytesPerRow"/> isn't a multiple of
+    /// <see cref="TextureBufferCopy.RowPitchAlignment"/>; or <see cref="TextureBufferCopy.BufferOffset"/> isn't a
+    /// multiple of the texel size and of 4.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// The aspect is outside its enum, or the mip level, layer or region lies outside the texture.
+    /// The aspect is outside its enum; the mip level, layer or region lies outside the texture;
+    /// <see cref="TextureBufferCopy.BytesPerRow"/> is below the region's row size; or the buffer offset is negative or
+    /// leaves too few bytes for the rows.
     /// </exception>
     public static void ValidateCopyToTexture(in TextureBufferCopy copy, in BufferDescription buffer, in TextureDescription texture)
     {
         CheckUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Buffer), buffer, BufferUsage.CopySource);
         CheckTextureUsage(nameof(copy), nameof(TextureBufferCopy), nameof(TextureBufferCopy.Texture), texture, TextureUsage.CopyDestination);
-        CheckTextureBufferCopy(copy, texture);
+        CheckTextureBufferCopy(copy, texture, buffer);
 
         // A deliberate simplification (docs/design/graphics.md section 6): WebGPU forbids this for Depth32Float only.
         if (copy.Texture.Aspect == TextureAspect.Depth)
@@ -229,13 +237,70 @@ internal static class CopyValidator
         }
     }
 
-    // The rules a TextureBufferCopy has in both directions, after the usages.
-    private static void CheckTextureBufferCopy(in TextureBufferCopy copy, in TextureDescription texture)
+    // The rules a TextureBufferCopy has in both directions, after the usages: the texture side, then the buffer rows.
+    private static void CheckTextureBufferCopy(in TextureBufferCopy copy, in TextureDescription texture, in BufferDescription buffer)
     {
         const string Type = nameof(TextureBufferCopy);
         CheckSingleSample(nameof(copy), Type, nameof(TextureBufferCopy.Texture), texture);
         CheckLocation(nameof(copy), Type, nameof(TextureBufferCopy.Texture), copy.Texture, texture);
         CheckRegion(nameof(copy), Type, nameof(TextureBufferCopy.Region), copy.Region, copy.Texture.MipLevel, texture);
+
+        int texelSize = TextureFormatInfo.TexelSize(texture.Format);
+
+        // The region lies inside its mip level, so Width is at most int.MaxValue and this can't overflow a long.
+        long rowBytes = (long)copy.Region.Width * texelSize;
+        if (copy.BytesPerRow < rowBytes)
+        {
+            ThrowOutOfRange(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BytesPerRow),
+                string.Create(CultureInfo.InvariantCulture, $"must be at least Region.Width times the texel size ({rowBytes})"),
+                copy.BytesPerRow,
+                texture.DebugName);
+        }
+
+        if (copy.BytesPerRow % TextureBufferCopy.RowPitchAlignment != 0)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BytesPerRow),
+                string.Create(CultureInfo.InvariantCulture, $"must be a multiple of {TextureBufferCopy.RowPitchAlignment}, but is {copy.BytesPerRow}"),
+                texture.DebugName);
+        }
+
+        if (copy.BufferOffset < 0)
+        {
+            ThrowOutOfRange(nameof(copy), Type, nameof(TextureBufferCopy.BufferOffset), "must be at least 0", copy.BufferOffset, buffer.DebugName);
+        }
+
+        // Texel sizes are powers of two, so a multiple of the larger of 4 and the texel size is a multiple of both.
+        long offsetAlignment = Math.Max(BufferCopyAlignment, texelSize);
+        if (copy.BufferOffset % offsetAlignment != 0)
+        {
+            ThrowInvalid(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BufferOffset),
+                string.Create(CultureInfo.InvariantCulture, $"must be a multiple of the texel size and of 4 ({offsetAlignment}), but is {copy.BufferOffset}"),
+                buffer.DebugName);
+        }
+
+        // BytesPerRow and Height are positive ints, so the product is below 2^62 and the sum below 2^63. The offset is
+        // non-negative and the size positive, so Size - BufferOffset can't overflow either: no sum with the offset is formed.
+        long required = ((long)copy.BytesPerRow * (copy.Region.Height - 1)) + rowBytes;
+        long available = buffer.Size - copy.BufferOffset;
+        if (required > available)
+        {
+            ThrowOutOfRange(
+                nameof(copy),
+                Type,
+                nameof(TextureBufferCopy.BufferOffset),
+                string.Create(CultureInfo.InvariantCulture, $"must leave the {required} bytes the rows need (BytesPerRow * (Region.Height - 1) + Region.Width * texel size) before the buffer's end ({buffer.Size})"),
+                copy.BufferOffset,
+                buffer.DebugName);
+        }
     }
 
     private static void CheckTextureUsage(string paramName, string type, string field, in TextureDescription texture, TextureUsage required)
