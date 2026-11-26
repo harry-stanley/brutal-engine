@@ -77,7 +77,7 @@ public sealed class GraphicsDevice : IDisposable
 }
 ```
 
-`GraphicsDevice` implements `IDisposable` and is owned by whoever created it (the Runtime host, a test, a sample). `Dispose` waits for the GPU to go idle (ignoring a lost device, because destroying objects stays valid then, `samples/HelloWindow/HelloWindowApp.cs:225-235`), logs every live object as a leak (section 13), destroys everything in reverse creation order, then the backend device. Every member except `Dispose` throws `ObjectDisposedException` afterwards.
+`GraphicsDevice` implements `IDisposable` and is owned by whoever created it (the Runtime host, a test, a sample). `Dispose` waits for the GPU to go idle (ignoring a lost device, because destroying objects stays valid then, `samples/HelloWindow/HelloWindowApp.cs:225-235`), logs every live object as a leak (section 13), destroys everything in reverse creation order, then the backend device. Every member except `Dispose`, `Adapter` and `Capabilities` throws `ObjectDisposedException` afterwards; those two keep returning the values read at creation (section 14).
 
 ## 2. Device creation, adapters and capabilities
 
