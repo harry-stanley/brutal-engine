@@ -13,7 +13,7 @@ namespace BrutalEngine.Graphics.Validation;
 /// <para>
 /// A violation throws <see cref="ArgumentException"/>, or <see cref="ArgumentOutOfRangeException"/> for a value out of
 /// its range (including a flag outside its enum's members). Each exception's <see cref="ArgumentException.ParamName"/>
-/// is the device method's parameter that holds the value (<c>copy</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
+/// is the device method's parameter that holds the value (<c>copy</c>, <c>write</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
 /// <c>byteCount</c> or <c>usage</c>), and its message names the type or method, the field, the value, any computed
 /// bound, and the debug name of the buffer or texture the field refers to. A buffer-texture copy's
 /// <see cref="TextureBufferCopy.BytesPerRow"/> and <see cref="TextureBufferCopy.BufferOffset"/> describe the buffer's
@@ -150,6 +150,66 @@ internal static class CopyValidator
         if (copy.Texture.Aspect == TextureAspect.Depth)
         {
             ThrowInvalid(nameof(copy), nameof(TextureBufferCopy), "Texture.Aspect", "must not be Depth: depth can be copied to buffers but never from them", texture.DebugName);
+        }
+    }
+
+    /// <summary>Checks a texture write against the texture it writes and the length of its data.</summary>
+    /// <param name="write">The write to check.</param>
+    /// <param name="target">The description of the texture written; already valid.</param>
+    /// <param name="dataLength">The length of the data, in bytes. Data longer than the rows need is allowed.</param>
+    /// <exception cref="ArgumentException">
+    /// The texture lacks <see cref="TextureUsage.CopyDestination"/>, has a depth format, or has more than one sample; or
+    /// the aspect isn't <see cref="TextureAspect.Color"/> (parameter <c>write</c>).
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The aspect is outside its enum; the mip level, layer or region lies outside the texture; or
+    /// <see cref="TextureWrite.BytesPerRow"/> is negative, or neither 0 nor at least the region's row size (parameter
+    /// <c>write</c>). Or the data is shorter than <c>BytesPerRow * (Region.Height - 1) + Region.Width * texel size</c>
+    /// bytes (parameter <c>data</c>).
+    /// </exception>
+    public static void ValidateWriteTexture(in TextureWrite write, in TextureDescription target, int dataLength)
+    {
+        const string Type = nameof(TextureWrite);
+        CheckTextureUsage(nameof(write), Type, nameof(TextureWrite.Target), target, TextureUsage.CopyDestination);
+        if (TextureFormatInfo.IsDepth(target.Format))
+        {
+            ThrowInvalid(
+                nameof(write),
+                Type,
+                nameof(TextureWrite.Target),
+                string.Create(CultureInfo.InvariantCulture, $"must be a color texture, but has the depth format {target.Format}: WriteTexture takes color formats only"),
+                target.DebugName);
+        }
+
+        CheckSingleSample(nameof(write), Type, nameof(TextureWrite.Target), target);
+        CheckLocation(nameof(write), Type, nameof(TextureWrite.Target), write.Target, target);
+        CheckRegion(nameof(write), Type, nameof(TextureWrite.Region), write.Region, write.Target.MipLevel, target);
+
+        // The region lies inside its mip level, so Width is at most int.MaxValue and this can't overflow a long.
+        long rowBytes = (long)write.Region.Width * TextureFormatInfo.TexelSize(target.Format);
+        if (write.BytesPerRow < 0 || (write.BytesPerRow != 0 && write.BytesPerRow < rowBytes))
+        {
+            ThrowOutOfRange(
+                nameof(write),
+                Type,
+                nameof(TextureWrite.BytesPerRow),
+                string.Create(CultureInfo.InvariantCulture, $"must be 0 (tight rows) or at least Region.Width times the texel size ({rowBytes})"),
+                write.BytesPerRow,
+                target.DebugName);
+        }
+
+        // BytesPerRow and Height are ints, so the product is below 2^62 and the sum below 2^63.
+        long bytesPerRow = write.BytesPerRow == 0 ? rowBytes : write.BytesPerRow;
+        long required = (bytesPerRow * (write.Region.Height - 1)) + rowBytes;
+        if (dataLength < required)
+        {
+            ThrowOutOfRange(
+                "data",
+                Type,
+                "data.Length",
+                string.Create(CultureInfo.InvariantCulture, $"must be at least BytesPerRow * (Region.Height - 1) + Region.Width * texel size ({required})"),
+                dataLength,
+                target.DebugName);
         }
     }
 

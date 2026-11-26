@@ -211,7 +211,7 @@ public sealed partial class CopyValidatorTests
             "TextureBuffer.BufferOffsetPastEnd" => (ToBuffer(t with { BufferOffset = 192 }), ToBuffer(t with { BufferOffset = 1028 }), outOfRange, "copy", "TextureBufferCopy.BufferOffset", BufferName),
             // long.MaxValue - 3 is the largest multiple of 4, so the buffer-size rule (not alignment) rejects it.
             "TextureBuffer.BufferOffsetMaxValue" => (ToBuffer(t), ToBuffer(t with { BufferOffset = long.MaxValue - 3 }), outOfRange, "copy", "TextureBufferCopy.BufferOffset", BufferName),
-            _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
+            _ => WriteRow(rule),
         };
     }
 
