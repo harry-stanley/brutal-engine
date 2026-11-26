@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
@@ -18,7 +17,7 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Instances;
 /// proprietary driver on Linux, so every one the backend makes runs inside <see cref="GlobalCommands.Gate"/>. The
 /// sources check the gate from inside each call, so a call made outside it fails deterministically, whatever the timing.
 /// </summary>
-public sealed partial class GlobalCommandsTests
+public sealed class GlobalCommandsTests
 {
     private const string Validation = "VK_LAYER_KHRONOS_validation";
 
@@ -157,18 +156,15 @@ public sealed partial class GlobalCommandsTests
                 continue;
             }
 
-            string[] lines = File.ReadAllLines(file);
-            for (int i = 0; i < lines.Length; i++)
+            foreach (string found in GlobalCommandScan.FindBypasses(File.ReadAllText(file)))
             {
-                if (GlobalCommandCall().IsMatch(lines[i]))
-                {
-                    bypasses.Add($"{relative}:{i + 1}: {lines[i].Trim()}");
-                }
+                bypasses.Add(relative + ":" + found);
             }
         }
 
         // A global command made anywhere else skips the process-wide gate, and concurrent instance creation can crash
         // the process again on drivers that race (the NVIDIA proprietary driver on Linux): call it through GlobalCommands.
+        // What the scan catches, and what it can't see, is on GlobalCommandScan.
         Assert.True(bypasses.Count == 0, "Global Vulkan commands outside " + GateFile + ":\n" + string.Join('\n', bypasses));
     }
 
@@ -222,11 +218,6 @@ public sealed partial class GlobalCommandsTests
 
         throw new InvalidOperationException("BrutalEngine.slnx not found above " + AppContext.BaseDirectory);
     }
-
-    // A call of a global command through BRUTAL: the raw bindings (Vulkan.PInvoke.vkCreateInstance,
-    // vkEnumerateInstance*) or the wrappers (Vulkan.CreateInstance, Vulkan.EnumerateInstance*).
-    [GeneratedRegex(@"\bVulkan\.(PInvoke\.)?(vk)?(CreateInstance|EnumerateInstance\w*)\s*\(")]
-    private static partial Regex GlobalCommandCall();
 
     /// <summary>
     /// A thread-safe loader that offers one extension and fails <c>vkCreateInstance</c> as BRUTAL's wrapper does. It

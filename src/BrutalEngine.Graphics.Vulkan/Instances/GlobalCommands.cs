@@ -41,6 +41,12 @@ internal static class GlobalCommands
     /// <summary>The process-wide gate that every global command runs inside; re-entrant on one thread.</summary>
     internal static readonly Lock Gate = new();
 
+    /// <summary>
+    /// <c>vkCreateInstance</c>'s name, for a converted error's message. It lives here because a string that is exactly a
+    /// global command's name is what a lookup by name passes, which the backend's source scan allows only in this file.
+    /// </summary>
+    internal const string CreateInstanceName = "vkCreateInstance";
+
     /// <summary><c>vkEnumerateInstanceExtensionProperties</c> through <paramref name="source"/>, inside <see cref="Gate"/>.</summary>
     /// <typeparam name="TSource">The global commands; the real ones are a struct, so nothing is boxed.</typeparam>
     /// <param name="source">The global commands.</param>

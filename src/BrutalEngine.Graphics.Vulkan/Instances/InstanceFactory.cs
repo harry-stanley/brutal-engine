@@ -41,9 +41,6 @@ namespace BrutalEngine.Graphics.Vulkan.Instances;
 /// </remarks>
 internal static class InstanceFactory
 {
-    /// <summary>The wrapper call's name in a converted error's message.</summary>
-    private const string CreateInstanceCall = "vkCreateInstance";
-
     /// <summary>Creates an instance on the process's loader.</summary>
     /// <param name="options">The request.</param>
     /// <param name="gate">The device's gate.</param>
@@ -170,7 +167,7 @@ internal static class InstanceFactory
                     sink.Release();
                 }
 
-                return VkCheck.FromException(error, CreateInstanceCall);
+                return VkCheck.FromException(error, GlobalCommands.CreateInstanceName);
             }
         }
 
