@@ -570,6 +570,24 @@ BrutalEngine.Platform.TextEventData.Offset.get -> int
 BrutalEngine.Platform.TextEventData.Offset.init -> void
 BrutalEngine.Platform.TextEventData.TextEventData() -> void
 BrutalEngine.Platform.TextEventData.TextEventData(int Offset, int Length) -> void
+BrutalEngine.Platform.Vfs.DirectoryFileSystem
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.CreateDirectory(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.Delete(string! relativePath) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.DirectoryFileSystem(BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions! options) -> void
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.GetEntryKind(string! relativePath) -> BrutalEngine.Core.Result<BrutalEngine.Platform.Vfs.VfsEntryKind>
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.IsReadOnly.get -> bool
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.List(string! relativePath) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Platform.Vfs.VfsEntry>!>
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.OpenRead(string! relativePath) -> BrutalEngine.Core.Result<System.IO.Stream!>
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.ReadAllBytes(string! relativePath) -> BrutalEngine.Core.Result<byte[]!>
+BrutalEngine.Platform.Vfs.DirectoryFileSystem.WriteAllBytes(string! relativePath, System.ReadOnlySpan<byte> contents) -> BrutalEngine.Core.Result
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.<Clone>$() -> BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions!
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.DirectoryFileSystemOptions() -> void
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.Equals(BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions? other) -> bool
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.IsReadOnly.get -> bool
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.IsReadOnly.init -> void
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.RootDirectory.get -> string!
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.RootDirectory.init -> void
 BrutalEngine.Platform.Vfs.IFileSystem
 BrutalEngine.Platform.Vfs.IFileSystem.CreateDirectory(string! relativePath) -> BrutalEngine.Core.Result
 BrutalEngine.Platform.Vfs.IFileSystem.Delete(string! relativePath) -> BrutalEngine.Core.Result
@@ -700,6 +718,9 @@ override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
 override BrutalEngine.Platform.TextEventData.GetHashCode() -> int
+override BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.Equals(object? obj) -> bool
+override BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.GetHashCode() -> int
+override BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.ToString() -> string!
 override BrutalEngine.Platform.Vfs.VfsEntry.GetHashCode() -> int
 override BrutalEngine.Platform.Vfs.VfsEntry.ToString() -> string!
 override BrutalEngine.Platform.Vfs.VfsPath.Equals(object? obj) -> bool
@@ -747,6 +768,8 @@ static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.P
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.TextEventData.operator !=(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
 static BrutalEngine.Platform.TextEventData.operator ==(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
+static BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.operator !=(BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions? left, BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions? right) -> bool
+static BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.operator ==(BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions? left, BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions? right) -> bool
 static BrutalEngine.Platform.Vfs.VfsEntry.operator !=(BrutalEngine.Platform.Vfs.VfsEntry left, BrutalEngine.Platform.Vfs.VfsEntry right) -> bool
 static BrutalEngine.Platform.Vfs.VfsEntry.operator ==(BrutalEngine.Platform.Vfs.VfsEntry left, BrutalEngine.Platform.Vfs.VfsEntry right) -> bool
 static BrutalEngine.Platform.Vfs.VfsPath.Parse(string! path) -> BrutalEngine.Platform.Vfs.VfsPath
