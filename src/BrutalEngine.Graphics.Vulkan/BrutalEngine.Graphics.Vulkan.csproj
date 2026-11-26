@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>BrutalEngine Vulkan 1.3 backend for the render interface, built on BRUTAL's Vulkan bindings.</Description>
+    <PackageTags>gamedev;game-engine;2d;brutal;graphics;vulkan</PackageTags>
+  </PropertyGroup>
+
+  <!--
+    InternalsVisibleTo for BrutalEngine.Graphics.Vulkan.Tests is inherited from src/Directory.Build.props, and it is
+    the only friend assembly: the backend's fault seam (VulkanFaultInjector) is reachable only from that project
+    (docs/design/graphics-vulkan.md section 12).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Graphics.Vulkan/BrutalEngine.Graphics.Vulkan.csproj" />
+  </ItemGroup>
+</Project>
