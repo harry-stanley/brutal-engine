@@ -51,6 +51,8 @@ jobs:
         run: bash .github/scripts/ci-merge-check-test.sh
       - name: Self-test the GPU-trait discovery
         run: bash .github/scripts/gpu-tests-test.sh
+      - name: Self-test the package check
+        run: bash .github/scripts/check-packages-test.sh
       - name: Select tier
         id: select
         env:
@@ -187,6 +189,10 @@ jobs:
       - name: Pack (with package validation)
         if: runner.os == 'Linux'
         run: dotnet pack BrutalEngine.slnx -c Release --no-build -o artifacts/packages
+      # The ship gate (ADR-0016): exactly the libraries whose milestone is released were packed.
+      - name: Check the packed set
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/check-packages.sh artifacts/packages .
       - name: Upload packages
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
