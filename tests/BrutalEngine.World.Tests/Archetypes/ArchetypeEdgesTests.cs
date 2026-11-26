@@ -254,6 +254,38 @@ public sealed unsafe class ArchetypeEdgesTests
     }
 
     [Fact]
+    public void Dispose_ChunkTableThrows_StillFreesEdges()
+    {
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking }))
+        {
+            _ = ArchetypeTestTypes.Forge(world, 1);
+            int baseline = tracking.LiveAllocationCount;
+            ChunkPool pool = new(tracking, 16 * 1024);
+            ArchetypeSet set = new(tracking, pool, world.Components, 256);
+            Archetype empty = set.Empty;
+            _ = empty.WithAdded(new ComponentId(0));
+            _ = empty.Chunks.AddChunk(1);
+            void* block = empty.Chunks.GetData(0);
+            Assert.Equal(1, empty.Edges.Count);
+
+            // Misuse: the pool goes first, so returning the block throws; the edge table is freed all the same.
+            pool.Dispose();
+            _ = Assert.Throws<ObjectDisposedException>(empty.Dispose);
+            Assert.Equal(0, empty.Edges.Capacity);
+
+            // Only the block is left: the chunk table's arrays and the edge entries were freed.
+            Assert.Equal(baseline + 1, tracking.LiveAllocationCount);
+
+            // Sound: the block came from this tracking allocator, through the pool, and was never freed.
+            tracking.Free(block);
+            set.Dispose();
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void RandomPath_MatchesDirectSignature()
     {
         const int Types = 10;
