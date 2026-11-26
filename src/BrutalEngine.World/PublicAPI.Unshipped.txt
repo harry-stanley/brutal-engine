@@ -3,6 +3,14 @@ BrutalEngine.World.EcsWorld
 BrutalEngine.World.EcsWorld.Dispose() -> void
 BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -> void
 BrutalEngine.World.EcsWorld.Name.get -> string!
+BrutalEngine.World.Entity
+BrutalEngine.World.Entity.Entity() -> void
+BrutalEngine.World.Entity.Entity(uint index, uint generation) -> void
+BrutalEngine.World.Entity.Equals(BrutalEngine.World.Entity other) -> bool
+BrutalEngine.World.Entity.Generation.get -> uint
+BrutalEngine.World.Entity.Index.get -> uint
+BrutalEngine.World.Entity.IsNull.get -> bool
+BrutalEngine.World.Entity.RawValue.get -> ulong
 BrutalEngine.World.WorldOptions
 BrutalEngine.World.WorldOptions.<Clone>$() -> BrutalEngine.World.WorldOptions!
 BrutalEngine.World.WorldOptions.Allocator.get -> BrutalEngine.Core.Memory.INativeAllocator?
@@ -23,8 +31,15 @@ BrutalEngine.World.WorldOptions.MaxHierarchyDepth.init -> void
 BrutalEngine.World.WorldOptions.Name.get -> string!
 BrutalEngine.World.WorldOptions.Name.init -> void
 BrutalEngine.World.WorldOptions.WorldOptions() -> void
+override BrutalEngine.World.Entity.Equals(object? obj) -> bool
+override BrutalEngine.World.Entity.GetHashCode() -> int
+override BrutalEngine.World.Entity.ToString() -> string!
 override BrutalEngine.World.WorldOptions.Equals(object? obj) -> bool
 override BrutalEngine.World.WorldOptions.GetHashCode() -> int
 override BrutalEngine.World.WorldOptions.ToString() -> string!
+static BrutalEngine.World.Entity.FromRawValue(ulong rawValue) -> BrutalEngine.World.Entity
+static BrutalEngine.World.Entity.Null.get -> BrutalEngine.World.Entity
+static BrutalEngine.World.Entity.operator !=(BrutalEngine.World.Entity left, BrutalEngine.World.Entity right) -> bool
+static BrutalEngine.World.Entity.operator ==(BrutalEngine.World.Entity left, BrutalEngine.World.Entity right) -> bool
 static BrutalEngine.World.WorldOptions.operator !=(BrutalEngine.World.WorldOptions? left, BrutalEngine.World.WorldOptions? right) -> bool
 static BrutalEngine.World.WorldOptions.operator ==(BrutalEngine.World.WorldOptions? left, BrutalEngine.World.WorldOptions? right) -> bool
