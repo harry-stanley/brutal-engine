@@ -8,7 +8,8 @@ namespace BrutalEngine.World.Tests.Entities;
 /// <summary>
 /// The change ticks the direct API stamps in each chunk (docs/design/world.md, sections 4 and 5): spawning stamps
 /// <c>Changed</c> and <c>Added</c> for every column of the row's chunk, <c>Write</c> stamps its component's
-/// <c>Changed</c> tick, a despawn stamps <c>Changed</c> in the chunk that received the moved row, and reads stamp nothing.
+/// <c>Changed</c> tick, a despawn stamps <c>Changed</c> in the chunk that received the moved row, and reads stamp
+/// nothing.
 /// </summary>
 public sealed class ChangeStampTests
 {

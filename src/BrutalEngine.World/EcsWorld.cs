@@ -33,9 +33,10 @@ namespace BrutalEngine.World;
 /// <para>
 /// <b>Entities.</b> <see cref="Spawn()"/> (and its overloads with up to four components) and <see cref="Despawn"/> add
 /// and remove entities directly, <see cref="Has{T}"/>, <see cref="Get{T}"/> and <see cref="TryGet{T}"/> read their
-/// components, and <see cref="Write{T}"/> writes one in place, stamping its <c>Changed</c> tick; misuse (a null, stale or pending entity) throws before anything changes. Spawning, despawning and
-/// reading allocate no managed memory once the component types are registered and their archetypes exist, and once
-/// the entity table and the chunk pool have grown to the churn's size they make no allocator calls either.
+/// components, and <see cref="Write{T}"/> writes one in place, stamping its <c>Changed</c> tick; misuse (a null, stale
+/// or pending entity) throws before anything changes. Spawning, despawning and reading allocate no managed memory once
+/// the component types are registered and their archetypes exist, and once the entity table and the chunk pool have
+/// grown to the churn's size they make no allocator calls either.
 /// </para>
 /// </remarks>
 public sealed partial class EcsWorld : IDisposable

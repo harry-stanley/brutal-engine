@@ -28,8 +28,8 @@ public sealed class EntityModelTests
     /// despawns, reads (Has, Get and TryGet of a random type, present or not), writes through Write (to a type present
     /// or not) and stale access, against a dictionary model with its own first-in, first-out slot queue and dense rows
     /// per component set. After every step the world's count, each archetype's rows and chunk count, each alive
-    /// entity's record, stored row id, Has answers and component values agree with the model. Each sample grows past one chunk at a high spawn share, then shrinks at a low one,
-    /// so rows move within and between chunks.
+    /// entity's record, stored row id, Has answers and component values agree with the model. Each sample grows past
+    /// one chunk at a high spawn share, then shrinks at a low one, so rows move within and between chunks.
     /// </summary>
     [Fact]
     public void RandomOperations_MatchModel()

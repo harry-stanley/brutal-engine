@@ -86,8 +86,8 @@ public sealed partial class EcsWorld
     /// Every exception is thrown before anything changes. The archetype's last row moves into the despawned row's
     /// place, so the moved entity's location changes (references into chunks are invalidated by any structural
     /// change), and the chunk that received it has the <c>Changed</c> tick of every column stamped with the world's
-    /// current change tick. A chunk that empties goes back to the world's chunk pool. The slot is reused by a later spawn with
-    /// an advanced generation, or retired once its generation reaches <see cref="uint.MaxValue"/>.
+    /// current change tick. A chunk that empties goes back to the world's chunk pool. The slot is reused by a later
+    /// spawn with an advanced generation, or retired once its generation reaches <see cref="uint.MaxValue"/>.
     /// </para>
     /// <para>
     /// Once the world has a hierarchy (docs/design/world.md, section 8), despawning an entity also despawns its
@@ -435,7 +435,8 @@ public sealed partial class EcsWorld
     /// <returns>The new, alive entity.</returns>
     /// <exception cref="InvalidOperationException">No entity slot is left. Nothing changes.</exception>
     /// <exception cref="OutOfMemoryException">
-    /// Growing the entity table, or the row's new chunk, failed. The entity is rolled back with
+    /// Growing the entity table failed: that happens before a slot is taken, so nothing changed. Or the row's new chunk
+    /// (its block or the grown chunk arrays) failed: the entity is rolled back with
     /// <see cref="EntityTable.CancelPending"/>, which advances the slot's generation and queues it for reuse.
     /// </exception>
     private Entity SpawnRow(Archetype archetype, out int chunk, out int row)
