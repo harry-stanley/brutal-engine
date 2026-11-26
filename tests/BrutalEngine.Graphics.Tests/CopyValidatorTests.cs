@@ -46,6 +46,15 @@ public sealed partial class CopyValidatorTests
     [MemberData(nameof(Rules))]
     public void Rule_Passes_And_Fails(string rule)
     {
+        // The texture rows name the resource each failure must cite, because their texture and buffer are named apart.
+        if (Array.IndexOf(_textureRules, rule) >= 0)
+        {
+            (Action texturePass, Action textureFail, Type textureException, string textureParam, string textureField, string name) = TextureRow(rule);
+            texturePass();
+            AssertRejected(textureException, textureParam, textureField, textureFail, name);
+            return;
+        }
+
         Type outOfRange = typeof(ArgumentOutOfRangeException);
         Type invalid = typeof(ArgumentException);
         BufferDescription noCopySource = _buffer with { Usage = BufferUsage.Vertex | BufferUsage.CopyDestination };
@@ -132,7 +141,7 @@ public sealed partial class CopyValidatorTests
                 Transient(1, TransientUsage.Vertex | (TransientUsage)32),
                 outOfRange, "usage", "AllocateTransient.usage"),
             "Transient.UsageSignBit" => (Transient(1, TransientUsage.Storage), Transient(1, (TransientUsage)int.MinValue), outOfRange, "usage", "AllocateTransient.usage"),
-            _ => TextureRow(rule),
+            _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, "Unknown rule."),
         };
 
         pass();
@@ -362,7 +371,7 @@ public sealed partial class CopyValidatorTests
 
     private static Action Transient(long byteCount, TransientUsage usage) => () => CopyValidator.ValidateTransientAllocation(byteCount, usage);
 
-    private static void AssertRejected(Type exceptionType, string paramName, string field, Action validate)
+    private static void AssertRejected(Type exceptionType, string paramName, string field, Action validate, string debugName = DebugName)
     {
         // Exact type: an ArgumentOutOfRangeException where an ArgumentException is documented fails, and vice versa.
         var exception = (ArgumentException)Assert.Throws(exceptionType, validate);
@@ -371,7 +380,7 @@ public sealed partial class CopyValidatorTests
         Assert.Contains(field, exception.Message, StringComparison.Ordinal);
         if (!field.StartsWith("AllocateTransient.", StringComparison.Ordinal))
         {
-            Assert.Contains("debug name 'probe'", exception.Message, StringComparison.Ordinal);
+            Assert.Contains($"debug name '{debugName}'", exception.Message, StringComparison.Ordinal);
         }
     }
 }

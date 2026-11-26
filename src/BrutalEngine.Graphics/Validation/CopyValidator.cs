@@ -15,7 +15,9 @@ namespace BrutalEngine.Graphics.Validation;
 /// its range (including a flag outside its enum's members). Each exception's <see cref="ArgumentException.ParamName"/>
 /// is the device method's parameter that holds the value (<c>copy</c>, <c>buffer</c>, <c>offset</c>, <c>data</c>,
 /// <c>byteCount</c> or <c>usage</c>), and its message names the type or method, the field, the value, any computed
-/// bound, and the debug name of the buffer or texture the field refers to.
+/// bound, and the debug name of the buffer or texture the field refers to. A buffer-texture copy's
+/// <see cref="TextureBufferCopy.BytesPerRow"/> and <see cref="TextureBufferCopy.BufferOffset"/> describe the buffer's
+/// rows, so their messages name the buffer.
 /// </para>
 /// <para>
 /// The descriptions are inputs: the device resolves the handles (and throws for stale ones) before calling, so each
@@ -257,7 +259,7 @@ internal static class CopyValidator
                 nameof(TextureBufferCopy.BytesPerRow),
                 string.Create(CultureInfo.InvariantCulture, $"must be at least Region.Width times the texel size ({rowBytes})"),
                 copy.BytesPerRow,
-                texture.DebugName);
+                buffer.DebugName);
         }
 
         if (copy.BytesPerRow % TextureBufferCopy.RowPitchAlignment != 0)
@@ -267,7 +269,7 @@ internal static class CopyValidator
                 Type,
                 nameof(TextureBufferCopy.BytesPerRow),
                 string.Create(CultureInfo.InvariantCulture, $"must be a multiple of {TextureBufferCopy.RowPitchAlignment}, but is {copy.BytesPerRow}"),
-                texture.DebugName);
+                buffer.DebugName);
         }
 
         if (copy.BufferOffset < 0)
