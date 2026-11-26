@@ -12,52 +12,71 @@ public sealed class FreeIndexRingTests
     [Fact]
     public void EnqueueDequeue_IsFifo()
     {
-        using FreeIndexRing ring = new(new HeapAllocator(), capacity: 4);
-        ring.Enqueue(7);
-        ring.Enqueue(3);
-        ring.Enqueue(5);
+        TrackingAllocator tracking = NewTracking();
+        using (FreeIndexRing ring = new(tracking, capacity: 4))
+        {
+            ring.Enqueue(7);
+            ring.Enqueue(3);
+            ring.Enqueue(5);
 
-        Assert.Equal(3, ring.Count);
-        Assert.Equal(7, Dequeue(ring));
-        Assert.Equal(3, Dequeue(ring));
-        Assert.Equal(5, Dequeue(ring));
-        Assert.Equal(0, ring.Count);
+            Assert.Equal(3, ring.Count);
+            Assert.Equal(7, Dequeue(ring));
+            Assert.Equal(3, Dequeue(ring));
+            Assert.Equal(5, Dequeue(ring));
+            Assert.Equal(0, ring.Count);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void EnqueueDequeue_WrapsAround()
     {
-        using FreeIndexRing ring = new(new HeapAllocator(), capacity: 3);
-        for (int i = 0; i < 10; i++)
+        TrackingAllocator tracking = NewTracking();
+        using (FreeIndexRing ring = new(tracking, capacity: 3))
         {
-            ring.Enqueue(i);
-            ring.Enqueue(i + 100);
-            Assert.Equal(i, Dequeue(ring));
-            Assert.Equal(i + 100, Dequeue(ring));
+            for (int i = 0; i < 10; i++)
+            {
+                ring.Enqueue(i);
+                ring.Enqueue(i + 100);
+                Assert.Equal(i, Dequeue(ring));
+                Assert.Equal(i + 100, Dequeue(ring));
+            }
         }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void TryDequeue_Empty_ReturnsFalse()
     {
-        using FreeIndexRing ring = new(new HeapAllocator(), capacity: 2);
+        TrackingAllocator tracking = NewTracking();
+        using (FreeIndexRing ring = new(tracking, capacity: 2))
+        {
+            Assert.False(ring.TryDequeue(out int index));
+            Assert.Equal(0, index);
+        }
 
-        Assert.False(ring.TryDequeue(out int index));
-        Assert.Equal(0, index);
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Enqueue_Full_ThrowsAndKeepsContents()
     {
-        using FreeIndexRing ring = new(new HeapAllocator(), capacity: 2);
-        ring.Enqueue(1);
-        ring.Enqueue(2);
+        TrackingAllocator tracking = NewTracking();
+        using (FreeIndexRing ring = new(tracking, capacity: 2))
+        {
+            ring.Enqueue(1);
+            ring.Enqueue(2);
 
-        _ = Assert.Throws<InvalidOperationException>(() => ring.Enqueue(3));
+            _ = Assert.Throws<InvalidOperationException>(() => ring.Enqueue(3));
 
-        Assert.Equal(2, ring.Count);
-        Assert.Equal(1, Dequeue(ring));
-        Assert.Equal(2, Dequeue(ring));
+            Assert.Equal(2, ring.Count);
+            Assert.Equal(1, Dequeue(ring));
+            Assert.Equal(2, Dequeue(ring));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
@@ -101,10 +120,14 @@ public sealed class FreeIndexRingTests
     [InlineData(3)]
     public void Grow_NotLarger_Throws(int capacity)
     {
-        using FreeIndexRing ring = new(new HeapAllocator(), capacity: 4);
+        TrackingAllocator tracking = NewTracking();
+        using (FreeIndexRing ring = new(tracking, capacity: 4))
+        {
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => ring.Grow(capacity));
+            Assert.Equal(4, ring.Capacity);
+        }
 
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => ring.Grow(capacity));
-        Assert.Equal(4, ring.Capacity);
+        tracking.ThrowIfLeaks();
     }
 
     [Theory]
@@ -112,7 +135,11 @@ public sealed class FreeIndexRingTests
     [InlineData(-1)]
     public void Constructor_CapacityBelowOne_Throws(int capacity)
     {
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new FreeIndexRing(new HeapAllocator(), capacity));
+        TrackingAllocator tracking = NewTracking();
+
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new FreeIndexRing(tracking, capacity));
+
+        Assert.Equal(0, tracking.TotalAllocationCount);
     }
 
     [Fact]
@@ -200,6 +227,9 @@ public sealed class FreeIndexRingTests
                 return tracking.LiveAllocationCount == 0;
             });
     }
+
+    /// <summary>A fresh tracking allocator per test, so each test's leak check sees only its own blocks.</summary>
+    private static TrackingAllocator NewTracking() => new(new HeapAllocator(), "Ring");
 
     private static int Dequeue(FreeIndexRing ring)
     {

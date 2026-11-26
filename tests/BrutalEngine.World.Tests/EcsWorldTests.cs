@@ -20,9 +20,13 @@ public sealed class EcsWorldTests
     [Fact]
     public void Name_IsOptionsName()
     {
-        using EcsWorld world = new(new WorldOptions { Name = "Play" });
+        TrackingAllocator tracking = NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking, Name = "Play" }))
+        {
+            Assert.Equal("Play", world.Name);
+        }
 
-        Assert.Equal("Play", world.Name);
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
@@ -63,23 +67,29 @@ public sealed class EcsWorldTests
     [Fact]
     public void Dispose_Twice_DoesNotThrow()
     {
-        EcsWorld world = new(new WorldOptions());
+        TrackingAllocator tracking = NewTracking();
+        EcsWorld world = new(new WorldOptions { Allocator = tracking });
         world.Dispose();
 
         Exception? exception = Record.Exception(world.Dispose);
 
         Assert.Null(exception);
+
+        // The second Dispose freed nothing twice (the tracking allocator throws on a double free).
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void AfterDispose_Throws()
     {
-        EcsWorld world = new(new WorldOptions());
+        TrackingAllocator tracking = NewTracking();
+        EcsWorld world = new(new WorldOptions { Allocator = tracking });
         world.Dispose();
 
         ObjectDisposedException exception = Assert.Throws<ObjectDisposedException>(() => world.Name);
 
         Assert.Equal(typeof(EcsWorld).FullName, exception.ObjectName);
+        tracking.ThrowIfLeaks();
     }
 
     [Theory]
@@ -87,37 +97,77 @@ public sealed class EcsWorldTests
     [InlineData("EcsWorld.Dispose")]
     public void OtherThread_Throws(string apiName)
     {
-        using EcsWorld world = new(new WorldOptions());
-        Action<EcsWorld> call = apiName switch
+        TrackingAllocator tracking = NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking }))
         {
-            "EcsWorld.Name" => w => _ = w.Name,
-            "EcsWorld.Dispose" => w => w.Dispose(),
-            _ => throw new ArgumentOutOfRangeException(nameof(apiName), apiName, "Unknown member."),
-        };
+            Action<EcsWorld> call = apiName switch
+            {
+                "EcsWorld.Name" => w => _ = w.Name,
+                "EcsWorld.Dispose" => w => w.Dispose(),
+                _ => throw new ArgumentOutOfRangeException(nameof(apiName), apiName, "Unknown member."),
+            };
 
-        (Exception? failure, int threadId) = RunOnOtherThread(() => call(world));
+            (Exception? failure, int threadId) = RunOnOtherThread(() => call(world));
 
-        WrongThreadException exception = Assert.IsType<WrongThreadException>(failure);
-        Assert.Equal(apiName, exception.ApiName);
-        Assert.Equal(Environment.CurrentManagedThreadId, exception.ExpectedThreadId);
-        Assert.Equal(threadId, exception.ActualThreadId);
+            WrongThreadException exception = Assert.IsType<WrongThreadException>(failure);
+            Assert.Equal(apiName, exception.ApiName);
+            Assert.Equal(Environment.CurrentManagedThreadId, exception.ExpectedThreadId);
+            Assert.Equal(threadId, exception.ActualThreadId);
 
-        // The rejected call changed nothing: the world is still alive on its owner thread.
-        Assert.Equal("World", world.Name);
+            // The rejected call changed nothing: the world is still alive on its owner thread.
+            Assert.Equal("World", world.Name);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Constructor_OnOtherThread_MakesThatThreadTheOwner()
     {
+        TrackingAllocator tracking = NewTracking();
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using ManualResetEventSlim created = new();
+        using ManualResetEventSlim ownerChecked = new();
         EcsWorld? world = null;
+        Exception? failure = null;
+        int threadId = 0;
 
-        (Exception? failure, int threadId) = RunOnOtherThread(() => world = new EcsWorld(new WorldOptions()));
+        // The creating thread stays alive until the check below is done, so it can dispose the world it owns.
+        Thread thread = new(() =>
+        {
+            threadId = Environment.CurrentManagedThreadId;
+            try
+            {
+                world = new EcsWorld(new WorldOptions { Allocator = tracking });
+                created.Set();
+                ownerChecked.Wait(cancellation);
+                world.Dispose();
+            }
+            catch (Exception ex)
+            {
+                // Caught here, so it can't escape the thread and take down the test host.
+                failure = ex;
+            }
+            finally
+            {
+                created.Set();
+            }
+        });
+        thread.Start();
+        created.Wait(cancellation);
+        Exception? fromThisThread = Record.Exception(() => world?.Name);
+        ownerChecked.Set();
+        thread.Join();
 
         Assert.Null(failure);
         Assert.NotNull(world);
-        WrongThreadException exception = Assert.Throws<WrongThreadException>(() => world.Name);
+        WrongThreadException exception = Assert.IsType<WrongThreadException>(fromThisThread);
         Assert.Equal(threadId, exception.ExpectedThreadId);
+        tracking.ThrowIfLeaks();
     }
+
+    /// <summary>A fresh tracking allocator per test, so each test's leak check sees only its own blocks.</summary>
+    private static TrackingAllocator NewTracking() => new(new HeapAllocator(), "World");
 
     private static unsafe void AssertStillAllocates(INativeAllocator allocator)
     {

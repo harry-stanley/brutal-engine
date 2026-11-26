@@ -43,85 +43,110 @@ public sealed class EntityTableTests
     [Fact]
     public void MaxGeneration_Retires()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 100);
-        _ = table.Allocate();
-        table.Place(0, archetype: 0, chunk: 0, row: 0);
-        table.SetGenerationForTesting(0, uint.MaxValue);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 100))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 0, chunk: 0, row: 0);
+            table.SetGenerationForTesting(0, uint.MaxValue);
 
-        table.Free(0);
+            table.Free(0);
 
-        EntityRecord record = table.GetRecord(0);
-        Assert.Equal(EntityRecord.RetiredState, record.Archetype);
-        Assert.Equal(uint.MaxValue, record.Generation);
-        Assert.Equal(1, table.RetiredCount);
-        Assert.Equal(0, table.FreeCount);
+            EntityRecord record = table.GetRecord(0);
+            Assert.Equal(EntityRecord.RetiredState, record.Archetype);
+            Assert.Equal(uint.MaxValue, record.Generation);
+            Assert.Equal(1, table.RetiredCount);
+            Assert.Equal(0, table.FreeCount);
 
-        // The retired slot is never reused: the next entity gets a fresh slot.
-        Assert.Equal(new Entity(1, 1), table.Allocate());
+            // The retired slot is never reused: the next entity gets a fresh slot.
+            Assert.Equal(new Entity(1, 1), table.Allocate());
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void MaxGeneration_RetiredSlotCountsTowardsExhaustion()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 1, maxEntities: 1);
-        _ = table.Allocate();
-        table.Place(0, archetype: 0, chunk: 0, row: 0);
-        table.SetGenerationForTesting(0, uint.MaxValue);
-        table.Free(0);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 1, maxEntities: 1))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 0, chunk: 0, row: 0);
+            table.SetGenerationForTesting(0, uint.MaxValue);
+            table.Free(0);
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => table.Allocate());
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => table.Allocate());
 
-        Assert.Contains("WorldOptions.MaxEntities", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("WorldOptions.MaxEntities", exception.Message, StringComparison.Ordinal);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Free_BelowMaxGeneration_AdvancesGenerationAndQueuesSlot()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 100);
-        _ = table.Allocate();
-        table.Place(0, archetype: 3, chunk: 1, row: 2);
-        table.SetGenerationForTesting(0, uint.MaxValue - 1);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 100))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 3, chunk: 1, row: 2);
+            table.SetGenerationForTesting(0, uint.MaxValue - 1);
 
-        table.Free(0);
+            table.Free(0);
 
-        EntityRecord record = table.GetRecord(0);
-        Assert.Equal(EntityRecord.FreeState, record.Archetype);
-        Assert.Equal(uint.MaxValue, record.Generation);
-        Assert.Equal(0, table.RetiredCount);
-        Assert.Equal(1, table.FreeCount);
-        Assert.Equal(new Entity(0, uint.MaxValue), table.Allocate());
+            EntityRecord record = table.GetRecord(0);
+            Assert.Equal(EntityRecord.FreeState, record.Archetype);
+            Assert.Equal(uint.MaxValue, record.Generation);
+            Assert.Equal(0, table.RetiredCount);
+            Assert.Equal(1, table.FreeCount);
+            Assert.Equal(new Entity(0, uint.MaxValue), table.Allocate());
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Exhaustion_ThrowsNamingOption()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 2, maxEntities: 3);
-        for (int i = 0; i < 3; i++)
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 2, maxEntities: 3))
         {
-            _ = table.Allocate();
-            table.Place(i, archetype: 0, chunk: 0, row: i);
+            for (int i = 0; i < 3; i++)
+            {
+                _ = table.Allocate();
+                table.Place(i, archetype: 0, chunk: 0, row: i);
+            }
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => table.Allocate());
+
+            Assert.Contains("WorldOptions.MaxEntities", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("3", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(3, table.SlotCount);
+            Assert.Equal(3, table.Capacity);
+
+            // A freed slot makes room again.
+            table.Free(1);
+            Assert.Equal(new Entity(1, 2), table.Allocate());
         }
 
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => table.Allocate());
-
-        Assert.Contains("WorldOptions.MaxEntities", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("3", exception.Message, StringComparison.Ordinal);
-        Assert.Equal(3, table.SlotCount);
-        Assert.Equal(3, table.Capacity);
-
-        // A freed slot makes room again.
-        table.Free(1);
-        Assert.Equal(new Entity(1, 2), table.Allocate());
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Exhaustion_CountsAllocatedUnplacedSlots()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 1, maxEntities: 2);
-        _ = table.Allocate();
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 1, maxEntities: 2))
+        {
+            _ = table.Allocate();
+            _ = table.Allocate();
 
-        _ = Assert.Throws<InvalidOperationException>(() => table.Allocate());
+            _ = Assert.Throws<InvalidOperationException>(() => table.Allocate());
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
@@ -206,86 +231,118 @@ public sealed class EntityTableTests
     [Fact]
     public void Constructor_InvalidArguments_Throw()
     {
-        HeapAllocator heap = new();
+        TrackingAllocator tracking = NewTracking();
 
         _ = Assert.Throws<ArgumentNullException>(() => new Storage.EntityTable(null!, 1, 1));
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new Storage.EntityTable(heap, 1, 0));
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new Storage.EntityTable(heap, 0, 1));
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new Storage.EntityTable(heap, 2, 1));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new Storage.EntityTable(tracking, 1, 0));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new Storage.EntityTable(tracking, 0, 1));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => new Storage.EntityTable(tracking, 2, 1));
+
+        // Arguments are checked before anything is allocated.
+        Assert.Equal(0, tracking.TotalAllocationCount);
     }
 
     [Fact]
     public void Allocate_MarksSlotPendingUntilPlaced()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 2, maxEntities: 2);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 2, maxEntities: 2))
+        {
+            _ = table.Allocate();
 
-        _ = table.Allocate();
+            Assert.Equal(new EntityRecord { Generation = 1, Archetype = EntityRecord.PendingState, Chunk = -1, Row = -1 }, table.GetRecord(0));
+            Assert.Equal(0, table.PlacedCount);
+        }
 
-        Assert.Equal(new EntityRecord { Generation = 1, Archetype = EntityRecord.PendingState, Chunk = -1, Row = -1 }, table.GetRecord(0));
-        Assert.Equal(0, table.PlacedCount);
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Place_WritesLocationAndCountsPlaced()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 2, maxEntities: 2);
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 2, maxEntities: 2))
+        {
+            _ = table.Allocate();
 
-        table.Place(0, archetype: 7, chunk: 8, row: 9);
+            table.Place(0, archetype: 7, chunk: 8, row: 9);
 
-        Assert.Equal(new EntityRecord { Generation = 1, Archetype = 7, Chunk = 8, Row = 9 }, table.GetRecord(0));
-        Assert.Equal(1, table.PlacedCount);
+            Assert.Equal(new EntityRecord { Generation = 1, Archetype = 7, Chunk = 8, Row = 9 }, table.GetRecord(0));
+            Assert.Equal(1, table.PlacedCount);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Place_PlacedSlot_MovesToOtherArchetype()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 2, maxEntities: 2);
-        _ = table.Allocate();
-        table.Place(0, archetype: 7, chunk: 8, row: 9);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 2, maxEntities: 2))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 7, chunk: 8, row: 9);
 
-        table.Place(0, archetype: 1, chunk: 2, row: 3);
+            table.Place(0, archetype: 1, chunk: 2, row: 3);
 
-        Assert.Equal(new EntityRecord { Generation = 1, Archetype = 1, Chunk = 2, Row = 3 }, table.GetRecord(0));
-        Assert.Equal(1, table.PlacedCount);
+            Assert.Equal(new EntityRecord { Generation = 1, Archetype = 1, Chunk = 2, Row = 3 }, table.GetRecord(0));
+            Assert.Equal(1, table.PlacedCount);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Move_UpdatesChunkAndRowOnly()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 2, maxEntities: 2);
-        _ = table.Allocate();
-        table.Place(0, archetype: 7, chunk: 8, row: 9);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 2, maxEntities: 2))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 7, chunk: 8, row: 9);
 
-        table.Move(0, chunk: 0, row: 1);
+            table.Move(0, chunk: 0, row: 1);
 
-        Assert.Equal(new EntityRecord { Generation = 1, Archetype = 7, Chunk = 0, Row = 1 }, table.GetRecord(0));
+            Assert.Equal(new EntityRecord { Generation = 1, Archetype = 7, Chunk = 0, Row = 1 }, table.GetRecord(0));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Free_CountsAndClearsLocation()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 2, maxEntities: 2);
-        _ = table.Allocate();
-        table.Place(0, archetype: 7, chunk: 8, row: 9);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 2, maxEntities: 2))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 7, chunk: 8, row: 9);
 
-        table.Free(0);
+            table.Free(0);
 
-        Assert.Equal(new EntityRecord { Generation = 2, Archetype = EntityRecord.FreeState, Chunk = -1, Row = -1 }, table.GetRecord(0));
-        Assert.Equal(0, table.PlacedCount);
-        Assert.Equal(1, table.FreeCount);
+            Assert.Equal(new EntityRecord { Generation = 2, Archetype = EntityRecord.FreeState, Chunk = -1, Row = -1 }, table.GetRecord(0));
+            Assert.Equal(0, table.PlacedCount);
+            Assert.Equal(1, table.FreeCount);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Place_SlotNotInUse_Throws()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
-        table.Place(0, archetype: 0, chunk: 0, row: 0);
-        table.Free(0);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 0, chunk: 0, row: 0);
+            table.Free(0);
 
-        _ = Assert.Throws<InvalidOperationException>(() => table.Place(0, archetype: 0, chunk: 0, row: 0));
-        Assert.Equal(EntityRecord.FreeState, table.GetRecord(0).Archetype);
+            _ = Assert.Throws<InvalidOperationException>(() => table.Place(0, archetype: 0, chunk: 0, row: 0));
+            Assert.Equal(EntityRecord.FreeState, table.GetRecord(0).Archetype);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Theory]
@@ -296,20 +353,30 @@ public sealed class EntityTableTests
     [InlineData(0, 0, 0, -1)]
     public void Place_OutOfRange_Throws(int index, int archetype, int chunk, int row)
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
 
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.Place(index, archetype, chunk, row));
-        Assert.Equal(EntityRecord.PendingState, table.GetRecord(0).Archetype);
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.Place(index, archetype, chunk, row));
+            Assert.Equal(EntityRecord.PendingState, table.GetRecord(0).Archetype);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Move_SlotNotPlaced_Throws()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
 
-        _ = Assert.Throws<InvalidOperationException>(() => table.Move(0, chunk: 0, row: 0));
+            _ = Assert.Throws<InvalidOperationException>(() => table.Move(0, chunk: 0, row: 0));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Theory]
@@ -319,27 +386,37 @@ public sealed class EntityTableTests
     [InlineData(0, 0, -1)]
     public void Move_OutOfRange_Throws(int index, int chunk, int row)
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
-        table.Place(0, archetype: 0, chunk: 0, row: 0);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
+            table.Place(0, archetype: 0, chunk: 0, row: 0);
 
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.Move(index, chunk, row));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.Move(index, chunk, row));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void Free_SlotNotPlaced_Throws()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
-        _ = table.Allocate();
-        table.Place(1, archetype: 0, chunk: 0, row: 0);
-        table.Free(1);
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
+            _ = table.Allocate();
+            table.Place(1, archetype: 0, chunk: 0, row: 0);
+            table.Free(1);
 
-        // Pending (allocated, not placed) and already-free slots are both rejected, and nothing changes.
-        _ = Assert.Throws<InvalidOperationException>(() => table.Free(0));
-        _ = Assert.Throws<InvalidOperationException>(() => table.Free(1));
-        Assert.Equal(1, table.FreeCount);
-        Assert.Equal(2u, table.GetRecord(1).Generation);
+            // Pending (allocated, not placed) and already-free slots are both rejected, and nothing changes.
+            _ = Assert.Throws<InvalidOperationException>(() => table.Free(0));
+            _ = Assert.Throws<InvalidOperationException>(() => table.Free(1));
+            Assert.Equal(1, table.FreeCount);
+            Assert.Equal(2u, table.GetRecord(1).Generation);
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Theory]
@@ -347,10 +424,15 @@ public sealed class EntityTableTests
     [InlineData(1)]
     public void Free_OutOfRange_Throws(int index)
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
 
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.Free(index));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.Free(index));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Theory]
@@ -358,35 +440,53 @@ public sealed class EntityTableTests
     [InlineData(1)]
     public void GetRecord_OutOfRange_Throws(int index)
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
 
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.GetRecord(index));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.GetRecord(index));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void SetGenerationForTesting_InvalidArguments_Throw()
     {
-        using Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
-        _ = table.Allocate();
+        TrackingAllocator tracking = NewTracking();
+        using (Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4))
+        {
+            _ = table.Allocate();
 
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.SetGenerationForTesting(1, 5));
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.SetGenerationForTesting(0, 0));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.SetGenerationForTesting(1, 5));
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => table.SetGenerationForTesting(0, 0));
+        }
+
+        tracking.ThrowIfLeaks();
     }
 
     [Fact]
     public void AfterDispose_Throws()
     {
-        Storage.EntityTable table = new(new HeapAllocator(), initialCapacity: 4, maxEntities: 4);
+        TrackingAllocator tracking = NewTracking();
+        Storage.EntityTable table = new(tracking, initialCapacity: 4, maxEntities: 4);
         _ = table.Allocate();
         table.Dispose();
+        tracking.ThrowIfLeaks();
 
         _ = Assert.Throws<ObjectDisposedException>(() => table.Allocate());
         _ = Assert.Throws<ObjectDisposedException>(() => table.Place(0, 0, 0, 0));
         _ = Assert.Throws<ObjectDisposedException>(() => table.Move(0, 0, 0));
         _ = Assert.Throws<ObjectDisposedException>(() => table.Free(0));
         _ = Assert.Throws<ObjectDisposedException>(() => table.GetRecord(0));
+
+        // The rejected calls allocated nothing.
+        tracking.ThrowIfLeaks();
     }
+
+    /// <summary>A fresh tracking allocator per test, so each test's leak check sees only its own blocks.</summary>
+    private static TrackingAllocator NewTracking() => new(new HeapAllocator(), "EntityTable");
 
     /// <summary>Passes calls through, but throws <see cref="InsufficientMemoryException"/> (an out-of-memory exception) once a set number of allocations succeed.</summary>
     private sealed unsafe class FailingAllocator(INativeAllocator inner) : INativeAllocator
