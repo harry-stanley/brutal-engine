@@ -58,6 +58,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 
 ### Fixed
 
+- `BrutalEngine.Core` logging no longer allocates a new message buffer after a gen2 collection under high memory pressure. The buffers came from `ArrayPool<byte>.Shared`, whose trim then drops every thread's cached arrays; each logger now keeps up to 8 buffers of its own, falling back to the shared pool only when more threads log at once. A formatter that throws now returns its buffer instead of leaving it to the garbage collector ([logging design](docs/design/logging.md#memory-and-threading)).
 - `Logger.SetLevel` no longer allocates after a garbage collection. It validated the level with `Enum.IsDefined`, which rebuilds a weakly held runtime cache (240 bytes) on its first call after any collection.
 - `samples/HelloWindow`: `--require-driver MaxEnum` is rejected (it's Vulkan's sentinel value, not a driver), an unnamed `VkResult` appears once in error messages instead of twice, a failure inside an SDL callback is reported with its stack trace and the inner exception, and on the splash's 1:1 copy path the window's minimum size is recomputed when the pixel density changes (for example, after a move to another display).
 

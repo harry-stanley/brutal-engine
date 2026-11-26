@@ -16,8 +16,10 @@ namespace BrutalEngine.Core.Logging;
 /// <para>
 /// Created by the compiler for each logging call; there's no need to use it directly. When the level is disabled,
 /// no part of the message is formatted and nothing is rented. When enabled, the message is formatted into a
-/// buffer of <see cref="LoggerOptions.MaxMessageBytes"/> bytes rented from <see cref="ArrayPool{T}.Shared"/>,
-/// and the buffer is returned once the entry has been dispatched.
+/// buffer of <see cref="LoggerOptions.MaxMessageBytes"/> bytes rented from the logger's own buffers, and the buffer
+/// is returned once the entry has been dispatched. The logger keeps those buffers itself, so logging stays
+/// allocation-free after <see cref="ArrayPool{T}.Shared"/> trims its arrays; only when more threads are inside a
+/// logging call at once than the logger has buffers (eight) does a call rent from the shared pool instead.
 /// </para>
 /// <para>
 /// Formatting uses the invariant culture. The output is always valid UTF-8: invalid UTF-16 or UTF-8 input is
@@ -33,12 +35,11 @@ namespace BrutalEngine.Core.Logging;
 /// <see cref="IUtf8SpanFormattable"/>, even when the type argument is <see cref="int"/>: the compiler picks the
 /// overload from the declared type. To keep such values allocation-free, implement <see cref="IUtf8SpanFormattable"/>
 /// on the struct, and constrain the generic parameter (<c>where T : IUtf8SpanFormattable</c>). If formatting a value
-/// throws, the exception reaches the caller, nothing is logged, and the rented buffer is left to the garbage
-/// collector.
+/// throws, the exception reaches the caller, nothing is logged, and the buffer is returned to the logger.
 /// </para>
 /// <para>
 /// Confined to the calling thread, like any <see langword="ref"/> struct. <b>Don't copy a handler:</b> each copy
-/// would return the same pooled buffer when completed, which corrupts the pool. The compiler never copies one.
+/// would return the same buffer when completed, so two later messages could share it. The compiler never copies one.
 /// </para>
 /// </remarks>
 [InterpolatedStringHandler]
@@ -83,7 +84,7 @@ public ref struct LogMessageHandler<TLevel>
         {
             _category = state;
             _limit = state!.Owner.MaxMessageBytes;
-            _buffer = ArrayPool<byte>.Shared.Rent(_limit);
+            _buffer = state.Owner.MessageBuffers.Rent();
         }
     }
 
@@ -155,15 +156,24 @@ public ref struct LogMessageHandler<TLevel>
             return;
         }
 
-        Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
-        // Not null: a null reference returned above, and a value type can't be null.
-        if (value!.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
+        try
         {
-            CommitFormatted(written);
+            Span<byte> destination = _buffer.AsSpan(_length, _limit - _length);
+            // Not null: a null reference returned above, and a value type can't be null.
+            if (value!.TryFormat(destination, out int written, format, CultureInfo.InvariantCulture))
+            {
+                CommitFormatted(written);
+            }
+            else
+            {
+                AppendOverflowing(value, format);
+            }
         }
-        else
+        catch
         {
-            AppendOverflowing(value, format);
+            // The compiler doesn't complete a handler whose part threw, so give the buffer back here.
+            ReleaseBuffer();
+            throw;
         }
     }
 
@@ -199,23 +209,36 @@ public ref struct LogMessageHandler<TLevel>
 
         if (value is IUtf8SpanFormattable utf8Formattable)
         {
+            // Releases the buffer itself if formatting throws.
             AppendFormatted(utf8Formattable, format);
             return;
         }
 
-        if (value is ISpanFormattable spanFormattable)
+        string? text;
+        try
         {
-            Span<char> chars = stackalloc char[CharScratchLength];
-            if (spanFormattable.TryFormat(chars, out int charsWritten, format, CultureInfo.InvariantCulture))
+            if (value is ISpanFormattable spanFormattable)
             {
-                AppendChars(chars[..charsWritten]);
-                return;
+                Span<char> chars = stackalloc char[CharScratchLength];
+                if (spanFormattable.TryFormat(chars, out int charsWritten, format, CultureInfo.InvariantCulture))
+                {
+                    AppendChars(chars[..charsWritten]);
+                    return;
+                }
             }
+
+            text = value is IFormattable formattable
+                ? formattable.ToString(format, CultureInfo.InvariantCulture)
+                : value.ToString();
+        }
+        catch
+        {
+            // The compiler doesn't complete a handler whose part threw, so give the buffer back here.
+            ReleaseBuffer();
+            throw;
         }
 
-        AppendChars(value is IFormattable formattable
-            ? formattable.ToString(format, CultureInfo.InvariantCulture)
-            : value.ToString());
+        AppendChars(text);
     }
 
     /// <summary>
@@ -244,11 +267,22 @@ public ref struct LogMessageHandler<TLevel>
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            _category!.Owner.MessageBuffers.Return(buffer);
         }
     }
 
     private static bool IsContinuationByte(byte value) => (value & 0xC0) == 0x80;
+
+    // Gives the buffer back early, when a part of the message threw. Later parts and Complete then do nothing.
+    private void ReleaseBuffer()
+    {
+        byte[]? buffer = _buffer;
+        if (buffer is not null)
+        {
+            _buffer = null;
+            _category!.Owner.MessageBuffers.Return(buffer);
+        }
+    }
 
     private void AppendChars(scoped ReadOnlySpan<char> chars)
     {
