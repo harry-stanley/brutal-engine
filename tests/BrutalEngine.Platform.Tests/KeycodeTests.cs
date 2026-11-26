@@ -78,6 +78,19 @@ public sealed class KeycodeTests
     }
 
     [Fact]
+    public void IsCharacter_ForUnknownKey_False()
+    {
+        // 0 is SDL's unknown key (SDLK_UNKNOWN), not a typed NUL.
+        Keycode[] unknownKeys = [default, new(0)];
+
+        foreach (Keycode keycode in unknownKeys)
+        {
+            Assert.False(keycode.IsCharacter);
+            Assert.Throws<InvalidOperationException>(() => keycode.Character);
+        }
+    }
+
+    [Fact]
     public void IsCharacter_AboveUnicodeRange_False()
     {
         Assert.False(new Keycode(0x110000).IsCharacter);
@@ -88,13 +101,13 @@ public sealed class KeycodeTests
     public void IsCharacter_MatchesRuneIsValid()
     {
         // Most samples are around the surrogate block or within the Unicode range, so both outcomes and both kinds
-        // of invalid value below 0x110000 are well covered.
-        var value = Gen.OneOf(Gen.UInt[0xD700, 0xE100], Gen.UInt[0, 0x11_0100], Gen.UInt);
+        // of invalid value below 0x110000 are well covered. The zero range keeps the unknown key in every run.
+        var value = Gen.OneOf(Gen.UInt[0xD700, 0xE100], Gen.UInt[0, 0x11_0100], Gen.UInt[0, 2], Gen.UInt);
 
         value.Sample(raw =>
         {
             Keycode keycode = new(raw);
-            bool expected = (raw & ScancodeMask) == 0 && Rune.IsValid(raw);
+            bool expected = raw != 0 && (raw & ScancodeMask) == 0 && Rune.IsValid(raw);
 
             Assert.Equal(expected, keycode.IsCharacter);
             if (expected)

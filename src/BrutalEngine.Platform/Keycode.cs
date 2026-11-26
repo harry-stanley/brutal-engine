@@ -14,10 +14,10 @@ namespace BrutalEngine.Platform;
 /// </para>
 /// <para>
 /// Code points include control characters: SDL reports Return as <c>13</c>, Escape as <c>27</c> and Backspace as
-/// <c>8</c>, and its unknown key (<c>default(Keycode)</c>) as <c>0</c>, so all of these are characters by
-/// <see cref="IsCharacter"/>. Text typed by the user arrives as <c>TextInput</c> events, not as key codes; use a
-/// <see cref="Keycode"/> for shortcuts and key bindings that follow the layout, and a <see cref="Scancode"/> for
-/// bindings that follow key position.
+/// <c>8</c>, so all of these are characters by <see cref="IsCharacter"/>. The value <c>0</c>
+/// (<c>default(Keycode)</c>) is SDL's unknown key, not a typed NUL, so it is not a character. Text typed by the user
+/// arrives as <c>TextInput</c> events, not as key codes; use a <see cref="Keycode"/> for shortcuts and key bindings
+/// that follow the layout, and a <see cref="Scancode"/> for bindings that follow key position.
 /// </para>
 /// <para>
 /// Any <see langword="uint"/> is accepted, because a backend can report keys that this version doesn't know.
@@ -41,11 +41,14 @@ public readonly record struct Keycode
     public uint Value { get; }
 
     /// <summary>
-    /// Gets whether <see cref="Value"/> is a character's code point: bit 30 is clear and the value is a Unicode scalar
-    /// value (at most <c>0x10FFFF</c> and not a surrogate).
+    /// Gets whether <see cref="Value"/> is a character's code point: the value is not <c>0</c>, bit 30 is clear, and
+    /// the value is a Unicode scalar value (at most <c>0x10FFFF</c> and not a surrogate).
     /// </summary>
-    /// <remarks>Control characters, such as Return (<c>13</c>), and <c>0</c> count as characters.</remarks>
-    public bool IsCharacter => Rune.IsValid(Value);
+    /// <remarks>
+    /// Control characters, such as Return (<c>13</c>), count as characters. <c>0</c> is SDL's unknown key
+    /// (<c>default(Keycode)</c>) and is not a character.
+    /// </remarks>
+    public bool IsCharacter => Value != 0 && Rune.IsValid(Value);
 
     /// <summary>Gets the character the key produces.</summary>
     /// <exception cref="InvalidOperationException"><see cref="IsCharacter"/> is <see langword="false"/>.</exception>
