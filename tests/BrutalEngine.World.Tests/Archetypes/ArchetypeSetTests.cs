@@ -254,6 +254,43 @@ public sealed class ArchetypeSetTests
         tracking.ThrowIfLeaks();
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void GetOrCreateAdding_SourceAsLongAsIdBuffer_MatchesDirectSignature(int lengths)
+    {
+        // The set's id buffer starts at InitialCapacity ids and grows as archetypes get longer. A source signature as
+        // long as the buffer once was (once at the initial length, once after the buffer has grown) still has room for
+        // the added id, because the buffer is kept one longer than the largest signature.
+        int length = ArchetypeSet.InitialCapacity * lengths;
+        int[] sourceIds = new int[length];
+        int[] neighbourIds = new int[length + 1];
+        for (int i = 0; i < neighbourIds.Length; i++)
+        {
+            neighbourIds[i] = i;
+            if (i < length)
+            {
+                sourceIds[i] = i;
+            }
+        }
+
+        TrackingAllocator tracking = ArchetypeTestTypes.NewTracking();
+        using (EcsWorld world = new(new WorldOptions { Allocator = tracking }))
+        {
+            _ = ArchetypeTestTypes.Forge(world, length + 1);
+            ArchetypeSet set = world.Archetypes;
+            Archetype source = set.GetOrCreate(ArchetypeTestTypes.Ids(sourceIds));
+
+            // Added before the direct request, so no longer request has grown the buffer first.
+            Archetype added = set.GetOrCreateAdding(source, length);
+            Assert.Equal(length + 1, added.Signature.Count);
+            Assert.Same(set.GetOrCreate(ArchetypeTestTypes.Ids(neighbourIds)), added);
+            Assert.Same(source, set.GetOrCreateRemoving(added, length));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     [Fact]
     public void Neighbours_Misuse_ThrowsAndLeavesSetUnchanged()
     {
