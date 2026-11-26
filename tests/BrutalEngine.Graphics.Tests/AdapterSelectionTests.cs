@@ -9,11 +9,21 @@ namespace BrutalEngine.Graphics.Tests;
 /// <summary>The adapter override and its text form (docs/design/graphics.md section 2).</summary>
 public sealed class AdapterSelectionTests
 {
+    // Name characters: any char, biased toward the ones the text form must keep verbatim (space, colon, comma, case).
+    private static readonly Gen<char> _nameChars = Gen.OneOf(Gen.Char, Gen.Char[" :,aA"]);
+
+    // Names, often with a space at either end, so trimming or case-folding a name can't survive the property.
+    private static readonly Gen<string> _names = Gen.Select(
+        Gen.Bool,
+        _nameChars.Array[1, 20],
+        Gen.Bool,
+        (leading, chars, trailing) => (leading ? " " : "") + new string(chars) + (trailing ? " " : ""));
+
     // Every selection: auto, any non-negative index, any non-empty name (any characters), every defined type.
     private static readonly Gen<AdapterSelection> _selections = Gen.OneOf(
         Gen.Const(AdapterSelection.Auto),
         Gen.Int[0, int.MaxValue].Select(AdapterSelection.ByIndex),
-        Gen.Char.Array[1, 20].Select(chars => AdapterSelection.ByName(new string(chars))),
+        _names.Select(AdapterSelection.ByName),
         Gen.Enum<AdapterType>().Select(AdapterSelection.ByType));
 
     [Theory]
@@ -114,8 +124,11 @@ public sealed class AdapterSelectionTests
         Assert.Equal(expected, Create(factory, argument).ToString());
     }
 
+    // A regression guard, not a discriminating test: .NET formats an int's default form the same in every culture,
+    // so this passes whichever culture ToString uses. It pins that the text form stays culture-independent if
+    // ToString ever formats something culture-sensitive.
     [Fact]
-    public void ToString_UnderAnotherCulture_UsesInvariantDigits()
+    public void ToString_UnderAnotherCulture_IsUnchanged()
     {
         CultureInfo original = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ar-SA");
