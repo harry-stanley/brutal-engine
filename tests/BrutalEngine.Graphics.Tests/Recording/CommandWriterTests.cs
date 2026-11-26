@@ -214,8 +214,10 @@ public sealed unsafe class CommandWriterTests
 
         // Trailing parts too large for the stream. The spans point at no memory: the writer must reject them before
         // reading a byte. One is over int.MaxValue bytes; the other fits an int but not the stream's maximum.
-        Assert.Throws<ArgumentOutOfRangeException>(() => writer.Append(CommandKind.Barrier, new Sized4(), FakeSpan<long>(int.MaxValue / 4)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => writer.Append(CommandKind.Barrier, new Sized4(), FakeSpan<byte>(CommandWriter.MaxCapacity - 8)));
+        ArgumentOutOfRangeException hugeTrailing = Assert.Throws<ArgumentOutOfRangeException>(() => writer.Append(CommandKind.Barrier, new Sized4(), FakeSpan<long>(int.MaxValue / 4)));
+        Assert.Equal("trailing", hugeTrailing.ParamName);
+        ArgumentOutOfRangeException longTrailing = Assert.Throws<ArgumentOutOfRangeException>(() => writer.Append(CommandKind.Barrier, new Sized4(), FakeSpan<byte>(CommandWriter.MaxCapacity - 8)));
+        Assert.Equal("trailing", longTrailing.ParamName);
         Assert.Equal(0, writer.Written.Length);
         Assert.Equal(1, tracking.TotalAllocationCount);
 
@@ -262,6 +264,42 @@ public sealed unsafe class CommandWriterTests
         writer.Append(kind, default(T));
         return Unsafe.SizeOf<T>();
     }
+
+    [Fact]
+    public void Append_StreamFull_NamesTheCallersParameter()
+    {
+        var tracking = new TrackingAllocator(new HeapAllocator(), "writer");
+        using (var writer = new CommandWriter(tracking, initialCapacity: 64))
+        {
+            // A stream 8 bytes short of its maximum, without writing 2 GB: the overflow check reads only the length
+            // and runs before growth or any write, so nothing touches the memory this length claims.
+            ref int length = ref WrittenLength(writer);
+            length = CommandWriter.MaxCapacity - 8;
+            try
+            {
+                // Each record needs 16 bytes. The payload-only overload has no trailing parameter, so it names the
+                // payload; the other names the trailing part.
+                ArgumentOutOfRangeException payloadOnly = Assert.Throws<ArgumentOutOfRangeException>(() => writer.Append(CommandKind.Draw, new Sized4()));
+                Assert.Equal("payload", payloadOnly.ParamName);
+                ArgumentOutOfRangeException withTrailing = Assert.Throws<ArgumentOutOfRangeException>(() => writer.Append(CommandKind.Barrier, new Sized4(), new byte[1]));
+                Assert.Equal("trailing", withTrailing.ParamName);
+
+                Assert.Equal(CommandWriter.MaxCapacity - 8, length);
+                Assert.Equal(64, writer.Capacity);
+                Assert.Equal(1, tracking.TotalAllocationCount);
+            }
+            finally
+            {
+                length = 0;
+            }
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    // The writer's private length field, so a test can put the stream near its maximum without filling it.
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_length")]
+    private static extern ref int WrittenLength(CommandWriter writer);
 
     private static void WriteFrame(CommandWriter writer, ReadOnlySpan<Sized3> trailing)
     {

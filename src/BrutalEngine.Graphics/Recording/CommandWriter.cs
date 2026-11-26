@@ -85,12 +85,13 @@ internal sealed unsafe class CommandWriter : IDisposable
     /// <param name="payload">The payload, copied into the stream.</param>
     /// <exception cref="ObjectDisposedException">The writer is disposed.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <paramref name="kind"/> isn't defined, or the record would take the stream past <see cref="MaxCapacity"/>.
+    /// <paramref name="kind"/> isn't defined, or the record would take the stream past <see cref="MaxCapacity"/>
+    /// (the exception then names <paramref name="payload"/>).
     /// </exception>
     /// <exception cref="OutOfMemoryException">Growing the block failed. The writer is unchanged.</exception>
     internal void Append<T>(CommandKind kind, in T payload)
         where T : unmanaged
-        => Append(kind, in payload, ReadOnlySpan<byte>.Empty);
+        => AppendRecord(kind, in payload, ReadOnlySpan<byte>.Empty, nameof(payload));
 
     /// <summary>Appends a record with a trailing part.</summary>
     /// <typeparam name="T">The kind's payload struct.</typeparam>
@@ -101,10 +102,19 @@ internal sealed unsafe class CommandWriter : IDisposable
     /// <exception cref="ObjectDisposedException">The writer is disposed.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="kind"/> isn't defined, or the record would take the stream past <see cref="MaxCapacity"/>
-    /// (including a trailing part of more than <see cref="int.MaxValue"/> bytes).
+    /// (including a trailing part of more than <see cref="int.MaxValue"/> bytes; the exception then names
+    /// <paramref name="trailing"/>).
     /// </exception>
     /// <exception cref="OutOfMemoryException">Growing the block failed. The writer is unchanged.</exception>
     internal void Append<T, TTrailing>(CommandKind kind, in T payload, ReadOnlySpan<TTrailing> trailing)
+        where T : unmanaged
+        where TTrailing : unmanaged
+        => AppendRecord(kind, in payload, trailing, nameof(trailing));
+
+    // Both Append overloads. overflowParameter is the caller's parameter the stream-full exception names: the payload
+    // for the overload without a trailing part, the trailing part for the other.
+    private void AppendRecord<T, TTrailing>(
+        CommandKind kind, in T payload, ReadOnlySpan<TTrailing> trailing, string overflowParameter)
         where T : unmanaged
         where TTrailing : unmanaged
     {
@@ -123,7 +133,7 @@ internal sealed unsafe class CommandWriter : IDisposable
         if (padded > MaxCapacity - _length)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(trailing), trailingBytes, "The record would make the command stream larger than its maximum size.");
+                overflowParameter, trailingBytes, "The record would make the command stream larger than its maximum size.");
         }
 
         long required = _length + padded;
