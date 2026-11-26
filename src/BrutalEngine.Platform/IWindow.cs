@@ -179,7 +179,9 @@ public interface IWindow : IDisposable
     /// <summary>Switches the window to exclusive fullscreen in one of its display's modes.</summary>
     /// <param name="mode">
     /// A mode the platform returned (its fullscreen-mode list for a display, or a display's current mode). It is matched
-    /// exactly, field by field, against the display's current list; there is no closest match.
+    /// exactly, field by field, against the display's current fullscreen-mode list; there is no closest match. A
+    /// display's current mode isn't guaranteed to be in that list (for example under OS scaling), so passing it can
+    /// fail with <see cref="ErrorKind.NotFound"/>.
     /// </param>
     /// <returns>
     /// Success; <see cref="ErrorKind.NotFound"/> if the mode matches nothing (the display was unplugged, its modes changed,
