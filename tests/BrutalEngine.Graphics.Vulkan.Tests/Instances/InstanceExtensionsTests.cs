@@ -55,5 +55,118 @@ public sealed class InstanceExtensionsTests
     public void Plan_NullOptions_Throws() =>
         Assert.Throws<ArgumentNullException>("options", () => InstanceExtensions.Plan([], [], null!));
 
+    [Fact]
+    public void MissingLayer_IsUnavailable()
+    {
+        FakeEnumeration loader = new();
+        loader.Extensions[string.Empty].Add("VK_EXT_debug_utils");
+        loader.Layers.Add("VK_LAYER_LUNARG_api_dump");
+
+        Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options { Validation = true }, new VulkanCallGate());
+
+        Assert.Equal(new EngineError(ErrorKind.Unavailable, "validation layer not installed: VK_LAYER_KHRONOS_validation is missing"), result.Error);
+
+        // The layer's own list is never asked for: the loader would answer VK_ERROR_LAYER_NOT_PRESENT.
+        Assert.Equal(["extensions() count", "extensions() fill", "layers count", "layers fill"], loader.Calls);
+    }
+
+    [Fact]
+    public void Select_Validation_PlansFromTheLayersOwnList()
+    {
+        FakeEnumeration loader = new();
+        loader.Extensions[string.Empty].Add("VK_EXT_debug_utils");
+        loader.Layers.AddRange(["VK_LAYER_LUNARG_api_dump", Validation]);
+        loader.Extensions[Validation] = ["VK_EXT_debug_utils", "VK_EXT_validation_features"];
+
+        Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options { Validation = true }, new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(["VK_EXT_debug_utils", "VK_EXT_validation_features"], result.Value.Extensions);
+        Assert.Equal(["extensions() count", "extensions() fill", "layers count", "layers fill", $"extensions({Validation}) count", $"extensions({Validation}) fill"], loader.Calls);
+    }
+
+    [Fact]
+    public void Select_NoValidation_ListsNoLayers()
+    {
+        FakeEnumeration loader = new();
+
+        Result<InstanceExtensions.Selection> result = InstanceExtensions.Select(loader, new InstanceFactory.Options(), new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(["extensions() count"], loader.Calls);
+    }
+
+    [Fact]
+    public void EnumerateExtensions_ListGrowsBetweenCalls_RetriesAndReturnsAll()
+    {
+        FakeEnumeration loader = new() { GrowthsLeft = 1 };
+        loader.Extensions[string.Empty].AddRange(["VK_KHR_surface", "VK_EXT_debug_utils"]);
+
+        Result<string[]> result = InstanceExtensions.EnumerateExtensions(loader, null, new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(["VK_KHR_surface", "VK_EXT_debug_utils", "VK_FAKE_grown_2"], result.Value);
+        Assert.Equal(["extensions() count", "extensions() fill", "extensions() count", "extensions() fill"], loader.Calls);
+    }
+
+    [Fact]
+    public void EnumerateLayers_ListGrowsBetweenCalls_RetriesAndReturnsAll()
+    {
+        FakeEnumeration loader = new() { GrowthsLeft = 1 };
+        loader.Layers.Add(Validation);
+
+        Result<string[]> result = InstanceExtensions.EnumerateLayers(loader, new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal([Validation, "VK_FAKE_grown_1"], result.Value);
+        Assert.Equal(["layers count", "layers fill", "layers count", "layers fill"], loader.Calls);
+    }
+
+    [Fact]
+    public void EnumerateExtensions_ListKeepsGrowing_FailsWithIncomplete()
+    {
+        FakeEnumeration loader = new() { GrowthsLeft = int.MaxValue };
+        loader.Extensions[string.Empty].Add("VK_KHR_surface");
+
+        Result<string[]> result = InstanceExtensions.EnumerateExtensions(loader, null, new VulkanCallGate());
+
+        Assert.Equal(new EngineError(ErrorKind.Native, "vkEnumerateInstanceExtensionProperties failed", (int)VkResult.Incomplete), result.Error);
+        Assert.Equal(2 * InstanceExtensions.MaxEnumerationAttempts, loader.Calls.Count);
+    }
+
+    [Fact]
+    public void EnumerateLayers_ListKeepsGrowing_FailsWithIncomplete()
+    {
+        FakeEnumeration loader = new() { GrowthsLeft = int.MaxValue };
+        loader.Layers.Add(Validation);
+
+        Result<string[]> result = InstanceExtensions.EnumerateLayers(loader, new VulkanCallGate());
+
+        Assert.Equal(new EngineError(ErrorKind.Native, "vkEnumerateInstanceLayerProperties failed", (int)VkResult.Incomplete), result.Error);
+        Assert.Equal(2 * InstanceExtensions.MaxEnumerationAttempts, loader.Calls.Count);
+    }
+
+    [Fact]
+    public void EnumerateExtensions_EmptyList_SkipsTheFill()
+    {
+        FakeEnumeration loader = new();
+
+        Result<string[]> result = InstanceExtensions.EnumerateExtensions(loader, null, new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Empty(result.Value);
+        Assert.Equal(["extensions() count"], loader.Calls);
+    }
+
+    [Fact]
+    public void EnumerateExtensions_UnknownLayer_IsTheGatesError()
+    {
+        FakeEnumeration loader = new();
+
+        Result<string[]> result = InstanceExtensions.EnumerateExtensions(loader, "VK_LAYER_missing", new VulkanCallGate());
+
+        Assert.Equal(new EngineError(ErrorKind.Unsupported, "vkEnumerateInstanceExtensionProperties failed", (int)VkResult.ErrorLayerNotPresent), result.Error);
+    }
+
     private static string[] Split(string list) => list.Split(',', StringSplitOptions.RemoveEmptyEntries);
 }
