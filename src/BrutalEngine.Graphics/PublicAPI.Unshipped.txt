@@ -20,6 +20,18 @@ BrutalEngine.Graphics.AddressMode.ClampToBorder = 3 -> BrutalEngine.Graphics.Add
 BrutalEngine.Graphics.AddressMode.ClampToEdge = 0 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.MirrorRepeat = 2 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.Repeat = 1 -> BrutalEngine.Graphics.AddressMode
+BrutalEngine.Graphics.Backend.AttachmentCommand
+BrutalEngine.Graphics.Backend.AttachmentCommand.AttachmentCommand() -> void
+BrutalEngine.Graphics.Backend.AttachmentCommand.ClearColor.get -> BrutalEngine.Graphics.ColorValue
+BrutalEngine.Graphics.Backend.AttachmentCommand.ClearColor.init -> void
+BrutalEngine.Graphics.Backend.AttachmentCommand.ClearDepth.get -> float
+BrutalEngine.Graphics.Backend.AttachmentCommand.ClearDepth.init -> void
+BrutalEngine.Graphics.Backend.AttachmentCommand.Load.get -> BrutalEngine.Graphics.LoadOp
+BrutalEngine.Graphics.Backend.AttachmentCommand.Load.init -> void
+BrutalEngine.Graphics.Backend.AttachmentCommand.Store.get -> BrutalEngine.Graphics.StoreOp
+BrutalEngine.Graphics.Backend.AttachmentCommand.Store.init -> void
+BrutalEngine.Graphics.Backend.AttachmentCommand.View.get -> ulong
+BrutalEngine.Graphics.Backend.AttachmentCommand.View.init -> void
 BrutalEngine.Graphics.Backend.BackendAcquire
 BrutalEngine.Graphics.Backend.BackendAcquire.BackendAcquire() -> void
 BrutalEngine.Graphics.Backend.BackendAcquire.BackendAcquire(BrutalEngine.Graphics.Backend.SwapchainStatus Status, int ImageIndex, int NativeCode) -> void
@@ -122,6 +134,30 @@ BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.get -> BrutalEngine
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Source.init -> void
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.get -> ulong
 BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Surface.init -> void
+BrutalEngine.Graphics.Backend.BarrierCommand
+BrutalEngine.Graphics.Backend.BarrierCommand.BarrierCommand() -> void
+BrutalEngine.Graphics.Backend.BarrierCommand.Count.get -> int
+BrutalEngine.Graphics.Backend.BarrierCommand.Count.init -> void
+BrutalEngine.Graphics.Backend.BeginComputePassCommand
+BrutalEngine.Graphics.Backend.BeginComputePassCommand.BeginComputePassCommand() -> void
+BrutalEngine.Graphics.Backend.BeginComputePassCommand.Label.get -> BrutalEngine.Graphics.DebugLabel
+BrutalEngine.Graphics.Backend.BeginComputePassCommand.Label.init -> void
+BrutalEngine.Graphics.Backend.BeginComputePassCommand.TimestampQueryIndex.get -> int
+BrutalEngine.Graphics.Backend.BeginComputePassCommand.TimestampQueryIndex.init -> void
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.BeginRenderPassCommand() -> void
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.ColorCount.get -> int
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.ColorCount.init -> void
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.HasDepth.get -> bool
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.HasDepth.init -> void
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.Label.get -> BrutalEngine.Graphics.DebugLabel
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.Label.init -> void
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.TimestampQueryIndex.get -> int
+BrutalEngine.Graphics.Backend.BeginRenderPassCommand.TimestampQueryIndex.init -> void
+BrutalEngine.Graphics.Backend.ClearSwapchainImageCommand
+BrutalEngine.Graphics.Backend.ClearSwapchainImageCommand.AcquiredIndex.get -> int
+BrutalEngine.Graphics.Backend.ClearSwapchainImageCommand.AcquiredIndex.init -> void
+BrutalEngine.Graphics.Backend.ClearSwapchainImageCommand.ClearSwapchainImageCommand() -> void
 BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.CommandKind.Barrier = 0 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.CommandKind.BeginComputePass = 7 -> BrutalEngine.Graphics.Backend.CommandKind
@@ -145,6 +181,64 @@ BrutalEngine.Graphics.Backend.CommandKind.SetPipeline = 9 -> BrutalEngine.Graphi
 BrutalEngine.Graphics.Backend.CommandKind.SetScissor = 14 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.CommandKind.SetVertexBuffer = 11 -> BrutalEngine.Graphics.Backend.CommandKind
 BrutalEngine.Graphics.Backend.CommandKind.SetViewport = 13 -> BrutalEngine.Graphics.Backend.CommandKind
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.ArrayLayer.get -> int
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.ArrayLayer.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Aspect.get -> BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Aspect.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Buffer.get -> ulong
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Buffer.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.BufferOffset.get -> long
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.BufferOffset.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.BytesPerRow.get -> int
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.BytesPerRow.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.CopyBufferTextureCommand() -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.MipLevel.get -> int
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.MipLevel.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Region.get -> BrutalEngine.Graphics.TextureRegion
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Region.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Texture.get -> ulong
+BrutalEngine.Graphics.Backend.CopyBufferTextureCommand.Texture.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.CopyBufferToBufferCommand() -> void
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.Destination.get -> ulong
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.Destination.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.DestinationOffset.get -> long
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.DestinationOffset.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.Size.get -> long
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.Size.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.Source.get -> ulong
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.Source.init -> void
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.SourceOffset.get -> long
+BrutalEngine.Graphics.Backend.CopyBufferToBufferCommand.SourceOffset.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.CopyTextureToTextureCommand() -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.Destination.get -> ulong
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.Destination.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationArrayLayer.get -> int
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationArrayLayer.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationAspect.get -> BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationAspect.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationMipLevel.get -> int
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationMipLevel.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationX.get -> int
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationX.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationY.get -> int
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.DestinationY.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.Source.get -> ulong
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.Source.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceArrayLayer.get -> int
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceArrayLayer.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceAspect.get -> BrutalEngine.Graphics.TextureAspect
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceAspect.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceMipLevel.get -> int
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceMipLevel.init -> void
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceRegion.get -> BrutalEngine.Graphics.TextureRegion
+BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceRegion.init -> void
+BrutalEngine.Graphics.Backend.EndPassCommand
+BrutalEngine.Graphics.Backend.EndPassCommand.EndPassCommand() -> void
+BrutalEngine.Graphics.Backend.EndPassCommand.TimestampQueryIndex.get -> int
+BrutalEngine.Graphics.Backend.EndPassCommand.TimestampQueryIndex.init -> void
 BrutalEngine.Graphics.Backend.FramePlan
 BrutalEngine.Graphics.Backend.FramePlan.Acquired.get -> System.ReadOnlySpan<BrutalEngine.Graphics.Backend.SwapchainImageUse>
 BrutalEngine.Graphics.Backend.FramePlan.Commands.get -> System.ReadOnlySpan<byte>

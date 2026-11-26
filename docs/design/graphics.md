@@ -961,13 +961,13 @@ Each record in the stream is a `CommandKind` with an unmanaged payload struct of
 
 | `CommandKind` | Payload fields | Trailing |
 |---------------|----------------|----------|
-| `Barrier` | `Count` | `ResourceTransition[Count]` |
-| `CopyBufferToBuffer` | source id, source offset, destination id, destination offset, size | none |
-| `CopyBufferToTexture`, `CopyTextureToBuffer` | buffer id, offset, bytes per row, texture id, mip, layer, aspect, region | none |
-| `CopyTextureToTexture` | source and destination id, mip, layer, region, destination x, y | none |
-| `BeginRenderPass` | color count, has depth, label, timestamp query index (-1 = none) | `AttachmentCommand[color count + depth]`: view id, load, store, clear value |
-| `BeginComputePass` | label, timestamp query index | none |
-| `EndRenderPass`, `EndComputePass` | timestamp query index | none |
+| `Barrier` | `BarrierCommand`: `Count` | `ResourceTransition[Count]` |
+| `CopyBufferToBuffer` | `CopyBufferToBufferCommand`: source id, source offset, destination id, destination offset, size | none |
+| `CopyBufferToTexture`, `CopyTextureToBuffer` | `CopyBufferTextureCommand`, shared (the kind gives the direction): buffer id, offset, bytes per row, texture id, mip, layer, aspect, region | none |
+| `CopyTextureToTexture` | `CopyTextureToTextureCommand`: per side, as `TextureCopy`'s two `TextureLocation`s, a texture id, mip, layer and aspect (source first); then the source region, destination x, y | none |
+| `BeginRenderPass` | `BeginRenderPassCommand`: color count, has depth, label, timestamp query index (-1 = none) | `AttachmentCommand[color count + (has depth ? 1 : 0)]`, colors first: view id, load, store, color clear (`ColorValue`, used by color attachments), depth clear (`float`, used by the depth attachment) |
+| `BeginComputePass` | `BeginComputePassCommand`: label, timestamp query index (-1 = none) | none |
+| `EndRenderPass`, `EndComputePass` | `EndPassCommand`, shared: timestamp query index (-1 = none) | none |
 | `SetPipeline` | pipeline id, is compute | none |
 | `SetBindGroup` | index, bind group id | none |
 | `SetVertexBuffer`, `SetIndexBuffer` | slot or index format, buffer id, offset | none |
@@ -975,7 +975,7 @@ Each record in the stream is a `CommandKind` with an unmanaged payload struct of
 | `PushConstants` | stages, offset, size | `byte[size]` |
 | `Draw`, `DrawIndexed`, `Dispatch` | `DrawArguments`, `DrawIndexedArguments`, group counts | none |
 | `PushDebugGroup`, `PopDebugGroup` | label | none |
-| `ClearSwapchainImage` | index into `FramePlan.Acquired` (an acquired image no pass wrote) | none |
+| `ClearSwapchainImage` | `ClearSwapchainImageCommand`: index into `FramePlan.Acquired` (an acquired image no pass wrote) | none |
 
 Contract rules:
 
