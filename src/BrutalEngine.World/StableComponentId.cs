@@ -12,8 +12,8 @@ namespace BrutalEngine.World;
 /// <para>
 /// Serialised data names component types by stable id, never by the dense <see cref="ComponentId"/> a registry
 /// issues. The schema version is kept separately in <see cref="ComponentInfo.SchemaVersion"/>, so a type keeps its
-/// stable id when its layout changes. The component generator computes the same value at compile time; both pin the
-/// same known vectors in tests.
+/// stable id when its layout changes. The component generator, once it ships, will compute the same value at compile
+/// time and pin the same known vectors in its tests.
 /// </para>
 /// <para>
 /// Equality compares <see cref="Value"/>. <c>default(StableComponentId)</c> has <see cref="Value"/> <c>0</c>, which no
@@ -34,7 +34,7 @@ public readonly record struct StableComponentId(ulong Value)
     /// <returns>
     /// FNV-1a 64 (offset basis <c>0xcbf29ce484222325</c>, prime <c>0x100000001b3</c>) over the UTF-8 encoding of
     /// <paramref name="fullName"/>. A lone surrogate, which has no UTF-8 encoding, is encoded as U+FFFD (the bytes
-    /// <c>EF BF BD</c>), as <see cref="Rune"/> enumeration and <see cref="Encoding.UTF8"/> do; the generator does the same.
+    /// <c>EF BF BD</c>), as <see cref="Rune"/> enumeration and <see cref="Encoding.UTF8"/> do; the generator must do the same.
     /// </returns>
     /// <remarks>Thread-safe. Allocates nothing: it encodes one scalar value at a time on the stack.</remarks>
     public static StableComponentId FromFullName(ReadOnlySpan<char> fullName)

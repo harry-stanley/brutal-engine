@@ -9,6 +9,12 @@ public sealed class StableComponentIdTests
     // must hash to, because it is encoded as U+FFFD.
     private const ulong ReplacementVector = 0x97AE253931CFB7E2;
 
+    // FNV-1a 64 of "MyGame.\uFFFD\uFFFD" (UTF-8 4d 79 47 61 6d 65 2e ef bf bd ef bf bd), from the same Python reference.
+    private const ulong TwoReplacementsVector = 0xA41A1FEABFBC58BF;
+
+    // FNV-1a 64 of "MyGame.\uFFFDX" (UTF-8 4d 79 47 61 6d 65 2e ef bf bd 58), from the same Python reference.
+    private const ulong ReplacementThenXVector = 0x8CA0FA2FA3F5310E;
+
     /// <summary>
     /// FNV-1a 64 (offset basis 0xcbf29ce484222325, prime 0x100000001b3) over each name's UTF-8 bytes, computed
     /// independently of the code under test. "", "a" and "foobar" are the published FNV-1a 64 test vectors of the FNV
@@ -62,6 +68,7 @@ public sealed class StableComponentIdTests
 
         Assert.Equal(ReplacementVector, StableComponentId.FromFullName(loneHigh).Value);
         Assert.Equal(ReplacementVector, StableComponentId.FromFullName(loneLow).Value);
+        Assert.Equal(TwoReplacementsVector, StableComponentId.FromFullName(reversed).Value);
         Assert.Equal(StableComponentId.FromFullName("MyGame.\uFFFD\uFFFD"), StableComponentId.FromFullName(reversed));
     }
 
@@ -70,6 +77,7 @@ public sealed class StableComponentIdTests
     {
         string name = "MyGame." + (char)0xD83D + "X";
 
+        Assert.Equal(ReplacementThenXVector, StableComponentId.FromFullName(name).Value);
         Assert.Equal(StableComponentId.FromFullName("MyGame.\uFFFDX"), StableComponentId.FromFullName(name));
     }
 
