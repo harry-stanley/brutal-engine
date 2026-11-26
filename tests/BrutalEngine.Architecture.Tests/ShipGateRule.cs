@@ -16,7 +16,9 @@ namespace BrutalEngine.Architecture.Tests;
 /// </summary>
 /// <remarks>
 /// A milestone is 1 to 9 decimal digits, set once, unconditionally. src/Directory.Build.targets and
-/// .github/scripts/check-packages.sh accept the same values, so the three agree on what packs.
+/// .github/scripts/check-packages.sh accept the same values, so the three agree on what packs. MSBuild property names
+/// are case-insensitive, so the rule matches names ignoring case, as MSBuild does, and reports a milestone spelled in
+/// any other case: check-packages.sh reads the exact name, and would otherwise disagree with what MSBuild evaluates.
 /// </remarks>
 internal static partial class ShipGateRule
 {
@@ -77,7 +79,9 @@ internal static partial class ShipGateRule
     }
 
     /// <summary>Reads <c>BrutalEngineReleaseMilestone</c> from the text of src/Directory.Build.props.</summary>
-    /// <exception cref="InvalidDataException">The text isn't XML, or doesn't set the property once to an integer, unconditionally.</exception>
+    /// <exception cref="InvalidDataException">
+    /// The text isn't XML, or doesn't set the property once, spelled exactly, to an integer, unconditionally.
+    /// </exception>
     public static int ReadReleaseMilestone(string propsPath, string propsText)
     {
         ArgumentNullException.ThrowIfNull(propsPath);
@@ -109,6 +113,16 @@ internal static partial class ShipGateRule
             return $"declares no {property}.";
         }
 
+        string[] spellings =
+        [
+            .. elements.Select(e => e.Name.LocalName).Where(name => name != property).Distinct(StringComparer.Ordinal),
+        ];
+        if (spellings.Length != 0)
+        {
+            return $"spells {property} as {string.Join(", ", spellings.Select(name => $"\"{name}\""))}; MSBuild reads any case, "
+                + $"but .github/scripts/check-packages.sh reads only the exact name, so spell it {property}.";
+        }
+
         if (elements.Count > 1)
         {
             return $"declares {property} {elements.Count} times; set it once.";
@@ -130,15 +144,17 @@ internal static partial class ShipGateRule
     }
 
     private static List<XElement> Properties(XDocument document, string property) =>
-        [.. document.Descendants().Where(e => e.Name.LocalName == property)];
+        [.. document.Descendants().Where(e => string.Equals(e.Name.LocalName, property, StringComparison.OrdinalIgnoreCase))];
 
     [GeneratedRegex("^[0-9]{1,9}$", RegexOptions.CultureInvariant)]
     private static partial Regex MilestonePattern();
 
     /// <summary>The result of <see cref="Check"/>.</summary>
     /// <param name="Milestones">The milestone of every project that declares a valid one, by project name.</param>
-    /// <param name="MilestoneViolations">One line per project whose milestone is missing, repeated, conditional or not an integer.</param>
-    /// <param name="IsPackableViolations">One line per project that sets IsPackable itself.</param>
+    /// <param name="MilestoneViolations">
+    /// One line per project whose milestone is missing, spelled in another case, repeated, conditional or not an integer.
+    /// </param>
+    /// <param name="IsPackableViolations">One line per project that sets IsPackable itself, in any case.</param>
     internal sealed record Report(
         IReadOnlyDictionary<string, int> Milestones,
         IReadOnlyList<string> MilestoneViolations,

@@ -31,6 +31,47 @@ internal static class ShipGateFixtures
         </Project>
         """;
 
+    /// <summary>
+    /// A library with a valid milestone that sets <c>IsPackable</c> spelled <paramref name="elementName"/>, which MSBuild
+    /// reads as IsPackable because property names are case-insensitive.
+    /// </summary>
+    public static string SettingIsPackableAs(string elementName, bool conditioned)
+    {
+        string condition = conditioned ? " Condition=\"'$(Configuration)' == 'Release'\"" : "";
+        return $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <BrutalEngineMilestone>1</BrutalEngineMilestone>
+                <{elementName}{condition}>false</{elementName}>
+              </PropertyGroup>
+            </Project>
+            """;
+    }
+
+    /// <summary>
+    /// The milestone declared twice, the second time in lower camel case: MSBuild evaluates the last one, 2, while a
+    /// case-sensitive reader sees only the first, 1.
+    /// </summary>
+    public const string MixedCaseMilestones =
+        """
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <BrutalEngineMilestone>1</BrutalEngineMilestone>
+            <brutalEngineMilestone>2</brutalEngineMilestone>
+          </PropertyGroup>
+        </Project>
+        """;
+
+    /// <summary>The milestone declared once, spelled in upper case.</summary>
+    public const string UpperCaseMilestone =
+        """
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <BRUTALENGINEMILESTONE>1</BRUTALENGINEMILESTONE>
+          </PropertyGroup>
+        </Project>
+        """;
+
     /// <summary>A milestone declared only under a condition, so its value depends on how the project is built.</summary>
     public const string ConditionalMilestone =
         """

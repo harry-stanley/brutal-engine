@@ -89,6 +89,8 @@ public sealed class ShipGateTests
     [InlineData("conditional group", "sets BrutalEngineMilestone under a condition")]
     [InlineData("conditional element", "sets BrutalEngineMilestone under a condition")]
     [InlineData("not xml", "isn't a readable project file")]
+    [InlineData("mixed-case duplicate", "spells BrutalEngineMilestone as \"brutalEngineMilestone\"")]
+    [InlineData("upper case", "spells BrutalEngineMilestone as \"BRUTALENGINEMILESTONE\"")]
     public void Check_MissingOrNonIntegerMilestone_ReportsTheCsproj(string fixture, string expected)
     {
         string text = fixture switch
@@ -104,6 +106,8 @@ public sealed class ShipGateTests
             "conditional group" => ShipGateFixtures.ConditionalMilestone,
             "conditional element" => ShipGateFixtures.ConditionalMilestoneElement,
             "not xml" => ShipGateFixtures.NotXml,
+            "mixed-case duplicate" => ShipGateFixtures.MixedCaseMilestones,
+            "upper case" => ShipGateFixtures.UpperCaseMilestone,
             _ => throw new ArgumentOutOfRangeException(nameof(fixture), fixture, null),
         };
 
@@ -121,6 +125,7 @@ public sealed class ShipGateTests
     [InlineData("0", 0)]
     [InlineData("7", 7)]
     [InlineData("007", 7)]
+    [InlineData("08", 8)]
     [InlineData("999999999", 999999999)]
     public void Check_IntegerMilestone_IsRead(string milestone, int expected)
     {
@@ -140,6 +145,22 @@ public sealed class ShipGateTests
         string violation = Assert.Single(report.IsPackableViolations);
         Assert.StartsWith($"Fixture.Packable ({FixturePath("Fixture.Packable")}): sets IsPackable.", violation, StringComparison.Ordinal);
         Assert.Contains("src/Directory.Build.targets", violation, StringComparison.Ordinal);
+        Assert.Empty(report.MilestoneViolations);
+    }
+
+    [Theory]
+    [InlineData("isPackable", false)]
+    [InlineData("ISPACKABLE", false)]
+    [InlineData("isPackable", true)]
+    public void Check_ProjectSettingIsPackableInAnyCase_ReportsTheCsproj(string elementName, bool conditioned)
+    {
+        // MSBuild property names are case-insensitive, so each of these sets IsPackable.
+        ShipGateRule.Report report = CheckFixtures(
+            ("Fixture.Clean", ShipGateFixtures.WithMilestone("1")),
+            ("Fixture.Packable", ShipGateFixtures.SettingIsPackableAs(elementName, conditioned)));
+
+        string violation = Assert.Single(report.IsPackableViolations);
+        Assert.StartsWith($"Fixture.Packable ({FixturePath("Fixture.Packable")}): sets IsPackable.", violation, StringComparison.Ordinal);
         Assert.Empty(report.MilestoneViolations);
     }
 
@@ -183,6 +204,19 @@ public sealed class ShipGateTests
 
         Assert.Contains(path, exception.Message, StringComparison.Ordinal);
         Assert.Contains(ShipGateRule.ReleaseMilestoneProperty, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReadReleaseMilestone_NonCanonicalSpelling_ThrowsNamingTheSpelling()
+    {
+        string path = FixturePath("Directory.Build");
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(
+            () => ShipGateRule.ReadReleaseMilestone(
+                path, ShipGateFixtures.Library("<brutalEngineReleaseMilestone>1</brutalEngineReleaseMilestone>")));
+
+        Assert.Contains(path, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("spells BrutalEngineReleaseMilestone as \"brutalEngineReleaseMilestone\"", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
