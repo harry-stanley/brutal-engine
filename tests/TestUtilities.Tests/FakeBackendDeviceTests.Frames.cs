@@ -221,12 +221,33 @@ public sealed partial class FakeBackendDeviceTests
         FakeBackendDevice device = _fixture.CreateDevice(validation: true);
         device.InjectValidationError();
 
+        // A failed Execute submits nothing, so it doesn't report the error.
+        FakeBackendFixture.OpenFrame(device, 0);
+        _fixture.Script.FailNext(FakeBackendOperation.Execute, new EngineError(ErrorKind.Unavailable, "lost"));
+        Assert.True(device.Execute(Plan(0, 1)).IsFailure);
+        Assert.Equal(0, device.ValidationErrors);
         FakeBackendFixture.OpenFrame(device, 0);
         Assert.True(device.Execute(Plan(0, 1)).IsSuccess);
         FakeBackendFixture.OpenFrame(device, 0);
         Assert.True(device.Execute(Plan(0, 2)).IsSuccess);
 
         Assert.Equal(1, device.ValidationErrors);
+    }
+
+    [Fact]
+    public void AcquireImage_SeventeenthInOneFrame_Throws()
+    {
+        FakeBackendDevice device = _fixture.CreateDevice();
+        (_, _, ulong swapchain) = Presentable(device);
+        FakeBackendFixture.OpenFrame(device, 0);
+        for (int i = 0; i < 16; i++)
+        {
+            Assert.Equal(SwapchainStatus.Success, device.AcquireImage(swapchain, 0).Status);
+        }
+
+        // The fake's own limit, not a contract rule, so the message doesn't call it a violation.
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => device.AcquireImage(swapchain, 0));
+        Assert.DoesNotContain("contract violation", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -243,22 +264,25 @@ public sealed partial class FakeBackendDeviceTests
     {
         _fixture.Script.RecordCalls = false;
         _fixture.Script.RecordPlans = false;
+        _fixture.Script.Capabilities = FakeBackendScript.DefaultCapabilities with { Features = GraphicsFeatures.TimestampQueries };
         FakeBackendDevice device = _fixture.CreateDevice();
         (_, _, ulong swapchain) = Presentable(device);
         byte[] commands = new byte[64];
         var acquired = new SwapchainImageUse[1];
-        RunFrames(device, swapchain, commands, acquired, first: 0, count: 8);
+        ulong[] ticks = new ulong[4];
+        RunFrames(device, swapchain, commands, acquired, ticks, first: 0, count: 8);
 
         // Enough frames that a recorded-call list would cross at least one capacity doubling.
         long before = GC.GetAllocatedBytesForCurrentThread();
-        RunFrames(device, swapchain, commands, acquired, first: 8, count: 512);
+        RunFrames(device, swapchain, commands, acquired, ticks, first: 8, count: 512);
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(0, allocated);
         Assert.Empty(device.Calls);
     }
 
-    private static void RunFrames(FakeBackendDevice device, ulong swapchain, byte[] commands, SwapchainImageUse[] acquired, int first, int count)
+    private static void RunFrames(
+        FakeBackendDevice device, ulong swapchain, byte[] commands, SwapchainImageUse[] acquired, ulong[] ticks, int first, int count)
     {
         for (int frame = first; frame < first + count; frame++)
         {
@@ -269,13 +293,13 @@ public sealed partial class FakeBackendDeviceTests
             ok &= device.Execute(GraphicsInternals.NewFramePlan(slot, frame, commands, acquired)).IsSuccess;
             ok &= device.Present(swapchain, acquire.ImageIndex).Status == SwapchainStatus.Success;
             device.CompleteFrame(slot);
+            ok &= device.TryReadTimestamps(slot, ticks);
             if (!ok)
             {
                 // Asserting inside the measured loop would allocate; fail outside the hot path instead.
                 throw new InvalidOperationException($"Frame {frame} didn't run.");
             }
         }
-
     }
 
     private static FramePlan Plan(int slot, long frame) => GraphicsInternals.NewFramePlan(slot, frame, [], []);
