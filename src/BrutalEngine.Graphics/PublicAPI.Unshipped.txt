@@ -20,6 +20,15 @@ BrutalEngine.Graphics.BufferHandle
 BrutalEngine.Graphics.BufferHandle.BufferHandle() -> void
 BrutalEngine.Graphics.BufferHandle.Equals(BrutalEngine.Graphics.BufferHandle other) -> bool
 BrutalEngine.Graphics.BufferHandle.IsNull.get -> bool
+BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.CopyDestination = 64 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.CopySource = 32 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.Index = 2 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.Indirect = 16 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.None = 0 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.Storage = 8 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.Uniform = 4 -> BrutalEngine.Graphics.BufferUsage
+BrutalEngine.Graphics.BufferUsage.Vertex = 1 -> BrutalEngine.Graphics.BufferUsage
 BrutalEngine.Graphics.ComputePipelineHandle
 BrutalEngine.Graphics.ComputePipelineHandle.ComputePipelineHandle() -> void
 BrutalEngine.Graphics.ComputePipelineHandle.Equals(BrutalEngine.Graphics.ComputePipelineHandle other) -> bool
@@ -96,6 +105,10 @@ BrutalEngine.Graphics.GraphicsPipelineHandle
 BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
 BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
 BrutalEngine.Graphics.GraphicsPipelineHandle.IsNull.get -> bool
+BrutalEngine.Graphics.MemoryIntent
+BrutalEngine.Graphics.MemoryIntent.GpuOnly = 0 -> BrutalEngine.Graphics.MemoryIntent
+BrutalEngine.Graphics.MemoryIntent.Readback = 2 -> BrutalEngine.Graphics.MemoryIntent
+BrutalEngine.Graphics.MemoryIntent.Upload = 1 -> BrutalEngine.Graphics.MemoryIntent
 BrutalEngine.Graphics.PipelineLayoutHandle
 BrutalEngine.Graphics.PipelineLayoutHandle.Equals(BrutalEngine.Graphics.PipelineLayoutHandle other) -> bool
 BrutalEngine.Graphics.PipelineLayoutHandle.IsNull.get -> bool
@@ -119,10 +132,36 @@ BrutalEngine.Graphics.SwapchainHandle
 BrutalEngine.Graphics.SwapchainHandle.Equals(BrutalEngine.Graphics.SwapchainHandle other) -> bool
 BrutalEngine.Graphics.SwapchainHandle.IsNull.get -> bool
 BrutalEngine.Graphics.SwapchainHandle.SwapchainHandle() -> void
+BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Bgra8Unorm = 5 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Bgra8UnormSrgb = 6 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Depth16Unorm = 15 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Depth32Float = 16 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.R16Float = 7 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.R32Float = 10 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.R32Uint = 13 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.R8Unorm = 1 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rg16Float = 8 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rg32Float = 11 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rg8Unorm = 2 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rgba16Float = 9 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rgba32Float = 12 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rgba8Uint = 14 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rgba8Unorm = 3 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Rgba8UnormSrgb = 4 -> BrutalEngine.Graphics.TextureFormat
+BrutalEngine.Graphics.TextureFormat.Undefined = 0 -> BrutalEngine.Graphics.TextureFormat
 BrutalEngine.Graphics.TextureHandle
 BrutalEngine.Graphics.TextureHandle.Equals(BrutalEngine.Graphics.TextureHandle other) -> bool
 BrutalEngine.Graphics.TextureHandle.IsNull.get -> bool
 BrutalEngine.Graphics.TextureHandle.TextureHandle() -> void
+BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.ColorTarget = 4 -> BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.CopyDestination = 32 -> BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.CopySource = 16 -> BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.DepthStencilTarget = 8 -> BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.None = 0 -> BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.Sampled = 1 -> BrutalEngine.Graphics.TextureUsage
+BrutalEngine.Graphics.TextureUsage.Storage = 2 -> BrutalEngine.Graphics.TextureUsage
 BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.TextureViewHandle.Equals(BrutalEngine.Graphics.TextureViewHandle other) -> bool
 BrutalEngine.Graphics.TextureViewHandle.IsNull.get -> bool
