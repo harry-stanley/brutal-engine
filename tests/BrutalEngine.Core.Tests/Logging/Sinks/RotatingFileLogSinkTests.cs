@@ -186,7 +186,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
         // "C:engine.log" is rooted on Windows (drive-relative), where ':' is an invalid file-name character, so the
         // sink must reject it. Elsewhere it's a legal bare name and the file must land inside the directory.
         const string FileName = "C:engine.log";
-        string directory = Path.Combine(_root, "drive-relative");
+        string directory = Path.Join(_root, "drive-relative");
 
         if (OperatingSystem.IsWindows())
         {
@@ -204,7 +204,7 @@ public sealed class RotatingFileLogSinkTests : IDisposable
             }
 
             Assert.Equal([FileName], Files(directory));
-            Assert.Equal(Line("hello"), Read(Path.Combine(directory, FileName)));
+            Assert.Equal(Line("hello"), Read(Path.Join(directory, FileName)));
         }
     }
 
