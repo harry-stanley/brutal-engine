@@ -118,7 +118,20 @@ public sealed class SdlVideoSessionTests
     public void Start_InvalidOptions_ThrowsBeforeStartingSdl()
     {
         using var variable = NativeEnvironmentVariable.Set(VideoDriverVariable, null);
-        _ = Assert.Throws<ArgumentOutOfRangeException>(() => SdlVideoSession.Start(Options(HeadlessMode.NoSurface) with { EventCapacity = 0 }, null));
+        Result<SdlVideoSession> started = default;
+        try
+        {
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => started = SdlVideoSession.Start(Options(HeadlessMode.NoSurface) with { EventCapacity = 0 }, null));
+        }
+        finally
+        {
+            // A regression that returns a session instead of throwing must not leave SDL started for later tests.
+            if (started.TryGetValue(out SdlVideoSession? leaked))
+            {
+                leaked.Dispose();
+            }
+        }
+
         Assert.Equal((SdlInitFlags)0, Sdl.PInvoke.WasInit(SdlInitFlags.Video));
 
         using SdlVideoSession session = SdlVideoSession.Start(Options(HeadlessMode.NoSurface), null).Value;
@@ -133,7 +146,20 @@ public sealed class SdlVideoSessionTests
         Logger logger = new(new LoggerOptions { Sinks = [new MemoryLogSink(1, 64)] });
         logger.Dispose();
 
-        _ = Assert.Throws<ObjectDisposedException>(() => SdlVideoSession.Start(Options(HeadlessMode.NoSurface, logger), null));
+        Result<SdlVideoSession> started = default;
+        try
+        {
+            _ = Assert.Throws<ObjectDisposedException>(() => started = SdlVideoSession.Start(Options(HeadlessMode.NoSurface, logger), null));
+        }
+        finally
+        {
+            // A regression that returns a session instead of throwing must not leave SDL started for later tests.
+            if (started.TryGetValue(out SdlVideoSession? leaked))
+            {
+                leaked.Dispose();
+            }
+        }
+
         Assert.Equal((SdlInitFlags)0, Sdl.PInvoke.WasInit(SdlInitFlags.Video));
 
         using SdlVideoSession session = SdlVideoSession.Start(Options(HeadlessMode.NoSurface), null).Value;
