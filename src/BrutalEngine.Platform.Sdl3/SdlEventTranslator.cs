@@ -1,4 +1,6 @@
 using System;
+using System.Runtime.InteropServices;
+using System.Text.Unicode;
 using Brutal.SdlApi;
 
 namespace BrutalEngine.Platform.Sdl3;
@@ -29,7 +31,19 @@ namespace BrutalEngine.Platform.Sdl3;
 /// pure.
 /// </para>
 /// <para>
-/// Keyboard, text and mouse events are not translated yet and are ignored (#232).
+/// <b>Keys:</b> key events carry SDL's window, or a default one when SDL reports none. The scancode is SDL's value,
+/// kept after a range check (a value above <see cref="ushort.MaxValue"/> becomes <see cref="Scancode.Unknown"/>); the
+/// keycode and the modifier bits pass through unchanged, because the engine's encodings are SDL's
+/// (docs/design/platform.md, "Keys"). <see cref="KeyEventData.IsRepeat"/> is SDL's <c>repeat</c> flag.
+/// </para>
+/// <para>
+/// <b>Text:</b> SDL's NUL-terminated UTF-8 is copied into the buffer's text storage by
+/// <see cref="PlatformEventBuffer.AddText"/> before this returns (SDL frees it at a later event call), and an
+/// over-long text is cut at a code-point boundary and counted there. SDL doesn't validate the text it queues, so a
+/// text that isn't valid UTF-8 is ignored, as is a null text pointer; an empty text adds an empty event.
+/// </para>
+/// <para>
+/// Mouse events are not translated yet and are ignored (#232).
 /// </para>
 /// <para>
 /// <b>Threads:</b> call on the thread that pumps the buffer, which owns it; with <see cref="SdlScaleSource"/>, the
@@ -100,11 +114,28 @@ internal static class SdlEventTranslator
             case SdlEventType.DisplayContentScaleChanged:
                 return AddDisplayScale(sdlEvent.display, buffer, timestamp, ref scales);
 
+            case SdlEventType.KeyDown:
+            case SdlEventType.KeyUp:
+                AddKey(sdlEvent.key, buffer, timestamp);
+                return true;
+
+            case SdlEventType.TextInput:
+                return AddText(sdlEvent.text, buffer, timestamp);
+
             default:
                 return sdlEvent.type is >= SdlEventType.WindowFirst and <= SdlEventType.WindowLast
                     && AddWindow(sdlEvent.window, buffer, timestamp, ref scales);
         }
     }
+
+    /// <summary>Converts an SDL scancode: a range check plus a cast, because the engine's values are SDL's.</summary>
+    /// <param name="scancode">SDL's scancode. Any value is accepted.</param>
+    /// <returns>
+    /// The same value, including values without a member; <see cref="Scancode.Unknown"/> if it doesn't fit in a
+    /// <see langword="ushort"/>.
+    /// </returns>
+    internal static Scancode ToScancode(SdlScancode scancode) =>
+        (uint)scancode <= ushort.MaxValue ? (Scancode)(ushort)scancode : Scancode.Unknown;
 
     // DisplayContentScaleChanged has its own case.
     private static PlatformEventKind DisplayKindOf(SdlEventType type) => type switch
@@ -189,6 +220,32 @@ internal static class SdlEventTranslator
 
         PlatformEventHeader header = new(PlatformEventKind.DisplayContentScaleChanged, default, timestamp);
         buffer.Add(PlatformEvent.CreateDisplayScale(header, display, scale));
+        return true;
+    }
+
+    private static void AddKey(in SdlKeyboardEvent e, PlatformEventBuffer buffer, long timestamp)
+    {
+        PlatformEventKind kind = e.type == SdlEventType.KeyDown ? PlatformEventKind.KeyDown : PlatformEventKind.KeyUp;
+        KeyEventData key = new(ToScancode(e.scancode), new Keycode((uint)e.key), (KeyModifiers)e.mod, e.repeat != 0);
+        buffer.Add(PlatformEvent.CreateKey(new(kind, new WindowId(e.windowID), timestamp), key));
+    }
+
+    private static unsafe bool AddText(in SdlTextInputEvent e, PlatformEventBuffer buffer, long timestamp)
+    {
+        if (e.text is null)
+        {
+            return false;
+        }
+
+        // Sound: SDL's text is a NUL-terminated string that stays valid until the next SDL event call, and the span
+        // over it is read (and copied by AddText) before this returns.
+        ReadOnlySpan<byte> utf8 = MemoryMarshal.CreateReadOnlySpanFromNullTerminated(e.text);
+        if (!Utf8.IsValid(utf8))
+        {
+            return false;
+        }
+
+        buffer.AddText(new WindowId(e.windowID), timestamp, utf8);
         return true;
     }
 

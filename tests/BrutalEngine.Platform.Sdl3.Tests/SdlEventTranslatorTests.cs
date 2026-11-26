@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using Brutal.SdlApi;
 using Xunit;
 
@@ -6,7 +7,7 @@ namespace BrutalEngine.Platform.Sdl3.Tests;
 
 // In the SDL collection for the production scale source's rows, which start SDL video; the rest are pure.
 [Collection(SdlNativeTests.Name)]
-public sealed class SdlEventTranslatorTests
+public sealed unsafe class SdlEventTranslatorTests
 {
     // Literal inputs every row shares: distinct values, so a payload read from the wrong field shows.
     private const uint WindowIdValue = 7;
@@ -16,6 +17,10 @@ public sealed class SdlEventTranslatorTests
     private const long Timestamp = 123_456_789;
     private const float WindowScale = 1.5f;
     private const float DisplayScale = 2.25f;
+    private const ushort Modifiers = 0x0041; // SDL_KMOD_LSHIFT | SDL_KMOD_LCTRL
+
+    // "héllo" and its NUL, on the pinned heap so SDL events can point at it for the test run.
+    private static readonly byte[] _hello = Pinned("h\u00E9llo\0"u8);
 
     // One row per SDL quit, window and display type the engine maps, with the kind written from the design's table
     // (docs/design/platform.md, "The event struct"), not from the code under test.
@@ -42,6 +47,9 @@ public sealed class SdlEventTranslatorTests
     [InlineData(SdlEventType.DisplayRemoved, PlatformEventKind.DisplayRemoved)]
     [InlineData(SdlEventType.DisplayCurrentModeChanged, PlatformEventKind.DisplayCurrentModeChanged)]
     [InlineData(SdlEventType.DisplayContentScaleChanged, PlatformEventKind.DisplayContentScaleChanged)]
+    [InlineData(SdlEventType.KeyDown, PlatformEventKind.KeyDown)]
+    [InlineData(SdlEventType.KeyUp, PlatformEventKind.KeyUp)]
+    [InlineData(SdlEventType.TextInput, PlatformEventKind.TextInput)]
     public void Translate_Table(SdlEventType type, PlatformEventKind kind)
     {
         PlatformEventBuffer buffer = NewBuffer();
@@ -53,6 +61,10 @@ public sealed class SdlEventTranslatorTests
         PlatformEvent actual = Assert.Single(buffer.AsBatch().Events.ToArray());
         Assert.Equal(Expected(kind), actual);
         Assert.Equal(Expected(kind).ToString(), actual.ToString()); // names the payload when a row fails
+        if (kind == PlatformEventKind.TextInput)
+        {
+            Assert.Equal("h\u00E9llo"u8.ToArray(), buffer.AsBatch().GetText(actual).ToArray());
+        }
 
         // The source is asked once for the two scale kinds and never for any other, so every other kind stays pure
         // (no SDL call) and is never dropped by a failed query for a window SDL has already destroyed.
@@ -168,6 +180,105 @@ public sealed class SdlEventTranslatorTests
         Assert.Equal(0, buffer.Count);
         Assert.Equal(0, buffer.AsBatch().Events.Length);
         Assert.Equal(0, scales.Queries);
+    }
+
+    [Theory]
+    [InlineData("a")]
+    [InlineData("h\u00E9llo")] // 2-byte sequence
+    [InlineData("\u65E5\u672C\u8A9E")] // 3-byte sequences
+    [InlineData("\U0001F600")] // a 4-byte sequence
+    [InlineData("")] // SDL never sends one, but it is valid UTF-8
+    public void TextInput_CopiesUtf8UntilNul(string text)
+    {
+        // The bytes after the NUL must not be copied.
+        byte[] expected = Encoding.UTF8.GetBytes(text);
+        byte[] native = Pinned([.. expected, 0, (byte)'x', (byte)'y', 0]);
+        PlatformEventBuffer buffer = NewBuffer();
+        FakeScales scales = default;
+
+        bool added;
+        fixed (byte* pointer = native)
+        {
+            added = SdlEventTranslator.TryAdd(TextEvent(pointer, WindowIdValue), buffer, Timestamp, ref scales);
+        }
+
+        Assert.True(added);
+        PlatformEvent actual = Assert.Single(buffer.AsBatch().Events.ToArray());
+        Assert.Equal(PlatformEvent.CreateText(new(PlatformEventKind.TextInput, new WindowId(WindowIdValue), Timestamp), new TextEventData(0, expected.Length)), actual);
+        Assert.Equal(expected, buffer.AsBatch().GetText(actual).ToArray());
+        Assert.Equal(0, buffer.TruncatedTextCount);
+    }
+
+    [Fact]
+    public void TextInput_LongerThanFreeSpace_IsCutAtCodePointAndCounted()
+    {
+        // 1,000 three-byte characters (3,000 bytes) into 2,048 bytes of text storage: 682 whole characters fit.
+        byte[] native = Pinned([.. Encoding.UTF8.GetBytes(new string('\u65E5', 1000)), 0]);
+        PlatformEventBuffer buffer = NewBuffer();
+        FakeScales scales = default;
+
+        bool added;
+        fixed (byte* pointer = native)
+        {
+            added = SdlEventTranslator.TryAdd(TextEvent(pointer, 0), buffer, Timestamp, ref scales);
+        }
+
+        Assert.True(added);
+        PlatformEvent actual = Assert.Single(buffer.AsBatch().Events.ToArray());
+        Assert.Equal(default, actual.Window);
+        Assert.Equal(new TextEventData(0, 2046), actual.Text);
+        Assert.Equal(native.AsSpan(0, 2046).ToArray(), buffer.AsBatch().GetText(actual).ToArray());
+        Assert.Equal(1, buffer.TruncatedTextCount);
+    }
+
+    [Theory]
+    [InlineData(new byte[0], true)] // the null pointer row: the bytes aren't used
+    [InlineData(new byte[] { 0x80, 0 }, false)] // a lone continuation byte
+    [InlineData(new byte[] { 0x61, 0xE6, 0x97, 0 }, false)] // 'a' then a cut 3-byte sequence
+    [InlineData(new byte[] { 0xC0, 0xAF, 0 }, false)] // an overlong '/'
+    [InlineData(new byte[] { 0xED, 0xA0, 0x80, 0 }, false)] // a UTF-16 surrogate
+    [InlineData(new byte[] { 0xF4, 0x90, 0x80, 0x80, 0 }, false)] // above U+10FFFF
+    [InlineData(new byte[] { 0xFF, 0 }, false)]
+    public void TextInput_InvalidOrNull_AddsNothing(byte[] bytes, bool isNull)
+    {
+        byte[] native = Pinned(bytes);
+        PlatformEventBuffer buffer = NewBuffer();
+        FakeScales scales = default;
+
+        bool added;
+        fixed (byte* pointer = native)
+        {
+            added = SdlEventTranslator.TryAdd(TextEvent(isNull ? null : pointer, WindowIdValue), buffer, Timestamp, ref scales);
+        }
+
+        Assert.False(added);
+        Assert.Equal(0, buffer.Count);
+        Assert.Equal(0, buffer.TruncatedTextCount);
+    }
+
+    // Keycodes and modifiers are SDL's encodings, so every value passes through unchanged, including bits and values
+    // without a member.
+    [Theory]
+    [InlineData(SdlEventType.KeyDown, 97u, (ushort)0, (byte)0, false)] // 'a'
+    [InlineData(SdlEventType.KeyDown, 13u, (ushort)0x00C0, (byte)0, false)] // Return with SDL_KMOD_CTRL
+    [InlineData(SdlEventType.KeyDown, 1073741882u, (ushort)0x0001, (byte)1, true)] // F1 repeated, left Shift
+    [InlineData(SdlEventType.KeyDown, 0u, (ushort)0xFFFF, (byte)2, true)] // every bit, any non-zero repeat
+    [InlineData(SdlEventType.KeyUp, 0xFFFFFFFFu, (ushort)0x8000, (byte)0, false)] // Scroll Lock on
+    [InlineData(SdlEventType.KeyUp, 0x10FFFFu, (ushort)0x0038, (byte)0, false)] // modifier bits SDL leaves unnamed
+    public void KeyEvent_PassesKeycodeAndModifiers(SdlEventType type, uint key, ushort modifiers, byte repeat, bool isRepeat)
+    {
+        PlatformEventBuffer buffer = NewBuffer();
+        FakeScales scales = default;
+
+        bool added = SdlEventTranslator.TryAdd(KeyEvent(type, SdlScancode.Return, key, modifiers, repeat, 0), buffer, Timestamp, ref scales);
+
+        Assert.True(added);
+        PlatformEvent actual = Assert.Single(buffer.AsBatch().Events.ToArray());
+        PlatformEventKind kind = type == SdlEventType.KeyDown ? PlatformEventKind.KeyDown : PlatformEventKind.KeyUp;
+        Assert.Equal(new PlatformEventHeader(kind, default, Timestamp), actual.Header); // no window: default
+        Assert.Equal(new KeyEventData(Scancode.Return, new Keycode(key), (KeyModifiers)modifiers, isRepeat), actual.Key);
+        Assert.Equal(key, actual.Key.Keycode.Value);
+        Assert.Equal(modifiers, (ushort)actual.Key.Modifiers);
     }
 
     [Fact]
@@ -333,6 +444,32 @@ public sealed class SdlEventTranslatorTests
 
     private static PlatformEventBuffer NewBuffer() => new(64, 2048);
 
+    // A copy of the bytes on the pinned heap, which the garbage collector never moves.
+    private static byte[] Pinned(ReadOnlySpan<byte> bytes)
+    {
+        byte[] pinned = GC.AllocateArray<byte>(bytes.Length, pinned: true);
+        bytes.CopyTo(pinned);
+        return pinned;
+    }
+
+    private static SdlEvent TextEvent(byte* text, uint windowId) =>
+        new() { text = new SdlTextInputEvent { type = SdlEventType.TextInput, windowID = windowId, text = text } };
+
+    private static SdlEvent KeyEvent(SdlEventType type, SdlScancode scancode, uint key, ushort modifiers, byte repeat, uint windowId) =>
+        new()
+        {
+            key = new SdlKeyboardEvent
+            {
+                type = type,
+                windowID = windowId,
+                scancode = scancode,
+                key = (SdlKeycode)key,
+                mod = modifiers,
+                repeat = repeat,
+                down = type == SdlEventType.KeyDown ? (byte)1 : (byte)0,
+            },
+        };
+
     private static SdlVideoSession StartDummy()
     {
         PlatformOptions options = new() { Organization = "BrutalEngine", Application = "Platform.Sdl3.Tests", Headless = HeadlessMode.NoSurface };
@@ -347,6 +484,29 @@ public sealed class SdlEventTranslatorTests
         if (type is >= SdlEventType.DisplayFirst and <= SdlEventType.DisplayLast)
         {
             sdlEvent.display = new SdlDisplayEvent { type = type, displayID = DisplayIdValue, data1 = Data1, data2 = Data2 };
+        }
+        else if (type is SdlEventType.KeyDown or SdlEventType.KeyUp)
+        {
+            // The Z key on a layout where it types 'z', pressed with left Shift and left Control.
+            sdlEvent.key = new SdlKeyboardEvent
+            {
+                type = type,
+                windowID = windowId,
+                which = 3,
+                scancode = SdlScancode.Z,
+                key = (SdlKeycode)'z',
+                mod = Modifiers,
+                raw = 0x2C,
+                down = type == SdlEventType.KeyDown ? (byte)1 : (byte)0,
+            };
+        }
+        else if (type == SdlEventType.TextInput)
+        {
+            fixed (byte* text = _hello)
+            {
+                // Sound: _hello is on the pinned heap, so the pointer stays valid after the fixed block.
+                sdlEvent.text = new SdlTextInputEvent { type = type, windowID = windowId, text = text };
+            }
         }
         else if (type == SdlEventType.WindowDisplayChanged)
         {
@@ -377,6 +537,9 @@ public sealed class SdlEventTranslatorTests
                 PlatformEvent.CreateDisplay(platform, new DisplayId(DisplayIdValue)),
             PlatformEventKind.DisplayContentScaleChanged =>
                 PlatformEvent.CreateDisplayScale(platform, new DisplayId(DisplayIdValue), DisplayScale),
+            PlatformEventKind.KeyDown or PlatformEventKind.KeyUp => PlatformEvent.CreateKey(
+                window, new KeyEventData(Scancode.Z, new Keycode('z'), KeyModifiers.LeftShift | KeyModifiers.LeftControl, false)),
+            PlatformEventKind.TextInput => PlatformEvent.CreateText(window, new TextEventData(0, 6)),
             _ => PlatformEvent.Create(window),
         };
     }
