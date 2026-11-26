@@ -22,6 +22,25 @@ public sealed class DrawCommandPayloadTests
         "DebugGroupCommand",
     ];
 
+    // Worked out by hand from the field table in Fields_MatchDesign: sequential layout, each field at its natural
+    // alignment (bool 1, int, float and enums 4, ulong, long and DebugLabel 8; the section-9 records are 4-aligned:
+    // Viewport 24 bytes, ScissorRect and DrawArguments 16, DrawIndexedArguments 20), the size rounded up to the
+    // largest alignment. A literal, so a field that changes the record's size in the stream fails here.
+    public static TheoryData<string, int> Sizes() => new()
+    {
+        { "SetPipelineCommand", 16 },     // ulong 0, bool 8, padded to 16
+        { "SetBindGroupCommand", 16 },    // int 0, ulong 8
+        { "SetVertexBufferCommand", 24 }, // int 0, ulong 8, long 16
+        { "SetIndexBufferCommand", 24 },  // IndexFormat 0, ulong 8, long 16
+        { "SetViewportCommand", 24 },     // Viewport 0
+        { "SetScissorCommand", 16 },      // ScissorRect 0
+        { "PushConstantsCommand", 12 },   // ShaderStages 0, int 4, int 8
+        { "DrawCommand", 16 },            // DrawArguments 0
+        { "DrawIndexedCommand", 20 },     // DrawIndexedArguments 0
+        { "DispatchCommand", 12 },        // int 0, 4, 8
+        { "DebugGroupCommand", 8 },       // DebugLabel 0
+    };
+
     [Theory]
     [MemberData(nameof(Payloads))]
     public void Payloads_AreUnmanagedAndReadOnly(string type)
@@ -73,6 +92,23 @@ public sealed class DrawCommandPayloadTests
             Assert.NotNull(property.GetMethod);
             Assert.Contains(typeof(IsExternalInit), property.SetMethod!.ReturnParameter.GetRequiredCustomModifiers());
         }
+
+        // Every property is auto-implemented, so each has exactly one backing field. Counting the non-public fields
+        // too means a hidden member (an internal property or a private field) also changes the result.
+        FieldInfo[] fields = PayloadType(type).GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        Assert.Equal(expected.Length, fields.Length);
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void Size_MatchesDesignedLayout(string type, int size)
+    {
+        int actual = (int)typeof(Unsafe)
+            .GetMethod(nameof(Unsafe.SizeOf))!
+            .MakeGenericMethod(PayloadType(type))
+            .Invoke(null, null)!;
+
+        Assert.Equal(size, actual);
     }
 
     [Fact]

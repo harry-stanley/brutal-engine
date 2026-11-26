@@ -21,6 +21,26 @@ public sealed class PassCommandPayloadTests
         "ClearSwapchainImageCommand",
     ];
 
+    // Worked out by hand from the field table in Fields_MatchDesign: sequential layout, each field at its natural
+    // alignment (bool 1, int, float and enums 4, ulong, long and DebugLabel 8; TextureRegion and ColorValue are
+    // 4-aligned, 16 bytes), the size rounded up to the largest alignment. A literal, so a field that changes the
+    // record's size in the stream fails here.
+    public static TheoryData<string, int> Sizes() => new()
+    {
+        { "BarrierCommand", 4 },               // int 0
+        { "CopyBufferToBufferCommand", 40 },   // ulong 0, long 8, ulong 16, long 24, long 32
+        // ulong 0, long 8, int 16, ulong 24, int 32, int 36, TextureAspect 40, TextureRegion 44, padded to 64
+        { "CopyBufferTextureCommand", 64 },
+        // ulong 0, int 8, int 12, TextureAspect 16, ulong 24, int 32, int 36, TextureAspect 40, TextureRegion 44,
+        // int 60, int 64, padded to 72
+        { "CopyTextureToTextureCommand", 72 },
+        { "BeginRenderPassCommand", 24 },      // int 0, bool 4, DebugLabel 8, int 16, padded to 24
+        { "AttachmentCommand", 40 },           // ulong 0, LoadOp 8, StoreOp 12, ColorValue 16, float 32, padded to 40
+        { "BeginComputePassCommand", 16 },     // DebugLabel 0, int 8, padded to 16
+        { "EndPassCommand", 4 },               // int 0
+        { "ClearSwapchainImageCommand", 4 },   // int 0
+    };
+
     [Theory]
     [MemberData(nameof(Payloads))]
     public void Payloads_AreUnmanagedAndReadOnly(string type)
@@ -93,6 +113,23 @@ public sealed class PassCommandPayloadTests
             Assert.NotNull(property.GetMethod);
             Assert.Contains(typeof(IsExternalInit), property.SetMethod!.ReturnParameter.GetRequiredCustomModifiers());
         }
+
+        // Every property is auto-implemented, so each has exactly one backing field. Counting the non-public fields
+        // too means a hidden member (an internal property or a private field) also changes the result.
+        FieldInfo[] fields = PayloadType(type).GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        Assert.Equal(expected.Length, fields.Length);
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void Size_MatchesDesignedLayout(string type, int size)
+    {
+        int actual = (int)typeof(Unsafe)
+            .GetMethod(nameof(Unsafe.SizeOf))!
+            .MakeGenericMethod(PayloadType(type))
+            .Invoke(null, null)!;
+
+        Assert.Equal(size, actual);
     }
 
     [Fact]
