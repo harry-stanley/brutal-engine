@@ -4,6 +4,7 @@ using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.Graphics;
 using BrutalEngine.Graphics.Backend;
+using BrutalEngine.Platform;
 using Xunit;
 
 namespace BrutalEngine.TestUtilities.Tests;
@@ -31,11 +32,27 @@ internal sealed class FakeBackendFixture : IDisposable
     public static TextureDescription Texture() =>
         new() { Format = TextureFormat.Rgba8Unorm, Width = 4, Height = 4, Usage = TextureUsage.Sampled };
 
-    public BackendDeviceRequest Request(bool validation = false, int framesInFlight = 2) =>
-        new() { Logger = _logger, Allocator = Allocator, Validation = validation, FramesInFlight = framesInFlight };
+    public BackendDeviceRequest Request(bool validation = false, int framesInFlight = 2, WindowSurfaceSource? compatible = null) =>
+        new()
+        {
+            Logger = _logger,
+            Allocator = Allocator,
+            Validation = validation,
+            FramesInFlight = framesInFlight,
+            CompatibleSurface = compatible,
+        };
 
-    public FakeBackendDevice CreateDevice(bool validation = false) =>
-        Assert.IsType<FakeBackendDevice>(Backend.CreateDevice(Request(validation), 0, Objects).Value);
+    public FakeBackendDevice CreateDevice(bool validation = false, WindowSurfaceSource? compatible = null) =>
+        Assert.IsType<FakeBackendDevice>(Backend.CreateDevice(Request(validation, compatible: compatible), 0, Objects).Value);
+
+    /// <summary>A surface source for a new window of the given pixel size.</summary>
+    public static WindowSurfaceSource Window(int width = 640, int height = 480, bool minimised = false) =>
+        GraphicsInternals.NewSurfaceSource(
+            new TestWindow { PixelSize = new WindowSize(width, height), State = minimised ? WindowState.Minimized : default },
+            new TestSurfaceSource());
+
+    public static BackendSwapchainRequest Swapchain(ulong surface, WindowSurfaceSource source, ulong old = 0) =>
+        new(surface, source, new SwapchainOptions(), old);
 
     /// <summary>Records a texture id in the table under a new handle, as the front end does, and returns a view of it.</summary>
     public TextureViewDescription ViewOf(ulong textureId, uint handleIndex)

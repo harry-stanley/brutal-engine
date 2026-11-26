@@ -101,6 +101,7 @@ public sealed class FakeGraphicsBackendTests : IDisposable
         Assert.Throws<ArgumentNullException>(() => _fixture.Backend.CreateDevice(_fixture.Request(), 0, null!));
         Assert.Throws<ArgumentNullException>(() => _fixture.Script.Capabilities = null!);
         Assert.Throws<ArgumentNullException>(() => _fixture.Script.FormatSupport = null!);
+        Assert.Throws<ArgumentNullException>(() => _fixture.Script.SwapchainInfo = null!);
     }
 
     public static TheoryData<FakeBackendOperation> NonResultOperations() =>
@@ -132,6 +133,32 @@ public sealed class FakeGraphicsBackendTests : IDisposable
         _fixture.Script.FailNext(FakeBackendOperation.WaitIdle, error);
 
         Assert.Throws<InvalidOperationException>(() => _fixture.Script.FailNext(FakeBackendOperation.WaitIdle, error));
+    }
+
+    [Theory]
+    [InlineData(FakeBackendOperation.CreateSwapchain)]
+    [InlineData(FakeBackendOperation.WaitForFrame)]
+    [InlineData(FakeBackendOperation.Execute)]
+    public void SwapchainStatusNext_NotASwapchainOperation_Throws(FakeBackendOperation operation) =>
+        Assert.Throws<ArgumentException>(() => _fixture.Script.SwapchainStatusNext(operation, SwapchainStatus.OutOfDate, 0));
+
+    [Fact]
+    public void SwapchainStatusNext_UndefinedArguments_Throw()
+    {
+        FakeBackendScript script = _fixture.Script;
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => script.SwapchainStatusNext((FakeBackendOperation)(-1), SwapchainStatus.OutOfDate, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => script.SwapchainStatusNext(FakeBackendOperation.Present, (SwapchainStatus)(-1), 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => script.SwapchainStatusNext(FakeBackendOperation.Present, SwapchainStatus.DeviceLost + 1, 0));
+    }
+
+    [Fact]
+    public void SwapchainStatusNext_AlreadyPending_Throws()
+    {
+        _fixture.Script.SwapchainStatusNext(FakeBackendOperation.AcquireImage, SwapchainStatus.OutOfDate, 0);
+
+        Assert.Throws<InvalidOperationException>(
+            () => _fixture.Script.SwapchainStatusNext(FakeBackendOperation.AcquireImage, SwapchainStatus.SurfaceLost, 0));
     }
 
     [Fact]

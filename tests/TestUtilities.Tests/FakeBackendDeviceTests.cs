@@ -8,7 +8,7 @@ using Xunit;
 namespace BrutalEngine.TestUtilities.Tests;
 
 /// <summary>The fake backend device's object members, scripted failures and contract checks.</summary>
-public sealed class FakeBackendDeviceTests : IDisposable
+public sealed partial class FakeBackendDeviceTests : IDisposable
 {
     private readonly FakeBackendFixture _fixture = new();
 
@@ -48,6 +48,8 @@ public sealed class FakeBackendDeviceTests : IDisposable
         FakeBackendOperation.CreateTextureView,
         FakeBackendOperation.CreateSampler,
         FakeBackendOperation.WaitIdle,
+        FakeBackendOperation.CreateSurface,
+        FakeBackendOperation.CreateSwapchain,
     ];
 
     [Theory]
@@ -57,13 +59,15 @@ public sealed class FakeBackendDeviceTests : IDisposable
         FakeBackendDevice device = _fixture.CreateDevice();
         ulong texture = device.CreateTexture(FakeBackendFixture.Texture()).Value;
         TextureViewDescription view = _fixture.ViewOf(texture, 1);
+        WindowSurfaceSource source = FakeBackendFixture.Window();
+        ulong surface = operation is FakeBackendOperation.CreateSwapchain ? device.CreateSurface(source).Value : 0;
         int liveBefore = device.LiveObjectCount;
         var error = new EngineError(ErrorKind.OutOfMemory, "scripted", nativeCode: -2);
         _fixture.Script.FailNext(operation, error);
 
-        Result first = Invoke(device, operation, view);
+        Result first = Invoke(device, operation, view, surface, source);
         FakeBackendDevice? lastAfterFirst = _fixture.Backend.LastDevice;
-        Result second = Invoke(device, operation, view);
+        Result second = Invoke(device, operation, view, surface, source);
 
         Assert.True(first.IsFailure);
         Assert.Equal(error, first.Error);
@@ -104,6 +108,7 @@ public sealed class FakeBackendDeviceTests : IDisposable
         "CreateTexture after Dispose",
         "WaitIdle after Dispose",
         "Destroy after Dispose",
+        .. _swapchainViolations,
     ];
 
     [Theory]
@@ -135,7 +140,7 @@ public sealed class FakeBackendDeviceTests : IDisposable
             "CreateTexture after Dispose" => AfterDispose(() => device.CreateTexture(FakeBackendFixture.Texture())),
             "WaitIdle after Dispose" => AfterDispose(() => device.WaitIdle()),
             "Destroy after Dispose" => AfterDispose(() => device.Destroy(BackendObjectKind.Buffer, buffer)),
-            _ => throw new ArgumentOutOfRangeException(nameof(violation), violation, "Unknown row."),
+            _ => SwapchainViolation(device, violation),
         };
         int callsBefore = device.Calls.Count;
 
@@ -273,11 +278,7 @@ public sealed class FakeBackendDeviceTests : IDisposable
         Assert.Throws<ArgumentOutOfRangeException>(() => device.AddValidationMessages(0, -1));
     }
 
-    public static TheoryData<string> LaterMembers() =>
-    [
-        "CreateSurface", "DestroySurface", "CreateSwapchain", "DestroySwapchain", "GetSwapchainImage", "AcquireImage",
-        "Present", "WaitForFrame", "IsFrameComplete", "BeginFrame", "Execute", "TryReadTimestamps",
-    ];
+    public static TheoryData<string> LaterMembers() => ["WaitForFrame", "IsFrameComplete", "BeginFrame", "Execute", "TryReadTimestamps"];
 
     [Theory]
     [MemberData(nameof(LaterMembers))]
@@ -286,13 +287,6 @@ public sealed class FakeBackendDeviceTests : IDisposable
         FakeBackendDevice device = _fixture.CreateDevice();
         Action call = member switch
         {
-            "CreateSurface" => () => device.CreateSurface(null!),
-            "DestroySurface" => () => device.DestroySurface(1),
-            "CreateSwapchain" => () => device.CreateSwapchain(default),
-            "DestroySwapchain" => () => device.DestroySwapchain(1),
-            "GetSwapchainImage" => () => device.GetSwapchainImage(1, 0, out _, out _),
-            "AcquireImage" => () => device.AcquireImage(1, 0),
-            "Present" => () => device.Present(1, 0),
             "WaitForFrame" => () => device.WaitForFrame(0),
             "IsFrameComplete" => () => device.IsFrameComplete(0),
             "BeginFrame" => () => device.BeginFrame(0),
@@ -304,17 +298,23 @@ public sealed class FakeBackendDeviceTests : IDisposable
         Assert.Throws<NotSupportedException>(call);
     }
 
-    private Result Invoke(FakeBackendDevice device, FakeBackendOperation operation, TextureViewDescription view) => operation switch
+    private Result Invoke(
+        FakeBackendDevice device, FakeBackendOperation operation, TextureViewDescription view, ulong surface, WindowSurfaceSource source)
     {
-        FakeBackendOperation.EnumerateAdapters => _fixture.Backend.EnumerateAdapters(_fixture.Request()).ToResult(),
-        FakeBackendOperation.CreateDevice => _fixture.Backend.CreateDevice(_fixture.Request(), 0, _fixture.Objects).ToResult(),
-        FakeBackendOperation.CreateBuffer => device.CreateBuffer(FakeBackendFixture.Buffer(16), BackendMemory.HostUpload).ToResult(),
-        FakeBackendOperation.CreateTexture => device.CreateTexture(FakeBackendFixture.Texture()).ToResult(),
-        FakeBackendOperation.CreateTextureView => device.CreateTextureView(view).ToResult(),
-        FakeBackendOperation.CreateSampler => device.CreateSampler(new SamplerDescription()).ToResult(),
-        FakeBackendOperation.WaitIdle => device.WaitIdle(),
-        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Not an object operation."),
-    };
+        return operation switch
+        {
+            FakeBackendOperation.EnumerateAdapters => _fixture.Backend.EnumerateAdapters(_fixture.Request()).ToResult(),
+            FakeBackendOperation.CreateDevice => _fixture.Backend.CreateDevice(_fixture.Request(), 0, _fixture.Objects).ToResult(),
+            FakeBackendOperation.CreateBuffer => device.CreateBuffer(FakeBackendFixture.Buffer(16), BackendMemory.HostUpload).ToResult(),
+            FakeBackendOperation.CreateTexture => device.CreateTexture(FakeBackendFixture.Texture()).ToResult(),
+            FakeBackendOperation.CreateTextureView => device.CreateTextureView(view).ToResult(),
+            FakeBackendOperation.CreateSampler => device.CreateSampler(new SamplerDescription()).ToResult(),
+            FakeBackendOperation.WaitIdle => device.WaitIdle(),
+            FakeBackendOperation.CreateSurface => device.CreateSurface(FakeBackendFixture.Window()).ToResult(),
+            FakeBackendOperation.CreateSwapchain => device.CreateSwapchain(FakeBackendFixture.Swapchain(surface, source)).ToResult(),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Not an object operation."),
+        };
+    }
 
     private static BackendObjectKind? KindOf(FakeBackendOperation operation) => operation switch
     {

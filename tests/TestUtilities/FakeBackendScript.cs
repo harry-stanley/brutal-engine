@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics;
+using BrutalEngine.Graphics.Backend;
 using Support = BrutalEngine.Graphics.FormatSupport;
 
 namespace BrutalEngine.TestUtilities;
@@ -25,8 +26,10 @@ public sealed class FakeBackendScript
     private const int OperationCount = (int)FakeBackendOperation.Dispose + 1;
 
     private readonly EngineError?[] _failures = new EngineError?[OperationCount];
+    private readonly (SwapchainStatus Status, int NativeCode)?[] _statuses = new (SwapchainStatus, int)?[OperationCount];
     private GraphicsCapabilities _capabilities = DefaultCapabilities;
     private Func<TextureFormat, Support> _formatSupport = DefaultFormatSupport;
+    private Func<BackendSwapchainRequest, SwapchainInfo> _swapchainInfo = DefaultSwapchainInfo;
 
     /// <summary>Creates a script with one suitable adapter (<see cref="CreateAdapter"/> at index 0) and the defaults.</summary>
     public FakeBackendScript() => Adapters = [CreateAdapter(0)];
@@ -80,6 +83,17 @@ public sealed class FakeBackendScript
         set => _formatSupport = value ?? throw new ArgumentNullException(nameof(value));
     }
 
+    /// <summary>
+    /// What <see cref="FakeBackendDevice.CreateSwapchain"/> reports for a request; <see cref="DefaultSwapchainInfo"/> at
+    /// first. The image count it returns must be at least 1.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">The value is <see langword="null"/>.</exception>
+    public Func<BackendSwapchainRequest, SwapchainInfo> SwapchainInfo
+    {
+        get => _swapchainInfo;
+        set => _swapchainInfo = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
     /// <summary>Describes a suitable fake adapter: a discrete GPU named "Fake GPU &lt;index&gt;" with no rejection reasons.</summary>
     /// <param name="index">The adapter's position in <see cref="Adapters"/>.</param>
     /// <param name="rejectionReasons">Why the adapter can't serve the request; none by default.</param>
@@ -116,6 +130,18 @@ public sealed class FakeBackendScript
             | Support.CopyDestination,
     };
 
+    /// <summary>
+    /// The swapchain a new script reports: the window's pixel size, the requested present mode, 3 images that support copies,
+    /// and <see cref="TextureFormat.Bgra8UnormSrgb"/> or <see cref="TextureFormat.Bgra8Unorm"/> for the requested format.
+    /// </summary>
+    /// <param name="request">The swapchain request.</param>
+    /// <returns>What the swapchain really is.</returns>
+    public static SwapchainInfo DefaultSwapchainInfo(BackendSwapchainRequest request)
+    {
+        TextureFormat format = request.Options.Format == SwapchainFormat.Srgb ? TextureFormat.Bgra8UnormSrgb : TextureFormat.Bgra8Unorm;
+        return new SwapchainInfo(request.Source.PixelWidth, request.Source.PixelHeight, format, request.Options.PresentMode, 3, true);
+    }
+
     /// <summary>Makes the next call of an operation fail with an error, once; the call after it behaves normally again.</summary>
     /// <param name="operation">
     /// An operation that returns a <see cref="Result"/>: <see cref="FakeBackendOperation.EnumerateAdapters"/>,
@@ -149,6 +175,52 @@ public sealed class FakeBackendScript
         }
 
         _failures[(int)operation] = error;
+    }
+
+    /// <summary>Makes the next call of a swapchain operation report a status, once; the call after it succeeds again.</summary>
+    /// <param name="operation"><see cref="FakeBackendOperation.AcquireImage"/> or <see cref="FakeBackendOperation.Present"/>.</param>
+    /// <param name="status">The status to report.</param>
+    /// <param name="nativeCode">The native code to report with it.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="status"/> isn't a defined member.</exception>
+    /// <exception cref="ArgumentException"><paramref name="operation"/> isn't one of the two swapchain operations.</exception>
+    /// <exception cref="InvalidOperationException">A status for that operation is already pending.</exception>
+    /// <remarks>
+    /// The status is taken by the next call of that operation that passes its checks. An acquire that reports a status other
+    /// than <see cref="SwapchainStatus.Success"/> or <see cref="SwapchainStatus.Suboptimal"/> acquires no image. Allocates
+    /// nothing.
+    /// </remarks>
+    public void SwapchainStatusNext(FakeBackendOperation operation, SwapchainStatus status, int nativeCode)
+    {
+        if ((uint)operation >= OperationCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(operation), operation, "Not a FakeBackendOperation member.");
+        }
+
+        if ((uint)status > (uint)SwapchainStatus.DeviceLost)
+        {
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Not a SwapchainStatus member.");
+        }
+
+        if (operation is not (FakeBackendOperation.AcquireImage or FakeBackendOperation.Present))
+        {
+            throw new ArgumentException($"{operation} doesn't report a swapchain status.", nameof(operation));
+        }
+
+        if (_statuses[(int)operation] is not null)
+        {
+            throw new InvalidOperationException($"A status of {operation} is already pending.");
+        }
+
+        _statuses[(int)operation] = (status, nativeCode);
+    }
+
+    /// <summary>Takes the pending status of a swapchain operation, if any.</summary>
+    internal bool TakeStatus(FakeBackendOperation operation, out SwapchainStatus status, out int nativeCode)
+    {
+        (SwapchainStatus Status, int NativeCode)? pending = _statuses[(int)operation];
+        _statuses[(int)operation] = null;
+        (status, nativeCode) = pending.GetValueOrDefault();
+        return pending.HasValue;
     }
 
     /// <summary>Takes the pending failure of an operation, if any.</summary>

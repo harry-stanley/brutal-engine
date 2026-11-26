@@ -18,10 +18,13 @@ namespace BrutalEngine.TestUtilities;
 /// reused within a device, whatever the kind.
 /// </para>
 /// <para>
-/// <b>Contract checks.</b> <see cref="Destroy"/> and <see cref="SetDebugName"/> take only a live id of the named kind; a
-/// view's texture must resolve, through the front end's table, to a live texture; <see cref="GetFormatSupport"/> takes only
-/// a defined format other than <see cref="TextureFormat.Undefined"/>; and nothing but <see cref="Dispose"/> is called after
-/// disposal. The fake can't tell which frames used an object (that needs the command reader), so it doesn't check that a
+/// <b>Contract checks.</b> <see cref="Destroy"/> and <see cref="SetDebugName"/> take only a live id of the named kind, and
+/// <see cref="Destroy"/> never a swapchain image's; a view's texture must resolve, through the front end's table, to a live
+/// texture; <see cref="GetFormatSupport"/> takes only a defined format other than <see cref="TextureFormat.Undefined"/>; a
+/// window has at most one live surface, a surface at most one swapchain that isn't retired, and only a surface without
+/// swapchains is destroyed; a swapchain is created for a window that isn't minimised, from its surface's own source; a
+/// retired swapchain is only read or destroyed; image indices and frame slots are in range; and nothing but
+/// <see cref="Dispose"/> is called after disposal. The fake can't tell which frames used an object (that needs the command reader), so it doesn't check that a
 /// destroyed object's frames completed. Nor does it check that the front end destroys every view before its texture: both
 /// checks come with #118.
 /// </para>
@@ -36,8 +39,15 @@ namespace BrutalEngine.TestUtilities;
 /// grows.
 /// </para>
 /// <para>
-/// <b>Not yet.</b> The surface and swapchain members throw <see cref="NotSupportedException"/> until #235 adds them, and the
-/// frame members until #236 does.
+/// <b>Surfaces and swapchains.</b> With a <see cref="BackendDeviceRequest.CompatibleSurface"/>, the device makes the
+/// selection surface when it is created, and the first <see cref="CreateSurface"/> for that same source hands it over. Each
+/// swapchain image's texture and view get ids when the swapchain is created; <see cref="AcquireImage"/> hands out the
+/// images in turn. Scripted statuses (<see cref="FakeBackendScript.SwapchainStatusNext"/>) replace the success of the next
+/// acquire or present.
+/// </para>
+/// <para>
+/// <b>Not yet.</b> The frame members throw <see cref="NotSupportedException"/> until #236 adds them, with the frame-order
+/// checks of <see cref="AcquireImage"/> and <see cref="Present"/>.
 /// </para>
 /// <para><b>Threading.</b> Not thread-safe, like the contract: the owner thread only.</para>
 /// </remarks>
@@ -48,10 +58,13 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
 
     private readonly FakeBackendScript _script;
     private readonly Dictionary<ulong, ObjectEntry> _live = [];
+    private readonly Dictionary<ulong, SurfaceState> _surfaces = [];
+    private readonly Dictionary<ulong, SwapchainState> _swapchains = [];
     private readonly List<FakeBackendCall> _calls = [];
     private ulong _nextId = 1;
     private long _validationErrors;
     private long _validationWarnings;
+    private ulong _selectionSurface;
     private bool _disposed;
 
     internal FakeBackendDevice(FakeBackendScript script, BackendDeviceRequest request, GraphicsAdapterInfo adapter, BackendObjectTable objects)
@@ -61,6 +74,11 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         Request = request;
         Adapter = adapter;
         Capabilities = script.Capabilities;
+        if (request.CompatibleSurface is not null)
+        {
+            _selectionSurface = _nextId++;
+            _surfaces.Add(_selectionSurface, new SurfaceState(request.CompatibleSurface) { HandedOver = false });
+        }
     }
 
     /// <summary>The request the device was created with.</summary>
@@ -72,8 +90,28 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <summary>Every call the device received that passed its checks, in order; still readable after disposal.</summary>
     public IReadOnlyList<FakeBackendCall> Calls => _calls;
 
-    /// <summary>The number of objects created and not yet destroyed.</summary>
-    public int LiveObjectCount => _live.Count;
+    /// <summary>
+    /// The number of objects, surfaces and swapchains created and not yet destroyed: everything the front end must destroy.
+    /// Swapchain images and a selection surface not yet handed over don't count.
+    /// </summary>
+    public int LiveObjectCount
+    {
+        get
+        {
+            int count = _live.Count + _swapchains.Count;
+            foreach (SwapchainState swapchain in _swapchains.Values)
+            {
+                count -= 2 * swapchain.ImageCount;
+            }
+
+            foreach (SurfaceState surface in _surfaces.Values)
+            {
+                count += surface.HandedOver ? 1 : 0;
+            }
+
+            return count;
+        }
+    }
 
     /// <summary>Whether <see cref="Dispose"/> has run.</summary>
     public bool IsDisposed => _disposed;
@@ -218,38 +256,221 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
             throw Violation($"Destroy of {kind} id {id}, not a live {kind}");
         }
 
+        if (_live[id].Swapchain != 0)
+        {
+            throw Violation($"Destroy of {kind} id {id}, an image of swapchain {_live[id].Swapchain}");
+        }
+
         Free(_live[id]);
         _ = _live.Remove(id);
         Record(FakeBackendOperation.Destroy, kind, id);
     }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #235 adds surfaces.</exception>
-    public Result<ulong> CreateSurface(WindowSurfaceSource source) => throw NotYet("#235");
+    /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: the window already has a live surface, or a call after disposal.
+    /// </exception>
+    /// <remarks>Takes a pending <see cref="FakeBackendOperation.CreateSurface"/> failure after the checks.</remarks>
+    public Result<ulong> CreateSurface(WindowSurfaceSource source)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(source);
+        foreach (SurfaceState surface in _surfaces.Values)
+        {
+            if (surface.HandedOver && ReferenceEquals(surface.Source, source))
+            {
+                throw Violation("CreateSurface for a window that already has a live surface");
+            }
+        }
+
+        if (_script.TakeFailure(FakeBackendOperation.CreateSurface, out EngineError error))
+        {
+            Record(FakeBackendOperation.CreateSurface, null, 0);
+            return error;
+        }
+
+        ulong id;
+        if (_selectionSurface != 0 && ReferenceEquals(source, Request.CompatibleSurface))
+        {
+            id = _selectionSurface;
+            _selectionSurface = 0;
+            _surfaces[id].HandedOver = true;
+        }
+        else
+        {
+            id = _nextId++;
+            _surfaces.Add(id, new SurfaceState(source) { HandedOver = true });
+        }
+
+        Record(FakeBackendOperation.CreateSurface, null, id);
+        return id;
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #235 adds surfaces.</exception>
-    public void DestroySurface(ulong surface) => throw NotYet("#235");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: an id that isn't a live surface the front end received, a surface with a swapchain (retired or
+    /// not), or a call after disposal.
+    /// </exception>
+    public void DestroySurface(ulong surface)
+    {
+        ThrowIfDisposed();
+        _ = LiveSurface(surface, "DestroySurface");
+        foreach (SwapchainState swapchain in _swapchains.Values)
+        {
+            if (swapchain.Surface == surface)
+            {
+                throw Violation($"DestroySurface of surface {surface}, which still has a swapchain");
+            }
+        }
+
+        _ = _surfaces.Remove(surface);
+        Record(FakeBackendOperation.DestroySurface, null, surface);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #235 adds swapchains.</exception>
-    public Result<BackendSwapchain> CreateSwapchain(in BackendSwapchainRequest request) => throw NotYet("#235");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: the surface isn't live, the request's source isn't the surface's, the options are
+    /// <see langword="null"/>, the window is minimised, the old swapchain isn't a live, unretired swapchain of that surface,
+    /// the surface already has an unretired swapchain and none is replaced, or a call after disposal. Also thrown when the
+    /// script's <see cref="FakeBackendScript.SwapchainInfo"/> reports no images.
+    /// </exception>
+    /// <remarks>
+    /// The checks run first; then the old swapchain is retired, then a pending <see cref="FakeBackendOperation.CreateSwapchain"/>
+    /// failure is taken, so a failed recreation still retires it.
+    /// </remarks>
+    public Result<BackendSwapchain> CreateSwapchain(in BackendSwapchainRequest request)
+    {
+        ThrowIfDisposed();
+        SurfaceState surface = LiveSurface(request.Surface, "CreateSwapchain");
+        if (!ReferenceEquals(request.Source, surface.Source) || request.Options is null)
+        {
+            throw Violation("CreateSwapchain whose source isn't its surface's window, or with no options");
+        }
+
+        if (request.Source.IsMinimised)
+        {
+            throw Violation("CreateSwapchain for a minimised window");
+        }
+
+        SwapchainState? old = null;
+        if (request.OldSwapchain != 0)
+        {
+            old = LiveSwapchain(request.OldSwapchain, "CreateSwapchain (the old swapchain)", unretired: true);
+            if (old.Surface != request.Surface)
+            {
+                throw Violation($"CreateSwapchain replacing swapchain {request.OldSwapchain} of another surface");
+            }
+        }
+        else
+        {
+            foreach (SwapchainState swapchain in _swapchains.Values)
+            {
+                if (swapchain.Surface == request.Surface && !swapchain.Retired)
+                {
+                    throw Violation($"CreateSwapchain on surface {request.Surface}, which has a swapchain it doesn't replace");
+                }
+            }
+        }
+
+        old?.Retired = true;
+        if (_script.TakeFailure(FakeBackendOperation.CreateSwapchain, out EngineError error))
+        {
+            Record(FakeBackendOperation.CreateSwapchain, null, 0);
+            return error;
+        }
+
+        SwapchainInfo info = _script.SwapchainInfo(request);
+        if (info.ImageCount < 1)
+        {
+            throw new InvalidOperationException($"The script's swapchain info has {info.ImageCount} images; at least 1 is needed.");
+        }
+
+        ulong id = _nextId++;
+        _swapchains.Add(id, new SwapchainState(request.Surface, info.ImageCount));
+        for (int i = 0; i < info.ImageCount; i++)
+        {
+            // Texture then view, per image: GetSwapchainImage computes the ids from this order.
+            _live.Add(_nextId++, new ObjectEntry(BackendObjectKind.Texture, 0, id));
+            _live.Add(_nextId++, new ObjectEntry(BackendObjectKind.TextureView, 0, id));
+        }
+
+        Record(FakeBackendOperation.CreateSwapchain, null, id);
+        return new BackendSwapchain(id, info);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #235 adds swapchains.</exception>
-    public void DestroySwapchain(ulong swapchain) => throw NotYet("#235");
+    /// <exception cref="InvalidOperationException">Contract violation: an id that isn't a live swapchain, or a call after disposal.</exception>
+    public void DestroySwapchain(ulong swapchain)
+    {
+        ThrowIfDisposed();
+        SwapchainState state = LiveSwapchain(swapchain, "DestroySwapchain", unretired: false);
+        for (ulong i = 1; i <= 2 * (ulong)state.ImageCount; i++)
+        {
+            _ = _live.Remove(swapchain + i);
+        }
+
+        _ = _swapchains.Remove(swapchain);
+        Record(FakeBackendOperation.DestroySwapchain, null, swapchain);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #235 adds swapchains.</exception>
-    public void GetSwapchainImage(ulong swapchain, int imageIndex, out ulong texture, out ulong view) => throw NotYet("#235");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: an id that isn't a live swapchain, an image index out of range, or a call after disposal.
+    /// </exception>
+    public void GetSwapchainImage(ulong swapchain, int imageIndex, out ulong texture, out ulong view)
+    {
+        ThrowIfDisposed();
+        CheckImage(LiveSwapchain(swapchain, "GetSwapchainImage", unretired: false), imageIndex, "GetSwapchainImage");
+        texture = swapchain + 1 + (2 * (ulong)imageIndex);
+        view = texture + 1;
+        Record(FakeBackendOperation.GetSwapchainImage, null, swapchain);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public BackendAcquire AcquireImage(ulong swapchain, int frameSlot) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: an id that isn't a live, unretired swapchain, a frame slot outside the request's frames in flight,
+    /// or a call after disposal.
+    /// </exception>
+    /// <remarks>
+    /// Takes a pending status (<see cref="FakeBackendScript.SwapchainStatusNext"/>); otherwise succeeds. Each acquired image is
+    /// the one after the swapchain's previous one. Allocates nothing.
+    /// </remarks>
+    public BackendAcquire AcquireImage(ulong swapchain, int frameSlot)
+    {
+        ThrowIfDisposed();
+        SwapchainState state = LiveSwapchain(swapchain, "AcquireImage", unretired: true);
+        if ((uint)frameSlot >= (uint)Request.FramesInFlight)
+        {
+            throw Violation($"AcquireImage for frame slot {frameSlot}, outside the {Request.FramesInFlight} frames in flight");
+        }
+
+        Record(FakeBackendOperation.AcquireImage, null, swapchain, frameSlot);
+        _ = _script.TakeStatus(FakeBackendOperation.AcquireImage, out SwapchainStatus status, out int nativeCode);
+        if (status is not (SwapchainStatus.Success or SwapchainStatus.Suboptimal))
+        {
+            return new BackendAcquire(status, -1, nativeCode);
+        }
+
+        int image = state.NextImage;
+        state.NextImage = (image + 1) % state.ImageCount;
+        return new BackendAcquire(status, image, nativeCode);
+    }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
-    public BackendPresent Present(ulong swapchain, int imageIndex) => throw NotYet("#236");
+    /// <exception cref="InvalidOperationException">
+    /// Contract violation: an id that isn't a live, unretired swapchain, an image index out of range, or a call after
+    /// disposal.
+    /// </exception>
+    /// <remarks>Takes a pending status (<see cref="FakeBackendScript.SwapchainStatusNext"/>); otherwise succeeds. Allocates nothing.</remarks>
+    public BackendPresent Present(ulong swapchain, int imageIndex)
+    {
+        ThrowIfDisposed();
+        CheckImage(LiveSwapchain(swapchain, "Present", unretired: true), imageIndex, "Present");
+        Record(FakeBackendOperation.Present, null, swapchain);
+        _ = _script.TakeStatus(FakeBackendOperation.Present, out SwapchainStatus status, out int nativeCode);
+        return new BackendPresent(status, nativeCode);
+    }
 
     /// <inheritdoc/>
     /// <exception cref="NotSupportedException">Always, until #236 adds frames.</exception>
@@ -298,7 +519,7 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         Record(FakeBackendOperation.InjectValidationError, null, 0);
     }
 
-    /// <summary>Destroys every object still alive and frees its mapped memory.</summary>
+    /// <summary>Destroys every object, surface and swapchain still alive, the selection surface included, and frees mapped memory.</summary>
     /// <remarks>Idempotent: only the first call does anything or is recorded. <see cref="Calls"/> stays readable.</remarks>
     public void Dispose()
     {
@@ -314,6 +535,9 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
 
         _live.Clear();
+        _swapchains.Clear();
+        _surfaces.Clear();
+        _selectionSurface = 0;
         Record(FakeBackendOperation.Dispose, null, 0);
     }
 
@@ -352,8 +576,36 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
     }
 
-    private void Record(FakeBackendOperation operation, BackendObjectKind? kind, ulong id) =>
-        _calls.Add(new FakeBackendCall(operation, kind, id, -1));
+    private SurfaceState LiveSurface(ulong id, string member)
+    {
+        if (!_surfaces.TryGetValue(id, out SurfaceState? surface) || !surface.HandedOver)
+        {
+            throw Violation($"{member} of id {id}, not a live surface");
+        }
+
+        return surface;
+    }
+
+    private SwapchainState LiveSwapchain(ulong id, string member, bool unretired)
+    {
+        if (!_swapchains.TryGetValue(id, out SwapchainState? swapchain) || (unretired && swapchain.Retired))
+        {
+            throw Violation($"{member} of id {id}, not a live{(unretired ? ", unretired" : "")} swapchain");
+        }
+
+        return swapchain;
+    }
+
+    private static void CheckImage(SwapchainState swapchain, int imageIndex, string member)
+    {
+        if ((uint)imageIndex >= (uint)swapchain.ImageCount)
+        {
+            throw Violation($"{member} of image {imageIndex}, outside the swapchain's {swapchain.ImageCount} images");
+        }
+    }
+
+    private void Record(FakeBackendOperation operation, BackendObjectKind? kind, ulong id, int frameSlot = -1) =>
+        _calls.Add(new FakeBackendCall(operation, kind, id, frameSlot));
 
     private void ThrowIfDisposed()
     {
@@ -363,6 +615,29 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
         }
     }
 
-    /// <summary>A live object: its kind and, for a host-visible buffer, its mapped block.</summary>
-    private readonly record struct ObjectEntry(BackendObjectKind Kind, nint Mapped);
+    /// <summary>
+    /// A live object: its kind, its mapped block for a host-visible buffer, and the swapchain that owns it for a swapchain
+    /// image's texture or view (0 otherwise).
+    /// </summary>
+    private readonly record struct ObjectEntry(BackendObjectKind Kind, nint Mapped, ulong Swapchain = 0);
+
+    /// <summary>A surface: its window's source, and whether the front end has received its id.</summary>
+    private sealed class SurfaceState(WindowSurfaceSource source)
+    {
+        public WindowSurfaceSource Source { get; } = source;
+
+        public bool HandedOver { get; set; }
+    }
+
+    /// <summary>A swapchain: its surface, its image count (image ids follow its own id), and its acquire state.</summary>
+    private sealed class SwapchainState(ulong surface, int imageCount)
+    {
+        public ulong Surface { get; } = surface;
+
+        public int ImageCount { get; } = imageCount;
+
+        public bool Retired { get; set; }
+
+        public int NextImage { get; set; }
+    }
 }
