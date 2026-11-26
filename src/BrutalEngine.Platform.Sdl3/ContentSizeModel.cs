@@ -64,7 +64,8 @@ internal static class ContentSizeModel
     {
         if (size.Width < 0 || size.Height < 0)
         {
-            throw new ArgumentOutOfRangeException(paramName, size, $"Both sides of {paramName} must be 0 or more, got {size.Width} by {size.Height}.");
+            throw new ArgumentOutOfRangeException(
+                paramName, size, string.Create(CultureInfo.InvariantCulture, $"Both sides of {paramName} must be 0 or more, got {size.Width} by {size.Height}."));
         }
     }
 
