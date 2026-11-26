@@ -204,7 +204,7 @@ public sealed class MemoryLogSinkTests
     {
         // A message is valid UTF-8 from random scalars (1 to 4 bytes each); null means "copy out with small buffers".
         var operation = Gen.Frequency(
-            (6, Gen.Int[0, 0x10FFFF].Where(Rune.IsValid).Array[0, 40].Select(s => (string?)string.Concat(s.Select(c => new Rune(c).ToString())))),
+            (6, Gen.Int[0, 0x10FFFF].Where(Rune.IsValid).Array[0, 40].Select(s => string.Concat(s.Select(c => new Rune(c).ToString())))),
             (1, Gen.Const((string?)null)));
 
         Gen.Select(Gen.Int[1, 6], Gen.Int[64, 160], operation.Array[1, 60], Gen.Int[0, 7], Gen.Int[0, 200]).Sample((entries, bytes, operations, copyEntries, copyBytes) =>
