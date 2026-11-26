@@ -123,6 +123,33 @@ public sealed class InstanceExtensionsTests
     }
 
     [Fact]
+    public void EnumerateExtensions_ListShrinksBetweenCalls_ReturnsOnlyTheWrittenEntries()
+    {
+        // The fill writes fewer entries than the count query reported and returns SUCCESS: only those are names.
+        FakeEnumeration loader = new() { ShrinksLeft = 1 };
+        loader.Extensions[string.Empty].AddRange(["VK_KHR_surface", "VK_EXT_debug_utils", "VK_KHR_win32_surface"]);
+
+        Result<string[]> result = InstanceExtensions.EnumerateExtensions(loader, null, new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(["VK_KHR_surface", "VK_EXT_debug_utils"], result.Value);
+        Assert.Equal(["extensions() count", "extensions() fill"], loader.Calls);
+    }
+
+    [Fact]
+    public void EnumerateLayers_ListShrinksBetweenCalls_ReturnsOnlyTheWrittenEntries()
+    {
+        FakeEnumeration loader = new() { ShrinksLeft = 1 };
+        loader.Layers.AddRange([Validation, "VK_LAYER_LUNARG_api_dump"]);
+
+        Result<string[]> result = InstanceExtensions.EnumerateLayers(loader, new VulkanCallGate());
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal([Validation], result.Value);
+        Assert.Equal(["layers count", "layers fill"], loader.Calls);
+    }
+
+    [Fact]
     public void EnumerateExtensions_ListKeepsGrowing_FailsWithIncomplete()
     {
         FakeEnumeration loader = new() { GrowthsLeft = int.MaxValue };

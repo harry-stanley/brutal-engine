@@ -10,8 +10,8 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Instances;
 /// A scripted loader for <see cref="InstanceExtensions"/>: lists per layer, behaving as the Vulkan commands do (an empty
 /// span asks for the count; a fill writes up to its capacity and returns <c>VK_INCOMPLETE</c> when more are left; an
 /// unknown layer is <c>VK_ERROR_LAYER_NOT_PRESENT</c>). Each of the next <see cref="GrowthsLeft"/> count queries is
-/// followed by one more entry in the queried list, as when a layer is installed between the two calls. Every call is
-/// recorded.
+/// followed by one more entry in the queried list, as when a layer is installed between the two calls, and each of the
+/// next <see cref="ShrinksLeft"/> by one entry fewer, as when one is removed. Every call is recorded.
 /// </summary>
 internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
 {
@@ -21,6 +21,8 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
     public List<string> Layers { get; } = [];
 
     public int GrowthsLeft { get; set; }
+
+    public int ShrinksLeft { get; set; }
 
     /// <summary>Gets the calls in order, e.g. <c>"extensions() count"</c>, <c>"layers fill"</c>.</summary>
     public List<string> Calls { get; } = [];
@@ -83,6 +85,11 @@ internal sealed class FakeEnumeration : InstanceExtensions.IEnumeration
         {
             GrowthsLeft--;
             list.Add($"VK_FAKE_grown_{list.Count}");
+        }
+        else if (ShrinksLeft > 0 && list.Count > 0)
+        {
+            ShrinksLeft--;
+            list.RemoveAt(list.Count - 1);
         }
 
         return true;
