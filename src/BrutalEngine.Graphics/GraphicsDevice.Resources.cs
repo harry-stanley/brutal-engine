@@ -22,6 +22,10 @@ public sealed partial class GraphicsDevice
     /// <exception cref="ArgumentException">The description breaks a structural rule (docs/design/graphics.md section 5).</exception>
     /// <exception cref="ArgumentOutOfRangeException">A value in the description is outside its range or enum.</exception>
     /// <exception cref="OutOfMemoryException">The device's handle table couldn't grow; the new backend buffer is destroyed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Every buffer handle slot is live or retired (the kind's handle allocator is exhausted); the new backend buffer is
+    /// destroyed.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -60,7 +64,8 @@ public sealed partial class GraphicsDevice
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// <see cref="SamplerDescription.MaxAnisotropy"/> is above 1 without <see cref="GraphicsFeatures.SamplerAnisotropy"/>
-    /// in <see cref="Capabilities"/>.
+    /// in <see cref="Capabilities"/>, or every sampler handle slot is live or retired (the kind's handle allocator is
+    /// exhausted), in which case the new backend sampler is destroyed.
     /// </exception>
     /// <exception cref="OutOfMemoryException">The device's handle table couldn't grow; the new backend sampler is destroyed.</exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
@@ -82,7 +87,11 @@ public sealed partial class GraphicsDevice
     /// <summary>Destroys a buffer: its handle and every copy become stale at once.</summary>
     /// <param name="buffer">A live buffer of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="buffer"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="buffer"/> was destroyed already, or isn't this device's.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="buffer"/> isn't a live buffer of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live buffer
+    /// here; one that matches can't be told apart from it.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -95,8 +104,10 @@ public sealed partial class GraphicsDevice
     /// <param name="texture">A live texture of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="texture"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="texture"/> was destroyed already, or isn't this device's. Until textures can be created, every
-    /// non-null handle is stale.
+    /// <paramref name="texture"/> isn't a live texture of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
+    /// here; one that matches can't be told apart from it. Until textures can be created, every non-null handle is
+    /// stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -107,8 +118,10 @@ public sealed partial class GraphicsDevice
     /// <param name="view">A live texture view of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="view"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="view"/> was destroyed already, or isn't this device's. Until texture views can be created, every
-    /// non-null handle is stale.
+    /// <paramref name="view"/> isn't a live texture view of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
+    /// view here; one that matches can't be told apart from it. Until texture views can be created, every non-null
+    /// handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -118,7 +131,11 @@ public sealed partial class GraphicsDevice
     /// <summary>Destroys a sampler: its handle and every copy become stale at once.</summary>
     /// <param name="sampler">A live sampler of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="sampler"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="sampler"/> was destroyed already, or isn't this device's.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="sampler"/> isn't a live sampler of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live sampler
+    /// here; one that matches can't be told apart from it.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -131,7 +148,9 @@ public sealed partial class GraphicsDevice
     /// <param name="shaderModule">A live shader module of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="shaderModule"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="shaderModule"/> was destroyed already, or isn't this device's. Until shader modules can be created,
+    /// <paramref name="shaderModule"/> isn't a live shader module of this device: it was destroyed already, or was
+    /// never issued here. A handle from another device is detected only when its index or generation doesn't match a
+    /// live shader module here; one that matches can't be told apart from it. Until shader modules can be created,
     /// every non-null handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
@@ -144,7 +163,9 @@ public sealed partial class GraphicsDevice
     /// <param name="layout">A live bind group layout of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="layout"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="layout"/> was destroyed already, or isn't this device's. Until bind group layouts can be created,
+    /// <paramref name="layout"/> isn't a live bind group layout of this device: it was destroyed already, or was never
+    /// issued here. A handle from another device is detected only when its index or generation doesn't match a live
+    /// bind group layout here; one that matches can't be told apart from it. Until bind group layouts can be created,
     /// every non-null handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
@@ -156,8 +177,10 @@ public sealed partial class GraphicsDevice
     /// <param name="layout">A live pipeline layout of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="layout"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="layout"/> was destroyed already, or isn't this device's. Until pipeline layouts can be created,
-    /// every non-null handle is stale.
+    /// <paramref name="layout"/> isn't a live pipeline layout of this device: it was destroyed already, or was never
+    /// issued here. A handle from another device is detected only when its index or generation doesn't match a live
+    /// pipeline layout here; one that matches can't be told apart from it. Until pipeline layouts can be created, every
+    /// non-null handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -168,8 +191,10 @@ public sealed partial class GraphicsDevice
     /// <param name="bindGroup">A live bind group of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="bindGroup"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="bindGroup"/> was destroyed already, or isn't this device's. Until bind groups can be created, every
-    /// non-null handle is stale.
+    /// <paramref name="bindGroup"/> isn't a live bind group of this device: it was destroyed already, or was never
+    /// issued here. A handle from another device is detected only when its index or generation doesn't match a live
+    /// bind group here; one that matches can't be told apart from it. Until bind groups can be created, every non-null
+    /// handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -180,8 +205,10 @@ public sealed partial class GraphicsDevice
     /// <param name="pipeline">A live graphics pipeline of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="pipeline"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="pipeline"/> was destroyed already, or isn't this device's. Until graphics pipelines can be created,
-    /// every non-null handle is stale.
+    /// <paramref name="pipeline"/> isn't a live graphics pipeline of this device: it was destroyed already, or was
+    /// never issued here. A handle from another device is detected only when its index or generation doesn't match a
+    /// live graphics pipeline here; one that matches can't be told apart from it. Until graphics pipelines can be
+    /// created, every non-null handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -193,7 +220,9 @@ public sealed partial class GraphicsDevice
     /// <param name="pipeline">A live compute pipeline of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="pipeline"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="pipeline"/> was destroyed already, or isn't this device's. Until compute pipelines can be created,
+    /// <paramref name="pipeline"/> isn't a live compute pipeline of this device: it was destroyed already, or was never
+    /// issued here. A handle from another device is detected only when its index or generation doesn't match a live
+    /// compute pipeline here; one that matches can't be told apart from it. Until compute pipelines can be created,
     /// every non-null handle is stale.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
