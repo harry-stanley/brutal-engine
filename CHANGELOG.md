@@ -26,6 +26,8 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
   - A view outside its texture, or a `Texture2D` view of several layers, throws `ArgumentOutOfRangeException` or `ArgumentException`. So does a view dimension outside `TextureViewDimension` (`ArgumentOutOfRangeException`).
   - A sampler value outside its enum, or a `MaxAnisotropy` that isn't positive, throws `ArgumentOutOfRangeException`.
   - Anisotropy above 1 needs the `SamplerAnisotropy` feature (`InvalidOperationException`) and must stay within the device's limit ([render interface design](docs/design/graphics.md#5-resource-descriptions)).
+- `BrutalEngine.Platform.Sdl3`: the internal Vulkan surface source of an SDL window, which Graphics uses through `IVulkanSurfaceSource` once windows land. SDL's required instance extensions are copied once, as UTF-8 without NUL terminators, and read on any thread without allocating. `CreateVulkanSurface` makes the `VkSurfaceKHR` through SDL's status-returning call on the main thread; an SDL failure is `ErrorKind.Native` with SDL's text, and misuse (an index out of range, a zero instance, the wrong thread, a disposed window) throws ([platform design](docs/design/platform.md#4-vulkan-surface-source)).
+- `BrutalEngine.Platform.Sdl3`: the internal rule for headless Vulkan windows: on SDL's `offscreen` driver, a window whose required extensions lack `VK_EXT_headless_surface` (no installed driver offers it, as on Windows) can't present, so window creation will reject it with `ErrorKind.Unsupported` and a message that says to run windowed ([platform design](docs/design/platform.md#3-headless-mode)).
 
 ### Breaking
 
