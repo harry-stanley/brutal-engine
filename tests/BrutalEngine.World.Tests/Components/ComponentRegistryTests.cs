@@ -512,8 +512,8 @@ public sealed class ComponentRegistryTests
     };
 
     /// <summary>
-    /// Runs <paramref name="action"/> on a new thread and waits for it. Any exception is caught there and returned,
-    /// so it can't escape the thread and take down the test host.
+    /// Runs <paramref name="action"/> on a new thread and waits for it, bounded so a hang fails the test instead of
+    /// the run. Any exception is caught there and returned, so it can't escape the thread and take down the test host.
     /// </summary>
     private static (Exception? Failure, int ThreadId) RunOnOtherThread(Action action)
     {
@@ -530,9 +530,12 @@ public sealed class ComponentRegistryTests
             {
                 failure = ex;
             }
-        });
+        })
+        {
+            IsBackground = true,
+        };
         thread.Start();
-        thread.Join();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "The other thread didn't finish.");
         return (failure, threadId);
     }
 
