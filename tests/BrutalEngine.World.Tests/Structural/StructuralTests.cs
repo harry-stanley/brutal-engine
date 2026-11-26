@@ -272,6 +272,263 @@ public sealed class StructuralTests
         tracking.ThrowIfLeaks();
     }
 
+    [Fact]
+    public void Remove_KeepsOtherValues()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // A full first chunk and five rows in a second, all with Position, Health and Payload.
+            Expected expected = new();
+            Entity first = world.Spawn(new Position(0, 0), new Health(0), new Payload(0));
+            int capacity = ArchetypeOf(world, first).Layout.Capacity;
+            var entities = new Entity[capacity + 5];
+            entities[0] = first;
+            expected[first] = new Values(new Position(0, 0), 0, 0, false);
+            for (int i = 1; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Position(i, -i), new Health(i), new Payload(i));
+                expected[entities[i]] = new Values(new Position(i, -i), i, i, false);
+            }
+
+            Archetype source = ArchetypeOf(world, first);
+            Assert.Equal(2, source.Chunks.ChunkCount);
+
+            // Mid-chunk in the full first chunk: the source's last row fills the hole.
+            Entity last = entities[^1];
+            Remove<Position>(world, expected, entities[3]);
+            Assert.Equal((source.Index, 0, 3), Where(world, last));
+            Archetype target = ArchetypeOf(world, entities[3]);
+            Assert.NotEqual(source.Index, target.Index);
+            Assert.Equal((target.Index, 0, 0), Where(world, entities[3]));
+
+            // Mid-chunk in the last chunk; the source's last row, which moves nothing in the source; the first row of
+            // the last chunk.
+            Remove<Position>(world, expected, entities[capacity + 1]);
+            Assert.Equal((source.Index, 1, 1), Where(world, entities[^2]));
+            Entity sourceLast = EntityTestSupport.EntityAt(source, 1, source.Chunks.GetCount(1) - 1);
+            EntityRecord beforeLast = Location(world, entities[capacity]);
+            Remove<Position>(world, expected, sourceLast);
+            Assert.Equal(beforeLast.Row, Location(world, entities[capacity]).Row);
+            Entity lastNow = EntityTestSupport.EntityAt(source, 1, source.Chunks.GetCount(1) - 1);
+            Remove<Position>(world, expected, entities[capacity]);
+            Assert.Equal((source.Index, 1, 0), Where(world, lastNow));
+
+            // Down to one row in the last chunk: moving a first-chunk row empties it, and it goes back to the pool.
+            Assert.Equal(1, source.Chunks.GetCount(1));
+            int pooled = world.ChunkPool.PooledCount;
+            Remove<Position>(world, expected, entities[10]);
+            Assert.Equal(1, source.Chunks.ChunkCount);
+            Assert.Equal(pooled + 1, world.ChunkPool.PooledCount);
+
+            // The middle column, then the last component, down to the empty archetype (no columns).
+            Remove<Health>(world, expected, entities[3]);
+            Remove<Payload>(world, expected, entities[3]);
+            Assert.Equal(0, Location(world, entities[3]).Archetype);
+
+            // A tag.
+            Entity tagged = world.Spawn(new Health(-1), default(Marker));
+            expected[tagged] = new Values(null, -1, null, true);
+            Remove<Marker>(world, expected, tagged);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// An absent component: registered and not on the entity (data or tag), or not registered at all. Remove returns
+    /// false and changes nothing: no move, no stamp, no registration. The entity's chunk keeps other rows, so a stamp
+    /// or a move would show.
+    /// </summary>
+    [Theory]
+    [InlineData("data")]
+    [InlineData("tag")]
+    [InlineData("unregistered")]
+    [InlineData("unregistered tag")]
+    public void Remove_Absent_ReturnsFalseWithoutEffect(string rule)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            _ = world.Spawn(new Position(9, 9), new Payload(9), default(Marker));
+            Entity first = world.Spawn(new Health(1));
+            Entity middle = world.Spawn(new Health(2));
+            _ = world.Spawn(new Health(3));
+            world.SetChangeTickForTesting(5);
+            string before = Dump(world);
+            int types = world.Components.Count;
+
+            bool removed = rule switch
+            {
+                "data" => world.Remove<Position>(middle),
+                "tag" => world.Remove<Marker>(middle),
+                "unregistered" => world.Remove<Unused>(middle),
+                _ => world.Remove<UnusedTag>(middle),
+            };
+
+            Assert.False(removed);
+            Assert.Equal(before, Dump(world));
+            Assert.Equal(types, world.Components.Count);
+            Assert.Equal(2, world.Get<Health>(middle).Value);
+            Assert.Equal(1, world.Get<Health>(first).Value);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Theory]
+    [InlineData(Misuse.Null, typeof(ArgumentException))]
+    [InlineData(Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(Misuse.Retired, typeof(StaleHandleException))]
+    [InlineData(Misuse.OutOfRange, typeof(StaleHandleException))]
+    [InlineData(Misuse.Pending, typeof(InvalidOperationException))]
+    [InlineData(Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Misuse.WrongThread, typeof(WrongThreadException))]
+    public void Remove_Misuse_Table(Misuse misuse, Type expected)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        EcsWorld world = EntityTestSupport.NewWorld(tracking);
+        try
+        {
+            Entity alive = world.Spawn(new Position(1, 2), new Health(3), default(Marker));
+            Entity other = world.Spawn(new Position(4, 5), new Health(6), default(Marker));
+            Entity despawned = world.Spawn(new Position(0, 0));
+            world.Despawn(despawned);
+            Entity retiring = world.Spawn();
+            world.Entities.SetGenerationForTesting((int)retiring.Index, uint.MaxValue);
+            var retired = new Entity(retiring.Index, uint.MaxValue);
+            world.Despawn(retired);
+            Entity pending = world.Entities.Reserve();
+            world.SetChangeTickForTesting(9);
+            Entity target = misuse switch
+            {
+                Misuse.Null => Entity.Null,
+                Misuse.Despawned => despawned,
+                Misuse.Retired => retired,
+                Misuse.OutOfRange => new Entity(4096, 1),
+                Misuse.Pending => pending,
+                _ => alive,
+            };
+
+            // A component the alive entity has, so a misordered check would move it; and an unregistered one, which the
+            // entity check rejects as well before the absent component's early false.
+            Action call = () => _ = world.Remove<Health>(target);
+            Action callUnregistered = () => _ = world.Remove<Unused>(target);
+            string before = Dump(world);
+            int slots = world.Entities.SlotCount;
+            int types = world.Components.Count;
+            Exception? failure;
+            if (misuse == Misuse.WrongThread)
+            {
+                failure = EntityTestSupport.RunOnOtherThread(call);
+                Assert.Equal("EcsWorld.Remove", Assert.IsType<WrongThreadException>(failure).ApiName);
+                Assert.IsType(expected, EntityTestSupport.RunOnOtherThread(callUnregistered));
+            }
+            else
+            {
+                if (misuse == Misuse.Disposed)
+                {
+                    world.Dispose();
+                }
+
+                failure = Record.Exception(call);
+                Assert.IsType(expected, Record.Exception(callUnregistered));
+            }
+
+            Assert.NotNull(failure);
+            Assert.IsType(expected, failure);
+            if (misuse != Misuse.Disposed)
+            {
+                Assert.Equal(before, Dump(world));
+                Assert.Equal(slots, world.Entities.SlotCount);
+                Assert.Equal(types, world.Components.Count);
+                Assert.True(world.IsPending(pending));
+                Assert.Equal(new Position(4, 5), world.Get<Position>(other));
+
+                // Still usable.
+                Assert.True(world.Remove<Health>(alive));
+                Assert.Equal(new Position(1, 2), world.Get<Position>(alive));
+                Assert.True(world.Has<Marker>(alive));
+            }
+        }
+        finally
+        {
+            world.Dispose();
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// The target archetype's new chunk can't be allocated, its first or its next: the entity keeps the component,
+    /// its row, values and stamps, nothing else changes, and the remove then succeeds.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Remove_AllocationFails_LeavesWorldUnchanged(bool targetHasFullChunk)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        FailingAllocator allocator = new(tracking);
+        using (EcsWorld world = EntityTestSupport.NewWorld(allocator, initialEntityCapacity: 4096))
+        {
+            Entity[] sources = [world.Spawn(new Position(0, 0), new Health(0), new Payload(0)), world.Spawn(new Position(1, 1), new Health(1), new Payload(1)), world.Spawn(new Position(2, 2), new Health(2), new Payload(2)), world.Spawn(new Position(3, 3), new Health(3), new Payload(3))];
+
+            // The first remove creates the target archetype, caches the edge and opens the target's chunk arrays.
+            Assert.True(world.Remove<Position>(sources[0]));
+            Archetype target = ArchetypeOf(world, sources[0]);
+            if (targetHasFullChunk)
+            {
+                for (int i = 1; i < target.Layout.Capacity; i++)
+                {
+                    _ = world.Spawn(new Health(i), new Payload(i));
+                }
+            }
+            else
+            {
+                world.Despawn(sources[0]);
+                Assert.Equal(0, target.Chunks.ChunkCount);
+            }
+
+            world.TrimMemory();
+            world.SetChangeTickForTesting(9);
+            string before = Dump(world);
+            long liveBlocks = tracking.LiveAllocationCount;
+            allocator.FailNext = true;
+
+            // A row that isn't the source's last, so a swap-remove before the failure would show.
+            _ = Assert.Throws<InsufficientMemoryException>(() => world.Remove<Position>(sources[1]));
+
+            Assert.False(allocator.FailNext);
+            Assert.Equal(before, Dump(world));
+            Assert.Equal(liveBlocks, tracking.LiveAllocationCount);
+            Assert.Equal(new Position(1, 1), world.Get<Position>(sources[1]));
+            Assert.Equal(0, world.Entities.PendingCount);
+
+            // Still usable: the same remove now succeeds and keeps the other values.
+            Assert.True(world.Remove<Position>(sources[1]));
+            Assert.False(world.Has<Position>(sources[1]));
+            Assert.Equal(1, world.Get<Health>(sources[1]).Value);
+            Assert.True(EntityComponents.Same(new Payload(1), world.Get<Payload>(sources[1])));
+            AssertDense(world);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    private static void Remove<T>(EcsWorld world, Expected expected, Entity entity)
+        where T : unmanaged, IComponent
+    {
+        Assert.True(world.Remove<T>(entity));
+        Values values = expected[entity];
+        expected[entity] = typeof(T) == typeof(Position) ? values with { Position = null }
+            : typeof(T) == typeof(Health) ? values with { Health = null }
+            : typeof(T) == typeof(Payload) ? values with { Payload = null }
+            : values with { Marker = false };
+        AssertDense(world);
+        expected.AssertWorld(world);
+    }
+
     private static void Add(EcsWorld world, Expected expected, Entity entity, Position position)
     {
         world.Add(entity, position);
