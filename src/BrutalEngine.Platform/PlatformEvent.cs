@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 
@@ -387,14 +388,26 @@ public readonly struct PlatformEvent
         _ => Payload.Invalid,
     };
 
-    // Only called for kinds PayloadOf accepted, so the remaining kinds are the key, text and mouse kinds.
+    // Only called for kinds PayloadOf accepted. Every kind is listed by name, as in PayloadOf, so a kind appended later
+    // must be classified here: it can't fall into a range or a default and silently accept any window.
     private static WindowRule WindowRuleOf(PlatformEventKind kind) => kind switch
     {
         PlatformEventKind.QuitRequested or PlatformEventKind.DisplayAdded or PlatformEventKind.DisplayRemoved
             or PlatformEventKind.DisplayContentScaleChanged
             or PlatformEventKind.DisplayCurrentModeChanged => WindowRule.Default,
-        >= PlatformEventKind.WindowShown and <= PlatformEventKind.WindowCloseRequested => WindowRule.Required,
-        _ => WindowRule.Any,
+        PlatformEventKind.WindowShown or PlatformEventKind.WindowHidden or PlatformEventKind.WindowMoved
+            or PlatformEventKind.WindowResized or PlatformEventKind.WindowPixelSizeChanged
+            or PlatformEventKind.WindowDisplayScaleChanged or PlatformEventKind.WindowDisplayChanged
+            or PlatformEventKind.WindowMinimized or PlatformEventKind.WindowMaximized
+            or PlatformEventKind.WindowRestored or PlatformEventKind.WindowFocusGained
+            or PlatformEventKind.WindowFocusLost or PlatformEventKind.WindowMouseEntered
+            or PlatformEventKind.WindowMouseLeft or PlatformEventKind.WindowOccluded or PlatformEventKind.WindowExposed
+            or PlatformEventKind.WindowCloseRequested => WindowRule.Required,
+        PlatformEventKind.KeyDown or PlatformEventKind.KeyUp or PlatformEventKind.TextInput
+            or PlatformEventKind.MouseMotion or PlatformEventKind.MouseButtonDown or PlatformEventKind.MouseButtonUp
+            or PlatformEventKind.MouseWheel => WindowRule.Any,
+        _ => throw new UnreachableException(string.Create(
+            CultureInfo.InvariantCulture, $"PlatformEventKind {kind} has a factory but no window rule.")),
     };
 
     private static void Check(PlatformEventHeader header, Payload payload)
