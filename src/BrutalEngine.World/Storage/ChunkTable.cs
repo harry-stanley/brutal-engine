@@ -266,7 +266,7 @@ internal sealed unsafe class ChunkTable : IDisposable
             new ReadOnlySpan<ChunkEntry>(_entries, _count).CopyTo(new Span<ChunkEntry>(entries, _count));
             if (ColumnCount > 0)
             {
-                int ticks = _count * ColumnCount;
+                int ticks = checked(_count * ColumnCount);
                 new ReadOnlySpan<uint>(_changed, ticks).CopyTo(new Span<uint>(changed, ticks));
                 new ReadOnlySpan<uint>(_added, ticks).CopyTo(new Span<uint>(added, ticks));
             }
