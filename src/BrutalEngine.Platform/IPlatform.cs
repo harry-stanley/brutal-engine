@@ -45,6 +45,9 @@ public interface IPlatform : IDisposable
 {
     /// <summary>The name of the backend that implements the platform, for example <c>SDL3</c>.</summary>
     /// <remarks>Immutable; any thread. Allocates nothing.</remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// The platform has been disposed. This member throws it on any thread, not only on the main thread.
+    /// </exception>
     public string BackendName { get; }
 
     /// <summary>
@@ -55,6 +58,9 @@ public interface IPlatform : IDisposable
     /// Read from the backend after it started, so an override from the environment shows here. Immutable; any thread.
     /// Allocates nothing.
     /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// The platform has been disposed. This member throws it on any thread, not only on the main thread.
+    /// </exception>
     public string VideoDriver { get; }
 
     /// <summary>The headless mode the platform runs in, derived from <see cref="VideoDriver"/>.</summary>
@@ -62,6 +68,9 @@ public interface IPlatform : IDisposable
     /// <c>offscreen</c> is <see cref="HeadlessMode.Offscreen"/>, <c>dummy</c> is <see cref="HeadlessMode.NoSurface"/>
     /// and any other driver is <see cref="HeadlessMode.None"/>. Immutable; any thread. Allocates nothing.
     /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// The platform has been disposed. This member throws it on any thread, not only on the main thread.
+    /// </exception>
     public HeadlessMode Headless { get; }
 
     /// <summary>The clock for frame timing and event timestamps: <c>PlatformOptions.Clock</c>.</summary>
@@ -69,10 +78,16 @@ public interface IPlatform : IDisposable
     /// Defaults to <see cref="TimeProvider.System"/>, which is monotonic, high-resolution and allocation-free; tests
     /// inject their own. Immutable; any thread. Allocates nothing.
     /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// The platform has been disposed. This member throws it on any thread, not only on the main thread.
+    /// </exception>
     public TimeProvider Clock { get; }
 
     /// <summary>The absolute directory that holds the application: an OS path, not a virtual file system path.</summary>
     /// <remarks>Read once when the platform is created. Immutable; any thread. Allocates nothing.</remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// The platform has been disposed. This member throws it on any thread, not only on the main thread.
+    /// </exception>
     public string BaseDirectory { get; }
 
     /// <summary>Gets the absolute directory for the user's saves, settings and logs: an OS path.</summary>
