@@ -339,10 +339,16 @@ public sealed class CommandStreamTests
         tracking.ThrowIfLeaks();
     }
 
-    // What one frame of WriteAndReadFrame adds up: every kind's value (0 to 21), then for the barrier its count and
-    // transitions (2 + 2), the render pass its color count and attachments (2 + 3), the push constants their size and
-    // bytes (13 + 13), and the draw its vertex count (3).
-    private const long FrameChecksum = (21 * 22 / 2) + 4 + 5 + 26 + 3;
+    // What one frame of WriteAndReadFrame adds up: every kind's value (0 to 21), then, in kind order, one payload field
+    // of each record plus its trailing length: the barrier's count and transitions (2 + 2), the buffer copy's size
+    // (64), the two buffer-texture copies' bytes per row (256 each), the texture copy's destination (6), the render
+    // pass's color count and attachments (2 + 3), its end's query index (-1), the compute pass's label index (5), its
+    // end's query index (-1), the pipeline (11), bind group (12), vertex buffer (13) and index buffer (14), the
+    // viewport's width (1280), the scissor's height (720), the push constants' size and bytes (13 + 13), the draw's
+    // vertex count (3), the indexed draw's index count (6), the dispatch's group counts (1 + 1 + 1), the two debug
+    // groups' label indices (5 each) and the swapchain clear's acquired index (1).
+    private const long FrameChecksum =
+        (21 * 22 / 2) + 4 + 64 + 256 + 256 + 6 + 5 - 1 + 5 - 1 + 11 + 12 + 13 + 14 + 1280 + 720 + 26 + 3 + 6 + 3 + 5 + 5 + 1;
 
     private static long WriteAndReadFrame(CommandWriter writer)
     {
@@ -352,32 +358,50 @@ public sealed class CommandStreamTests
             WriteSample(writer, (CommandKind)kind);
         }
 
+        // Every record is read through its own payload struct (each a separate Payload<T> instantiation) and its
+        // trailing part (byte for the kinds without one), so an allocation on any kind's read path shows.
         long checksum = 0;
         var reader = new CommandReader(writer.Written);
         while (reader.MoveNext())
         {
             checksum += (int)reader.Kind;
-            switch (reader.Kind)
+            checksum += reader.Kind switch
             {
-                case CommandKind.Barrier:
-                    checksum += reader.Payload<BarrierCommand>().Count + reader.Trailing<ResourceTransition>().Length;
-                    break;
-                case CommandKind.BeginRenderPass:
-                    checksum += reader.Payload<BeginRenderPassCommand>().ColorCount + reader.Trailing<AttachmentCommand>().Length;
-                    break;
-                case CommandKind.PushConstants:
-                    checksum += reader.Payload<PushConstantsCommand>().Size + reader.Trailing<byte>().Length;
-                    break;
-                case CommandKind.Draw:
-                    checksum += reader.Payload<DrawCommand>().Arguments.VertexCount + reader.Trailing<byte>().Length;
-                    break;
-                default:
-                    break;
-            }
+                CommandKind.Barrier => reader.Payload<BarrierCommand>().Count + reader.Trailing<ResourceTransition>().Length,
+                CommandKind.CopyBufferToBuffer => reader.Payload<CopyBufferToBufferCommand>().Size + reader.Trailing<byte>().Length,
+                CommandKind.CopyBufferToTexture or CommandKind.CopyTextureToBuffer =>
+                    reader.Payload<CopyBufferTextureCommand>().BytesPerRow + reader.Trailing<byte>().Length,
+                CommandKind.CopyTextureToTexture =>
+                    (long)reader.Payload<CopyTextureToTextureCommand>().Destination + reader.Trailing<byte>().Length,
+                CommandKind.BeginRenderPass =>
+                    reader.Payload<BeginRenderPassCommand>().ColorCount + reader.Trailing<AttachmentCommand>().Length,
+                CommandKind.EndRenderPass or CommandKind.EndComputePass =>
+                    reader.Payload<EndPassCommand>().TimestampQueryIndex + reader.Trailing<byte>().Length,
+                CommandKind.BeginComputePass =>
+                    reader.Payload<BeginComputePassCommand>().Label.Value.Index + reader.Trailing<byte>().Length,
+                CommandKind.SetPipeline => (long)reader.Payload<SetPipelineCommand>().Pipeline + reader.Trailing<byte>().Length,
+                CommandKind.SetBindGroup => (long)reader.Payload<SetBindGroupCommand>().BindGroup + reader.Trailing<byte>().Length,
+                CommandKind.SetVertexBuffer => (long)reader.Payload<SetVertexBufferCommand>().Buffer + reader.Trailing<byte>().Length,
+                CommandKind.SetIndexBuffer => (long)reader.Payload<SetIndexBufferCommand>().Buffer + reader.Trailing<byte>().Length,
+                CommandKind.SetViewport => (long)reader.Payload<SetViewportCommand>().Viewport.Width + reader.Trailing<byte>().Length,
+                CommandKind.SetScissor => reader.Payload<SetScissorCommand>().Scissor.Height + reader.Trailing<byte>().Length,
+                CommandKind.PushConstants => reader.Payload<PushConstantsCommand>().Size + reader.Trailing<byte>().Length,
+                CommandKind.Draw => reader.Payload<DrawCommand>().Arguments.VertexCount + reader.Trailing<byte>().Length,
+                CommandKind.DrawIndexed => reader.Payload<DrawIndexedCommand>().Arguments.IndexCount + reader.Trailing<byte>().Length,
+                CommandKind.Dispatch => SumGroupCounts(in reader.Payload<DispatchCommand>()) + reader.Trailing<byte>().Length,
+                CommandKind.PushDebugGroup or CommandKind.PopDebugGroup =>
+                    reader.Payload<DebugGroupCommand>().Label.Value.Index + reader.Trailing<byte>().Length,
+                CommandKind.ClearSwapchainImage =>
+                    reader.Payload<ClearSwapchainImageCommand>().AcquiredIndex + reader.Trailing<byte>().Length,
+                _ => throw new InvalidOperationException($"Unexpected kind {reader.Kind}."),
+            };
         }
 
         return checksum;
     }
+
+    private static long SumGroupCounts(in DispatchCommand dispatch) =>
+        dispatch.GroupCountX + dispatch.GroupCountY + dispatch.GroupCountZ;
 
     // Writes one record of the kind with the same values RoundTrip_EachKind uses, without allocating.
     private static void WriteSample(CommandWriter writer, CommandKind kind)
@@ -439,7 +463,7 @@ public sealed class CommandStreamTests
                 writer.Append(kind, new DebugGroupCommand { Label = _label });
                 break;
             case CommandKind.ClearSwapchainImage:
-                writer.Append(kind, new ClearSwapchainImageCommand());
+                writer.Append(kind, new ClearSwapchainImageCommand { AcquiredIndex = 1 });
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(kind), kind, "No sample for this kind.");
