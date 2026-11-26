@@ -6,6 +6,24 @@ BrutalEngine.Platform.DisplayId.DisplayId(uint Value) -> void
 BrutalEngine.Platform.DisplayId.Equals(BrutalEngine.Platform.DisplayId other) -> bool
 BrutalEngine.Platform.DisplayId.Value.get -> uint
 BrutalEngine.Platform.DisplayId.Value.init -> void
+BrutalEngine.Platform.DisplayInfo
+BrutalEngine.Platform.DisplayInfo.<Clone>$() -> BrutalEngine.Platform.DisplayInfo!
+BrutalEngine.Platform.DisplayInfo.Bounds.get -> BrutalEngine.Platform.DisplayRect
+BrutalEngine.Platform.DisplayInfo.Bounds.init -> void
+BrutalEngine.Platform.DisplayInfo.ContentScale.get -> float
+BrutalEngine.Platform.DisplayInfo.ContentScale.init -> void
+BrutalEngine.Platform.DisplayInfo.CurrentMode.get -> BrutalEngine.Platform.DisplayMode
+BrutalEngine.Platform.DisplayInfo.CurrentMode.init -> void
+BrutalEngine.Platform.DisplayInfo.DisplayInfo() -> void
+BrutalEngine.Platform.DisplayInfo.Equals(BrutalEngine.Platform.DisplayInfo? other) -> bool
+BrutalEngine.Platform.DisplayInfo.Id.get -> BrutalEngine.Platform.DisplayId
+BrutalEngine.Platform.DisplayInfo.Id.init -> void
+BrutalEngine.Platform.DisplayInfo.IsPrimary.get -> bool
+BrutalEngine.Platform.DisplayInfo.IsPrimary.init -> void
+BrutalEngine.Platform.DisplayInfo.Name.get -> string!
+BrutalEngine.Platform.DisplayInfo.Name.init -> void
+BrutalEngine.Platform.DisplayInfo.UsableBounds.get -> BrutalEngine.Platform.DisplayRect
+BrutalEngine.Platform.DisplayInfo.UsableBounds.init -> void
 BrutalEngine.Platform.DisplayMode
 BrutalEngine.Platform.DisplayMode.Display.get -> BrutalEngine.Platform.DisplayId
 BrutalEngine.Platform.DisplayMode.Display.init -> void
@@ -19,6 +37,19 @@ BrutalEngine.Platform.DisplayMode.RefreshRate.get -> float
 BrutalEngine.Platform.DisplayMode.RefreshRate.init -> void
 BrutalEngine.Platform.DisplayMode.Width.get -> int
 BrutalEngine.Platform.DisplayMode.Width.init -> void
+BrutalEngine.Platform.DisplayRect
+BrutalEngine.Platform.DisplayRect.Deconstruct(out int X, out int Y, out int Width, out int Height) -> void
+BrutalEngine.Platform.DisplayRect.DisplayRect() -> void
+BrutalEngine.Platform.DisplayRect.DisplayRect(int X, int Y, int Width, int Height) -> void
+BrutalEngine.Platform.DisplayRect.Equals(BrutalEngine.Platform.DisplayRect other) -> bool
+BrutalEngine.Platform.DisplayRect.Height.get -> int
+BrutalEngine.Platform.DisplayRect.Height.init -> void
+BrutalEngine.Platform.DisplayRect.Width.get -> int
+BrutalEngine.Platform.DisplayRect.Width.init -> void
+BrutalEngine.Platform.DisplayRect.X.get -> int
+BrutalEngine.Platform.DisplayRect.X.init -> void
+BrutalEngine.Platform.DisplayRect.Y.get -> int
+BrutalEngine.Platform.DisplayRect.Y.init -> void
 BrutalEngine.Platform.HeadlessMode
 BrutalEngine.Platform.HeadlessMode.NoSurface = 2 -> BrutalEngine.Platform.HeadlessMode
 BrutalEngine.Platform.HeadlessMode.None = 0 -> BrutalEngine.Platform.HeadlessMode
@@ -67,6 +98,19 @@ BrutalEngine.Platform.PlatformOptions.TextCapacityBytes.get -> int
 BrutalEngine.Platform.PlatformOptions.TextCapacityBytes.init -> void
 BrutalEngine.Platform.PlatformOptions.UserDataDirectory.get -> string?
 BrutalEngine.Platform.PlatformOptions.UserDataDirectory.init -> void
+BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Crosshair = 3 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Default = 0 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Move = 9 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.NotAllowed = 10 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Pointer = 11 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Progress = 4 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.ResizeEw = 7 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.ResizeNesw = 6 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.ResizeNs = 8 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.ResizeNwse = 5 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Text = 1 -> BrutalEngine.Platform.SystemCursor
+BrutalEngine.Platform.SystemCursor.Wait = 2 -> BrutalEngine.Platform.SystemCursor
 BrutalEngine.Platform.WindowId
 BrutalEngine.Platform.WindowId.Deconstruct(out uint Value) -> void
 BrutalEngine.Platform.WindowId.Equals(BrutalEngine.Platform.WindowId other) -> bool
@@ -117,8 +161,13 @@ BrutalEngine.Platform.WindowSurface
 BrutalEngine.Platform.WindowSurface.None = 0 -> BrutalEngine.Platform.WindowSurface
 BrutalEngine.Platform.WindowSurface.Vulkan = 1 -> BrutalEngine.Platform.WindowSurface
 override BrutalEngine.Platform.DisplayId.GetHashCode() -> int
+override BrutalEngine.Platform.DisplayInfo.Equals(object? obj) -> bool
+override BrutalEngine.Platform.DisplayInfo.GetHashCode() -> int
+override BrutalEngine.Platform.DisplayInfo.ToString() -> string!
 override BrutalEngine.Platform.DisplayMode.GetHashCode() -> int
 override BrutalEngine.Platform.DisplayMode.ToString() -> string!
+override BrutalEngine.Platform.DisplayRect.GetHashCode() -> int
+override BrutalEngine.Platform.DisplayRect.ToString() -> string!
 override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
@@ -129,8 +178,12 @@ override BrutalEngine.Platform.WindowOptions.ToString() -> string!
 override BrutalEngine.Platform.WindowSize.GetHashCode() -> int
 static BrutalEngine.Platform.DisplayId.operator !=(BrutalEngine.Platform.DisplayId left, BrutalEngine.Platform.DisplayId right) -> bool
 static BrutalEngine.Platform.DisplayId.operator ==(BrutalEngine.Platform.DisplayId left, BrutalEngine.Platform.DisplayId right) -> bool
+static BrutalEngine.Platform.DisplayInfo.operator !=(BrutalEngine.Platform.DisplayInfo? left, BrutalEngine.Platform.DisplayInfo? right) -> bool
+static BrutalEngine.Platform.DisplayInfo.operator ==(BrutalEngine.Platform.DisplayInfo? left, BrutalEngine.Platform.DisplayInfo? right) -> bool
 static BrutalEngine.Platform.DisplayMode.operator !=(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
 static BrutalEngine.Platform.DisplayMode.operator ==(BrutalEngine.Platform.DisplayMode left, BrutalEngine.Platform.DisplayMode right) -> bool
+static BrutalEngine.Platform.DisplayRect.operator !=(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
+static BrutalEngine.Platform.DisplayRect.operator ==(BrutalEngine.Platform.DisplayRect left, BrutalEngine.Platform.DisplayRect right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.WindowId.operator !=(BrutalEngine.Platform.WindowId left, BrutalEngine.Platform.WindowId right) -> bool
@@ -142,6 +195,7 @@ static BrutalEngine.Platform.WindowSize.operator ==(BrutalEngine.Platform.Window
 ~override BrutalEngine.Platform.DisplayId.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.DisplayId.ToString() -> string
 ~override BrutalEngine.Platform.DisplayMode.Equals(object obj) -> bool
+~override BrutalEngine.Platform.DisplayRect.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.WindowId.ToString() -> string
 ~override BrutalEngine.Platform.WindowSize.Equals(object obj) -> bool
