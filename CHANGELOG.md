@@ -19,6 +19,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 ### Added
 
 - `BrutalEngine.Core`: `ThreadAffinity`, which captures an owner thread and checks that a call is on it (`ThrowIfNotCurrentThread` runs in every build, and is a null check plus one integer comparison that allocates nothing when it passes), and `WrongThreadException`, thrown with the member's name and both managed thread ids when the check fails.
+- `BrutalEngine.World` (new package, the world model of ADR-0006): `WorldOptions`, validated when a world is created (chunk size, initial entity capacity and limit, component-type width, hierarchy depth, clock and name, each named in the exception), and the `EcsWorld` shell: construction, owner-thread checks that throw `WrongThreadException` naming the member, and idempotent disposal. The world never owns or disposes an allocator it is given.
 
 ### Changed
 

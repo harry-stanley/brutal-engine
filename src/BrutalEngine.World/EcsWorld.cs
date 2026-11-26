@@ -1,0 +1,141 @@
+using System;
+using System.Numerics;
+using BrutalEngine.Core;
+using BrutalEngine.Core.Memory;
+
+namespace BrutalEngine.World;
+
+/// <summary>
+/// A world: the container of a game's entities and their components. One world is the unit of ownership,
+/// threading and disposal for everything stored in it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Owner thread.</b> The thread that constructs the world owns it. Every member, <see cref="Dispose"/> included,
+/// checks that it is called on that thread and throws <see cref="WrongThreadException"/> naming the member otherwise.
+/// The check is one integer comparison and runs in every build.
+/// </para>
+/// <para>
+/// <b>Ownership.</b> The world owns every unmanaged block it allocates and frees it in <see cref="Dispose"/>. All of
+/// it comes from <see cref="WorldOptions.Allocator"/>, which the world does not own: the caller keeps it alive until
+/// the world is disposed, and the world never disposes it. Without one, the world uses a
+/// <see cref="HeapAllocator"/> of its own.
+/// </para>
+/// <para>
+/// <b>Allocation.</b> Constructing a world allocates; it is setup work, not frame work. Reading <see cref="Name"/>
+/// allocates nothing.
+/// </para>
+/// </remarks>
+public sealed class EcsWorld : IDisposable
+{
+    private readonly ThreadAffinity _owner;
+    private readonly string _name;
+    private readonly INativeAllocator _allocator;
+    private bool _disposed;
+
+    /// <summary>Creates an empty world owned by the calling thread.</summary>
+    /// <param name="options">Settings. The world copies what it needs, so later changes have no effect.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <see cref="WorldOptions.Clock"/> is <see langword="null"/>, or <see cref="WorldOptions.Name"/> is
+    /// <see langword="null"/> or empty. The message names the option.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A numeric option is outside the range documented on <see cref="WorldOptions"/>. The message names the option.
+    /// </exception>
+    public EcsWorld(WorldOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        Validate(options);
+
+        _owner = ThreadAffinity.CurrentThread();
+        _name = options.Name;
+
+        // HeapAllocator is stateless and holds nothing to release, so the world's own one needs no disposal.
+        _allocator = options.Allocator ?? new HeapAllocator();
+    }
+
+    /// <summary>The world's name, from <see cref="WorldOptions.Name"/>, for diagnostics and leak reports.</summary>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>Allocates nothing.</remarks>
+    public string Name
+    {
+        get
+        {
+            ThrowIfUnusable("EcsWorld.Name");
+            return _name;
+        }
+    }
+
+    /// <summary>The allocator every unmanaged block of this world comes from. Not owned by the world.</summary>
+    internal INativeAllocator Allocator => _allocator;
+
+    /// <summary>Frees everything the world allocated. Idempotent: later calls do nothing.</summary>
+    /// <remarks>
+    /// Afterwards every other member throws <see cref="ObjectDisposedException"/>. The allocator from
+    /// <see cref="WorldOptions.Allocator"/> is not disposed. Allocates nothing.
+    /// </remarks>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    public void Dispose()
+    {
+        _owner.ThrowIfNotCurrentThread("EcsWorld.Dispose");
+        _disposed = true;
+    }
+
+    private void ThrowIfUnusable(string apiName)
+    {
+        _owner.ThrowIfNotCurrentThread(apiName);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private static void Validate(WorldOptions options)
+    {
+        if (!BitOperations.IsPow2(options.ChunkBytes)
+            || options.ChunkBytes is < WorldOptions.SmallestChunkBytes or > WorldOptions.LargestChunkBytes)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.ChunkBytes,
+                $"WorldOptions.ChunkBytes must be a power of two from {WorldOptions.SmallestChunkBytes} to {WorldOptions.LargestChunkBytes}.");
+        }
+
+        // MaxEntities first: the range of InitialEntityCapacity depends on it.
+        if (options.MaxEntities < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), options.MaxEntities, "WorldOptions.MaxEntities must be at least 1.");
+        }
+
+        if (options.InitialEntityCapacity < 1 || options.InitialEntityCapacity > options.MaxEntities)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.InitialEntityCapacity,
+                $"WorldOptions.InitialEntityCapacity must be from 1 to WorldOptions.MaxEntities ({options.MaxEntities}).");
+        }
+
+        if (options.MaxComponentTypes is < WorldOptions.ComponentTypeGranularity or > WorldOptions.LargestMaxComponentTypes
+            || options.MaxComponentTypes % WorldOptions.ComponentTypeGranularity != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.MaxComponentTypes,
+                $"WorldOptions.MaxComponentTypes must be a multiple of {WorldOptions.ComponentTypeGranularity} from {WorldOptions.ComponentTypeGranularity} to {WorldOptions.LargestMaxComponentTypes}.");
+        }
+
+        if (options.MaxHierarchyDepth < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), options.MaxHierarchyDepth, "WorldOptions.MaxHierarchyDepth must be at least 1.");
+        }
+
+        if (options.Clock is null)
+        {
+            throw new ArgumentException("WorldOptions.Clock must not be null.", nameof(options));
+        }
+
+        if (string.IsNullOrEmpty(options.Name))
+        {
+            throw new ArgumentException("WorldOptions.Name must not be null or empty.", nameof(options));
+        }
+    }
+}

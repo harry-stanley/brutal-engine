@@ -1,0 +1,30 @@
+#nullable enable
+BrutalEngine.World.EcsWorld
+BrutalEngine.World.EcsWorld.Dispose() -> void
+BrutalEngine.World.EcsWorld.EcsWorld(BrutalEngine.World.WorldOptions! options) -> void
+BrutalEngine.World.EcsWorld.Name.get -> string!
+BrutalEngine.World.WorldOptions
+BrutalEngine.World.WorldOptions.<Clone>$() -> BrutalEngine.World.WorldOptions!
+BrutalEngine.World.WorldOptions.Allocator.get -> BrutalEngine.Core.Memory.INativeAllocator?
+BrutalEngine.World.WorldOptions.Allocator.init -> void
+BrutalEngine.World.WorldOptions.ChunkBytes.get -> int
+BrutalEngine.World.WorldOptions.ChunkBytes.init -> void
+BrutalEngine.World.WorldOptions.Clock.get -> System.TimeProvider!
+BrutalEngine.World.WorldOptions.Clock.init -> void
+BrutalEngine.World.WorldOptions.Equals(BrutalEngine.World.WorldOptions? other) -> bool
+BrutalEngine.World.WorldOptions.InitialEntityCapacity.get -> int
+BrutalEngine.World.WorldOptions.InitialEntityCapacity.init -> void
+BrutalEngine.World.WorldOptions.MaxComponentTypes.get -> int
+BrutalEngine.World.WorldOptions.MaxComponentTypes.init -> void
+BrutalEngine.World.WorldOptions.MaxEntities.get -> int
+BrutalEngine.World.WorldOptions.MaxEntities.init -> void
+BrutalEngine.World.WorldOptions.MaxHierarchyDepth.get -> int
+BrutalEngine.World.WorldOptions.MaxHierarchyDepth.init -> void
+BrutalEngine.World.WorldOptions.Name.get -> string!
+BrutalEngine.World.WorldOptions.Name.init -> void
+BrutalEngine.World.WorldOptions.WorldOptions() -> void
+override BrutalEngine.World.WorldOptions.Equals(object? obj) -> bool
+override BrutalEngine.World.WorldOptions.GetHashCode() -> int
+override BrutalEngine.World.WorldOptions.ToString() -> string!
+static BrutalEngine.World.WorldOptions.operator !=(BrutalEngine.World.WorldOptions? left, BrutalEngine.World.WorldOptions? right) -> bool
+static BrutalEngine.World.WorldOptions.operator ==(BrutalEngine.World.WorldOptions? left, BrutalEngine.World.WorldOptions? right) -> bool
