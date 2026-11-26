@@ -212,17 +212,36 @@ internal static class SdlDisplays
             return SdlCheck.Error("SDL_GetCurrentDisplayMode");
         }
 
-        return new DisplayInfo
+        return ToDisplayInfo(id, name, bounds, usable, contentScale, *current, isPrimary);
+    }
+
+    /// <summary>Builds a <see cref="DisplayInfo"/> from the values SDL reported for one display.</summary>
+    /// <param name="id">SDL's display id.</param>
+    /// <param name="name">The display's name.</param>
+    /// <param name="bounds">The display's bounds, from <c>SDL_GetDisplayBounds</c>.</param>
+    /// <param name="usable">The display's usable bounds, from <c>SDL_GetDisplayUsableBounds</c>.</param>
+    /// <param name="contentScale">The display's content scale, from <c>SDL_GetDisplayContentScale</c>.</param>
+    /// <param name="current">The display's current mode, from <c>SDL_GetCurrentDisplayMode</c>.</param>
+    /// <param name="isPrimary">Whether this is SDL's primary display.</param>
+    /// <returns>The display, with every field copied from its argument.</returns>
+    /// <remarks>Pure; allocates the record.</remarks>
+    internal static DisplayInfo ToDisplayInfo(
+        uint id,
+        string name,
+        in SdlRect bounds,
+        in SdlRect usable,
+        float contentScale,
+        in SdlDisplayMode current,
+        bool isPrimary) => new()
         {
             Id = new DisplayId(id),
             Name = name,
             Bounds = ToRect(bounds),
             UsableBounds = ToRect(usable),
             ContentScale = contentScale,
-            CurrentMode = ToDisplayMode(*current),
+            CurrentMode = ToDisplayMode(current),
             IsPrimary = isPrimary,
         };
-    }
 
-    private static DisplayRect ToRect(SdlRect rect) => new(rect.x, rect.y, rect.w, rect.h);
+    private static DisplayRect ToRect(in SdlRect rect) => new(rect.x, rect.y, rect.w, rect.h);
 }

@@ -109,6 +109,42 @@ public sealed class SdlDisplaysTests
         Assert.Equal(new DisplayMode { Display = new DisplayId(7), Width = 1920, Height = 1080, PixelDensity = 2f, RefreshRate = 59.94f }, converted);
     }
 
+    // Every value differs from every other one it could be confused with: x != y in each rect, the bounds differ from
+    // the usable bounds in every field, the scale isn't 1, and the current mode's display isn't the display's own id.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ToDisplayInfo_CopiesEveryField(bool isPrimary)
+    {
+        var bounds = new SdlRect { x = -1920, y = 120, w = 1920, h = 1080 };
+        var usable = new SdlRect { x = -1900, y = 160, w = 1880, h = 1040 };
+        var current = new SdlDisplayMode
+        {
+            displayID = 11,
+            format = SdlPixelFormat.Xrgb8888,
+            w = 3840,
+            h = 2160,
+            pixel_density = 2f,
+            refresh_rate = 143.856f,
+            refresh_rate_numerator = 144000,
+            refresh_rate_denominator = 1001,
+        };
+
+        var info = SdlDisplays.ToDisplayInfo(9, "Display nine", bounds, usable, 1.5f, current, isPrimary);
+
+        DisplayInfo expected = new()
+        {
+            Id = new DisplayId(9),
+            Name = "Display nine",
+            Bounds = new DisplayRect(-1920, 120, 1920, 1080),
+            UsableBounds = new DisplayRect(-1900, 160, 1880, 1040),
+            ContentScale = 1.5f,
+            CurrentMode = new DisplayMode { Display = new DisplayId(11), Width = 3840, Height = 2160, PixelDensity = 2f, RefreshRate = 143.856f },
+            IsPrimary = isPrimary,
+        };
+        Assert.Equal(expected, info);
+    }
+
     private static SdlVideoSession Start(HeadlessMode headless)
     {
         PlatformOptions options = new() { Organization = "BrutalEngine", Application = "Platform.Sdl3.Tests", Headless = headless };
