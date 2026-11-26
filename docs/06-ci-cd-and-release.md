@@ -116,6 +116,8 @@ The CI-only **Khronos validation layers for macOS** are unused while macOS is ou
 5. Create the GitHub Release with packages, symbols and sample game builds attached.
 6. Deploy the docs site (docfx) for that version.
 
+**Ship gate** ([ADR-0016](adr/0016-trunk-based-milestones.md), implemented by #254): every engine library's csproj sets `BrutalEngineMilestone`, the milestone that first ships it, and `src/Directory.Build.props` sets `BrutalEngineReleaseMilestone`, the milestone the next release ships. A library packs only when `BrutalEngineMilestone <= BrutalEngineReleaseMilestone`, and a CI step after Pack, `.github/scripts/check-packages.sh`, fails when the packed set differs from the set of projects the rule selects. Libraries of a later milestone are still built and tested on every PR and are in the source tree at the tag, but the release's packages, notes and assets don't include them. The notes for a tag (step 3) come from the `## [Unreleased]` section of the tagged commit: the version's own heading is added by the PR that follows the tag (see *Versioning*).
+
 ### `docs.yml`
 
 Builds the docfx site on every PR (broken links and missing API docs fail it), and deploys to GitHub Pages on release.
@@ -123,8 +125,10 @@ Builds the docfx site on every PR (broken links and missing API docs fail it), a
 ## Versioning
 
 - **Semantic Versioning 2.0.** During milestones M0 to M5, versions are `0.y.z`. Breaking changes are allowed between minors and must be listed under "Breaking" in the changelog with migration notes. **1.0.0** is released at the end of M6, and after that breaking changes go only into major versions, after at least one minor release with `[Obsolete]` warnings.
+- **Releases are tags on `main`.** Milestone M*n* is released as `v0.(n+1).0`, tagged on `main` (see `release.yml`). Work for the next milestone merges to `main` before that tag, and the ship gate keeps it out of the release ([ADR-0016](adr/0016-trunk-based-milestones.md)).
 - Pre-releases: `x.y.z-preview.N` from release branches when needed.
-- `CHANGELOG.md` follows *Keep a Changelog*. Each PR updates the `Unreleased` section.
+- `CHANGELOG.md` follows *Keep a Changelog*. A PR for the milestone being released next adds its entry to the `Unreleased` section; a PR for the milestone after that adds it to the Next section directly below (`## Next: 0.3.0 (not in the next release)` until `v0.2.0`) ([ADR-0016](adr/0016-trunk-based-milestones.md)).
+- **After a release tag**, one PR renames `Unreleased` to the released version and the Next section to `Unreleased`, adds an empty Next section for the milestone after, bumps `BrutalEngineReleaseMilestone` and `MinVerMinimumMajorMinor`, and fixes the compare links. Until that PR merges, next-milestone work doesn't change the packages or samples being released, an existing version in `Directory.Packages.props`, or the build-wide files `Directory.Build.props`, `src/Directory.Build.props`, `src/Directory.Build.targets` and `global.json`. It adds a version to `Directory.Packages.props` only for a package that no releasing library or sample resolves, directly or transitively, because transitive pinning (`Directory.Packages.props:5`) would make it a direct dependency of a released package; no releasing project's `packages.lock.json` may change ([ADR-0016](adr/0016-trunk-based-milestones.md)).
 - The supported BRUTAL version range is stated per engine release. BRUTAL bumps are their own PRs.
 
 ## Game publishing pipeline (what game developers get)

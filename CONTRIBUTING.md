@@ -51,7 +51,7 @@ A PR is ready to merge when it meets the [definition of done](docs/08-workflow.m
 - **One logical change per commit.** A commit should make sense on its own and be easy to review and revert. Don't put everything in one big commit, and don't split so finely that a commit no longer makes sense alone (a type and its tests land together).
 - **Every commit leaves the repository working:** it builds with zero warnings and all tests pass.
 - The PR title must be a valid conventional commit too, because it becomes the squashed commit on `main`.
-- Add your change to the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md).
+- Add your change to the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md), or to the Next section below it if it's for the milestone after the next release ([ADR-0016](docs/adr/0016-trunk-based-milestones.md)).
 
 See [Coding standards: Commits](docs/07-coding-standards.md#commits) for the full rules.
 

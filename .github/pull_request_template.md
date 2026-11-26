@@ -47,5 +47,5 @@ Closes #<!-- issue number -->
 - [ ] No leaks (tracking allocators and GPU tracker clean)
 - [ ] Every native status code checked
 - [ ] Public API: intentional, XML-documented, recorded in `PublicAPI.Unshipped.txt`
-- [ ] `CHANGELOG.md` `Unreleased` section updated
+- [ ] `CHANGELOG.md` updated: the `Unreleased` section for the next release, or the Next section below it for the milestone after (ADR-0016)
 - [ ] Docs and samples updated if user-facing behaviour changed

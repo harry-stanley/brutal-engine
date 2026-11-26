@@ -5,6 +5,7 @@ All notable changes to BrutalEngine are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Until 1.0.0, versions are `0.y.z` and breaking changes can happen between minor releases. They are always listed under "Breaking", with migration notes. See [CI/CD and release: Versioning](docs/06-ci-cd-and-release.md#versioning).
 
 Every pull request adds its user-visible changes to the `Unreleased` section.
+Changes for the milestone after the next release go in the *Next* section below ([ADR-0016](docs/adr/0016-trunk-based-milestones.md)).
 
 ## [Unreleased]
 
@@ -98,6 +99,7 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - CI builds, tests and smoke-runs on Windows and Linux only. macOS is best-effort and unverified ([ADR-0015](docs/adr/0015-tested-platforms-windows-linux.md)), so there is no `hello-window-osx-arm64` artifact any more. The macOS code, the `osx-arm64` RID, the pinned natives and the macOS setup action are kept.
 - `samples/HelloWindow` logs through `BrutalEngine.Core`'s `Logger` and `ConsoleLogSink` (categories `HelloWindow` and `HelloWindow.Vulkan`) instead of plain console writes, so each line now reads `2026-11-26T01:02:03.456Z INFO [HelloWindow] message`. Messages may be up to 64 KiB, so a failure's full exception report stays whole. The validation messenger keeps its counts per instance and reaches them through the callback's user data, with no static state. CI's splash check matches the new line format.
 - `samples/HelloWindow`'s published output, and so the `hello-window-<rid>` CI artifacts, no longer include XML doc files (`HelloWindow.xml`, `BrutalEngine.Core.xml`). CI checks there are none.
+- Release process ([ADR-0016](docs/adr/0016-trunk-based-milestones.md)): work for the next milestone merges to `main` before the current milestone is released, and each release ships only its own and earlier milestones' packages. Changes for the milestone after the next release are listed in the *Next* section of this changelog.
 
 ### Fixed
 
@@ -106,6 +108,10 @@ Every pull request adds its user-visible changes to the `Unreleased` section.
 - `BrutalEngine.Core` logging no longer allocates a new message buffer after a gen2 collection under high memory pressure. The buffers came from `ArrayPool<byte>.Shared`, whose trim then drops every thread's cached arrays; each logger now keeps up to 8 buffers of its own, falling back to the shared pool only when more threads log at once. A formatter that throws now returns its buffer instead of leaving it to the garbage collector ([logging design](docs/design/logging.md#memory-and-threading)).
 - `Logger.SetLevel` no longer allocates after a garbage collection. It validated the level with `Enum.IsDefined`, which rebuilds a weakly held runtime cache (240 bytes) on its first call after any collection.
 - `samples/HelloWindow`: `--require-driver MaxEnum` is rejected (it's Vulkan's sentinel value, not a driver), an unnamed `VkResult` appears once in error messages instead of twice, a failure inside an SDL callback is reported with its stack trace and the inner exception, and on the splash's 1:1 copy path the window's minimum size is recomputed when the pixel density changes (for example, after a move to another display).
+
+## Next: 0.3.0 (not in the next release)
+
+Changes merged for M2, which ship in 0.3.0, not 0.2.0.
 
 ## [0.1.0-alpha] - 2026-11-26
 
