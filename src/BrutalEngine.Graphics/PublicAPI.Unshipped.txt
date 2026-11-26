@@ -235,6 +235,26 @@ BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceMipLevel.get -> 
 BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceMipLevel.init -> void
 BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceRegion.get -> BrutalEngine.Graphics.TextureRegion
 BrutalEngine.Graphics.Backend.CopyTextureToTextureCommand.SourceRegion.init -> void
+BrutalEngine.Graphics.Backend.DebugGroupCommand
+BrutalEngine.Graphics.Backend.DebugGroupCommand.DebugGroupCommand() -> void
+BrutalEngine.Graphics.Backend.DebugGroupCommand.Label.get -> BrutalEngine.Graphics.DebugLabel
+BrutalEngine.Graphics.Backend.DebugGroupCommand.Label.init -> void
+BrutalEngine.Graphics.Backend.DispatchCommand
+BrutalEngine.Graphics.Backend.DispatchCommand.DispatchCommand() -> void
+BrutalEngine.Graphics.Backend.DispatchCommand.GroupCountX.get -> int
+BrutalEngine.Graphics.Backend.DispatchCommand.GroupCountX.init -> void
+BrutalEngine.Graphics.Backend.DispatchCommand.GroupCountY.get -> int
+BrutalEngine.Graphics.Backend.DispatchCommand.GroupCountY.init -> void
+BrutalEngine.Graphics.Backend.DispatchCommand.GroupCountZ.get -> int
+BrutalEngine.Graphics.Backend.DispatchCommand.GroupCountZ.init -> void
+BrutalEngine.Graphics.Backend.DrawCommand
+BrutalEngine.Graphics.Backend.DrawCommand.Arguments.get -> BrutalEngine.Graphics.DrawArguments
+BrutalEngine.Graphics.Backend.DrawCommand.Arguments.init -> void
+BrutalEngine.Graphics.Backend.DrawCommand.DrawCommand() -> void
+BrutalEngine.Graphics.Backend.DrawIndexedCommand
+BrutalEngine.Graphics.Backend.DrawIndexedCommand.Arguments.get -> BrutalEngine.Graphics.DrawIndexedArguments
+BrutalEngine.Graphics.Backend.DrawIndexedCommand.Arguments.init -> void
+BrutalEngine.Graphics.Backend.DrawIndexedCommand.DrawIndexedCommand() -> void
 BrutalEngine.Graphics.Backend.EndPassCommand
 BrutalEngine.Graphics.Backend.EndPassCommand.EndPassCommand() -> void
 BrutalEngine.Graphics.Backend.EndPassCommand.TimestampQueryIndex.get -> int
@@ -275,6 +295,14 @@ BrutalEngine.Graphics.Backend.IGraphicsBackend
 BrutalEngine.Graphics.Backend.IGraphicsBackend.CreateDevice(BrutalEngine.Graphics.Backend.BackendDeviceRequest! request, int adapterIndex, BrutalEngine.Graphics.Backend.BackendObjectTable! objects) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.Backend.IBackendDevice!>
 BrutalEngine.Graphics.Backend.IGraphicsBackend.EnumerateAdapters(BrutalEngine.Graphics.Backend.BackendDeviceRequest! request) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Graphics.GraphicsAdapterInfo!>!>
 BrutalEngine.Graphics.Backend.IGraphicsBackend.Name.get -> string!
+BrutalEngine.Graphics.Backend.PushConstantsCommand
+BrutalEngine.Graphics.Backend.PushConstantsCommand.Offset.get -> int
+BrutalEngine.Graphics.Backend.PushConstantsCommand.Offset.init -> void
+BrutalEngine.Graphics.Backend.PushConstantsCommand.PushConstantsCommand() -> void
+BrutalEngine.Graphics.Backend.PushConstantsCommand.Size.get -> int
+BrutalEngine.Graphics.Backend.PushConstantsCommand.Size.init -> void
+BrutalEngine.Graphics.Backend.PushConstantsCommand.Stages.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.Backend.PushConstantsCommand.Stages.init -> void
 BrutalEngine.Graphics.Backend.ResourceState
 BrutalEngine.Graphics.Backend.ResourceState.ColorTarget = 10 -> BrutalEngine.Graphics.Backend.ResourceState
 BrutalEngine.Graphics.Backend.ResourceState.CopyDestination = 2 -> BrutalEngine.Graphics.Backend.ResourceState
@@ -312,6 +340,42 @@ BrutalEngine.Graphics.Backend.ResourceTransition.MipLevelCount.init -> void
 BrutalEngine.Graphics.Backend.ResourceTransition.Resource.get -> ulong
 BrutalEngine.Graphics.Backend.ResourceTransition.Resource.init -> void
 BrutalEngine.Graphics.Backend.ResourceTransition.ResourceTransition() -> void
+BrutalEngine.Graphics.Backend.SetBindGroupCommand
+BrutalEngine.Graphics.Backend.SetBindGroupCommand.BindGroup.get -> ulong
+BrutalEngine.Graphics.Backend.SetBindGroupCommand.BindGroup.init -> void
+BrutalEngine.Graphics.Backend.SetBindGroupCommand.Index.get -> int
+BrutalEngine.Graphics.Backend.SetBindGroupCommand.Index.init -> void
+BrutalEngine.Graphics.Backend.SetBindGroupCommand.SetBindGroupCommand() -> void
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.Buffer.get -> ulong
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.Buffer.init -> void
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.Format.get -> BrutalEngine.Graphics.IndexFormat
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.Format.init -> void
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.Offset.get -> long
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.Offset.init -> void
+BrutalEngine.Graphics.Backend.SetIndexBufferCommand.SetIndexBufferCommand() -> void
+BrutalEngine.Graphics.Backend.SetPipelineCommand
+BrutalEngine.Graphics.Backend.SetPipelineCommand.IsCompute.get -> bool
+BrutalEngine.Graphics.Backend.SetPipelineCommand.IsCompute.init -> void
+BrutalEngine.Graphics.Backend.SetPipelineCommand.Pipeline.get -> ulong
+BrutalEngine.Graphics.Backend.SetPipelineCommand.Pipeline.init -> void
+BrutalEngine.Graphics.Backend.SetPipelineCommand.SetPipelineCommand() -> void
+BrutalEngine.Graphics.Backend.SetScissorCommand
+BrutalEngine.Graphics.Backend.SetScissorCommand.Scissor.get -> BrutalEngine.Graphics.ScissorRect
+BrutalEngine.Graphics.Backend.SetScissorCommand.Scissor.init -> void
+BrutalEngine.Graphics.Backend.SetScissorCommand.SetScissorCommand() -> void
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.Buffer.get -> ulong
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.Buffer.init -> void
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.Offset.get -> long
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.Offset.init -> void
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.SetVertexBufferCommand() -> void
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.Slot.get -> int
+BrutalEngine.Graphics.Backend.SetVertexBufferCommand.Slot.init -> void
+BrutalEngine.Graphics.Backend.SetViewportCommand
+BrutalEngine.Graphics.Backend.SetViewportCommand.SetViewportCommand() -> void
+BrutalEngine.Graphics.Backend.SetViewportCommand.Viewport.get -> BrutalEngine.Graphics.Viewport
+BrutalEngine.Graphics.Backend.SetViewportCommand.Viewport.init -> void
 BrutalEngine.Graphics.Backend.SwapchainImageUse
 BrutalEngine.Graphics.Backend.SwapchainImageUse.Deconstruct(out ulong Swapchain, out int ImageIndex) -> void
 BrutalEngine.Graphics.Backend.SwapchainImageUse.Equals(BrutalEngine.Graphics.Backend.SwapchainImageUse other) -> bool

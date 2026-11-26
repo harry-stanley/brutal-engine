@@ -968,13 +968,13 @@ Each record in the stream is a `CommandKind` with an unmanaged payload struct of
 | `BeginRenderPass` | `BeginRenderPassCommand`: color count, has depth, label, timestamp query index (-1 = none) | `AttachmentCommand[color count + (has depth ? 1 : 0)]`, colors first: view id, load, store, color clear (`ColorValue`, used by color attachments), depth clear (`float`, used by the depth attachment) |
 | `BeginComputePass` | `BeginComputePassCommand`: label, timestamp query index (-1 = none) | none |
 | `EndRenderPass`, `EndComputePass` | `EndPassCommand`, shared: timestamp query index (-1 = none) | none |
-| `SetPipeline` | pipeline id, is compute | none |
-| `SetBindGroup` | index, bind group id | none |
-| `SetVertexBuffer`, `SetIndexBuffer` | slot or index format, buffer id, offset | none |
-| `SetViewport`, `SetScissor` | `Viewport`, `ScissorRect` | none |
-| `PushConstants` | stages, offset, size | `byte[size]` |
-| `Draw`, `DrawIndexed`, `Dispatch` | `DrawArguments`, `DrawIndexedArguments`, group counts | none |
-| `PushDebugGroup`, `PopDebugGroup` | label | none |
+| `SetPipeline` | `SetPipelineCommand`: pipeline id, is compute | none |
+| `SetBindGroup` | `SetBindGroupCommand`: index, bind group id | none |
+| `SetVertexBuffer`, `SetIndexBuffer` | `SetVertexBufferCommand`: slot, buffer id, offset; `SetIndexBufferCommand`: `IndexFormat`, buffer id, offset (one struct each) | none |
+| `SetViewport`, `SetScissor` | `SetViewportCommand` holding a `Viewport`, `SetScissorCommand` holding a `ScissorRect` | none |
+| `PushConstants` | `PushConstantsCommand`: stages (`ShaderStages`), offset, size | `byte[size]` |
+| `Draw`, `DrawIndexed`, `Dispatch` | `DrawCommand` holding a `DrawArguments`, `DrawIndexedCommand` holding a `DrawIndexedArguments`, `DispatchCommand`: group counts x, y, z | none |
+| `PushDebugGroup`, `PopDebugGroup` | `DebugGroupCommand`, shared: label (for a pop, the innermost open group's) | none |
 | `ClearSwapchainImage` | `ClearSwapchainImageCommand`: index into `FramePlan.Acquired` (an acquired image no pass wrote) | none |
 
 Contract rules:
