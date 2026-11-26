@@ -529,6 +529,12 @@ BrutalEngine.Graphics.FormatSupport.Storage = 32 -> BrutalEngine.Graphics.Format
 BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.FrameStatus.DeviceLost = 1 -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.FrameStatus.Ready = 0 -> BrutalEngine.Graphics.FrameStatus
+BrutalEngine.Graphics.GpuResourceLeakException
+BrutalEngine.Graphics.GpuResourceLeakException.GpuResourceLeakException() -> void
+BrutalEngine.Graphics.GpuResourceLeakException.GpuResourceLeakException(System.Collections.Generic.IReadOnlyList<string!>! leakedObjects) -> void
+BrutalEngine.Graphics.GpuResourceLeakException.GpuResourceLeakException(string! message) -> void
+BrutalEngine.Graphics.GpuResourceLeakException.GpuResourceLeakException(string! message, System.Exception! innerException) -> void
+BrutalEngine.Graphics.GpuResourceLeakException.LeakedObjects.get -> System.Collections.Generic.IReadOnlyList<string!>!
 BrutalEngine.Graphics.GraphicsAdapterInfo
 BrutalEngine.Graphics.GraphicsAdapterInfo.<Clone>$() -> BrutalEngine.Graphics.GraphicsAdapterInfo!
 BrutalEngine.Graphics.GraphicsAdapterInfo.ApiVersion.get -> string!
@@ -557,6 +563,7 @@ BrutalEngine.Graphics.GraphicsDevice
 BrutalEngine.Graphics.GraphicsDevice.Adapter.get -> BrutalEngine.Graphics.GraphicsAdapterInfo!
 BrutalEngine.Graphics.GraphicsDevice.Capabilities.get -> BrutalEngine.Graphics.GraphicsCapabilities!
 BrutalEngine.Graphics.GraphicsDevice.CreateBuffer(in BrutalEngine.Graphics.BufferDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.BufferHandle>
+BrutalEngine.Graphics.GraphicsDevice.CreateDebugLabel(string! name) -> BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.GraphicsDevice.CreateSampler(in BrutalEngine.Graphics.SamplerDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.SamplerHandle>
 BrutalEngine.Graphics.GraphicsDevice.CreateTexture(in BrutalEngine.Graphics.TextureDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.TextureHandle>
 BrutalEngine.Graphics.GraphicsDevice.CreateTextureView(in BrutalEngine.Graphics.TextureViewDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.TextureViewHandle>
@@ -572,8 +579,11 @@ BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.SwapchainHand
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureHandle texture) -> void
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureViewHandle view) -> void
 BrutalEngine.Graphics.GraphicsDevice.Dispose() -> void
+BrutalEngine.Graphics.GraphicsDevice.GetDebugLabelName(BrutalEngine.Graphics.DebugLabel label) -> string!
 BrutalEngine.Graphics.GraphicsDevice.GetDefaultView(BrutalEngine.Graphics.TextureHandle texture) -> BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.GraphicsDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.GraphicsDevice.Statistics.get -> BrutalEngine.Graphics.GraphicsStatistics
+BrutalEngine.Graphics.GraphicsDevice.ThrowIfLeaks() -> void
 BrutalEngine.Graphics.GraphicsDeviceOptions
 BrutalEngine.Graphics.GraphicsDeviceOptions.<Clone>$() -> BrutalEngine.Graphics.GraphicsDeviceOptions!
 BrutalEngine.Graphics.GraphicsDeviceOptions.Adapter.get -> BrutalEngine.Graphics.AdapterSelection
@@ -633,6 +643,23 @@ BrutalEngine.Graphics.GraphicsPipelineHandle
 BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(BrutalEngine.Graphics.GraphicsPipelineHandle other) -> bool
 BrutalEngine.Graphics.GraphicsPipelineHandle.GraphicsPipelineHandle() -> void
 BrutalEngine.Graphics.GraphicsPipelineHandle.IsNull.get -> bool
+BrutalEngine.Graphics.GraphicsStatistics
+BrutalEngine.Graphics.GraphicsStatistics.Deconstruct(out long FramesSubmitted, out long UploadBytesLastFrame, out long UploadOverflowBytes, out int LiveObjects, out long ValidationErrors, out long ValidationWarnings) -> void
+BrutalEngine.Graphics.GraphicsStatistics.Equals(BrutalEngine.Graphics.GraphicsStatistics other) -> bool
+BrutalEngine.Graphics.GraphicsStatistics.FramesSubmitted.get -> long
+BrutalEngine.Graphics.GraphicsStatistics.FramesSubmitted.init -> void
+BrutalEngine.Graphics.GraphicsStatistics.GraphicsStatistics() -> void
+BrutalEngine.Graphics.GraphicsStatistics.GraphicsStatistics(long FramesSubmitted, long UploadBytesLastFrame, long UploadOverflowBytes, int LiveObjects, long ValidationErrors, long ValidationWarnings) -> void
+BrutalEngine.Graphics.GraphicsStatistics.LiveObjects.get -> int
+BrutalEngine.Graphics.GraphicsStatistics.LiveObjects.init -> void
+BrutalEngine.Graphics.GraphicsStatistics.UploadBytesLastFrame.get -> long
+BrutalEngine.Graphics.GraphicsStatistics.UploadBytesLastFrame.init -> void
+BrutalEngine.Graphics.GraphicsStatistics.UploadOverflowBytes.get -> long
+BrutalEngine.Graphics.GraphicsStatistics.UploadOverflowBytes.init -> void
+BrutalEngine.Graphics.GraphicsStatistics.ValidationErrors.get -> long
+BrutalEngine.Graphics.GraphicsStatistics.ValidationErrors.init -> void
+BrutalEngine.Graphics.GraphicsStatistics.ValidationWarnings.get -> long
+BrutalEngine.Graphics.GraphicsStatistics.ValidationWarnings.init -> void
 BrutalEngine.Graphics.IndexFormat
 BrutalEngine.Graphics.IndexFormat.Uint16 = 0 -> BrutalEngine.Graphics.IndexFormat
 BrutalEngine.Graphics.IndexFormat.Uint32 = 1 -> BrutalEngine.Graphics.IndexFormat
@@ -976,6 +1003,8 @@ override BrutalEngine.Graphics.GraphicsLimits.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsPipelineHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.GraphicsPipelineHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsPipelineHandle.ToString() -> string!
+override BrutalEngine.Graphics.GraphicsStatistics.GetHashCode() -> int
+override BrutalEngine.Graphics.GraphicsStatistics.ToString() -> string!
 override BrutalEngine.Graphics.PipelineLayoutHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.PipelineLayoutHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.PipelineLayoutHandle.ToString() -> string!
@@ -1074,6 +1103,8 @@ static BrutalEngine.Graphics.GraphicsLimits.operator !=(BrutalEngine.Graphics.Gr
 static BrutalEngine.Graphics.GraphicsLimits.operator ==(BrutalEngine.Graphics.GraphicsLimits left, BrutalEngine.Graphics.GraphicsLimits right) -> bool
 static BrutalEngine.Graphics.GraphicsPipelineHandle.operator !=(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
 static BrutalEngine.Graphics.GraphicsPipelineHandle.operator ==(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
+static BrutalEngine.Graphics.GraphicsStatistics.operator !=(BrutalEngine.Graphics.GraphicsStatistics left, BrutalEngine.Graphics.GraphicsStatistics right) -> bool
+static BrutalEngine.Graphics.GraphicsStatistics.operator ==(BrutalEngine.Graphics.GraphicsStatistics left, BrutalEngine.Graphics.GraphicsStatistics right) -> bool
 static BrutalEngine.Graphics.PipelineLayoutHandle.operator !=(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
 static BrutalEngine.Graphics.PipelineLayoutHandle.operator ==(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
 static BrutalEngine.Graphics.SamplerDescription.operator !=(BrutalEngine.Graphics.SamplerDescription left, BrutalEngine.Graphics.SamplerDescription right) -> bool
@@ -1125,6 +1156,7 @@ static BrutalEngine.Graphics.Viewport.operator ==(BrutalEngine.Graphics.Viewport
 ~override BrutalEngine.Graphics.DrawArguments.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.DrawIndexedArguments.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.GraphicsStatistics.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SamplerDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.ScissorRect.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SwapchainImage.Equals(object obj) -> bool

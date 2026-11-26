@@ -185,29 +185,40 @@ internal sealed class HandleTables
         return id;
     }
 
-    /// <summary>Removes every live object, newest first, and returns them in that order.</summary>
-    /// <returns>Each object's kind, backend id and debug name, in reverse creation order. Allocates the list.</returns>
-    public List<LiveObject> TakeAll()
+    /// <summary>Lists every live object, oldest first, without changing anything.</summary>
+    /// <returns>Each object's kind, backend id and debug name, in creation order. Allocates the list.</returns>
+    public List<LiveObject> ListLive()
     {
         var live = new List<LiveObject>(LiveCount);
         for (int kind = 0; kind < KindCount; kind++)
         {
-            Entry[] entries = _entries[kind];
-            for (int index = 0; index < entries.Length; index++)
+            foreach (Entry entry in _entries[kind])
             {
-                if (entries[index].Id != 0)
+                if (entry.Id != 0)
                 {
-                    live.Add(new LiveObject((BackendObjectKind)kind, entries[index].Id, entries[index].DebugName, entries[index].Sequence));
+                    live.Add(new LiveObject((BackendObjectKind)kind, entry.Id, entry.DebugName, entry.Sequence));
                 }
             }
+        }
 
+        live.Sort(static (a, b) => a.Sequence.CompareTo(b.Sequence));
+        return live;
+    }
+
+    /// <summary>Removes every live object and returns them newest first.</summary>
+    /// <returns>Each object's kind, backend id and debug name, in reverse creation order. Allocates the list.</returns>
+    public List<LiveObject> TakeAll()
+    {
+        List<LiveObject> live = ListLive();
+        live.Reverse();
+        for (int kind = 0; kind < KindCount; kind++)
+        {
             _allocators[kind].Clear();
-            Array.Clear(entries);
+            Array.Clear(_entries[kind]);
         }
 
         Array.Clear(_textures);
         _objects.Clear();
-        live.Sort(static (a, b) => b.Sequence.CompareTo(a.Sequence));
         return live;
     }
 

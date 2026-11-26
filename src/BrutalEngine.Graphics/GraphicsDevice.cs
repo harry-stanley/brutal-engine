@@ -31,8 +31,11 @@ namespace BrutalEngine.Graphics;
 /// required feature.
 /// </para>
 /// <para>
-/// <b>Allocation.</b> <see cref="Create"/> and <see cref="EnumerateAdapters"/> allocate. <see cref="Adapter"/>,
-/// <see cref="Capabilities"/> and <see cref="GetFormatSupport"/> allocate nothing, except an exception they throw.
+/// <b>Allocation.</b> <see cref="Create"/>, <see cref="EnumerateAdapters"/>, object creation, a new label,
+/// <see cref="ThrowIfLeaks"/> with leaks and <see cref="Dispose"/> allocate. <see cref="Adapter"/>,
+/// <see cref="Capabilities"/>, <see cref="GetFormatSupport"/>, every <c>Destroy</c>, <see cref="GetDefaultView"/>,
+/// <see cref="CreateDebugLabel"/> for a name already interned, <see cref="GetDebugLabelName"/> and
+/// <see cref="Statistics"/> allocate nothing, except an exception they throw.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice : IDisposable
@@ -40,14 +43,21 @@ public sealed partial class GraphicsDevice : IDisposable
     private const string LogCategoryName = "Graphics";
 
     private readonly IBackendDevice _backend;
+    private readonly BackendObjectTable _objects;
     private readonly HandleTables _handles;
+    private readonly HandleAllocator _labels = new();
+    private readonly Dictionary<string, DebugLabel> _labelsByName = new(StringComparer.Ordinal);
+    private readonly LogCategory _log;
     private readonly ThreadAffinity _owner;
+    private string[] _labelNames = [];
     private bool _disposed;
 
-    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, ThreadAffinity owner)
+    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner)
     {
         _backend = backend;
+        _objects = objects;
         _handles = new HandleTables(objects);
+        _log = log;
         _owner = owner;
         Adapter = backend.Adapter;
         Capabilities = backend.Capabilities;
@@ -111,7 +121,8 @@ public sealed partial class GraphicsDevice : IDisposable
             return adapters.Error;
         }
 
-        LogRejections(options.Logger.CreateCategory(LogCategoryName), list);
+        LogCategory log = options.Logger.CreateCategory(LogCategoryName);
+        LogRejections(log, list);
         if (!TrySelect(list, options.Adapter, out int adapterIndex, out error))
         {
             return error;
@@ -133,7 +144,7 @@ public sealed partial class GraphicsDevice : IDisposable
                 $"Create: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
         }
 
-        return new GraphicsDevice(device, objects, ThreadAffinity.CurrentThread());
+        return new GraphicsDevice(device, objects, log, ThreadAffinity.CurrentThread());
     }
 
     /// <summary>Lists every adapter the backend can see for these options, each with the reasons it can't serve them.</summary>
@@ -185,13 +196,132 @@ public sealed partial class GraphicsDevice : IDisposable
         return _backend.GetFormatSupport(format);
     }
 
+    /// <summary>A snapshot of the device's counters.</summary>
+    /// <value>
+    /// The live objects over every kind (default texture views included) and the backend's validation counts; the frame
+    /// and upload counters are 0 until frames land.
+    /// </value>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Read from a thread other than the owner thread.</exception>
+    /// <remarks>Owner thread. Allocates nothing, except the exception.</remarks>
+    public GraphicsStatistics Statistics
+    {
+        get
+        {
+            ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(Statistics));
+            return new GraphicsStatistics(0, 0, 0, _handles.LiveCount, _backend.ValidationErrors, _backend.ValidationWarnings);
+        }
+    }
+
+    /// <summary>Interns a debug label: a name for passes and debug groups that the frame loop passes without strings.</summary>
+    /// <param name="name">The label's name, compared ordinally.</param>
+    /// <returns>
+    /// The label; the same one for every call with an equal name. It stays valid for the device's lifetime: labels are never
+    /// removed.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty: <c>default(DebugLabel)</c> already means no label.</exception>
+    /// <exception cref="OutOfMemoryException">A table couldn't grow; no label was created.</exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    /// <remarks>
+    /// The first call for a name allocates (the name's UTF-8 copy the backend reads, and the lookup entries); later calls
+    /// for the same name allocate nothing. Owner thread.
+    /// </remarks>
+    public DebugLabel CreateDebugLabel(string name)
+    {
+        ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(CreateDebugLabel));
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (_labelsByName.TryGetValue(name, out DebugLabel existing))
+        {
+            return existing;
+        }
+
+        Handle handle = _labels.Allocate();
+        var label = new DebugLabel(handle);
+        try
+        {
+            if (handle.Index >= (uint)_labelNames.Length)
+            {
+                Array.Resize(ref _labelNames, Math.Max(_labelNames.Length * 2, (int)handle.Index + 1));
+            }
+
+            _labelsByName.Add(name, label);
+            try
+            {
+                _objects.SetLabel(label, name);
+            }
+            catch
+            {
+                _ = _labelsByName.Remove(name);
+                throw;
+            }
+        }
+        catch
+        {
+            // Out of memory part-way: nothing refers to the label, so its slot is freed and a later call starts afresh.
+            _labels.Free(handle);
+            throw;
+        }
+
+        _labelNames[handle.Index] = name;
+        return label;
+    }
+
+    /// <summary>Returns the name a debug label was interned with.</summary>
+    /// <param name="label">A label of this device, or <c>default</c> for no label.</param>
+    /// <returns>The interned string itself, not a copy; empty for <c>default</c>.</returns>
+    /// <exception cref="StaleHandleException"><paramref name="label"/> isn't null and wasn't interned by this device.</exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    /// <remarks>Owner thread. Allocates nothing, except the exception.</remarks>
+    public string GetDebugLabelName(DebugLabel label)
+    {
+        ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(GetDebugLabelName));
+        if (label.IsNull)
+        {
+            return string.Empty;
+        }
+
+        return _labels.IsValid(label.Value) ? _labelNames[label.Value.Index] : throw new StaleHandleException(label.Value);
+    }
+
+    /// <summary>Throws if any GPU object is still alive: tests call it before <see cref="Dispose"/>.</summary>
+    /// <exception cref="GpuResourceLeakException">
+    /// Objects are alive; <see cref="GpuResourceLeakException.LeakedObjects"/> lists each, oldest first, as
+    /// <c>Kind 'DebugName'</c>. Nothing is destroyed.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    /// <remarks>Default texture views count as objects. Owner thread. Allocates nothing when nothing leaks.</remarks>
+    public void ThrowIfLeaks()
+    {
+        ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(ThrowIfLeaks));
+        if (_handles.LiveCount == 0)
+        {
+            return;
+        }
+
+        List<HandleTables.LiveObject> live = _handles.ListLive();
+        string[] lines = new string[live.Count];
+        for (int i = 0; i < lines.Length; i++)
+        {
+            lines[i] = Describe(live[i]);
+        }
+
+        throw new GpuResourceLeakException(lines);
+    }
+
     /// <summary>
-    /// Destroys every object still alive, newest first, then disposes the backend device, once; later calls do nothing.
+    /// Logs every object still alive as a leak, destroys them newest first, then disposes the backend device, once; later
+    /// calls do nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>
-    /// Afterwards every member except <see cref="Dispose"/>, <see cref="Adapter"/> and <see cref="Capabilities"/> throws
-    /// <see cref="ObjectDisposedException"/>. The backend, logger, allocator and compatible window are left alone.
+    /// Each leaked object is one <see cref="LogLevel.Error"/> line under <c>"Graphics"</c>, oldest first, with its kind and
+    /// debug name. Afterwards every member except <see cref="Dispose"/>, <see cref="Adapter"/> and <see cref="Capabilities"/>
+    /// throws <see cref="ObjectDisposedException"/>. The backend, logger, allocator and compatible window are left alone.
+    /// Allocates.
     /// </remarks>
     public void Dispose()
     {
@@ -202,6 +332,11 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         _disposed = true;
+        foreach (HandleTables.LiveObject leaked in _handles.ListLive())
+        {
+            _log.Error($"Leak: {Describe(leaked)} was still alive when the device was disposed.");
+        }
+
         foreach (HandleTables.LiveObject live in _handles.TakeAll())
         {
             _backend.Destroy(live.Kind, live.Id);
@@ -310,6 +445,8 @@ public sealed partial class GraphicsDevice : IDisposable
             }
         }
     }
+
+    private static string Describe(HandleTables.LiveObject live) => $"{live.Kind} '{live.DebugName}'";
 
     private void ThrowIfUnusable(string apiName)
     {

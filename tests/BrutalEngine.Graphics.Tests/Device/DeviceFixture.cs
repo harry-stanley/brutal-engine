@@ -26,7 +26,8 @@ internal sealed class DeviceFixture : IDisposable
 
     public TrackingAllocator Allocator { get; } = new(new HeapAllocator(), "graphics-device-tests");
 
-    public MemoryLogSink Sink { get; } = new(64, 16 * 1024);
+    // Room for every leak line a property test's device can log at Dispose, so no entry is dropped.
+    public MemoryLogSink Sink { get; } = new(1024, 256 * 1024);
 
     public Logger Logger { get; }
 
