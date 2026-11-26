@@ -97,7 +97,14 @@ public sealed class SdlVulkanSurfaceSourceTests
         Assert.NotEqual(0, result.Value);
         try
         {
-            Assert.Equal(Brutal.VulkanApi.VkResult.Success, harness.QueryCapabilities(result.Value));
+            Brutal.VulkanApi.VkResult queried = harness.QueryCapabilities(result.Value, out Brutal.VulkanApi.VkSurfaceCapabilitiesKHR capabilities);
+
+            // Only a driver that really queried the surface fills these in: the Vulkan spec requires minImageCount >= 1,
+            // and a usable surface has a non-zero maximum extent, so a query that never reached a device can't pass.
+            Assert.Equal(Brutal.VulkanApi.VkResult.Success, queried);
+            Assert.True(capabilities.MinImageCount >= 1, $"minImageCount is {capabilities.MinImageCount}.");
+            Assert.True(capabilities.MaxImageExtent.Width > 0, $"maxImageExtent.width is {capabilities.MaxImageExtent.Width}.");
+            Assert.True(capabilities.MaxImageExtent.Height > 0, $"maxImageExtent.height is {capabilities.MaxImageExtent.Height}.");
         }
         finally
         {

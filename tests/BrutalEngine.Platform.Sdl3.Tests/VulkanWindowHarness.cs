@@ -92,19 +92,58 @@ internal sealed unsafe class VulkanWindowHarness : IDisposable, SdlVulkanSurface
         return _instance.VkHandle;
     }
 
-    /// <summary>Calls vkGetPhysicalDeviceSurfaceCapabilitiesKHR on the first physical device: a surface it accepts is usable.</summary>
-    public VkResult QueryCapabilities(nint surface)
+    /// <summary>
+    /// Asks every physical device for the surface's capabilities, as a backend choosing a device would: a host with more
+    /// than one driver can list a device that can't use the surface (the NVIDIA driver lacks VK_EXT_headless_surface)
+    /// before one that can (lavapipe), so the first device alone doesn't decide. Returns Success with the capabilities
+    /// of the first device that accepts the surface; when none does, the first device's result with zeroed capabilities.
+    /// Fails the test when the instance has no physical device.
+    /// </summary>
+    public VkResult QueryCapabilities(nint surface, out VkSurfaceCapabilitiesKHR capabilities)
     {
-        // Sound: count, device and capabilities are locals of this frame, which outlives both calls, and count is 1, so
-        // the driver writes at most one handle into device; device is read only after Assert.Equal(1, count) proves the
-        // driver wrote it.
-        int count = 1;
-        VkPhysicalDevice device;
-        VkResult enumerated = _table.vkEnumeratePhysicalDevices.Invoke(_instance, &count, &device);
+        int count = 0;
+
+        // Sound: count is a local of this frame, which outlives the call, and the null array asks only for the count.
+        VkResult counted = _table.vkEnumeratePhysicalDevices.Invoke(_instance, &count, null);
+        Assert.Equal(VkResult.Success, counted);
+        Assert.True(count > 0, "The Vulkan instance has no physical device to query the surface with.");
+
+        var devices = new VkPhysicalDevice[count];
+        VkResult enumerated;
+
+        // Sound: devices is pinned for the call and count, a local, holds its length, so the driver writes at most
+        // devices.Length handles and sets count to the number it wrote.
+        fixed (VkPhysicalDevice* pinned = devices)
+        {
+            enumerated = _table.vkEnumeratePhysicalDevices.Invoke(_instance, &count, pinned);
+        }
+
+        // Incomplete means a device appeared between the two calls; the array still holds count valid handles.
         Assert.True(enumerated is VkResult.Success or VkResult.Incomplete, enumerated.ToString());
-        Assert.Equal(1, count);
-        VkSurfaceCapabilitiesKHR capabilities;
-        return _table.vkGetPhysicalDeviceSurfaceCapabilitiesKHR.Invoke(device, new VkSurfaceKHR(surface), &capabilities);
+        Assert.InRange(count, 1, devices.Length);
+
+        VkResult firstResult = VkResult.Success;
+        for (int i = 0; i < count; i++)
+        {
+            VkSurfaceCapabilitiesKHR queried;
+
+            // Sound: queried is a local of this frame, which outlives the call, and the device handle came from the
+            // instance that owns the surface.
+            VkResult result = _table.vkGetPhysicalDeviceSurfaceCapabilitiesKHR.Invoke(devices[i], new VkSurfaceKHR(surface), &queried);
+            if (result == VkResult.Success)
+            {
+                capabilities = queried;
+                return result;
+            }
+
+            if (i == 0)
+            {
+                firstResult = result;
+            }
+        }
+
+        capabilities = default;
+        return firstResult;
     }
 
     /// <summary>Destroys a surface the source created, with vkDestroySurfaceKHR from the instance, as a backend would.</summary>
