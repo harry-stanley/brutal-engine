@@ -20,6 +20,13 @@ BrutalEngine.Graphics.AddressMode.ClampToBorder = 3 -> BrutalEngine.Graphics.Add
 BrutalEngine.Graphics.AddressMode.ClampToEdge = 0 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.MirrorRepeat = 2 -> BrutalEngine.Graphics.AddressMode
 BrutalEngine.Graphics.AddressMode.Repeat = 1 -> BrutalEngine.Graphics.AddressMode
+BrutalEngine.Graphics.Backend.WindowSurfaceSource
+BrutalEngine.Graphics.Backend.WindowSurfaceSource.CreateVulkanSurface(nint instance) -> BrutalEngine.Core.Result<nint>
+BrutalEngine.Graphics.Backend.WindowSurfaceSource.GetRequiredInstanceExtension(int index) -> System.ReadOnlySpan<byte>
+BrutalEngine.Graphics.Backend.WindowSurfaceSource.IsMinimised.get -> bool
+BrutalEngine.Graphics.Backend.WindowSurfaceSource.PixelHeight.get -> int
+BrutalEngine.Graphics.Backend.WindowSurfaceSource.PixelWidth.get -> int
+BrutalEngine.Graphics.Backend.WindowSurfaceSource.RequiredInstanceExtensionCount.get -> int
 BrutalEngine.Graphics.BindGroupHandle
 BrutalEngine.Graphics.BindGroupHandle.BindGroupHandle() -> void
 BrutalEngine.Graphics.BindGroupHandle.Equals(BrutalEngine.Graphics.BindGroupHandle other) -> bool

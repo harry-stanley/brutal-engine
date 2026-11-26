@@ -170,6 +170,13 @@
       "brutalengine.graphics": {
         "type": "Project",
         "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )",
+          "BrutalEngine.Platform": "[1.0.0, )"
+        }
+      },
+      "brutalengine.platform": {
+        "type": "Project",
+        "dependencies": {
           "BrutalEngine.Core": "[1.0.0, )"
         }
       }
