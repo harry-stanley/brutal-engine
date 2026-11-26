@@ -13,6 +13,9 @@ public enum LoadOp
     /// <summary>Clear the attachment to the attachment's clear value.</summary>
     Clear = 1,
 
-    /// <summary>The earlier contents aren't needed: the pass starts with undefined contents and must write every pixel it uses.</summary>
+    /// <summary>
+    /// The earlier contents aren't needed: the pass starts with undefined contents, so pixels the pass doesn't write are
+    /// undefined afterwards.
+    /// </summary>
     DontCare = 2,
 }

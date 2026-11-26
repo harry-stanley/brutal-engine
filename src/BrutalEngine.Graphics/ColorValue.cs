@@ -9,8 +9,9 @@ namespace BrutalEngine.Graphics;
 /// <param name="A">The alpha channel.</param>
 /// <remarks>
 /// <para>
-/// The channels are linear: an sRGB attachment encodes them when it is cleared, so the same value gives the same visible
-/// color on sRGB and linear targets. <c>default</c> is transparent black. The type itself accepts any values.
+/// The channels are linear: an sRGB attachment encodes them when it is cleared, and a linear (<c>Unorm</c>) attachment
+/// stores them as given (as <see cref="SwapchainFormat.Unorm"/> does). <c>default</c> is transparent black. The type
+/// itself accepts any values.
 /// </para>
 /// <para>
 /// A plain unmanaged value, so the command stream holds it as raw bytes. Equality compares every channel
