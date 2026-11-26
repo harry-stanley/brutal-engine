@@ -345,3 +345,300 @@ Exactly, per button action: `BeginFrame` adds the batch's press and release edge
 **`Rebase()`** zeroes every pending edge and delta and masks every control that is held now until it is released (as a context push does, section 4), so nothing that happened before the call reaches gameplay: the splash, a loading screen, the start of a recording (section 7). The frame view is untouched.
 
 Misuse: `BeginFixedStep` before the first `BeginFrame` is allowed (it reports nothing); views have no other state machine to break.
+
+## 4. Contexts
+
+A **context** is a named set of actions (gameplay, menu, chat). Active contexts form a stack; only actions of contexts in the stack can change state, and an action outside the stack reads idle.
+
+```csharp
+input.PushContext(menu);               // InvalidOperationException if already in the stack, or 16 deep
+input.PopContext(menu);                // InvalidOperationException unless menu is the top
+```
+
+- **Initial stack:** `InputOptions.InitialContexts` (bottom first), or the map's first context. `SetMap` keeps the stack, dropping contexts the new map lacks.
+- **Changes apply at the call.** The current views keep what they sampled; the next `BeginFrame` evaluates actions through the new stack. A pending fixed edge of an action whose context was just covered is still delivered: it happened while the context was active.
+
+**Consume or pass through, per action.** Visibility is computed whenever the stack or the bindings change (into arrays allocated at `SetMap`, so a push allocates nothing), walking from the top down with a set of blocked controls, empty at the top:
+
+1. A context sees every control that isn't blocked.
+2. Its actions that aren't `PassThrough` then block every control their bindings use: simple controls and composite parts. Modifiers don't block, so a menu's `Ctrl+S` leaves `Ctrl` to gameplay.
+3. A `TextEntry` context blocks every `Key` and `Keycode` control except those its own actions bind (Enter to send, Escape to close), so typing never moves the character.
+4. A context with `BlocksLowerContexts` blocks everything: contexts below it see nothing (a pause menu).
+
+Consumption is **by binding, not by press**: while a menu that binds `Space` is above gameplay, gameplay never sees `Space`, even when the menu's action is idle. That keeps the rule static and testable.
+
+**Text entry.** `Text` holds the frame's committed text only while the top context is `TextEntry`; editing (cursor, selection, IME composition) belongs to M3's UI text fields. `WantsTextInput` tells the host to start OS text input (section 2).
+
+**Held controls across a change.** When a push or pop makes a control **newly visible** to a context while the control is held (the `Escape` that closed the menu, the click that opened it), that context ignores the control until it is released, so it never triggers there on the way in. Where visibility doesn't change, a held control keeps working: pushing a pass-through HUD context doesn't stop a held move key. Where a control becomes hidden, the action loses it, and a button that only that control held reports a release edge at the next `BeginFrame`.
+
+## 5. Rebinding and user bindings
+
+```csharp
+public readonly record struct BindingSlot(ActionId Action, int Binding, CompositePart Part);  // Part None for a simple binding
+
+public sealed record RebindRequest
+{
+    public required BindingSlot Slot { get; init; }          // Binding == the action's count appends a binding (up to 16)
+    public RebindDevices Devices { get; init; } = RebindDevices.KeyboardAndMouse | RebindDevices.Gamepad;
+    public RebindKeyMode KeyMode { get; init; } = RebindKeyMode.Scancode;
+    public IReadOnlyList<InputControl> CancelControls { get; init; } = [InputControl.ForKey(Scancode.Escape)];
+    public IReadOnlyList<InputControl> ExcludedControls { get; init; } = [];
+    public float AxisThreshold { get; init; } = 0.5f;        // gamepad axes, (0, 1)
+}
+
+[Flags] public enum RebindDevices : byte { None = 0, KeyboardAndMouse = 1, Gamepad = 2 }
+public enum RebindKeyMode : byte { Scancode = 0, Keycode }
+public enum RebindState : byte { Listening = 0, Completed, Cancelled, Applied }
+public enum RebindResolution : byte { KeepConflicts = 0, UnbindConflicts, Swap }
+
+public sealed class RebindOperation
+{
+    public RebindRequest Request { get; }
+    public RebindState State { get; }
+    public InputControl Control { get; }                      // when Completed: the captured control
+    public IReadOnlyList<BindingSlot> Conflicts { get; }      // when Completed: other slots of the context bound to it
+    public void Cancel();                                     // Listening or Completed -> Cancelled
+    public void Apply(RebindResolution resolution);           // Completed -> Applied
+}
+```
+
+**The flow.** `StartRebind` validates the request (`ArgumentException` for a slot that doesn't exist or a part that doesn't match the binding) and returns an operation in `Listening`; a second one while one listens is an `InvalidOperationException`. While it listens, **every action reads idle**, and controls held when it started are ignored until released (the click on "Rebind" isn't captured). During `BeginFrame`, the first qualifying press completes it:
+
+- a `CancelControls` press cancels it; `ExcludedControls` are ignored;
+- for a button-like slot: a key (`Key` or `Keycode` by `KeyMode`), a mouse button, a wheel step, a gamepad button, or a gamepad axis crossing `AxisThreshold` from rest as a half axis; for a `Vector2` part or a simple `Axis1D` binding, a gamepad axis crossing it as a full axis. Mouse motion is never captured by listening; menus offer it through `SetBinding`.
+
+The completing press is consumed: it is ignored until released, so it doesn't fire the action the moment the operation completes. `Conflicts` lists the other slots bound to the captured control in the same context, the action's own other bindings included. `Apply` sets the slot and, for `UnbindConflicts`, unbinds the conflicts; for `Swap`, gives the first conflict (in action order) the slot's previous control and unbinds the rest. `SetBinding(slot, control)` does the same without listening; it throws `ArgumentException` for a control the slot can't take (section 1's rules). Every change is recorded as an override of the map's default, so `ResetBinding` and `ResetBindings` restore defaults and a map update still brings new defaults for slots the player never touched. An appended slot (`Binding` equal to the action's binding count) is a simple binding, so its `Part` must be `None`. `SetMap` cancels a listening or completed operation.
+
+**The user-bindings file**, `user://input/<map name>.json` by default:
+
+```json
+{
+  "version": 1,
+  "map": "player",
+  "overrides": [
+    { "action": "jump", "binding": 0, "control": "key:Space" },
+    { "action": "move", "binding": 0, "part": "Up", "control": "key:Up" },
+    { "action": "fire", "binding": 1, "control": null }
+  ]
+}
+```
+
+```csharp
+public readonly record struct BindingOverride(string Action, int Binding, CompositePart Part, InputControl Control); // default Control: unbound
+
+public sealed class UserBindings                         // immutable; thread-safe
+{
+    public string MapName { get; }
+    public IReadOnlyList<BindingOverride> Overrides { get; }
+    public static Result<UserBindings> FromJson(ReadOnlySpan<byte> utf8Json);
+    public byte[] ToJson();
+}
+
+public sealed record UserBindingsReport(int Applied, IReadOnlyList<string> Ignored);
+
+public static class UserBindingsFile
+{
+    public static VfsPath GetDefaultPath(InputMap map);  // user://input/<name>.json
+    public static Result<UserBindingsReport> Load(InputService input, VirtualFileSystem files, VfsPath path);
+    public static Result Save(InputService input, VirtualFileSystem files, VfsPath path);
+}
+```
+
+- **Serialisation** is source-generated `System.Text.Json` over internal DTOs (`[JsonSerializable]` on an internal `JsonSerializerContext`): no reflection, NativeAOT-safe. Comments and trailing commas are rejected; unknown properties are skipped, so a later build of the game can add a property within version 1 without older builds refusing the file (input maps, which come with the game, are stricter: section 9). Files are at most 1 MiB and 4,096 overrides.
+- **Versioned.** `version` 1 is the only version. A higher one fails with `ErrorKind.Unsupported` ("written by a newer version of the game"); a missing or lower one with `InvalidData`. A future version 2 reads version 1 files through a migration step in `FromJson`; every version bump adds one.
+- **A bad file never stops the game.** `Load` returns a failure and leaves the service unchanged for a corrupt file (`InvalidData`), a newer version (`Unsupported`), a file for another map (`InvalidData`) or an I/O error (the VFS's kinds, `docs/design/platform.md:425-433`); a missing file is a success with nothing applied. Inside a good file, each entry that names an unknown action, a binding index above 15, a part that doesn't match the binding, a second entry for the same slot, or a control the slot can't take is skipped and listed in `Ignored`; the rest apply. An index past the map's bindings adds a simple binding there (any gap stays unbound). Overrides are keyed by action name, binding index and part, so `SetMap` re-applies them to the new map and drops (and logs) those that no longer fit. `Load` logs a `Warning` for any failure or ignored entry; the game continues with the defaults. The file is only rewritten by `Save`, through the VFS's atomic replace (`WriteAllBytes`, `docs/design/platform.md:395`), so a crash never leaves half a file. Saving after a newer-version file was refused overwrites it; that is the player's choice made by rebinding.
+- `VirtualFileSystem` and `VfsPath` are Platform's (`VfsPath` is on `main`, `src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:605`; `VirtualFileSystem` is specified in the platform note, section 5, and in review). The pure `FromJson`/`ToJson` pair works without either, which is what the tests use.
+
+## 6. Gamepads
+
+Nothing in this section can run until Platform delivers gamepad events (decision above); it is the contract for that Platform issue and for Input's gamepad issue.
+
+### The device model
+
+- A **gamepad** is an SDL gamepad: a controller SDL maps to the standard layout. Joysticks without a mapping, touchpads, sensors and lights are out of scope.
+- A gamepad is identified by a **`GamepadId`**, SDL's joystick instance id, which SDL documents as unique for as long as the device stays connected and not reused within a process (SDL's documentation; not observed here). A reconnected pad is a new id.
+- Per gamepad, Input keeps 26 buttons (a bit set) and 6 axes (floats), zeroed when it is added. At most 16 gamepads are tracked; more are ignored and logged once.
+
+### Players and assignment
+
+- `InputOptions.Players` players (1..8), each with its own action state and its own `Frame` and `Fixed` views. The context stack is shared: one screen, one menu, one UI focus.
+- **Keyboard and mouse** belong to player 0 unless `AssignKeyboardAndMouse` moves them.
+- **Gamepads** follow `GamepadAssignment`: `FirstFreePlayer` (the default) assigns a gamepad, when it is added, to the lowest-index player without one, or leaves it unassigned when every player has one; `Manual` assigns none, and the game calls `AssignGamepad` (a "press Start to join" screen reads `IsGamepadButtonDown` for unassigned pads). Assigning a pad that another player holds moves it; its held controls are released for the old player.
+- An action reads only its player's devices. Bindings belong to the map and the user-bindings file, so every player shares them; per-player bindings would be a later, additive option (a player index on `BindingSlot`).
+
+```csharp
+public enum GamepadAssignment : byte { FirstFreePlayer = 0, Manual }
+public enum GamepadChangeKind : byte { Added = 0, Removed, Remapped, Assigned, Unassigned }
+public readonly record struct GamepadChange(GamepadId Gamepad, GamepadChangeKind Kind, int Player);  // Player -1: none
+```
+
+- **Hot-plug.** `GamepadAdded` adds the device and assigns it by the policy. `GamepadRemoved` releases every held control of that pad (as edges at this position in the order) and unassigns it; the player keeps an empty slot, so the game can show "controller disconnected" from the `Removed` change. `GamepadRemapped` releases everything on that pad, because its layout changed. `GamepadChanges` lists the frame's changes in order, until the next `BeginFrame`.
+- **Focus.** While the game is unfocused, gamepad presses are ignored unless `GamepadsWhileUnfocused`; releases always count.
+- **Controls** appended to `ControlKind` by the gamepad issue: `GamepadButton` (code: `GamepadButton`), `GamepadAxis` (code: `GamepadAxis`; sticks -1..1, triggers 0..1) and `GamepadHalfAxis` (code: axis × 2, plus 1 for the negative half; 0..1, button-like). Text forms `gamepad:South`, `gamepad-axis:LeftX`, `gamepad-axis:LeftY-`. Factories `ForGamepadButton(GamepadButton)`, `ForGamepadAxis(GamepadAxis)`, `ForGamepadHalfAxis(GamepadAxis, bool negative)`. Until that issue lands, a map naming a gamepad control fails validation as an unknown control. Sticks bind as a `Vector2` composite of their two axes, with a radial `Deadzone` (`0.125`, `0.925` is a reasonable start).
+
+**Rumble.** `Rumble(player, rumble)` forwards to `IPlatform.RumbleGamepad` for the player's pad. A player without a pad is `ErrorKind.NotFound`; `InputOptions.Platform` null is `Unavailable`; the platform's own failures pass through. Main thread; allocation-free on success.
+
+### What Platform adds after the 0.2.0 release
+
+All in `BrutalEngine.Platform` and `BrutalEngine.Platform.Sdl3`, appended so nothing is renumbered:
+
+```csharp
+namespace BrutalEngine.Platform;
+
+public readonly record struct GamepadId(uint Value);                  // 0 = invalid; SDL_JoystickID
+
+public enum GamepadButton : byte    // SDL_GamepadButton values 0-25; SDL's Invalid (-1) is never translated
+{
+    South = 0, East, West, North, Back, Guide, Start, LeftStick, RightStick, LeftShoulder, RightShoulder,
+    DpadUp, DpadDown, DpadLeft, DpadRight, Misc1, RightPaddle1, LeftPaddle1, RightPaddle2, LeftPaddle2,
+    Touchpad, Misc2, Misc3, Misc4, Misc5, Misc6,
+}
+
+public enum GamepadAxis : byte { LeftX = 0, LeftY, RightX, RightY, LeftTrigger, RightTrigger }   // SDL_GamepadAxis 0-5
+
+public enum GamepadType : byte      // SDL_GamepadType 0-11
+{
+    Unknown = 0, Standard, Xbox360, XboxOne, Ps3, Ps4, Ps5, NintendoSwitchPro,
+    NintendoSwitchJoyconLeft, NintendoSwitchJoyconRight, NintendoSwitchJoyconPair, Gamecube,
+}
+
+public readonly record struct GamepadDeviceData(GamepadId Gamepad);                           // payload 16-19
+public readonly record struct GamepadButtonData(GamepadId Gamepad, GamepadButton Button);     // 16-19, 20
+public readonly record struct GamepadAxisData(GamepadId Gamepad, GamepadAxis Axis, float Value); // 16-19, 20, 24-27
+
+public readonly record struct GamepadRumble(float LowFrequency, float HighFrequency, TimeSpan Duration); // 0..1, 0..1, 0..49.7 days
+
+public sealed record GamepadInfo
+{
+    public required GamepadId Id { get; init; }
+    public required string Name { get; init; }
+    public GamepadType Type { get; init; }
+    public ushort VendorId { get; init; }
+    public ushort ProductId { get; init; }
+    public bool HasRumble { get; init; }
+}
+```
+
+- **Event kinds** appended after `DisplayCurrentModeChanged = 29` (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:253-256`): `GamepadAdded = 30`, `GamepadRemoved = 31`, `GamepadRemapped = 32` (payload `GamepadDevice`), `GamepadButtonDown = 33`, `GamepadButtonUp = 34` (payload `GamepadButton`), `GamepadAxisMotion = 35` (payload `GamepadAxis`). They carry a default `WindowId`, like the `Display*` kinds; the factories `CreateGamepadDevice`, `CreateGamepadButton` and `CreateGamepadAxis` reject anything else, and the views `PlatformEvent.GamepadDevice`, `GamepadButton` and `GamepadAxis` throw for other kinds, as the existing views do (a property named like its enum, as `MouseButton` is). SDL's sources: `SDL_EVENT_GAMEPAD_AXIS_MOTION` to `SDL_EVENT_GAMEPAD_REMAPPED` (`Brutal.Sdl/Generated/Enums/SdlEventType.gen.cs:81-86`) and their structs (`Brutal.Sdl/Generated/Sdl.Structs.gen.cs:491-525`); the enums' values are SDL's (`Brutal.Sdl/Generated/Enums/SdlGamepadButton.gen.cs:10-36`, `Brutal.Sdl/Generated/Enums/SdlGamepadAxis.gen.cs:10-16`, `Brutal.Sdl/Generated/Enums/SdlGamepadType.gen.cs:9-21`), and a Platform.Sdl3 test asserts each member equals SDL's of the same name.
+- **Axis values** are normalised by the backend: sticks `value / 32767` clamped to `[-1, 1]`, triggers `value / 32767` in `[0, 1]`, from SDL's `short` (`Brutal.Sdl/Generated/Sdl.Structs.gen.cs:501`). SDL documents stick values as negative up and left, positive down and right; the backend keeps that direction, which is Input's +Y-down convention (section 1).
+- **`IPlatform` members:** `IReadOnlyList<GamepadInfo> Gamepads { get; }`, a snapshot rebuilt (allocating) when a gamepad event is pumped, like `Displays`; and `Result RumbleGamepad(GamepadId gamepad, GamepadRumble rumble)`, main thread, `NotFound` for an unknown pad, `Unsupported` without rumble, `Native` for SDL's failure.
+- **Platform.Sdl3:** initialises `SDL_INIT_GAMEPAD` with video (`Sdl.Constants.InitGamepad`, `Brutal.Sdl/Generated/Sdl.Constants.gen.cs:378`), opens each added pad with `SDL_OpenGamepad` and closes it on removal or `Dispose` (`Brutal.Sdl/Generated/Sdl.PInvoke.gen.cs:8301`, `:8886`), and rumbles with `SDL_RumbleGamepad`, whose duration is a `uint` of milliseconds (`:8826-8831`), so longer durations are clamped. It enables SDL's background joystick events so releases arrive while unfocused, and Input applies its focus rule.
+- **No variable-length payload.** The platform note expected gamepads to need one, like text (`docs/design/platform.md:607`). Keeping device names in the `Gamepads` snapshot rather than in events makes every gamepad event fit the fixed 24-byte payload, so the event struct and buffer don't change.
+
+## 7. Record and replay
+
+```csharp
+public sealed record InputRecorderOptions
+{
+    public int CapacityBytes { get; init; } = 16 * 1024 * 1024;   // 64 KiB..1 GiB, allocated at StartRecording
+}
+
+public sealed class InputRecorder
+{
+    public bool IsRecording { get; }
+    public bool IsTruncated { get; }          // the buffer filled; frames after that weren't recorded
+    public long FrameCount { get; }
+    public void Stop();
+    public InputRecording ToRecording();       // copies; allocates
+}
+
+public sealed class InputRecording            // immutable; thread-safe
+{
+    public static Result<InputRecording> Read(ReadOnlySpan<byte> bytes);
+    public byte[] ToBytes();
+    public long FrameCount { get; }
+    public ReadOnlySpan<byte> MapHash { get; }
+}
+
+public sealed class InputReplayer
+{
+    public static Result<InputReplayer> Create(InputService input, InputRecording recording);
+    public bool IsFinished { get; }
+    public long FrameIndex { get; }
+    public ReplayFrame NextFrame();            // InvalidOperationException when finished
+}
+
+public readonly ref struct ReplayFrame
+{
+    public PlatformEventBatch Events { get; }  // valid until the next NextFrame
+    public int FixedSteps { get; }
+    public TimeSpan FrameDelta { get; }
+}
+```
+
+**What is recorded:** from `StartRecording` on, at each `BeginFrame`, the batch's events of the kinds Input applies (section 2's table: keys, text, mouse, focus, mouse enter and leave, gamepad kinds once they exist) and `frameDelta`; and, when the next `BeginFrame` comes, how many `BeginFixedStep` calls the frame made. `StartRecording` begins with a `Rebase()` (section 3) and stores the start state: the map's `ContentHash`, the user bindings, the context stack and the gamepad assignments. Recording appends into the buffer allocated at the start, so a recorded frame allocates nothing; when the buffer is full, or a frame makes more than 65,535 fixed steps, recording stops and `IsTruncated` is set. `Stop` closes the last frame with its step count. One recorder at a time (`InvalidOperationException`).
+
+**The file format**, version 1, little-endian, floats as IEEE bits:
+
+| Part | Layout |
+|------|--------|
+| Header, 64 bytes | 0: ASCII `BEINPREC`; 8: `u16` format version (1); 10: `u16` flags (0); 12: `u32` start-block length `S`; 16: 32-byte map `ContentHash`; 48: `u64` frame count; 56: 8 bytes reserved (0) |
+| Start block, `S` bytes | `u8` context count, then each context's name as `u8` length + UTF-8; `u32` length + the user bindings as section 5's JSON; `u8` player count; `u8` the keyboard-and-mouse player; `u8` gamepad assignment count, then 8 bytes each (`u32` gamepad id, `u8` player, 3 reserved); zero padding to a multiple of 8 |
+| Each frame | A 24-byte frame header: 0 `u32` event count `E` (at most 65,536); 4 `u16` fixed steps; 6 `u16` 0; 8 `u32` text bytes `T` (at most 1 MiB); 12 `u32` 0; 16 `i64` frame delta in `TimeSpan` ticks. Then `E` 40-byte event records, `T` bytes of UTF-8 text, and zero padding to a multiple of 8 |
+| Event record, 40 bytes | 0: `u16` `PlatformEventKind`; 2: `u16` 0; 4: `u32` window: 0 for the input window or no window, 1 for any other; 8: `i64` timestamp (kept for diagnostics; Input doesn't use it); 16-39: payload, zero unless listed. Keys: 16 `u16` scancode, 18 `u16` modifiers, 20 `u32` keycode, 24 `u8` repeat. Text: 16 `u32` offset into the frame's text, 20 `u32` length. Motion: 16-28 `f32` x, y, delta x, delta y; 32 `u8` buttons. Buttons: 16 `u8` button, 17 `u8` clicks, 20-24 `f32` x, y. Wheel: 16-28 `f32` x, y, mouse x, mouse y. Gamepads: 16 `u32` id, 20 `u8` button or axis, 24 `f32` value |
+| Trailer, 32 bytes | SHA-256 of everything before it |
+
+`Read` checks, before allocating anything it sizes from the data: the length (at least header plus trailer), the magic, the version (2 or above: `Unsupported`, "recorded by a newer engine"; 0: `InvalidData`), the trailer hash, then every length against the bytes left, every count against the limits above, the frame count against the frames present, kinds against the recorded set, enum values, text ranges inside their frame and valid UTF-8, and names against the map grammar. Any failure is `InvalidData` naming the offset.
+
+**Replay.** `InputReplayer.Create` checks the recording's map hash against `input.Map.ContentHash` (a mismatch is `InvalidData`: "recorded with a different input map"), then applies the recorded user bindings, sets the context stack and the keyboard-and-mouse player, registers each recorded gamepad as a device assigned to its recorded player (as if it had just been added), calls `Rebase()`, and allocates one `PlatformEventBuffer` sized for the largest recorded frame (`new PlatformEventBuffer(int, int)`, `Add`, `AddText`, `AsBatch`, `src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:239`, `:230-232`; events rebuilt with the `PlatformEvent.Create*` factories, `:721-730`). Window 0 becomes the replaying service's `InputOptions.Window` (default when that is default) and window 1 the smallest id other than it (1 or 2), so window filtering replays the same way. A test harness's loop then takes its timing from the recording:
+
+```csharp
+while (!replayer.IsFinished)
+{
+    ReplayFrame frame = replayer.NextFrame();
+    input.BeginFrame(frame.Events, frame.FrameDelta);
+    for (int i = 0; i < frame.FixedSteps; i++) { input.BeginFixedStep(); world.RunSchedule(ScheduleLabel.FixedUpdate, fixedDelta); }
+    world.RunSchedule(ScheduleLabel.Update, frame.FrameDelta);
+}
+```
+
+**Determinism.** With the same map content, the recorded start state, the recorded events and step counts, and the same calls from game code (pushes, pops, rebinding), every view read returns the same values as in the recorded run: the state is a pure function of that input (no clock, no hash order, fixed evaluation order, IEEE single-precision processors). On one build and architecture that is bit for bit; across win-x64 and linux-x64 the operations used are correctly rounded, so the values should match, and the replay tests run on both. The rest of the game's determinism (fixed-step simulation, [world note](world.md#7-schedules)) is the game's.
+
+**Uses.** Tests replay committed recordings, or build them in code, against a reference model (section 11). Bug repros: a development build saves `recorder.ToRecording().ToBytes()` through the VFS (where and when is the game's choice), and a developer replays it in a harness that drives its own loop as above. Replay inside a Runtime game needs the host to take its step counts from the replayer, which `FixedStepClock` can't do in M1; that waits for Runtime's built-in modules after the 0.2.0 release.
+
+## 9. The input-map asset
+
+An input map is a JSON asset; `InputMap.FromJson` reads it and `InputMap.ToJson` writes its **canonical** form, which `ContentHash` hashes, so it is pinned exactly: `Utf8JsonWriter` with `Indented = true`, `IndentSize = 2` and `NewLine = "\n"`; properties in the order the records of section 1 declare them, `version` and `name` first; properties at their default value omitted; numbers in the writer's shortest round-trip form; no trailing newline. The example below is hand-formatted; the gamepad bindings in it validate once I11 lands (section 12).
+
+```json
+{
+  "version": 1,
+  "name": "player",
+  "contexts": [
+    {
+      "name": "gameplay",
+      "actions": [
+        { "name": "jump", "kind": "button", "bindings": [ { "control": "key:Space" }, { "control": "gamepad:South" } ] },
+        { "name": "move", "kind": "axis2d", "processors": [ { "kind": "normalize" } ],
+          "bindings": [
+            { "composite": "axis2d", "up": "key:W", "down": "key:S", "left": "key:A", "right": "key:D" },
+            { "composite": "vector2", "x": "gamepad-axis:LeftX", "y": "gamepad-axis:LeftY",
+              "processors": [ { "kind": "deadzone", "lower": 0.125, "upper": 0.925 } ] } ] },
+        { "name": "zoom", "kind": "axis1d", "bindings": [ { "control": "mouse-wheel:Y", "modifiers": [ "key:Lctrl" ] } ] }
+      ]
+    },
+    { "name": "chat", "textEntry": true, "actions": [ { "name": "send", "kind": "button", "bindings": [ { "control": "key:Return" } ] } ] }
+  ]
+}
+```
+
+- **Mapping:** each JSON object is the record of section 1 with camel-case names (`passThrough`, `pressThreshold`, `keyRepeat`, `textEntry`, `blocksLowerContexts`); `kind` values `button`, `axis1d`, `axis2d`; composites name their parts (`negative`/`positive`, `up`/`down`/`left`/`right`, `x`/`y`); processors are `{ "kind": "deadzone", "lower", "upper" }`, `{ "kind": "scale", "x", "y" }`, `{ "kind": "invert", "x": bool, "y": bool }`, `{ "kind": "normalize" }`; controls use the text form of section 1.
+- **Reading** uses source-generated `System.Text.Json` into internal DTOs, then `InputMap.Create`'s validation. `version` 1 only (higher: `Unsupported`; missing or lower: `InvalidData`); unknown properties are `InvalidData` (a typo in a binding must not silently do nothing); at most 1 MiB. `FromJson` is pure and thread-safe.
+- **Cooked form** is the canonical JSON: maps are a few KiB and load once, so a binary format would add a second reader for no gain. The cooker validates source maps with `FromJson` and writes `ToJson`'s bytes; that importer is the asset pipeline note's (#283) to register.
+
+```csharp
+public sealed class InputMapLoader       // stateless; thread-safe; implements the loader contract of #282
+{
+    public InputMapLoader();
+    // plus the members of #282's loader contract, each forwarding the cooked bytes to InputMap.FromJson
+}
+```
+
+- **The loader.** Input provides a public `InputMapLoader` that implements the loader contract of `docs/design/assets.md` (#282): given an input map's cooked bytes it returns `InputMap.FromJson(bytes)`, failing with that result's error; it has no dependencies on other assets. Its members, its registration call and the thread it runs on are #282's contract; it is safe on any thread because `FromJson` is. The game registers it with the database and passes the loaded map to `InputService` (`Map` in the options, or `SetMap` on hot reload, which keeps ids valid, section 1). If #282's contract can't express this loader as written, that note reports it, rather than this one redefining the contract.
+- **The layer edge.** The issue that adds `InputMapLoader` (section 12) adds the listed same-layer edge to `EngineLayers` (`tests/BrutalEngine.Architecture.Tests/EngineLayers.cs:30` lists Assets at L3; the only L3 edge today is Rendering2D → Text, `:62`) and to the edge table in [architecture tests](architecture-tests.md#the-layer-map):
+
+| Edge | Reason |
+|------|--------|
+| Input → Assets | Input registers its input-map loader with the asset database ([input](input.md#9-the-input-map-asset)) |
+
+Input's earlier issues don't reference Assets, so they don't wait for it.
