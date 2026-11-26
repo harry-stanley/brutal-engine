@@ -604,6 +604,7 @@ override BrutalEngine.Platform.MouseMotionData.GetHashCode() -> int
 override BrutalEngine.Platform.MouseMotionData.ToString() -> string!
 override BrutalEngine.Platform.MouseWheelData.GetHashCode() -> int
 override BrutalEngine.Platform.MouseWheelData.ToString() -> string!
+override BrutalEngine.Platform.PlatformEvent.ToString() -> string!
 override BrutalEngine.Platform.PlatformEventHeader.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformEventHeader.ToString() -> string!
 override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool

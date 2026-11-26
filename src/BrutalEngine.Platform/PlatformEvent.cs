@@ -32,7 +32,7 @@ namespace BrutalEngine.Platform;
 /// </para>
 /// <para>
 /// Immutable and safe to read from any thread. No member allocates, except the members that throw and
-/// <see cref="ValueType.ToString"/>, which is the default one and returns the type's name.
+/// <see cref="ToString"/>, which describes the event.
 /// </para>
 /// </remarks>
 [StructLayout(LayoutKind.Explicit, Size = 40)]
@@ -363,6 +363,54 @@ public readonly struct PlatformEvent
     {
         Check(header, Payload.DisplayScale);
         return new PlatformEvent(header, display, scale);
+    }
+
+    /// <summary>
+    /// Describes the event: the header, then the payload its kind carries, for example
+    /// <c>PlatformEvent { Kind = KeyDown, Window = 3, Timestamp = 120, Key = KeyEventData { Scancode = A, Keycode =
+    /// Keycode { Value = 97 }, Modifiers = None, IsRepeat = False } }</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Window"/> prints as its raw value. The payload is read through the views the kind carries, so it
+    /// never reads a view the kind doesn't carry, and prints in each payload record's usual form (both
+    /// <see cref="Display"/> and <see cref="Scale"/> for <see cref="PlatformEventKind.DisplayContentScaleChanged"/>).
+    /// Kinds without a payload, <see cref="PlatformEventKind.None"/> (<c>default(PlatformEvent)</c>) and values
+    /// without a member, which print as their number, print the header only.
+    /// </para>
+    /// <para>
+    /// Never throws, whatever the kind and payload values: NaN and infinite floats, negative sizes and values without
+    /// an enum member print as they are. Safe to call from any thread.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// A diagnostic string, formatted with the invariant culture whatever the current culture is. Allocates.
+    /// </returns>
+    public override string ToString()
+    {
+        CultureInfo invariant = CultureInfo.InvariantCulture;
+        string header = string.Create(
+            invariant, $"PlatformEvent {{ Kind = {_kind}, Window = {_window.Value}, Timestamp = {_timestamp}");
+
+        // TextEventData and WindowSize use the compiler's record ToString, which formats their ints with the current
+        // culture's negative sign, so their fields are formatted here in the same form.
+        return PayloadOf(_kind) switch
+        {
+            Payload.Key => string.Create(invariant, $"{header}, Key = {Key} }}"),
+            Payload.Text => string.Create(
+                invariant, $"{header}, Text = TextEventData {{ Offset = {Text.Offset}, Length = {Text.Length} }} }}"),
+            Payload.MouseMotion => string.Create(invariant, $"{header}, MouseMotion = {MouseMotion} }}"),
+            Payload.MouseButton => string.Create(invariant, $"{header}, MouseButton = {MouseButton} }}"),
+            Payload.MouseWheel => string.Create(invariant, $"{header}, MouseWheel = {MouseWheel} }}"),
+            Payload.Size => string.Create(
+                invariant, $"{header}, Size = WindowSize {{ Width = {Size.Width}, Height = {Size.Height} }} }}"),
+            Payload.Display => string.Create(invariant, $"{header}, Display = {Display} }}"),
+            Payload.Scale => string.Create(invariant, $"{header}, Scale = {Scale} }}"),
+            Payload.DisplayScale => string.Create(invariant, $"{header}, Display = {Display}, Scale = {Scale} }}"),
+
+            // No payload, None and values without a member.
+            _ => header + " }",
+        };
     }
 
     private static Payload PayloadOf(PlatformEventKind kind) => kind switch

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Xunit;
 
@@ -48,6 +49,14 @@ public sealed class PlatformEventFormatTests
         (PlatformEventKind.DisplayCurrentModeChanged, "Display", 'D'),
     ];
 
+    // Values without a member, as ToString prints them: the first above the last kind, and the largest (also what
+    // (PlatformEventKind)(-1) is).
+    private static readonly (PlatformEventKind Kind, string Text)[] _undefinedKinds =
+        [((PlatformEventKind)30, "30"), ((PlatformEventKind)ushort.MaxValue, "65535")];
+
+    private static readonly WindowId _sampleWindow = new(7);
+
+    // Negative numbers and fractions, so a culture's negative sign or decimal separator would show.
     private static readonly KeyEventData _sampleKey = new(Scancode.A, new Keycode(97), KeyModifiers.LeftShift, true);
     private static readonly TextEventData _sampleText = new(-3, 5);
     private static readonly MouseMotionData _sampleMotion = new(1.5f, -2.5f, 3.25f, -4.75f, MouseButtons.X2);
@@ -56,6 +65,39 @@ public sealed class PlatformEventFormatTests
     private static readonly WindowSize _sampleSize = new(-800, 600);
     private static readonly DisplayId _sampleDisplay = new(0xDEADBEEF);
     private const float SampleScale = -1.75f;
+
+    // What each payload of the samples above prints after the header, written by hand in the payload records' usual
+    // form with the invariant culture.
+    private static readonly (string Payload, string Text)[] _samplePayloadTexts =
+    [
+        ("", ""),
+        ("None", ""),
+        ("Key", ", Key = KeyEventData { Scancode = A, Keycode = Keycode { Value = 97 }, Modifiers = LeftShift, IsRepeat = True }"),
+        ("Text", ", Text = TextEventData { Offset = -3, Length = 5 }"),
+        ("MouseMotion", ", MouseMotion = MouseMotionData { X = 1.5, Y = -2.5, DeltaX = 3.25, DeltaY = -4.75, Buttons = X2 }"),
+        ("MouseButton", ", MouseButton = MouseButtonData { Button = X1, Clicks = 2, X = 10.5, Y = -20.25 }"),
+        ("MouseWheel", ", MouseWheel = MouseWheelData { X = 0.5, Y = -1.5, MouseX = 30.5, MouseY = 40.25 }"),
+        ("Size", ", Size = WindowSize { Width = -800, Height = 600 }"),
+        ("Display", ", Display = DisplayId { Value = 3735928559 }"),
+        ("Scale", ", Scale = -1.75"),
+        ("DisplayScale", ", Display = DisplayId { Value = 3735928559 }, Scale = -1.75"),
+    ];
+
+    public static TheoryData<PlatformEventKind> EveryKindAndUndefined()
+    {
+        TheoryData<PlatformEventKind> data = [];
+        foreach ((PlatformEventKind kind, _, _) in _kinds)
+        {
+            data.Add(kind);
+        }
+
+        foreach ((PlatformEventKind kind, _) in _undefinedKinds)
+        {
+            data.Add(kind);
+        }
+
+        return data;
+    }
 
     public static TheoryData<PlatformEventKind> KindsWithAFactory()
     {
@@ -102,11 +144,87 @@ public sealed class PlatformEventFormatTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(EveryKindAndUndefined))]
+    public void ToString_EveryKind_DoesNotThrow(PlatformEventKind kind)
+    {
+        PlatformEvent e = Make(kind, SampleWindowFor(kind));
+
+        Assert.Equal(Expected(kind), e.ToString());
+    }
+
+    [Fact]
+    public void ToString_Default_PrintsHeaderOnly()
+    {
+        Assert.Equal("PlatformEvent { Kind = None, Window = 0, Timestamp = 0 }", default(PlatformEvent).ToString());
+    }
+
+    [Fact]
+    public void ToString_UnderAnotherCulture_IsInvariant()
+    {
+        // A culture whose every number symbol differs from the invariant one, so any culture-sensitive formatting
+        // shows. Cloned from the invariant culture, so the test doesn't depend on the OS's culture data.
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        culture.NumberFormat.NegativeSign = "~";
+        culture.NumberFormat.NumberDecimalSeparator = ",";
+        culture.NumberFormat.NumberGroupSeparator = "_";
+        culture.NumberFormat.NaNSymbol = "nan!";
+        culture.NumberFormat.PositiveInfinitySymbol = "inf!";
+        culture.NumberFormat.NegativeInfinitySymbol = "~inf!";
+        PlatformEventHeader textHeader = new(PlatformEventKind.TextInput, default, long.MinValue);
+        PlatformEventHeader sizeHeader = new(PlatformEventKind.WindowPixelSizeChanged, _sampleWindow, -1);
+        PlatformEventHeader scaleHeader = new(PlatformEventKind.WindowDisplayScaleChanged, _sampleWindow, 0);
+        PlatformEventHeader bothHeader = new(PlatformEventKind.DisplayContentScaleChanged, default, 0);
+        (PlatformEvent Event, string Expected)[] edges =
+        [
+            (PlatformEvent.CreateText(textHeader, new TextEventData(int.MinValue, int.MaxValue)),
+                "PlatformEvent { Kind = TextInput, Window = 0, Timestamp = -9223372036854775808, "
+                + "Text = TextEventData { Offset = -2147483648, Length = 2147483647 } }"),
+            (PlatformEvent.CreateSize(sizeHeader, new WindowSize(-1, int.MinValue)),
+                "PlatformEvent { Kind = WindowPixelSizeChanged, Window = 7, Timestamp = -1, "
+                + "Size = WindowSize { Width = -1, Height = -2147483648 } }"),
+            (PlatformEvent.CreateScale(scaleHeader, float.NaN),
+                "PlatformEvent { Kind = WindowDisplayScaleChanged, Window = 7, Timestamp = 0, Scale = NaN }"),
+            (PlatformEvent.CreateScale(scaleHeader, float.PositiveInfinity),
+                "PlatformEvent { Kind = WindowDisplayScaleChanged, Window = 7, Timestamp = 0, Scale = Infinity }"),
+            (PlatformEvent.CreateDisplayScale(bothHeader, default, float.NegativeInfinity),
+                "PlatformEvent { Kind = DisplayContentScaleChanged, Window = 0, Timestamp = 0, "
+                + "Display = DisplayId { Value = 0 }, Scale = -Infinity }"),
+            (PlatformEvent.CreateDisplayScale(bothHeader, new DisplayId(uint.MaxValue), -0.5f),
+                "PlatformEvent { Kind = DisplayContentScaleChanged, Window = 0, Timestamp = 0, "
+                + "Display = DisplayId { Value = 4294967295 }, Scale = -0.5 }"),
+        ];
+
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = culture;
+        try
+        {
+            Assert.Equal("~1,5", (-1.5).ToString(CultureInfo.CurrentCulture));
+            foreach ((PlatformEventKind kind, _, _) in _kinds)
+            {
+                Assert.Equal(Expected(kind), Make(kind, SampleWindowFor(kind)).ToString());
+            }
+
+            foreach ((PlatformEvent e, string expected) in edges)
+            {
+                Assert.Equal(expected, e.ToString());
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
+    }
+
     private static (PlatformEventKind Kind, string Payload, char Window) Row(PlatformEventKind kind) =>
         Array.Find(_kinds, k => k.Kind == kind);
 
+    private static WindowId SampleWindowFor(PlatformEventKind kind) =>
+        Row(kind).Window == 'D' ? default : _sampleWindow;
+
     // An event of any kind with the sample payloads. Kinds without a factory (None and values without a member) are
-    // written as raw bytes, as a corrupted buffer slot would hold them, with every payload byte set.
+    // written as raw bytes, as a corrupted buffer slot would hold them, with every payload byte set, so a ToString
+    // that read a payload for them would print it.
     private static PlatformEvent Make(PlatformEventKind kind, WindowId window)
     {
         PlatformEventHeader header = new(kind, window, SampleTimestamp);
@@ -135,5 +253,17 @@ public sealed class PlatformEventFormatTests
         Unsafe.WriteUnaligned(ref raw[4], header.Window);
         Unsafe.WriteUnaligned(ref raw[8], header.Timestamp);
         return Unsafe.ReadUnaligned<PlatformEvent>(ref raw[0]);
+    }
+
+    private static string Expected(PlatformEventKind kind)
+    {
+        int undefined = Array.FindIndex(_undefinedKinds, k => k.Kind == kind);
+        string name = undefined >= 0 ? _undefinedKinds[undefined].Text : kind.ToString();
+        string payload = undefined >= 0 ? "" : Row(kind).Payload;
+        uint window = SampleWindowFor(kind).Value;
+        string payloadText = Array.Find(_samplePayloadTexts, p => p.Payload == payload).Text;
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"PlatformEvent {{ Kind = {name}, Window = {window}, Timestamp = -120{payloadText} }}");
     }
 }
