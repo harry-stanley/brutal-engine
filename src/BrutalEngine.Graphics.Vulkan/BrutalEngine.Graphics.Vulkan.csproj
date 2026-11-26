@@ -2,6 +2,7 @@
   <PropertyGroup>
     <Description>BrutalEngine Vulkan 1.3 backend for the render interface, built on BRUTAL's Vulkan bindings.</Description>
     <PackageTags>gamedev;game-engine;2d;brutal;graphics;vulkan</PackageTags>
+    <BrutalEngineMilestone>1</BrutalEngineMilestone>
   </PropertyGroup>
 
   <!--

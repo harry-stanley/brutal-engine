@@ -51,6 +51,8 @@ jobs:
         run: bash .github/scripts/ci-merge-check-test.sh
       - name: Self-test the GPU-trait discovery
         run: bash .github/scripts/gpu-tests-test.sh
+      - name: Self-test the package check
+        run: bash .github/scripts/check-packages-test.sh
       - name: Select tier
         id: select
         env:
@@ -187,6 +189,29 @@ jobs:
       - name: Pack (with package validation)
         if: runner.os == 'Linux'
         run: dotnet pack BrutalEngine.slnx -c Release --no-build -o artifacts/packages
+      # The ship gate (ADR-0016): exactly the libraries whose milestone is released were packed.
+      - name: Check the packed set
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/check-packages.sh artifacts/packages .
+      # The gate's other branch: no library is above the release milestone yet, so force one and check it doesn't pack.
+      # Both properties are pinned, so the probes test the comparison itself, whatever src/Directory.Build.props
+      # releases: at each release, its milestone packs and the next one doesn't.
+      - name: Check the ship gate excludes a later milestone
+        if: runner.os == 'Linux'
+        run: |
+          for probe in 1:1:true 1:2:false 2:2:true 2:3:false; do
+            release=${probe%%:*}
+            rest=${probe#*:}
+            milestone=${rest%%:*}
+            want=${rest#*:}
+            got=$(dotnet msbuild src/BrutalEngine.Core/BrutalEngine.Core.csproj -getProperty:IsPackable \
+              -p:BrutalEngineReleaseMilestone="$release" -p:BrutalEngineMilestone="$milestone")
+            echo "BrutalEngineReleaseMilestone=$release, BrutalEngineMilestone=$milestone: IsPackable=$got (expected $want)"
+            if [ "$got" != "$want" ]; then
+              echo "::error::With BrutalEngineReleaseMilestone=$release and BrutalEngineMilestone=$milestone, IsPackable is '$got', not '$want': check src/Directory.Build.targets (ADR-0016)."
+              exit 1
+            fi
+          done
       - name: Upload packages
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

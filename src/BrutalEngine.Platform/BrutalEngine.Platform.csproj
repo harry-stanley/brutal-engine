@@ -2,6 +2,7 @@
   <PropertyGroup>
     <Description>BrutalEngine platform abstraction: windows, displays and the Vulkan surface source, independent of the backend that implements them.</Description>
     <PackageTags>gamedev;game-engine;2d;brutal;platform</PackageTags>
+    <BrutalEngineMilestone>1</BrutalEngineMilestone>
   </PropertyGroup>
 
   <ItemGroup>

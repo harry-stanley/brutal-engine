@@ -1,0 +1,40 @@
+<Project>
+  <!--
+    MSBuild imports only the nearest Directory.Build.targets, so chain to a parent one, as src/Directory.Build.props
+    chains to the root props. There is none today; the import starts working as soon as one is added.
+  -->
+  <PropertyGroup>
+    <_BrutalEngineParentBuildTargets>$([MSBuild]::GetPathOfFileAbove('Directory.Build.targets', '$(MSBuildThisFileDirectory)../'))</_BrutalEngineParentBuildTargets>
+  </PropertyGroup>
+  <Import Project="$(_BrutalEngineParentBuildTargets)" Condition="'$(_BrutalEngineParentBuildTargets)' != ''" />
+
+  <!--
+    The ship gate (ADR-0016). Every engine library's csproj sets BrutalEngineMilestone, the milestone that first ships
+    it, and the library packs only when that is at most BrutalEngineReleaseMilestone (src/Directory.Build.props). This
+    file is evaluated after the csproj body, which the props file isn't, so the milestone is visible here. A csproj never
+    sets IsPackable itself (ShipGateTests), and .github/scripts/check-packages.sh checks the packed set in CI. Roslyn
+    components have no milestone and aren't packed (src/Directory.Build.props).
+    A milestone is 1 to 9 decimal digits, the form ShipGateRule and check-packages.sh accept too.
+  -->
+  <PropertyGroup Condition="'$(IsRoslynComponentProject)' != 'true'">
+    <_BrutalEngineMilestoneIsValid>$([System.Text.RegularExpressions.Regex]::IsMatch('$(BrutalEngineMilestone)', '^[0-9]{1,9}$'))</_BrutalEngineMilestoneIsValid>
+    <_BrutalEngineReleaseMilestoneIsValid>$([System.Text.RegularExpressions.Regex]::IsMatch('$(BrutalEngineReleaseMilestone)', '^[0-9]{1,9}$'))</_BrutalEngineReleaseMilestoneIsValid>
+    <IsPackable Condition="'$(_BrutalEngineMilestoneIsValid)' == 'true' and '$(_BrutalEngineReleaseMilestoneIsValid)' == 'true' and $(BrutalEngineMilestone) &gt; $(BrutalEngineReleaseMilestone)">false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    An unreadable milestone fails the build, and a pack with no build too (GenerateNuspec writes the package), rather
+    than leaving IsPackable as the props file set it.
+  -->
+  <Target Name="BrutalEngineCheckMilestone" BeforeTargets="BeforeBuild;GenerateNuspec" Condition="'$(IsRoslynComponentProject)' != 'true'">
+    <Error Condition="'$(BrutalEngineMilestone)' == ''"
+           File="$(MSBuildProjectFullPath)"
+           Text="$(MSBuildProjectName) doesn't set BrutalEngineMilestone. Set it in $(MSBuildProjectFile) to the milestone that first ships this library; see ADR-0016." />
+    <Error Condition="'$(BrutalEngineMilestone)' != '' and '$(_BrutalEngineMilestoneIsValid)' != 'true'"
+           File="$(MSBuildProjectFullPath)"
+           Text="$(MSBuildProjectName) sets BrutalEngineMilestone to '$(BrutalEngineMilestone)', which isn't a non-negative integer (1 to 9 digits). Set it in $(MSBuildProjectFile) to the milestone that first ships this library; see ADR-0016." />
+    <Error Condition="'$(_BrutalEngineReleaseMilestoneIsValid)' != 'true'"
+           File="$(MSBuildThisFileDirectory)Directory.Build.props"
+           Text="BrutalEngineReleaseMilestone is '$(BrutalEngineReleaseMilestone)', which isn't a non-negative integer (1 to 9 digits). src/Directory.Build.props sets it to the milestone the next release ships; see ADR-0016." />
+  </Target>
+</Project>

@@ -2,6 +2,7 @@
   <PropertyGroup>
     <Description>BrutalEngine world model: an archetype entity-component-system with hierarchy and 2D transforms.</Description>
     <PackageTags>gamedev;game-engine;2d;brutal;ecs</PackageTags>
+    <BrutalEngineMilestone>1</BrutalEngineMilestone>
   </PropertyGroup>
 
   <ItemGroup>
