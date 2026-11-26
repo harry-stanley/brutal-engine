@@ -233,8 +233,8 @@ public sealed class ResourceValidatorTests
     public static TheoryData<string> ViewsOutsideTexture() =>
     [
         "BaseMipNegative", "BaseMipAtCount", "MipCountZero", "MipCountNegative", "MipCountPastEnd", "MipCountPastEndFromBase",
-        "MipCountMaxValue", "BaseLayerNegative", "BaseLayerAtCount", "LayerCountZero", "LayerCountPastEnd",
-        "LayerCountPastEndFromBase", "LayerCountMaxValue",
+        "MipCountMaxValue", "BaseLayerNegative", "BaseLayerAtCount", "LayerCountZero", "LayerCountNegative",
+        "LayerCountPastEnd", "LayerCountPastEndFromBase", "LayerCountMaxValue",
     ];
 
     [Theory]
@@ -253,6 +253,7 @@ public sealed class ResourceValidatorTests
             "BaseLayerNegative" => (_view with { BaseArrayLayer = -1 }, "BaseArrayLayer"),
             "BaseLayerAtCount" => (_view with { BaseArrayLayer = 4 }, "BaseArrayLayer"),
             "LayerCountZero" => (_view with { ArrayLayerCount = 0 }, "ArrayLayerCount"),
+            "LayerCountNegative" => (_view with { ArrayLayerCount = -1 }, "ArrayLayerCount"),
             "LayerCountPastEnd" => (_view with { ArrayLayerCount = 5 }, "ArrayLayerCount"),
             "LayerCountPastEndFromBase" => (_view with { BaseArrayLayer = 3, ArrayLayerCount = 2 }, "ArrayLayerCount"),
             "LayerCountMaxValue" => (_view with { BaseArrayLayer = 1, ArrayLayerCount = int.MaxValue }, "ArrayLayerCount"),
@@ -328,8 +329,9 @@ public sealed class ResourceValidatorTests
     public static TheoryData<string> InvalidSamplers() =>
     [
         "MinFilterAboveLast", "MagFilterAboveLast", "MipmapFilterNegative", "AddressUAboveLast", "AddressVNegative",
-        "BorderColorAboveLast", "CompareAboveLast", "CompareNegative", "AnisotropyZero", "AnisotropyNegativeZero",
-        "AnisotropyNegative", "AnisotropyNaN", "AnisotropyNegativeInfinity", "AnisotropyAboveLimit", "AnisotropyInfinity",
+        "BorderColorAboveLast", "BorderColorNegative", "CompareAboveLast", "CompareNegative", "AnisotropyZero",
+        "AnisotropyNegativeZero", "AnisotropyNegative", "AnisotropyNaN", "AnisotropyNegativeInfinity", "AnisotropyAboveLimit",
+        "AnisotropyInfinity",
     ];
 
     [Theory]
@@ -344,6 +346,7 @@ public sealed class ResourceValidatorTests
             "AddressUAboveLast" => (_sampler with { AddressU = (AddressMode)4 }, "AddressU"),
             "AddressVNegative" => (_sampler with { AddressV = (AddressMode)(-1) }, "AddressV"),
             "BorderColorAboveLast" => (_sampler with { BorderColor = (BorderColor)3 }, "BorderColor"),
+            "BorderColorNegative" => (_sampler with { BorderColor = (BorderColor)(-1) }, "BorderColor"),
             "CompareAboveLast" => (_sampler with { Compare = (CompareFunction)8 }, "Compare"),
             "CompareNegative" => (_sampler with { Compare = (CompareFunction)(-1) }, "Compare"),
             "AnisotropyZero" => (_sampler with { MaxAnisotropy = 0 }, "MaxAnisotropy"),
