@@ -189,6 +189,48 @@ BrutalEngine.Platform.MouseWheelData.X.get -> float
 BrutalEngine.Platform.MouseWheelData.X.init -> void
 BrutalEngine.Platform.MouseWheelData.Y.get -> float
 BrutalEngine.Platform.MouseWheelData.Y.init -> void
+BrutalEngine.Platform.PlatformEventHeader
+BrutalEngine.Platform.PlatformEventHeader.Deconstruct(out BrutalEngine.Platform.PlatformEventKind Kind, out BrutalEngine.Platform.WindowId Window, out long Timestamp) -> void
+BrutalEngine.Platform.PlatformEventHeader.Equals(BrutalEngine.Platform.PlatformEventHeader other) -> bool
+BrutalEngine.Platform.PlatformEventHeader.Kind.get -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventHeader.Kind.init -> void
+BrutalEngine.Platform.PlatformEventHeader.PlatformEventHeader() -> void
+BrutalEngine.Platform.PlatformEventHeader.PlatformEventHeader(BrutalEngine.Platform.PlatformEventKind Kind, BrutalEngine.Platform.WindowId Window, long Timestamp) -> void
+BrutalEngine.Platform.PlatformEventHeader.Timestamp.get -> long
+BrutalEngine.Platform.PlatformEventHeader.Timestamp.init -> void
+BrutalEngine.Platform.PlatformEventHeader.Window.get -> BrutalEngine.Platform.WindowId
+BrutalEngine.Platform.PlatformEventHeader.Window.init -> void
+BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.DisplayAdded = 26 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.DisplayContentScaleChanged = 28 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.DisplayCurrentModeChanged = 29 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.DisplayRemoved = 27 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.KeyDown = 19 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.KeyUp = 20 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.MouseButtonDown = 23 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.MouseButtonUp = 24 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.MouseMotion = 22 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.MouseWheel = 25 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.None = 0 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.QuitRequested = 1 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.TextInput = 21 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowCloseRequested = 18 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowDisplayChanged = 8 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowDisplayScaleChanged = 7 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowExposed = 17 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowFocusGained = 12 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowFocusLost = 13 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowHidden = 3 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowMaximized = 10 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowMinimized = 9 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowMouseEntered = 14 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowMouseLeft = 15 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowMoved = 4 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowOccluded = 16 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowPixelSizeChanged = 6 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowResized = 5 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowRestored = 11 -> BrutalEngine.Platform.PlatformEventKind
+BrutalEngine.Platform.PlatformEventKind.WindowShown = 2 -> BrutalEngine.Platform.PlatformEventKind
 BrutalEngine.Platform.PlatformOptions
 BrutalEngine.Platform.PlatformOptions.<Clone>$() -> BrutalEngine.Platform.PlatformOptions!
 BrutalEngine.Platform.PlatformOptions.Application.get -> string!
@@ -548,6 +590,8 @@ override BrutalEngine.Platform.MouseMotionData.GetHashCode() -> int
 override BrutalEngine.Platform.MouseMotionData.ToString() -> string!
 override BrutalEngine.Platform.MouseWheelData.GetHashCode() -> int
 override BrutalEngine.Platform.MouseWheelData.ToString() -> string!
+override BrutalEngine.Platform.PlatformEventHeader.GetHashCode() -> int
+override BrutalEngine.Platform.PlatformEventHeader.ToString() -> string!
 override BrutalEngine.Platform.PlatformOptions.Equals(object? obj) -> bool
 override BrutalEngine.Platform.PlatformOptions.GetHashCode() -> int
 override BrutalEngine.Platform.PlatformOptions.ToString() -> string!
@@ -578,6 +622,8 @@ static BrutalEngine.Platform.MouseMotionData.operator !=(BrutalEngine.Platform.M
 static BrutalEngine.Platform.MouseMotionData.operator ==(BrutalEngine.Platform.MouseMotionData left, BrutalEngine.Platform.MouseMotionData right) -> bool
 static BrutalEngine.Platform.MouseWheelData.operator !=(BrutalEngine.Platform.MouseWheelData left, BrutalEngine.Platform.MouseWheelData right) -> bool
 static BrutalEngine.Platform.MouseWheelData.operator ==(BrutalEngine.Platform.MouseWheelData left, BrutalEngine.Platform.MouseWheelData right) -> bool
+static BrutalEngine.Platform.PlatformEventHeader.operator !=(BrutalEngine.Platform.PlatformEventHeader left, BrutalEngine.Platform.PlatformEventHeader right) -> bool
+static BrutalEngine.Platform.PlatformEventHeader.operator ==(BrutalEngine.Platform.PlatformEventHeader left, BrutalEngine.Platform.PlatformEventHeader right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator !=(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.PlatformOptions.operator ==(BrutalEngine.Platform.PlatformOptions? left, BrutalEngine.Platform.PlatformOptions? right) -> bool
 static BrutalEngine.Platform.TextEventData.operator !=(BrutalEngine.Platform.TextEventData left, BrutalEngine.Platform.TextEventData right) -> bool
@@ -598,6 +644,7 @@ static BrutalEngine.Platform.WindowSize.operator ==(BrutalEngine.Platform.Window
 ~override BrutalEngine.Platform.MouseButtonData.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.MouseMotionData.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.MouseWheelData.Equals(object obj) -> bool
+~override BrutalEngine.Platform.PlatformEventHeader.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.TextEventData.Equals(object obj) -> bool
 ~override BrutalEngine.Platform.TextEventData.ToString() -> string
 ~override BrutalEngine.Platform.WindowId.Equals(object obj) -> bool
