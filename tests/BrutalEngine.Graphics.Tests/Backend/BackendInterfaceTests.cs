@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.Graphics.Backend;
@@ -80,6 +81,7 @@ public sealed class BackendInterfaceTests : IDisposable
     public void FramePlan_IsRefStruct_WithInternalConstructorOnly()
     {
         Assert.True(typeof(FramePlan).IsByRefLike);
+        Assert.True(typeof(FramePlan).IsDefined(typeof(IsReadOnlyAttribute), inherit: false));
         Assert.Empty(typeof(FramePlan).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
         ConstructorInfo constructor = Assert.Single(typeof(FramePlan).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance));
         Assert.True(constructor.IsAssembly);

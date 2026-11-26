@@ -118,4 +118,12 @@ public sealed class BackendTypeTests
             CultureInfo.CurrentCulture = original;
         }
     }
+
+    [Fact]
+    public void BackendSwapchainRequest_ToString_Default_PrintsNothingForNullSource()
+    {
+        Assert.Equal(
+            "BackendSwapchainRequest { Surface = 0, Source = , Options = , OldSwapchain = 0 }",
+            default(BackendSwapchainRequest).ToString());
+    }
 }
