@@ -16,7 +16,7 @@ Local runs used the reference machine (Windows 11, Ryzen 9 5950X, RTX 2070 SUPER
 | S3 Linux + Windows software Vulkan on GitHub runners | **Pass** | Software-Vulkan GPU test jobs can go into `ci.yml` |
 | S4 Slang offline compilation | **Pass** | ADR-0002 (Slang) confirmed. ShaderC stays as the fallback |
 | S5 ECS prototype | **Partial**: 1 target missed under stress | ADR-0006 stands. Design changes recorded for M1 |
-| S6 audio decoding (research) | Recommendation | Decide in an ADR at the start of M2 |
+| S6 audio decoding (prototype, 2026-11-27) | **Pass** on Linux and Windows, JIT and NativeAOT ([details](#s6-compressed-audio-decoding-prototype)) | [ADR-0017](../adr/0017-audio-decoding.md): SDL3_mixer as a decoder only |
 | S8 text shaping (research) | Recommendation | Decide in an ADR at the start of M3 |
 
 ---
@@ -127,14 +127,32 @@ Results (BenchmarkDotNet, reference machine only):
 
 **Not done:** hierarchy and transform propagation, the source generator, a NativeAOT publish, min-spec hardware (Q7).
 
-## S6: compressed audio decoding (research, nothing executed)
+## S6: compressed audio decoding (prototype)
 
-- **Recommendation:** use the SDL3_mixer that BRUTAL already ships (`Ahwoo.Brutal.Sdl.Mixer`, SDL_mixer 3.2.4) as a **decoder only**, feeding our own mixer:
-  - Streamed music: a headless `MIX_CreateMixer` + `MIX_Track` per stream, pulled with `MIX_Generate` on a worker into a lock-free ring buffer.
-  - One-shot and cook-time decodes: `MIX_CreateAudioDecoder_IO` + `MIX_DecodeAudio`.
-- Vorbis, FLAC, MP3 and WAV are included. No new natives or licences are needed.
-- **Opus is not in BRUTAL's build** (checked in the binaries and notices). Leave it out of v1. If needed later, the first candidate is Concentus (managed, BSD-3).
-- Not yet executed: AOT, allocation behaviour and runtime tests.
+Research in M0, then a prototype on 2026-11-27 at the start of M2. The decision is [ADR-0017](../adr/0017-audio-decoding.md): SDL3_mixer as a decoder only.
+
+**Research (M0, nothing executed):** the SDL3_mixer that BRUTAL ships (`Ahwoo.Brutal.Sdl.Mixer`, SDL_mixer 3.2.4) has Vorbis, FLAC, MP3 and WAV decoders usable without its mixer, and no Opus (checked in the binaries and notices). It recommended a headless `MIX_CreateMixer` + track + `MIX_Generate` for streams and `MIX_CreateAudioDecoder_IO` + `MIX_DecodeAudio` for one-shot decodes, and Concentus (managed, BSD-3) as the first candidate if Opus is ever needed.
+
+**What ran:** a throwaway probe on [`spike/s6-audio-decoding`](https://github.com/harry-stanley/brutal-engine/tree/spike/s6-audio-decoding/spikes/s6-audio-decoding) (its `REPORT.md` has the full results), on .NET 11 with `Ahwoo.Brutal.Sdl` and `Ahwoo.Brutal.Sdl.Mixer` 2026.10.3 (SDL 3.4.12, SDL_mixer 3.2.4) and `Microsoft.Extensions.ObjectPool` 11.0.0. Every run set `SDL_AUDIO_DRIVER=dummy` and checked every native status.
+
+| Platform | JIT | NativeAOT | Evidence |
+|----------|-----|-----------|----------|
+| linux-x64, reference machine (Arch Linux, CachyOS) | Pass | Pass, 0 warnings | local run |
+| linux-x64, GitHub `ubuntu-24.04` | Pass | Pass, 0 warnings | [run 45910777898](https://github.com/harry-stanley/brutal-engine/actions/runs/45910777898), job 140218323763 |
+| win-x64, GitHub `windows-2025` | Pass | Pass, 0 warnings | [run 45910777898](https://github.com/harry-stanley/brutal-engine/actions/runs/45910777898), job 140218323454 |
+
+The test audio is generated, not third-party: a 1.0 s stereo 44100 Hz tone written by a Python script as WAV, and encoded to Ogg Vorbis (ffmpeg n9.1, libvorbis), FLAC (flac 1.5.0) and MP3 (LAME 4.0).
+
+**Results** (the same on every platform and build mode: the 19 result lines have the same SHA-256 in all six runs, and the workflow also diffs JIT against NativeAOT on each OS):
+
+- **Decoders listed:** `WAV, STBVORBIS, DRFLAC, VOC, AIFF, AU, DRMP3, SINEWAVE, RAW`. No Opus.
+- **One-shot decodes** from memory (`SDL_IOFromConstMem` + `MIX_CreateAudioDecoder_IO` + `MIX_DecodeAudio`) to f32 PCM on a worker thread: WAV, Ogg Vorbis, FLAC and MP3 each give the source's 44100 frames. WAV and FLAC equal the source bit for bit; Vorbis and MP3 are lossy (40.8 dB and 26 dB SNR against it), and each format's output has the same SHA-256 on Linux and Windows.
+- **Streaming with a loop:** the Ogg file through a headless `MIX_CreateMixer`, one track over a memory stream (`MIX_SetTrackIOStream`) and `MIX_Generate` in 1024-frame chunks on a worker thread, played with `loops = 1` from frame 22050. The output is the one-shot decode bit for bit, then the decode from frame 22050 bit for bit (66150 frames). `MIX_Generate` returned a short count where the track ended, then 0.
+- **Allocation:** 0 managed bytes per `MIX_DecodeAudio` and per `MIX_Generate` call after warm-up, with BRUTAL's trace logging off.
+- **Lifetime:** decoders fail before `MIX_Init` ("Mixer not initialized"). Neither `MIX_Init`, decoding nor the headless mixer needs or starts SDL's audio subsystem; a decode with the subsystem started gives the same bytes.
+- **Failure paths:** garbage and a half-length Ogg file are both refused when the decoder is created ("Audio data is in unknown/unsupported/corrupt format").
+
+**Not run:** macOS ([ADR-0015](../adr/0015-tested-platforms-windows-linux.md)); real audio output (the dummy driver plays nothing); resampling; infinite loops, seeking and concurrent use of one decoder; long files and native leak tracking.
 
 ## S8: complex-script text shaping (research, nothing executed)
 
