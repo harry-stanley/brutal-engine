@@ -74,13 +74,12 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
     public void MemoryIntent_MapsToBackendMemory(MemoryIntent intent, BackendMemory expected)
     {
         var backend = new CountingBackend(_fixture.Backend);
-        GraphicsDevice device = GraphicsDevice.Create(backend, _fixture.Options()).Value;
+        using GraphicsDevice device = GraphicsDevice.Create(backend, _fixture.Options()).Value;
 
         BufferHandle buffer = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.CopyDestination, Memory = intent }).Value;
 
         Assert.Equal(expected, backend.LastDevice?.LastBufferMemory);
         device.Destroy(buffer);
-        device.Dispose();
     }
 
     [Fact]
