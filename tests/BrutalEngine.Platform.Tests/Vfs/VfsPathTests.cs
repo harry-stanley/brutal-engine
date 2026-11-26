@@ -409,6 +409,26 @@ public sealed class VfsPathTests
         }
     }
 
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void Combine_PathLimitAtMountRoot_CountsNoJoiningSlash(int bytes, bool valid)
+    {
+        // "res://" + relative: the mount root has no relative path, so no '/' joins them.
+        var root = VfsPath.Parse("res://");
+        string relative = LongPath(bytes - "res://".Length);
+
+        if (valid)
+        {
+            Assert.Equal(bytes, Encoding.UTF8.GetByteCount(root.Combine(relative).ToString()));
+        }
+        else
+        {
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => root.Combine(relative));
+            Assert.Contains(PathLengthRule, exception.Message, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void Combine_NullRelative_Throws()
     {
