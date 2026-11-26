@@ -229,6 +229,32 @@ public sealed class VfsPathTests
         Assert.DoesNotContain('\uDE00', exception.Message);
     }
 
+    [Theory]
+    [InlineData("console")]
+    [InlineData("construct")]
+    [InlineData("auxiliary.png")]
+    [InlineData("nul1")]
+    [InlineData("aux_")]
+    [InlineData("xcon")]
+    [InlineData("co")]
+    [InlineData("COM0")]
+    [InlineData("LPT0")]
+    [InlineData("COM10")]
+    [InlineData("com12")]
+    [InlineData("lpt10.txt")]
+    [InlineData("conx.txt")]
+    [InlineData("com.txt")]
+    [InlineData("nul-1.log")]
+    public void Parse_DeviceLikeNameNotOnTheList_IsValid(string segment)
+    {
+        // Only CON, PRN, AUX, NUL, COM1-COM9 and LPT1-LPT9 are device names, matched on the whole text before the
+        // first '.': longer, shorter or other names that start like one, and COM0/LPT0, are ordinary segments.
+        Assert.True(VfsPath.TryParse("res://" + segment, out VfsPath parsed));
+        Assert.Equal(segment, parsed.RelativePath);
+        Assert.Equal(segment, VfsPath.Parse("res://a/" + segment).Name);
+        Assert.Equal("res://a/" + segment, VfsPath.Parse("res://a").Combine(segment).ToString());
+    }
+
     [Fact]
     public void SegmentLimit_CountsUtf8Bytes()
     {
