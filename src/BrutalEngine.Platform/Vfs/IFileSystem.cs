@@ -13,9 +13,15 @@ namespace BrutalEngine.Platform.Vfs;
 /// <para>
 /// <b>Paths:</b> every <c>relativePath</c> is a <see cref="VfsPath.RelativePath"/>: validated and normalised, segments
 /// joined by <c>/</c>, no leading or trailing <c>/</c>, no <c>.</c> or <c>..</c> segment. The empty string is the root,
-/// which is always a directory. Implementations compare paths ordinally (case-sensitive), never resolve them against
-/// anything outside their own root, and throw <see cref="ArgumentException"/> for text that isn't such a path, so a
-/// caller that bypasses the virtual file system can't escape the root either.
+/// which is always a directory. Implementations never resolve a path against anything outside their own root, and
+/// throw <see cref="ArgumentException"/> for text that isn't such a path, so a caller that bypasses the virtual file
+/// system can't leave the root lexically either (a directory-backed file system still follows symbolic links inside
+/// its root).
+/// </para>
+/// <para>
+/// <b>Lookups:</b> <c>VirtualFileSystem</c> and <c>InMemoryFileSystem</c> compare paths ordinally
+/// (case-sensitive). Each implementation documents its own lookup rule; for example, a directory-backed file system
+/// with case verification off follows the OS, so on a case-insensitive OS one spelling opens another.
 /// </para>
 /// <para>
 /// <b>Failures</b> are <see cref="Result"/>s with these kinds: a missing entry, or a file where a directory was
@@ -24,8 +30,9 @@ namespace BrutalEngine.Platform.Vfs;
 /// <see cref="ErrorKind.Unsupported"/>; access denied by the OS is <see cref="ErrorKind.Unavailable"/>; any other I/O
 /// error, including deleting a non-empty directory, is <see cref="ErrorKind.Io"/> with the OS message and its
 /// <see cref="Exception.HResult"/> as <see cref="EngineError.NativeCode"/> (0 when no OS call failed). On a read-only
-/// file system, writes, deletes and creates fail with <see cref="ErrorKind.Unsupported"/> before anything else is
-/// checked. Implementations don't throw for these failures; misuse does throw: a <see langword="null"/> path
+/// file system, writes, deletes and creates fail with <see cref="ErrorKind.Unsupported"/> before any other failure is
+/// checked; a <see langword="null"/> or non-normalised path still throws first. Implementations don't throw for these
+/// failures; misuse does throw: a <see langword="null"/> path
 /// (<see cref="ArgumentNullException"/>) or a path that isn't normalised (<see cref="ArgumentException"/>).
 /// </para>
 /// <para>
@@ -38,8 +45,10 @@ namespace BrutalEngine.Platform.Vfs;
 /// keeps any resources it holds and releases them after unmounting it.
 /// </para>
 /// <para>
-/// <b>Allocation:</b> file I/O is not a hot path. Results, byte arrays, streams, entry lists and error messages
-/// allocate. See docs/design/platform.md section 5, "Mounts and operations".
+/// <b>Allocation:</b> file I/O is not a hot path. Implementations may allocate on any operation call, successful or
+/// not (results, byte arrays, streams, entry lists, error messages, path checks, directory listings), and each one
+/// documents its own allocation behaviour; reading <see cref="IsReadOnly"/> allocates nothing. See
+/// docs/design/platform.md section 5, "Mounts and operations".
 /// </para>
 /// </remarks>
 public interface IFileSystem
@@ -58,7 +67,7 @@ public interface IFileSystem
     /// <returns>
     /// The entry's kind, or <see cref="VfsEntryKind.None"/> when nothing is there: a missing entry is a successful
     /// answer here, not a <see cref="ErrorKind.NotFound"/> failure. Fails with <see cref="ErrorKind.Unavailable"/> or
-    /// <see cref="ErrorKind.Io"/> when the OS can't answer. Allocates only on failure.
+    /// <see cref="ErrorKind.Io"/> when the OS can't answer.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="relativePath"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="relativePath"/> isn't a normalised relative path.</exception>
@@ -111,7 +120,6 @@ public interface IFileSystem
     /// Success, or <see cref="ErrorKind.Unsupported"/> on a read-only file system or for the root, which can't be
     /// deleted, <see cref="ErrorKind.NotFound"/> if nothing is there, <see cref="ErrorKind.Io"/> if the directory
     /// isn't empty, and <see cref="ErrorKind.Unavailable"/> or <see cref="ErrorKind.Io"/> when the OS refuses.
-    /// Allocates on failure.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="relativePath"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="relativePath"/> isn't a normalised relative path.</exception>
@@ -122,7 +130,7 @@ public interface IFileSystem
     /// <returns>
     /// Success, or <see cref="ErrorKind.Unsupported"/> on a read-only file system, <see cref="ErrorKind.NotFound"/>
     /// if the path or one of its parents is a file, and <see cref="ErrorKind.Unavailable"/> or
-    /// <see cref="ErrorKind.Io"/> when the OS refuses. Allocates on failure.
+    /// <see cref="ErrorKind.Io"/> when the OS refuses.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="relativePath"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="relativePath"/> isn't a normalised relative path.</exception>
