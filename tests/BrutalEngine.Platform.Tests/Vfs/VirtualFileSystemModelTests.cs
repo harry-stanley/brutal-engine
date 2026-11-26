@@ -14,7 +14,7 @@ public sealed class VirtualFileSystemModelTests
 {
     private const int Iterations = 3_000;
 
-    // _schemes that are prefixes of each other, so routing by prefix or substring sends a call to the wrong mount.
+    // Schemes that are prefixes of each other, so routing by prefix or substring sends a call to the wrong mount.
     private static readonly string[] _schemes = ["a", "ab", "b", "ba"];
 
     // Few relative paths, so random steps keep hitting the same entries: the root, files and directories at
@@ -41,7 +41,7 @@ public sealed class VirtualFileSystemModelTests
     [Fact]
     public void OperationsMatchReferenceModel()
     {
-        Gen<(Op Op, int Scheme, int Path, int _contents)> step = Gen.Select(
+        Gen<(Op Op, int Scheme, int Path, int Contents)> step = Gen.Select(
             Gen.Frequency(
                 (1, OneOf(Op.Mount, Op.Mount, Op.Unmount, Op.IsMounted)),
                 (4, OneOf(Op.WriteAllBytes, Op.CreateDirectory, Op.Delete)),
@@ -56,6 +56,9 @@ public sealed class VirtualFileSystemModelTests
 
         // How often the interesting outcomes happened, so a generator change that stops reaching them fails.
         int filesRead = 0, nonEmptyListings = 0, ioFailures = 0, doubleMounts = 0, unmountedCalls = 0;
+
+        // Sample runs on several threads. That is safe here: each sample builds its own virtual file system, file
+        // systems and model, the static arrays and everyPath are only read, and the counters use Interlocked.
         step.Array[10, 80].Sample(steps =>
         {
             // One file system per scheme for the whole run, remounted after an unmount, so its contents persist
