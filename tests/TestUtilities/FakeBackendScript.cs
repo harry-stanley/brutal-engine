@@ -181,7 +181,9 @@ public sealed class FakeBackendScript
     /// <param name="operation"><see cref="FakeBackendOperation.AcquireImage"/> or <see cref="FakeBackendOperation.Present"/>.</param>
     /// <param name="status">The status to report.</param>
     /// <param name="nativeCode">The native code to report with it.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="status"/> isn't a defined member.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="operation"/> or <paramref name="status"/> isn't a defined member.
+    /// </exception>
     /// <exception cref="ArgumentException"><paramref name="operation"/> isn't one of the two swapchain operations.</exception>
     /// <exception cref="InvalidOperationException">A status for that operation is already pending.</exception>
     /// <remarks>
