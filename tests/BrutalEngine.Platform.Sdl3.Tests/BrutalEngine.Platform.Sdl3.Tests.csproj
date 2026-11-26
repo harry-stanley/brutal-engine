@@ -1,4 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Background (concurrent) garbage collection off, so the allocation tests measure exactly: a background collection
+    voids every thread's allocation context without taking the unused tail off that thread's count
+    (docs/05-testing-strategy.md, "Allocation tests"). AllocationMeasurementTests guards the setting.
+  -->
+  <PropertyGroup>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="../../src/BrutalEngine.Platform.Sdl3/BrutalEngine.Platform.Sdl3.csproj" />
   </ItemGroup>
