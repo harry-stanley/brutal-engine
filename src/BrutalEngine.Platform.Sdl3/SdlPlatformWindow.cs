@@ -7,15 +7,15 @@ using BrutalEngine.Core;
 namespace BrutalEngine.Platform.Sdl3;
 
 /// <summary>
-/// One SDL window (docs/design/platform.md section 1): created from <see cref="WindowOptions"/> with its size requested
-/// in content units, with a snapshot of its sizes and state that the getters read.
+/// One SDL window, the backend's <see cref="IWindow"/> (docs/design/platform.md section 1): created from
+/// <see cref="WindowOptions"/> with its size requested in content units, with a snapshot of its sizes and state that the
+/// getters read.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The fullscreen members and
-/// the <see cref="IWindow"/> declaration come later; the event pump keeps the snapshot current through
-/// <see cref="RefreshSnapshot"/>. The setters ask SDL for changes; a size change shows in the snapshot on the refresh
-/// after SDL applies it (the event pump refreshes on the resize event).
+/// Not named <c>SdlWindow</c>: that is BRUTAL's window handle, which this namespace uses. The event pump keeps the
+/// snapshot current through <see cref="RefreshSnapshot"/>. The setters ask SDL for changes; a size or mode change shows
+/// in the snapshot on the refresh after SDL applies it (the event pump refreshes on the window's events).
 /// </para>
 /// <para>
 /// <b>Threads:</b> the thread that creates the window owns it. Every member, <see cref="Dispose"/> included, runs on
@@ -31,7 +31,7 @@ namespace BrutalEngine.Platform.Sdl3;
 /// <see cref="VulkanSurface"/> is destroyed before the window.
 /// </para>
 /// </remarks>
-internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IOwner
+internal sealed class SdlPlatformWindow : IWindow, SdlVulkanSurfaceSource.IOwner
 {
     /// <summary>The message for a Vulkan window on <see cref="HeadlessMode.NoSurface"/>, with <see cref="ErrorKind.Unsupported"/>.</summary>
     public const string NoSurfaceVulkanMessage =
@@ -53,6 +53,10 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
     private DisplayId _display;
     private bool _isTextInputActive;
     private bool _isRelativeMouseMode;
+
+    // The content size to apply when the window next leaves fullscreen, or null. Set when the window is created
+    // fullscreen (creation skips the content-size correction there) and by SetContentSize while it is fullscreen.
+    private WindowSize? _windowedContentSize;
 
     // 1 once disposed. Written on the owner thread; the surface source reads it from any thread.
     private int _disposed;
@@ -98,6 +102,9 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
 
     /// <inheritdoc cref="IWindow.VulkanSurface"/>
     public SdlVulkanSurfaceSource? VulkanSurface => Read(_vulkanSurface, "IWindow.VulkanSurface");
+
+    /// <inheritdoc/>
+    IVulkanSurfaceSource? IWindow.VulkanSurface => VulkanSurface;
 
     /// <summary>Whether the window has been disposed; once true, it stays true. Any thread, no allocation.</summary>
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
@@ -162,7 +169,10 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
             return created.Error;
         }
 
-        SdlPlatformWindow window = new(handle, ThreadAffinity.CurrentThread());
+        SdlPlatformWindow window = new(handle, ThreadAffinity.CurrentThread())
+        {
+            _windowedContentSize = options.Mode == WindowMode.Windowed ? null : options.ContentSize,
+        };
         bool keep = false;
         try
         {
@@ -208,7 +218,8 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
     /// <see cref="RefreshSnapshot"/> after SDL applies the size (the event pump refreshes on the resize event), because
     /// SDL can apply it asynchronously: on X11 and Wayland a refresh straight after this call can still read the old
     /// size. Nothing waits for it here. The result can differ from the request by rounding or because the OS clamped
-    /// it. Owner thread only. Allocates nothing on success; a failure allocates its message.
+    /// it. On a fullscreen window the size is also kept for <see cref="SetMode"/>, which applies it when the window
+    /// returns to windowed. Owner thread only. Allocates nothing on success; a failure allocates its message.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">A side of <paramref name="contentSize"/> is outside 1 to 16384.</exception>
     /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
@@ -218,7 +229,110 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         ThrowIfUnusable("IWindow.SetContentSize");
         WindowOptionsValidator.ValidateContentSize(contentSize, nameof(contentSize), nameof(contentSize));
         WindowSize size = ExactWindowSize(contentSize);
-        return SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
+        Result set = SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, size.Width, size.Height), "SDL_SetWindowSize");
+        if (set.IsSuccess)
+        {
+            // SDL doesn't keep a size set while fullscreen as the windowed size (observed on its dummy driver).
+            _windowedContentSize = IsFullscreen() ? contentSize : null;
+        }
+
+        return set;
+    }
+
+    /// <summary>
+    /// Switches the window to windowed or borderless fullscreen through <c>SDL_SetWindowFullscreen</c>. Borderless
+    /// first clears any exclusive mode with <c>SDL_SetWindowFullscreenMode(NULL)</c>.
+    /// </summary>
+    /// <param name="mode"><see cref="WindowMode.Windowed"/> or <see cref="WindowMode.BorderlessFullscreen"/>.</param>
+    /// <returns>Success, or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// Leaving fullscreen applies the content-size model when a content size is waiting for it: the size the window was
+    /// created with, if it was created fullscreen (creation corrects only windowed windows), or one set by
+    /// <see cref="SetContentSize"/> while fullscreen. The window is synced with <c>SDL_SyncWindow</c>, resized once to
+    /// that size in window coordinates and synced again; a sync that times out isn't a failure, as at creation.
+    /// </para>
+    /// <para>
+    /// <see cref="Mode"/> and the sizes change on the refresh after SDL applies the switch. Owner thread only. Allocates
+    /// nothing on success; a failure allocates its message.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="mode"/> is <see cref="WindowMode.ExclusiveFullscreen"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="mode"/> isn't a <see cref="WindowMode"/> value.</exception>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public unsafe Result SetMode(WindowMode mode)
+    {
+        ThrowIfUnusable("IWindow.SetMode");
+        switch (mode)
+        {
+            case WindowMode.Windowed:
+                return LeaveFullscreen();
+
+            case WindowMode.BorderlessFullscreen:
+                // Sound: NULL is SDL's documented value for borderless (desktop) fullscreen.
+                Result cleared = SdlCheck.Check(Sdl.PInvoke.SetWindowFullscreenMode(_handle, null), "SDL_SetWindowFullscreenMode");
+                return cleared.IsFailure ? cleared : SdlCheck.Check(Sdl.PInvoke.SetWindowFullscreen(_handle, 1), "SDL_SetWindowFullscreen");
+
+            case WindowMode.ExclusiveFullscreen:
+                throw new ArgumentException("Exclusive fullscreen needs a display mode: use SetExclusiveFullscreen.", nameof(mode));
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a WindowMode value.");
+        }
+    }
+
+    /// <summary>
+    /// Switches the window to exclusive fullscreen in <paramref name="mode"/>: re-reads the display's fullscreen modes,
+    /// takes the first exact match (<see cref="FullscreenModeMatcher"/>), then calls <c>SDL_SetWindowFullscreenMode</c>
+    /// and <c>SDL_SetWindowFullscreen</c>.
+    /// </summary>
+    /// <param name="mode">A mode from the display's fullscreen-mode list.</param>
+    /// <returns>
+    /// Success; <see cref="ErrorKind.NotFound"/> if the display isn't connected or no mode of it matches (a display's
+    /// current mode needn't be in its fullscreen list, and SDL's <c>dummy</c> and <c>offscreen</c> drivers list none);
+    /// or <see cref="ErrorKind.Native"/> with SDL's message if SDL refused.
+    /// </returns>
+    /// <remarks>
+    /// <see cref="Mode"/> changes on the refresh after SDL applies the switch. Owner thread only. Allocates a copy of the
+    /// display's mode list, which a mode switch, a rare call, can afford; a failure also allocates its message.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="mode"/> has display <c>0</c>, as <c>default(DisplayMode)</c> does.</exception>
+    /// <exception cref="ObjectDisposedException">The window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    public unsafe Result SetExclusiveFullscreen(DisplayMode mode)
+    {
+        ThrowIfUnusable("IWindow.SetExclusiveFullscreen");
+        if (mode.Display == default)
+        {
+            throw new ArgumentException("The mode has display 0, as default(DisplayMode) does: pass a mode from a display's fullscreen-mode list.", nameof(mode));
+        }
+
+        Result<SdlDisplayMode[]> listed = SdlDisplays.CopyFullscreenModes(mode.Display);
+        if (!listed.TryGetValue(out SdlDisplayMode[]? modes))
+        {
+            return listed.Error;
+        }
+
+        int index = FullscreenModeMatcher.FindExact(modes, mode);
+        if (index < 0)
+        {
+            return new EngineError(
+                ErrorKind.NotFound,
+                string.Create(CultureInfo.InvariantCulture, $"{mode} matches no fullscreen mode of display {mode.Display.Value}: pick one from its fullscreen-mode list."));
+        }
+
+        // Sound: the array element is pinned for the call, and SDL copies the mode it is given.
+        fixed (SdlDisplayMode* chosen = &modes[index])
+        {
+            Result set = SdlCheck.Check(Sdl.PInvoke.SetWindowFullscreenMode(_handle, chosen), "SDL_SetWindowFullscreenMode");
+            if (set.IsFailure)
+            {
+                return set;
+            }
+        }
+
+        return SdlCheck.Check(Sdl.PInvoke.SetWindowFullscreen(_handle, 1), "SDL_SetWindowFullscreen");
     }
 
     /// <summary>Turns text input on for this window through <c>SDL_StartTextInput</c>.</summary>
@@ -336,7 +450,7 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         return state;
     }
 
-    private static unsafe Result<uint> ResolveDisplay(DisplayId? requested)
+    private static Result<uint> ResolveDisplay(DisplayId? requested)
     {
         if (requested is not { } display)
         {
@@ -344,23 +458,8 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
             return primary != 0 ? primary : SdlCheck.Error("SDL_GetPrimaryDisplay");
         }
 
-        int count;
-
-        // Sound: count is a stack local that outlives the call. On success SDL returns an array of count display ids
-        // that it allocated for the caller; it is read before SDL_free releases it.
-        uint* displays = Sdl.PInvoke.GetDisplays(&count);
-        if (displays is null)
-        {
-            return SdlCheck.Error("SDL_GetDisplays");
-        }
-
-        bool connected = new ReadOnlySpan<uint>(displays, count).Contains(display.Value);
-        Sdl.PInvoke.Free(displays);
-        return connected
-            ? display.Value
-            : new EngineError(
-                ErrorKind.NotFound,
-                string.Create(CultureInfo.InvariantCulture, $"Display {display.Value} isn't connected: it may have been unplugged since it was listed."));
+        Result connected = SdlDisplays.RequireConnected(display.Value);
+        return connected.IsSuccess ? display.Value : connected.Error;
     }
 
     private static Result<SdlWindow> CreateNative(WindowOptions options, uint display, WindowSize size)
@@ -508,6 +607,32 @@ internal sealed class SdlPlatformWindow : IDisposable, SdlVulkanSurfaceSource.IO
         _isRelativeMouseMode = Sdl.PInvoke.GetWindowRelativeMouseMode(_handle) != 0;
         return Result.Success;
     }
+
+    // Leaves fullscreen and, when a content size is waiting for it, applies it once the window is windowed again.
+    private Result LeaveFullscreen()
+    {
+        Result left = SdlCheck.Check(Sdl.PInvoke.SetWindowFullscreen(_handle, 0), "SDL_SetWindowFullscreen");
+        if (left.IsFailure || _windowedContentSize is not { } content)
+        {
+            return left;
+        }
+
+        // SDL can leave fullscreen asynchronously, and a size set before it has would be lost: wait first. A sync that
+        // timed out isn't a failure (see Initialize), so its status is deliberately not checked.
+        _ = Sdl.PInvoke.SyncWindow(_handle);
+        WindowSize exact = ExactWindowSize(content);
+        Result resized = SdlCheck.Check(Sdl.PInvoke.SetWindowSize(_handle, exact.Width, exact.Height), "SDL_SetWindowSize");
+        if (resized.IsFailure)
+        {
+            return resized;
+        }
+
+        _windowedContentSize = null;
+        _ = Sdl.PInvoke.SyncWindow(_handle);
+        return Result.Success;
+    }
+
+    private bool IsFullscreen() => (Sdl.PInvoke.GetWindowFlags(_handle) & SdlWindowFlags.Fullscreen) != 0;
 
     // Content units to window coordinates with the window's own display scale and pixel density, from the snapshot.
     // The one conversion for both creation's exact step and SetContentSize, so the two can't drift apart.
