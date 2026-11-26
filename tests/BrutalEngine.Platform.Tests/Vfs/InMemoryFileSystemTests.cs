@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using BrutalEngine.Core;
 using BrutalEngine.Platform.Vfs;
@@ -116,6 +117,58 @@ public sealed class InMemoryFileSystemTests
         AssertFailure(result.IsFailure, result.IsFailure ? result.Error : default, ErrorKind.Unsupported);
         Assert.Empty(fileSystem.List(string.Empty).Value);
         Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("new.txt").Value);
+    }
+
+    [Theory]
+    [InlineData(false, "WriteAllBytes", "", ErrorKind.NotFound)]
+    [InlineData(false, "WriteAllBytes", "dir", ErrorKind.NotFound)]
+    [InlineData(false, "WriteAllBytes", "file.txt/child.txt", ErrorKind.NotFound)]
+    [InlineData(false, "CreateDirectory", "file.txt", ErrorKind.NotFound)]
+    [InlineData(false, "CreateDirectory", "file.txt/child", ErrorKind.NotFound)]
+    [InlineData(false, "Delete", "missing.txt", ErrorKind.NotFound)]
+    [InlineData(false, "Delete", "dir", ErrorKind.Io)]
+    [InlineData(true, "WriteAllBytes", "", ErrorKind.NotFound)]
+    [InlineData(true, "Delete", "missing.txt", ErrorKind.NotFound)]
+    [InlineData(true, "Delete", "dir/missing.txt", ErrorKind.NotFound)]
+    public void ReadOnly_IsCheckedBeforeEveryOtherFailure(bool fromConstructor, string operation, string path, ErrorKind otherwise)
+    {
+        // Each path fails another way on a writable twin (proved first), so an implementation that looks at the
+        // path before the read-only flag answers that kind instead of Unsupported. A file system created read-only
+        // stays empty, so only the root write and the missing-entry deletes can be built for it; the root is its one
+        // existing directory, and nothing in it can be a file.
+        InMemoryFileSystem writable = new();
+        if (!fromConstructor)
+        {
+            Seed(writable);
+        }
+
+        Result twin = RunWrite(writable, operation, path);
+        AssertFailure(twin.IsFailure, twin.IsFailure ? twin.Error : default, otherwise);
+
+        InMemoryFileSystem fileSystem;
+        if (fromConstructor)
+        {
+            fileSystem = new(isReadOnly: true);
+        }
+        else
+        {
+            fileSystem = new();
+            Seed(fileSystem);
+            fileSystem.Freeze();
+        }
+
+        Result result = RunWrite(fileSystem, operation, path);
+
+        AssertFailure(result.IsFailure, result.IsFailure ? result.Error : default, ErrorKind.Unsupported);
+        Assert.Contains($"'{path}'", result.Error.Message, StringComparison.Ordinal);
+        if (fromConstructor)
+        {
+            Assert.Empty(fileSystem.List(string.Empty).Value);
+        }
+        else
+        {
+            AssertSeedUnchanged(fileSystem);
+        }
     }
 
     [Fact]
@@ -480,15 +533,7 @@ public sealed class InMemoryFileSystemTests
             })));
         }
 
-        foreach (Thread thread in threads)
-        {
-            thread.Start();
-        }
-
-        foreach (Thread thread in threads)
-        {
-            Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "A worker thread did not finish.");
-        }
+        StartAndJoin(threads);
 
         Assert.Empty(failures);
         for (int w = 1; w <= Writers; w++)
@@ -504,6 +549,101 @@ public sealed class InMemoryFileSystemTests
         }
 
         CheckWhole(fileSystem.ReadAllBytes("shared.bin").Value);
+    }
+
+    [Fact]
+    public void ConcurrentSameLengthWrites_NeverTearReads()
+    {
+        // Writers replace one file with 64 KiB arrays of the same length, each filled with a 32-bit stamp unique to
+        // that write (writer and iteration), so the only way to tell two writes apart is their contents. Readers read
+        // through ReadAllBytes and OpenRead and check each result holds a single stamp: copying a new write into the
+        // stored array in place, while a reader copies it outside the lock, shows up as a mix of two stamps. Threads
+        // start together through a barrier, and writers keep writing until every reader has finished, so every read
+        // overlaps the writes; the writers' loop is capped too, so a stuck reader fails the join instead of a hang.
+        const int Writers = 2;
+        const int Readers = 2;
+        const int ReadIterations = 500;
+        const int WriterCap = 1_000_000;
+        const int Length = 64 * 1024;
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        InMemoryFileSystem fileSystem = new();
+        Assert.True(fileSystem.WriteAllBytes("shared.bin", new byte[Length]).IsSuccess);
+        ConcurrentQueue<Exception> failures = new();
+        using Barrier barrier = new(Writers + Readers);
+        int readersLeft = Readers;
+        List<Thread> threads = [];
+
+        for (int w = 0; w < Writers; w++)
+        {
+            int writer = w + 1;
+            threads.Add(new Thread(() => Guard(failures, () =>
+            {
+                barrier.SignalAndWait(cancellation);
+                byte[] write = new byte[Length];
+                for (int i = 1; i == 1 || (i <= WriterCap && Volatile.Read(ref readersLeft) > 0); i++)
+                {
+                    MemoryMarshal.Cast<byte, int>(write.AsSpan()).Fill((writer << 24) | i);
+                    Check(fileSystem.WriteAllBytes("shared.bin", write).IsSuccess, "shared write");
+                }
+            })));
+        }
+
+        for (int r = 0; r < Readers; r++)
+        {
+            threads.Add(new Thread(() => Guard(failures, () =>
+            {
+                try
+                {
+                    barrier.SignalAndWait(cancellation);
+                    for (int i = 0; i < ReadIterations; i++)
+                    {
+                        CheckSingleStamp(fileSystem.ReadAllBytes("shared.bin").Value, Length);
+                        using Stream stream = fileSystem.OpenRead("shared.bin").Value;
+                        CheckSingleStamp(ReadToEnd(stream), Length);
+                    }
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref readersLeft);
+                }
+            })));
+        }
+
+        StartAndJoin(threads);
+
+        Assert.Empty(failures);
+
+        // What remains is one whole write by one of the writers.
+        byte[] last = fileSystem.ReadAllBytes("shared.bin").Value;
+        CheckSingleStamp(last, Length);
+        Assert.InRange(MemoryMarshal.Read<int>(last) >> 24, 1, Writers);
+    }
+
+    private static void StartAndJoin(List<Thread> threads)
+    {
+        // Background threads, so a regression that deadlocks the lock fails the bounded join below without the
+        // stuck workers keeping the test host alive.
+        foreach (Thread thread in threads)
+        {
+            thread.IsBackground = true;
+            thread.Start();
+        }
+
+        foreach (Thread thread in threads)
+        {
+            Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "A worker thread did not finish.");
+        }
+    }
+
+    private static void CheckSingleStamp(byte[] bytes, int length)
+    {
+        Check(bytes.Length == length, $"length {bytes.Length}, expected {length}");
+        ReadOnlySpan<int> stamps = MemoryMarshal.Cast<byte, int>(bytes);
+        int first = stamps[0];
+        foreach (int stamp in stamps)
+        {
+            Check(stamp == first, $"torn read: stamps {first:X8} and {stamp:X8} in one result");
+        }
     }
 
     private static void Seed(InMemoryFileSystem fileSystem)
@@ -528,6 +668,14 @@ public sealed class InMemoryFileSystemTests
         Assert.Equal("abc"u8.ToArray(), fileSystem.ReadAllBytes("file.txt").Value);
         Assert.Equal("xy"u8.ToArray(), fileSystem.ReadAllBytes("dir/inner.txt").Value);
     }
+
+    private static Result RunWrite(InMemoryFileSystem fileSystem, string operation, string path) => operation switch
+    {
+        "WriteAllBytes" => fileSystem.WriteAllBytes(path, [9, 9]),
+        "Delete" => fileSystem.Delete(path),
+        "CreateDirectory" => fileSystem.CreateDirectory(path),
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, "Unknown operation."),
+    };
 
     private static Result RunWrite(InMemoryFileSystem fileSystem, string operation) => operation switch
     {
