@@ -78,6 +78,25 @@ BrutalEngine.Platform.IWindow.StartTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.State.get -> BrutalEngine.Platform.WindowState
 BrutalEngine.Platform.IWindow.StopTextInput() -> BrutalEngine.Core.Result
 BrutalEngine.Platform.IWindow.VulkanSurface.get -> BrutalEngine.Platform.IVulkanSurfaceSource?
+BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Alt = BrutalEngine.Platform.KeyModifiers.LeftAlt | BrutalEngine.Platform.KeyModifiers.RightAlt -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Caps = 8192 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Control = BrutalEngine.Platform.KeyModifiers.LeftControl | BrutalEngine.Platform.KeyModifiers.RightControl -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Gui = BrutalEngine.Platform.KeyModifiers.LeftGui | BrutalEngine.Platform.KeyModifiers.RightGui -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftAlt = 256 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftControl = 64 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftGui = 1024 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.LeftShift = 1 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Level5 = 4 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Mode = 16384 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.None = 0 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Num = 4096 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightAlt = 512 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightControl = 128 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightGui = 2048 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.RightShift = 2 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Scroll = 32768 -> BrutalEngine.Platform.KeyModifiers
+BrutalEngine.Platform.KeyModifiers.Shift = BrutalEngine.Platform.KeyModifiers.LeftShift | BrutalEngine.Platform.KeyModifiers.RightShift -> BrutalEngine.Platform.KeyModifiers
 BrutalEngine.Platform.Keycode
 BrutalEngine.Platform.Keycode.Character.get -> System.Text.Rune
 BrutalEngine.Platform.Keycode.Equals(BrutalEngine.Platform.Keycode other) -> bool
@@ -102,6 +121,20 @@ BrutalEngine.Platform.MessageBoxRequest.Parent.get -> BrutalEngine.Platform.IWin
 BrutalEngine.Platform.MessageBoxRequest.Parent.init -> void
 BrutalEngine.Platform.MessageBoxRequest.Title.get -> string!
 BrutalEngine.Platform.MessageBoxRequest.Title.init -> void
+BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.Left = 1 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.Middle = 2 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.None = 0 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.Right = 3 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.X1 = 4 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButton.X2 = 5 -> BrutalEngine.Platform.MouseButton
+BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.Left = 1 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.Middle = 2 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.None = 0 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.Right = 4 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.X1 = 8 -> BrutalEngine.Platform.MouseButtons
+BrutalEngine.Platform.MouseButtons.X2 = 16 -> BrutalEngine.Platform.MouseButtons
 BrutalEngine.Platform.PlatformOptions
 BrutalEngine.Platform.PlatformOptions.<Clone>$() -> BrutalEngine.Platform.PlatformOptions!
 BrutalEngine.Platform.PlatformOptions.Application.get -> string!
