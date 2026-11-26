@@ -32,6 +32,8 @@ public sealed class LoaderSetupTests
     [InlineData("bundled: VK_DRIVER_FILES already set is kept")]
     [InlineData("bundled: VK_ICD_FILENAMES already set is kept")]
     [InlineData("bundled: an empty VK_DRIVER_FILES counts as unset")]
+    [InlineData("bundled: an empty VK_DRIVER_FILES falls back to VK_ICD_FILENAMES")]
+    [InlineData("bundled: an empty VK_ICD_FILENAMES counts as unset")]
     [InlineData("bundled: loader without a manifest")]
     [InlineData("bundled: manifest without a loader uses BRUTAL's search")]
     [InlineData("bundled: no bundled files uses BRUTAL's search")]
@@ -167,6 +169,13 @@ public sealed class LoaderSetupTests
                 new(_bundled, LoaderOrigin.Bundled, UserDrivers), null, ["preload " + _bundled]),
         "bundled: an empty VK_DRIVER_FILES counts as unset" =>
             new(Host(macOS: true, _icd, _bundled).WithEnvironment(LoaderSetup.DriverFilesVariable, ""), null,
+                new(_bundled, LoaderOrigin.Bundled, _icd), null, [_setIcd, "preload " + _bundled]),
+        "bundled: an empty VK_DRIVER_FILES falls back to VK_ICD_FILENAMES" =>
+            new(Host(macOS: true, _icd, _bundled).WithEnvironment(LoaderSetup.DriverFilesVariable, "")
+                    .WithEnvironment(LoaderSetup.LegacyDriverFilesVariable, UserDrivers), null,
+                new(_bundled, LoaderOrigin.Bundled, UserDrivers), null, ["preload " + _bundled]),
+        "bundled: an empty VK_ICD_FILENAMES counts as unset" =>
+            new(Host(macOS: true, _icd, _bundled).WithEnvironment(LoaderSetup.LegacyDriverFilesVariable, ""), null,
                 new(_bundled, LoaderOrigin.Bundled, _icd), null, [_setIcd, "preload " + _bundled]),
         "bundled: loader without a manifest" =>
             new(Host(macOS: true, _bundled), null, new(_bundled, LoaderOrigin.Bundled, null), null, ["preload " + _bundled]),
