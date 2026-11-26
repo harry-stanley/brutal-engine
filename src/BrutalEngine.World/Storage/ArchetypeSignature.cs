@@ -11,7 +11,8 @@ namespace BrutalEngine.World.Storage;
 /// <b>Identity.</b> Two signatures are equal when they hold the same ids, so the order and repetition of the ids an
 /// archetype was asked for never matter: <see cref="Normalize"/> sorts and deduplicates them first. The hash
 /// (<see cref="ComputeHash"/>) is a fixed function of the sorted ids, the same in every process, and is used only to
-/// find a signature, never to order anything.
+/// find a signature, never to order anything. The mask's width isn't part of the identity either: signatures with the
+/// same ids are equal even if they were created with different mask widths.
 /// </para>
 /// <para>
 /// <b>Mask.</b> <see cref="Mask"/> is <c>MaxComponentTypes</c> bits wide, one <see cref="ulong"/> per 64 ids; bit
@@ -140,7 +141,7 @@ internal sealed class ArchetypeSignature : IEquatable<ArchetypeSignature>
 
     /// <summary>Compares the ids of two signatures.</summary>
     /// <param name="other">The signature to compare with.</param>
-    /// <returns><see langword="true"/> if both hold the same ids.</returns>
+    /// <returns><see langword="true"/> if both hold the same ids, whatever their mask widths.</returns>
     public bool Equals(ArchetypeSignature? other) =>
         other is not null && (ReferenceEquals(this, other) || (Hash == other.Hash && Matches(other._ids)));
 

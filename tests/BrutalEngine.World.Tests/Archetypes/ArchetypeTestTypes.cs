@@ -4,7 +4,11 @@ using BrutalEngine.World.Internal;
 
 namespace BrutalEngine.World.Tests.Archetypes;
 
-/// <summary>Worlds and made-up component types for the archetype tests.</summary>
+/// <summary>
+/// Shared helpers for the archetype tests: a fresh tracking allocator, made-up component types registered through the
+/// registry's internal seam, and component id arrays. The signature tests need none of them; the archetype set, edge
+/// and row tests do.
+/// </summary>
 internal static class ArchetypeTestTypes
 {
     /// <summary>A fresh tracking allocator per test, so each test's leak check sees only its own blocks.</summary>
