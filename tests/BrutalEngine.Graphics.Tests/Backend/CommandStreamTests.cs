@@ -242,7 +242,7 @@ public sealed class CommandStreamTests
         (byte[] bytes, int goodRecords) = stream switch
         {
             "truncated header" => (new byte[4], 0),
-            "truncated header after a record" => ([.. RawRecord(CommandKind.Draw, 24, 24), .. new byte[4]], 1),
+            "truncated header after a record" => ([.. RawDraw(vertexCount: 3), .. new byte[4]], 1),
             "unknown kind" => (RawRecord((CommandKind)22, 24, 24), 0),
             "largest unknown kind" => (RawRecord((CommandKind)ushort.MaxValue, 24, 24), 0),
             "size past the end" => (RawRecord(CommandKind.Draw, 64, 24), 0),
@@ -254,16 +254,55 @@ public sealed class CommandStreamTests
             _ => throw new ArgumentOutOfRangeException(nameof(stream), stream, "Unknown stream."),
         };
 
-        Assert.Throws<InvalidOperationException>(() =>
+        var reader = new CommandReader(bytes);
+        for (int i = 0; i < goodRecords; i++)
         {
-            var reader = new CommandReader(bytes);
-            for (int i = 0; i < goodRecords; i++)
-            {
-                Assert.True(reader.MoveNext());
-            }
+            Assert.True(reader.MoveNext());
+        }
 
+        Assert.IsType<InvalidOperationException>(MoveNextError(ref reader), exactMatch: true);
+
+        // The reader stays where it was: the last good record (or none) is still current, and the bad record throws
+        // again.
+        if (goodRecords > 0)
+        {
+            Assert.Equal(CommandKind.Draw, reader.Kind);
+            Assert.Equal(new DrawArguments(3, 0), reader.Payload<DrawCommand>().Arguments);
+        }
+        else
+        {
+            Assert.IsType<InvalidOperationException>(KindError(in reader), exactMatch: true);
+        }
+
+        Assert.IsType<InvalidOperationException>(MoveNextError(ref reader), exactMatch: true);
+    }
+
+    // The exception MoveNext throws, or null. A ref struct can't be captured by Assert.Throws's lambda.
+    private static Exception? MoveNextError(ref CommandReader reader)
+    {
+        try
+        {
             reader.MoveNext();
-        });
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e;
+        }
+    }
+
+    // The exception reading Kind throws, or null.
+    private static Exception? KindError(in CommandReader reader)
+    {
+        try
+        {
+            _ = reader.Kind;
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e;
+        }
     }
 
     [Fact]
@@ -631,6 +670,14 @@ public sealed class CommandStreamTests
         BitConverter.TryWriteBytes(bytes.AsSpan(0, 2), (ushort)kind);
         BitConverter.TryWriteBytes(bytes.AsSpan(2, 2), reserved);
         BitConverter.TryWriteBytes(bytes.AsSpan(4, 4), size);
+        return bytes;
+    }
+
+    // A well-formed 24-byte Draw record whose payload starts with the vertex count (the other arguments are 0).
+    private static byte[] RawDraw(int vertexCount)
+    {
+        byte[] bytes = RawRecord(CommandKind.Draw, 24, 24);
+        BitConverter.TryWriteBytes(bytes.AsSpan(8, 4), vertexCount);
         return bytes;
     }
 }
