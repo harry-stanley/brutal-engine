@@ -255,7 +255,8 @@ internal static class CopyValidator
         CheckSpan(nameof(copy), Type, null, nameof(TextureCopy.DestinationX), "SourceRegion.Width", copy.DestinationX, from.Width, MipSize(destination.Width, mip), "width", destination.DebugName);
         CheckSpan(nameof(copy), Type, null, nameof(TextureCopy.DestinationY), "SourceRegion.Height", copy.DestinationY, from.Height, MipSize(destination.Height, mip), "height", destination.DebugName);
 
-        // Both regions lie inside the same mip level here, so no end can overflow.
+        // Each region was checked inside its own mip level above, so no end can overflow, whether or not the
+        // subresources match.
         if (copy.Source.Texture == copy.Destination.Texture
             && copy.Source.MipLevel == copy.Destination.MipLevel
             && copy.Source.ArrayLayer == copy.Destination.ArrayLayer
