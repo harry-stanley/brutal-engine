@@ -14,7 +14,9 @@
 # is packed more than once; 2 on a usage error or input it can't read: a property that isn't set exactly once to a
 # non-negative integer of 1 to 9 digits (the form src/Directory.Build.targets and ShipGateRule accept), no engine
 # library, or a package file name without a version. The properties are read from the files' text, one
-# <Name>value</Name> element each; the architecture tests (ShipGateTests) reject conditional or repeated ones.
+# <Name>value</Name> element each, spelled exactly; the architecture tests (ShipGateTests) reject conditional or
+# repeated ones and other spellings, which MSBuild would read too, since its property names are case-insensitive.
+# Milestones are decimal (08 is 8, 010 is 10), as MSBuild compares them.
 set -eu
 
 readonly MILESTONE='BrutalEngineMilestone'

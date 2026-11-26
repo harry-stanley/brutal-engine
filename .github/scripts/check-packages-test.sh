@@ -102,6 +102,22 @@ fresh; standard_tree
 library Fixture.Platform '<BrutalEngineMilestone>01</BrutalEngineMilestone>'
 check 0 "leading zero is still milestone 1" "Packed set matches"
 
+# Milestones are decimal, as MSBuild compares them: 08 and 09 aren't octal errors, and 010 is 10, not 8.
+fresh; standard_tree
+library Fixture.Next '<BrutalEngineMilestone>08</BrutalEngineMilestone>'
+check 0 "milestone 08 is 8, above release 1" "Packed set matches the ship gate: Fixture.Core Fixture.Platform Fixture.Platform.Sdl3"
+
+fresh; standard_tree
+release '<BrutalEngineReleaseMilestone>09</BrutalEngineReleaseMilestone>'
+library Fixture.Next '<BrutalEngineMilestone>08</BrutalEngineMilestone>'
+packed Fixture.Next.0.3.0.nupkg
+check 0 "milestone 08 is at most release 09" "Packed set matches the ship gate: Fixture.Core Fixture.Next Fixture.Platform Fixture.Platform.Sdl3"
+
+fresh; standard_tree
+release '<BrutalEngineReleaseMilestone>9</BrutalEngineReleaseMilestone>'
+library Fixture.Next '<BrutalEngineMilestone>010</BrutalEngineMilestone>'
+check 0 "milestone 010 is 10, above release 9" "Packed set matches the ship gate: Fixture.Core Fixture.Platform Fixture.Platform.Sdl3"
+
 # Set differences: exit 1.
 fresh; standard_tree
 rm "$tree/packages/Fixture.Platform.0.2.0-alpha.0.84.nupkg"
