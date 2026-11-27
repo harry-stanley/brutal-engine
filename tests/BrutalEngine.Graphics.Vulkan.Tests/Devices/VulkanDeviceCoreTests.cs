@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
+using BrutalEngine.Graphics.Vulkan.Adapters;
 using BrutalEngine.Graphics.Vulkan.Devices;
 using BrutalEngine.Graphics.Vulkan.Instances;
 using BrutalEngine.Graphics.Vulkan.Tests.Adapters;
@@ -222,6 +223,44 @@ public sealed unsafe class VulkanDeviceCoreTests
 
         Assert.Throws<ArgumentNullException>("adapter", () => VulkanDeviceCore.Create(instance, null!, 0, SomeFeatures, Selection(null), new VulkanCallGate()));
         Assert.Throws<ArgumentException>("adapter", () => VulkanDeviceCore.Create(instance, foreign.Device, foreign.Family, SomeFeatures, Selection(null), new VulkanCallGate()));
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Create_EachQueueFamily_TakesTheQueueFromThatFamily()
+    {
+        ValidationLog sink = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(sink);
+        using (logger)
+        {
+            using VulkanInstance instance = GpuDevices.CreateInstance(category, []);
+            int created = 0;
+            foreach (GpuDevices.Adapter adapter in GpuDevices.Suitable(instance))
+            {
+                // Every family the adapter offers, in the driver's order; any family is a valid one-queue device (each
+                // has at least one queue), so none is skipped and a failure fails the test.
+                foreach (AdapterCandidate.QueueFamily family in adapter.Candidate.QueueFamilies.Span)
+                {
+                    GpuDevices.Adapter onFamily = adapter with { Family = family.Index };
+                    Result<VulkanDeviceCore> result = GpuDevices.Create(instance, onFamily, new VulkanCallGate(), null);
+                    Assert.True(result.IsSuccess, $"{adapter.Candidate.Name}, family {family.Index}: {result}");
+                    using VulkanDeviceCore core = result.Value;
+                    Device device = core.Device;
+                    VkQueue queue = default;
+                    device.PInvoke.vkGetDeviceQueue.Invoke(device.Handle, family.Index, 0, &queue);
+
+                    Assert.Equal(family.Index, core.QueueFamily);
+                    Assert.False(queue.IsNull());
+                    Assert.Equal(queue.VkHandle, core.Queue.VkHandle);
+                    created++;
+                    TestContext.Current.TestOutputHelper?.WriteLine($"{adapter.Candidate.Name}: family {family.Index} (graphics {family.Graphics}, compute {family.Compute})");
+                }
+            }
+
+            Assert.True(created > 0);
+        }
+
+        Assert.DoesNotContain(sink.Entries, e => e.Level >= LogLevel.Warning);
     }
 
     [Fact]
