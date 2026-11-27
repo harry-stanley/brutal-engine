@@ -122,6 +122,26 @@ public sealed partial class GraphicsDeviceDisposeTests
     }
 
     [Fact]
+    public void GpuResourceLeakException_CallerChangesList_ExceptionUnchanged()
+    {
+        string[] lines = ["Buffer 'Vertices'", "Sampler ''"];
+        var list = new List<string>(lines);
+
+        var thrown = new GpuResourceLeakException(list);
+        list[0] = "Texture 'Changed'";
+        list.Add("Buffer 'Added'");
+        lines[1] = "Texture 'Changed'";
+
+        Assert.Equal(["Buffer 'Vertices'", "Sampler ''"], thrown.LeakedObjects);
+        Assert.Equal("2 GPU object(s) still alive: Buffer 'Vertices', Sampler ''.", thrown.Message);
+        // Read-only to a catcher too: the list can't be cast back and changed.
+        Assert.IsNotType<string[]>(thrown.LeakedObjects);
+        Assert.IsNotType<List<string>>(thrown.LeakedObjects);
+        Assert.Throws<NotSupportedException>(() => ((IList<string>)thrown.LeakedObjects)[0] = "Texture 'Changed'");
+        Assert.Equal("Buffer 'Vertices'", thrown.LeakedObjects[0]);
+    }
+
+    [Fact]
     public void Dispose_KindNames_ComeFromBackendObjectKind() =>
         // The leak lines name kinds as BackendObjectKind members do; pinned so a renamed member is noticed here.
         Assert.Equal(
