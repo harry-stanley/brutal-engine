@@ -1,13 +1,15 @@
 using System;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
+using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Vulkan.Devices;
 
 namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 
 /// <summary>
 /// One Vulkan swapchain on a raw surface (docs/design/graphics-vulkan.md section 4): the swapchain, a view and a
-/// render-finished semaphore per image, and an acquire semaphore per frame slot.
+/// render-finished semaphore per image, and an acquire semaphore per frame slot; it acquires and presents through the
+/// raw device function table.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,12 +19,20 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 /// returns isn't known until it returns.
 /// </para>
 /// <para>
+/// Acquire and present call <c>vkAcquireNextImageKHR</c> and <c>vkQueuePresentKHR</c> through the raw table
+/// (<c>Brutal.Vulkan/Generated/Handles/VkDevice.gen.cs:247-248</c>), because BRUTAL's wrappers throw on
+/// <c>VK_ERROR_OUT_OF_DATE_KHR</c> (upstream issue draft #1), and the raw present skips BRUTAL's queue lock (section 13,
+/// rule 6). Their results map through <see cref="VkCheck.SwapchainStatusOf"/>, and pass through the gate so a lost
+/// device is detected in one place. Once the gate is lost they return <see cref="SwapchainStatus.DeviceLost"/> without
+/// calling the driver.
+/// </para>
+/// <para>
 /// The swapchain owns its images; <see cref="Dispose"/> destroys the semaphores, the views and the swapchain, never the
 /// surface. The owner disposes it once the device is idle and before the device.
 /// </para>
 /// <para>
 /// Not thread-safe: the device's owner thread creates, uses and disposes it. Creation allocates (this object and its
-/// arrays); the getters allocate nothing.
+/// arrays); <see cref="Acquire"/>, <see cref="Present"/> and the getters allocate nothing.
 /// </para>
 /// </remarks>
 internal sealed unsafe class VulkanSwapchain : IDisposable
@@ -165,17 +175,90 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <exception cref="IndexOutOfRangeException"><paramref name="index"/> is out of range.</exception>
     public VkImageView GetView(int index) => _views[index];
 
-    /// <summary>Gets an image's render-finished semaphore: the frame's submit signals it, <c>Present</c> waits on it.</summary>
+    /// <summary>Gets an image's render-finished semaphore: the frame's submit signals it, <see cref="Present"/> waits on it.</summary>
     /// <param name="index">The image's index.</param>
     /// <returns>The semaphore.</returns>
     /// <exception cref="IndexOutOfRangeException"><paramref name="index"/> is out of range.</exception>
     public VkSemaphore GetRenderFinished(int index) => _renderFinished[index];
 
-    /// <summary>Gets a slot's acquire semaphore: <c>Acquire</c> signals it, the frame's submit waits on it.</summary>
+    /// <summary>Gets a slot's acquire semaphore: <see cref="Acquire"/> signals it, the frame's submit waits on it.</summary>
     /// <param name="slot">The frame slot, from 0 to <see cref="FramesInFlight"/> minus 1.</param>
     /// <returns>The semaphore.</returns>
     /// <exception cref="IndexOutOfRangeException"><paramref name="slot"/> is out of range.</exception>
     public VkSemaphore GetAcquireSemaphore(int slot) => _acquired[slot];
+
+    /// <summary>Acquires the next image for a frame slot, signalling the slot's acquire semaphore when it is ready.</summary>
+    /// <param name="slot">The frame slot, from 0 to <see cref="FramesInFlight"/> minus 1.</param>
+    /// <param name="timeout">
+    /// The wait for an available image in nanoseconds, BRUTAL's <c>nint</c> for <c>uint64_t</c>: the caller passes
+    /// <c>GpuTimeout</c> as <c>unchecked((nint)ns)</c> (section 13, rule 7).
+    /// </param>
+    /// <returns>
+    /// The status (<see cref="VkCheck.SwapchainStatusOf"/>; a timeout is <see cref="SwapchainStatus.OutOfDate"/>, not a
+    /// loss), the image index for <see cref="SwapchainStatus.Success"/> and <see cref="SwapchainStatus.Suboptimal"/> and
+    /// -1 otherwise, and the <c>VkResult</c> as the native code.
+    /// </returns>
+    /// <exception cref="ObjectDisposedException">The swapchain or its device is disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="slot"/> is out of range.</exception>
+    /// <remarks>Allocates nothing.</remarks>
+    public BackendAcquire Acquire(int slot, nint timeout)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if ((uint)slot >= (uint)_acquired.Length)
+        {
+            ThrowOutOfRange(nameof(slot), slot);
+        }
+
+        if (_gate.IsLost)
+        {
+            return new BackendAcquire(SwapchainStatus.DeviceLost, -1, (int)VkResult.ErrorDeviceLost);
+        }
+
+        Device device = _core.Device;
+        int index = -1;
+
+        // Sound: index is a local the driver writes before returning.
+        VkResult result = _gate.TryTakeFault(VulkanCall.AcquireNextImage, out VkResult injected) ? injected
+            : device.PInvoke.vkAcquireNextImageKHR.Invoke(device.Handle, _handle, timeout, _acquired[slot], default, &index);
+
+        // Only to mark a lost device; the status below says what happened.
+        _ = _gate.Check(result, VulkanCall.AcquireNextImage);
+        SwapchainStatus status = VkCheck.SwapchainStatusOf(result, acquire: true);
+        return new BackendAcquire(status, status is SwapchainStatus.Success or SwapchainStatus.Suboptimal ? index : -1, (int)result);
+    }
+
+    /// <summary>Presents an acquired image on a queue, waiting on the image's render-finished semaphore.</summary>
+    /// <param name="queue">The device's queue, which can present to the surface.</param>
+    /// <param name="imageIndex">The image's index, from an acquire whose frame signals its render-finished semaphore.</param>
+    /// <returns>The status (<see cref="VkCheck.SwapchainStatusOf"/>) and the <c>VkResult</c> as the native code.</returns>
+    /// <exception cref="ObjectDisposedException">The swapchain or its device is disposed.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="imageIndex"/> is out of range.</exception>
+    /// <remarks>Allocates nothing.</remarks>
+    public BackendPresent Present(VkQueue queue, int imageIndex)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if ((uint)imageIndex >= (uint)_images.Length)
+        {
+            ThrowOutOfRange(nameof(imageIndex), imageIndex);
+        }
+
+        if (_gate.IsLost)
+        {
+            return new BackendPresent(SwapchainStatus.DeviceLost, (int)VkResult.ErrorDeviceLost);
+        }
+
+        Device device = _core.Device;
+        VkSwapchainKHR handle = _handle;
+        VkSemaphore wait = _renderFinished[imageIndex];
+
+        // Sound: every pointer is to a local or a parameter of this method, which outlive the call.
+        VkPresentInfoKHR info = new() { WaitSemaphoreCount = 1, WaitSemaphores = &wait, SwapchainCount = 1, Swapchains = &handle, ImageIndices = &imageIndex };
+        VkResult result = _gate.TryTakeFault(VulkanCall.QueuePresent, out VkResult injected) ? injected : device.PInvoke.vkQueuePresentKHR.Invoke(queue, &info);
+
+        // Only to mark a lost device; the status below says what happened.
+        _ = _gate.Check(result, VulkanCall.QueuePresent);
+        return new BackendPresent(VkCheck.SwapchainStatusOf(result, acquire: false), (int)result);
+    }
 
     /// <summary>Destroys the acquire semaphores, then each image's semaphore and view, then the swapchain; once.</summary>
     /// <exception cref="ObjectDisposedException">The device was disposed first (misuse); nothing is destroyed.</exception>
@@ -208,6 +291,9 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         _destroys?.OnSwapchain();
         _handle = default;
     }
+
+    private static void ThrowOutOfRange(string name, int value) =>
+        throw new ArgumentOutOfRangeException(name, value, "Out of the swapchain's range.");
 
     // Reads the images with the two-call pattern (their number is fixed, so VK_INCOMPLETE is a failure), then creates a
     // view and a render-finished semaphore per image and an acquire semaphore per slot. Each object is stored as soon

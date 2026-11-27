@@ -4,6 +4,7 @@ using System.Linq;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
+using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Vulkan.Devices;
 using BrutalEngine.Graphics.Vulkan.Swapchains;
 using BrutalEngine.Graphics.Vulkan.Tests.Devices;
@@ -17,7 +18,10 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Swapchains;
 [Trait("Category", "Gpu")]
 public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixture fixture) : IClassFixture<VulkanSwapchainTests.SurfaceFixture>
 {
+    // Every wait in the harness, and the acquire timeout (GpuTimeout's form: nanoseconds as BRUTAL's nint).
+    private const long WaitNanoseconds = 5_000_000_000;
     private const string ZeroExtent = "surface extent is zero";
+    private static readonly nint _timeout = unchecked((nint)WaitNanoseconds);
 
     // The failing call; which of its calls fails, then how many views and semaphores were created before it, each as
     // constant + per image (N) + per frame slot (F); the injected code, the kind and message section 13 gives it.
@@ -66,6 +70,109 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             Assert.True(swapchain.IsDisposed);
             Assert.True(swapchain.Handle.IsNull());
             Assert.Equal((1, count, count + framesInFlight), (destroys.Swapchains, destroys.Views, destroys.Semaphores));
+        });
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void AcquirePresent_RealSurface_Succeeds(int framesInFlight)
+    {
+        OnEveryPresentingAdapter(gpu =>
+        {
+            using VulkanSwapchain swapchain = gpu.Create(framesInFlight);
+            using FrameLoop loop = new(gpu, framesInFlight);
+
+            // Past every image twice, so each render-finished semaphore and acquire semaphore is reused, which validation
+            // reports if a present didn't wait on the one it was given.
+            loop.Run(swapchain, (2 * swapchain.ImageCount) + framesInFlight);
+        });
+    }
+
+    [Fact]
+    public void Recreate_WithOldSwapchain_Succeeds()
+    {
+        OnEveryPresentingAdapter(gpu =>
+        {
+            VulkanSwapchain.DestroyCounts oldDestroys = new();
+            VulkanSwapchain old = gpu.Create(2, destroys: oldDestroys);
+            using FrameLoop loop = new(gpu, 2);
+            loop.Run(old, 2);
+            gpu.WaitIdle();
+
+            using VulkanSwapchain replacement = gpu.Create(2, old: old);
+
+            // The front end destroys the retired swapchain after the device is idle, whether creation succeeded or not.
+            Assert.False(old.IsDisposed);
+            old.Dispose();
+            Assert.Equal((1, old.ImageCount), (oldDestroys.Swapchains, oldDestroys.Views));
+            Assert.NotEqual(old.GetImage(0).VkHandle, replacement.GetImage(0).VkHandle);
+            loop.Run(replacement, replacement.ImageCount + 2);
+
+            // The replacement is disposed before the frame loop (declared after it), so wait here.
+            gpu.WaitIdle();
+        });
+    }
+
+    [Theory]
+    [InlineData(VkResult.ErrorOutOfDateKHR, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.ErrorSurfaceLostKHR, SwapchainStatus.SurfaceLost)]
+    [InlineData(VkResult.Timeout, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.NotReady, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.ErrorOutOfHostMemory, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorDeviceLost, SwapchainStatus.DeviceLost)]
+    public void Acquire_InjectedResult_MapsStatus(VkResult code, SwapchainStatus status)
+    {
+        OnEveryPresentingAdapter(gpu =>
+        {
+            VulkanFaultInjector faults = new();
+            VulkanCallGate gate = new() { Faults = faults };
+            using VulkanSwapchain swapchain = gpu.Create(2, gate);
+            faults.FailNth(VulkanCall.AcquireNextImage, 1, code);
+
+            Assert.Equal(new BackendAcquire(status, -1, (int)code), swapchain.Acquire(0, _timeout));
+
+            bool lost = code == VkResult.ErrorDeviceLost;
+            Assert.Equal(lost, gate.IsLost);
+            if (lost)
+            {
+                AssertLostMakesNoDriverCall(gpu, swapchain, faults, gate);
+            }
+            else
+            {
+                // The injected result replaced the call, so slot 0's semaphore is untouched and a real frame works.
+                using FrameLoop loop = new(gpu, 2);
+                loop.Run(swapchain, 1);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(VkResult.ErrorOutOfDateKHR, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.SuboptimalKHR, SwapchainStatus.Suboptimal)]
+    [InlineData(VkResult.ErrorSurfaceLostKHR, SwapchainStatus.SurfaceLost)]
+    [InlineData(VkResult.Timeout, SwapchainStatus.DeviceLost)] // a present can't time out
+    [InlineData(VkResult.ErrorDeviceLost, SwapchainStatus.DeviceLost)]
+    public void Present_InjectedResult_MapsStatus(VkResult code, SwapchainStatus status)
+    {
+        OnEveryPresentingAdapter(gpu =>
+        {
+            VulkanFaultInjector faults = new();
+            VulkanCallGate gate = new() { Faults = faults };
+            using VulkanSwapchain swapchain = gpu.Create(2, gate);
+            using FrameLoop loop = new(gpu, 2);
+            int image = loop.AcquireAndSubmit(swapchain, 0);
+            faults.FailNth(VulkanCall.QueuePresent, 1, code);
+
+            Assert.Equal(new BackendPresent(status, (int)code), swapchain.Present(gpu.Core.Queue, image));
+
+            bool lost = code == VkResult.ErrorDeviceLost;
+            Assert.Equal(lost, gate.IsLost);
+            if (lost)
+            {
+                AssertLostMakesNoDriverCall(gpu, swapchain, faults, gate);
+            }
         });
     }
 
@@ -119,6 +226,74 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     }
 
     [Fact]
+    public void AcquirePresent_DoNotAllocate()
+    {
+        OnEveryPresentingAdapter(gpu =>
+        {
+            VulkanFaultInjector faults = new();
+            VulkanCallGate gate = new() { Faults = faults };
+            using VulkanSwapchain swapchain = gpu.Create(2, gate);
+            using FrameLoop loop = new(gpu, 2);
+            loop.Run(swapchain, swapchain.ImageCount + 2);
+            VkQueue queue = gpu.Core.Queue;
+            long allocated = 0;
+            int checksum = 0;
+
+            // The success paths, every image and both slots: only the component's calls are inside the windows.
+            int frames = 3 * swapchain.ImageCount;
+            for (int frame = 0; frame < frames; frame++)
+            {
+                int slot = frame % 2;
+                loop.WaitSlot(slot);
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                BackendAcquire acquired = swapchain.Acquire(slot, _timeout);
+                allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+                Assert.Equal(SwapchainStatus.Success, acquired.Status);
+                loop.Submit(swapchain, slot, acquired.ImageIndex);
+                before = GC.GetAllocatedBytesForCurrentThread();
+                BackendPresent presented = swapchain.Present(queue, acquired.ImageIndex);
+                allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+                checksum += (int)presented.Status + acquired.ImageIndex;
+            }
+
+            // The failure paths: an injected acquire and present status, a loss, then calls on the lost gate.
+            loop.WaitSlot(0);
+            int image = loop.AcquireAndSubmit(swapchain, 0);
+            faults.FailNth(VulkanCall.QueuePresent, 1, VkResult.ErrorOutOfDateKHR);
+            faults.FailNth(VulkanCall.AcquireNextImage, 1, VkResult.ErrorOutOfDateKHR);
+            long failureBefore = GC.GetAllocatedBytesForCurrentThread();
+            checksum += (int)swapchain.Present(queue, image).Status;
+            checksum += (int)swapchain.Acquire(1, _timeout).Status;
+            allocated += GC.GetAllocatedBytesForCurrentThread() - failureBefore;
+            faults.FailNth(VulkanCall.AcquireNextImage, 1, VkResult.ErrorDeviceLost);
+            failureBefore = GC.GetAllocatedBytesForCurrentThread();
+            checksum += (int)swapchain.Acquire(1, _timeout).Status;
+            checksum += (int)swapchain.Acquire(0, _timeout).Status;
+            checksum += (int)swapchain.Present(queue, image).Status;
+            allocated += GC.GetAllocatedBytesForCurrentThread() - failureBefore;
+
+            // The getters, over every image and slot, on the lost swapchain (it stays readable).
+            long gettersBefore = GC.GetAllocatedBytesForCurrentThread();
+            nint handles = swapchain.Handle.VkHandle + swapchain.Plan.Width + swapchain.FramesInFlight + (swapchain.IsDisposed ? 1 : 0);
+            for (int i = 0; i < swapchain.ImageCount; i++)
+            {
+                handles += swapchain.GetImage(i).VkHandle + swapchain.GetView(i).VkHandle + swapchain.GetRenderFinished(i).VkHandle;
+            }
+
+            for (int slot = 0; slot < swapchain.FramesInFlight; slot++)
+            {
+                handles += swapchain.GetAcquireSemaphore(slot).VkHandle;
+            }
+
+            allocated += GC.GetAllocatedBytesForCurrentThread() - gettersBefore;
+
+            Assert.Equal(0, allocated);
+            Assert.True(gate.IsLost);
+            Assert.True(checksum > 0 && handles != 0);
+        });
+    }
+
+    [Fact]
     public void Misuse_ThrowsBeforeAnyDriverCall()
     {
         OnEveryPresentingAdapter(gpu =>
@@ -142,10 +317,35 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             Assert.True(faults.TryTake(VulkanCall.CreateSwapchain, out _), "a driver call was made");
 
             using VulkanSwapchain swapchain = gpu.Create(2);
+            Assert.Throws<ArgumentOutOfRangeException>("slot", () => swapchain.Acquire(-1, _timeout));
+            Assert.Throws<ArgumentOutOfRangeException>("slot", () => swapchain.Acquire(2, _timeout));
+            Assert.Throws<ArgumentOutOfRangeException>("imageIndex", () => swapchain.Present(gpu.Core.Queue, -1));
+            Assert.Throws<ArgumentOutOfRangeException>("imageIndex", () => swapchain.Present(gpu.Core.Queue, swapchain.ImageCount));
             Assert.Throws<IndexOutOfRangeException>(() => swapchain.GetImage(swapchain.ImageCount));
             Assert.Throws<IndexOutOfRangeException>(() => swapchain.GetView(-1));
             Assert.Throws<IndexOutOfRangeException>(() => swapchain.GetAcquireSemaphore(2));
+            Assert.Throws<ObjectDisposedException>(() => disposed.Acquire(0, _timeout));
+            Assert.Throws<ObjectDisposedException>(() => disposed.Present(gpu.Core.Queue, 0));
         });
+    }
+
+    // With the gate lost, create, acquire and present return at once: faults armed on each call stay unconsumed.
+    private static void AssertLostMakesNoDriverCall(Gpu gpu, VulkanSwapchain swapchain, VulkanFaultInjector faults, VulkanCallGate gate)
+    {
+        faults.FailNth(VulkanCall.AcquireNextImage, 1, VkResult.ErrorUnknown);
+        faults.FailNth(VulkanCall.QueuePresent, 1, VkResult.ErrorUnknown);
+        faults.FailNth(VulkanCall.CreateSwapchain, 1, VkResult.ErrorUnknown);
+        VulkanSwapchain.DestroyCounts destroys = new();
+
+        Assert.Equal(new BackendAcquire(SwapchainStatus.DeviceLost, -1, (int)VkResult.ErrorDeviceLost), swapchain.Acquire(1, _timeout));
+        Assert.Equal(new BackendPresent(SwapchainStatus.DeviceLost, (int)VkResult.ErrorDeviceLost), swapchain.Present(gpu.Core.Queue, 0));
+        Result<VulkanSwapchain> created = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, swapchain, 2, gate, destroys);
+
+        Assert.Equal(new EngineError(ErrorKind.Unavailable, "device is lost", (int)VkResult.ErrorDeviceLost), created.Error);
+        Assert.True(faults.TryTake(VulkanCall.AcquireNextImage, out _), "acquire reached the driver");
+        Assert.True(faults.TryTake(VulkanCall.QueuePresent, out _), "present reached the driver");
+        Assert.True(faults.TryTake(VulkanCall.CreateSwapchain, out _), "create reached the driver");
+        Assert.Equal((0, 0, 0), (destroys.Swapchains, destroys.Views, destroys.Semaphores));
     }
 
     private static void AssertDistinctLive(IEnumerable<nint> handles, int count)
@@ -281,6 +481,125 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             {
                 WaitIdle();
                 Core.Dispose();
+            }
+        }
+    }
+
+    // The frame work the swapchain component doesn't own (#311's frame slots): per slot a fence, a command pool and one
+    // command buffer that moves the acquired image to PRESENT_SRC, waiting on the slot's acquire semaphore and
+    // signalling the image's render-finished semaphore, both at COLOR_ATTACHMENT_OUTPUT as M0 does
+    // (samples/HelloWindow/FrameRenderer.cs:114-116, :318-333).
+    private sealed class FrameLoop : IDisposable
+    {
+        private readonly Gpu _gpu;
+        private readonly VkFence[] _fences;
+        private readonly VkCommandPool[] _pools;
+        private readonly VkCommandBuffer[] _commands;
+
+        public FrameLoop(Gpu gpu, int slots)
+        {
+            _gpu = gpu;
+            _fences = new VkFence[slots];
+            _pools = new VkCommandPool[slots];
+            _commands = new VkCommandBuffer[slots];
+            Device device = gpu.Core.Device;
+            for (int slot = 0; slot < slots; slot++)
+            {
+                VkFenceCreateInfo fence = new() { Flags = VkFenceCreateFlags.SignaledBit };
+                VkFence createdFence = default;
+                Check(device.PInvoke.vkCreateFence.Invoke(device.Handle, &fence, null, &createdFence), "vkCreateFence");
+                _fences[slot] = createdFence;
+                VkCommandPoolCreateInfo pool = new() { QueueFamilyIndex = gpu.Core.QueueFamily };
+                VkCommandPool createdPool = default;
+                Check(device.PInvoke.vkCreateCommandPool.Invoke(device.Handle, &pool, null, &createdPool), "vkCreateCommandPool");
+                _pools[slot] = createdPool;
+                VkCommandBufferAllocateInfo allocate = new() { CommandPool = createdPool, Level = VkCommandBufferLevel.Primary };
+
+                // BRUTAL makes commandBufferCount internal; write it at its explicit offset, 28
+                // (Brutal.Vulkan/Generated/Structs/VkCommandBufferAllocateInfo.gen.cs:51-52), as GpuValidation does.
+                *(int*)((byte*)&allocate + 28) = 1;
+                VkCommandBuffer commands = default;
+                Check(device.PInvoke.vkAllocateCommandBuffers.Invoke(device.Handle, &allocate, &commands), "vkAllocateCommandBuffers");
+                _commands[slot] = commands;
+            }
+        }
+
+        /// <summary>Full frames: wait, acquire, submit, present, each asserted to succeed.</summary>
+        public void Run(VulkanSwapchain swapchain, int frames)
+        {
+            for (int frame = 0; frame < frames; frame++)
+            {
+                int slot = frame % _fences.Length;
+                WaitSlot(slot);
+                int image = AcquireAndSubmit(swapchain, slot);
+                Assert.Equal(new BackendPresent(SwapchainStatus.Success, 0), swapchain.Present(_gpu.Core.Queue, image));
+            }
+        }
+
+        public void WaitSlot(int slot)
+        {
+            Device device = _gpu.Core.Device;
+            VkFence fence = _fences[slot];
+            Check(device.PInvoke.vkWaitForFences.Invoke(device.Handle, 1, &fence, true, unchecked((nint)WaitNanoseconds)), "vkWaitForFences");
+        }
+
+        public int AcquireAndSubmit(VulkanSwapchain swapchain, int slot)
+        {
+            BackendAcquire acquired = swapchain.Acquire(slot, _timeout);
+            Assert.Equal(SwapchainStatus.Success, acquired.Status);
+            Assert.Equal(0, acquired.NativeCode);
+            Assert.InRange(acquired.ImageIndex, 0, swapchain.ImageCount - 1);
+            Submit(swapchain, slot, acquired.ImageIndex);
+            return acquired.ImageIndex;
+        }
+
+        public void Submit(VulkanSwapchain swapchain, int slot, int image)
+        {
+            Device device = _gpu.Core.Device;
+            VkCommandBuffer commands = _commands[slot];
+            Check(device.PInvoke.vkResetCommandPool.Invoke(device.Handle, _pools[slot], VkCommandPoolResetFlags.None), "vkResetCommandPool");
+            VkCommandBufferBeginInfo begin = new() { Flags = VkCommandBufferUsageFlags.OneTimeSubmitBit };
+            Check(device.PInvoke.vkBeginCommandBuffer.Invoke(commands, &begin), "vkBeginCommandBuffer");
+            VkImageMemoryBarrier2 toPresent = new()
+            {
+                SrcStageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit,
+                DstStageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit,
+                OldLayout = VkImageLayout.Undefined,
+                NewLayout = VkImageLayout.PresentSrcKHR,
+                SrcQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+                DstQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+                Image = swapchain.GetImage(image),
+                SubresourceRange = new VkImageSubresourceRange { AspectMask = VkImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = 1 },
+            };
+            VkDependencyInfo dependency = new() { ImageMemoryBarrierCount = 1, ImageMemoryBarriers = &toPresent };
+            device.PInvoke.vkCmdPipelineBarrier2.Invoke(commands, &dependency);
+            Check(device.PInvoke.vkEndCommandBuffer.Invoke(commands), "vkEndCommandBuffer");
+
+            VkSemaphoreSubmitInfo wait = new() { Semaphore = swapchain.GetAcquireSemaphore(slot), StageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit };
+            VkSemaphoreSubmitInfo signal = new() { Semaphore = swapchain.GetRenderFinished(image), StageMask = VkPipelineStageFlags2.ColorAttachmentOutputBit };
+            VkCommandBufferSubmitInfo commandInfo = new() { CommandBuffer = commands };
+            VkSubmitInfo2 submit = new()
+            {
+                WaitSemaphoreInfoCount = 1,
+                WaitSemaphoreInfos = &wait,
+                CommandBufferInfoCount = 1,
+                CommandBufferInfos = &commandInfo,
+                SignalSemaphoreInfoCount = 1,
+                SignalSemaphoreInfos = &signal,
+            };
+            VkFence fence = _fences[slot];
+            Check(device.PInvoke.vkResetFences.Invoke(device.Handle, 1, &fence), "vkResetFences");
+            Check(device.PInvoke.vkQueueSubmit2.Invoke(_gpu.Core.Queue, 1, &submit, fence), "vkQueueSubmit2");
+        }
+
+        public void Dispose()
+        {
+            _gpu.WaitIdle();
+            Device device = _gpu.Core.Device;
+            for (int slot = 0; slot < _fences.Length; slot++)
+            {
+                device.PInvoke.vkDestroyCommandPool.Invoke(device.Handle, _pools[slot], null);
+                device.PInvoke.vkDestroyFence.Invoke(device.Handle, _fences[slot], null);
             }
         }
     }
