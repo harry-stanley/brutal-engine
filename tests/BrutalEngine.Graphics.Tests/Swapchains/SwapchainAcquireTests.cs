@@ -182,6 +182,13 @@ public sealed class SwapchainAcquireTests : IDisposable
         Assert.Equal(1, _device.Statistics.LiveObjects);
         bool logged = _fixture.Entries().Any(entry => entry.Level == LogLevel.Error && entry.Message.Contains("recreation failed", StringComparison.Ordinal));
         Assert.Equal(expected is AcquireStatus.Skipped or AcquireStatus.DeviceLost, logged);
+        if (expected == AcquireStatus.SurfaceLost)
+        {
+            // A lost surface sticks: the next acquire reports it without a surface, swapchain or acquire call.
+            (int lifetime, int acquires) = (Lifetime(_fixture.BackendDevice).Count, Acquires());
+            Assert.Equal((AcquireStatus.SurfaceLost, default(SwapchainImage)), Frame());
+            Assert.Equal((lifetime, acquires), (Lifetime(_fixture.BackendDevice).Count, Acquires()));
+        }
     }
 
     [Theory]
