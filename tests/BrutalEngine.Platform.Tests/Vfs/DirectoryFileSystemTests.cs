@@ -183,6 +183,28 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void WriteAllBytesAndDelete_AtALink_ReplaceTheLinkNotItsTarget()
+    {
+        Directory.CreateDirectory(Path.Join(_root, "data"));
+        string target = Path.Join(_root, "data", "real.bin");
+        File.WriteAllBytes(target, [1, 2, 3]);
+        CreateLink("written", Path.Join("data", "real.bin"), isDirectory: false);
+        CreateLink("deleted", Path.Join("data", "real.bin"), isDirectory: false);
+        DirectoryFileSystem fileSystem = Create();
+
+        Assert.True(fileSystem.WriteAllBytes("written", [7]).IsSuccess);
+        Assert.True(fileSystem.Delete("deleted").IsSuccess);
+
+        // The rename put a regular file where the link was, and the delete removed the other link; the file they
+        // pointed to is as it was.
+        Assert.Null(new FileInfo(Path.Join(_root, "written")).LinkTarget);
+        Assert.Equal([7], File.ReadAllBytes(Path.Join(_root, "written")));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(_root, "deleted"));
+        Assert.Equal([1, 2, 3], File.ReadAllBytes(target));
+        AssertNoTemporaryFiles();
+    }
+
+    [Fact]
     public void List_LinkToNothing_IsAnEmptyFile()
     {
         // A link to a missing file, and a link to itself: both lead nowhere.

@@ -15,12 +15,19 @@ namespace BrutalEngine.Platform.Vfs;
 /// <remarks>
 /// <para>
 /// <b>Paths:</b> a relative path must be a normalised <see cref="VfsPath.RelativePath"/>, so it can't leave the root
-/// lexically; its <c>/</c> separators become the OS's, and the OS resolves the result, following symbolic links as it
-/// does; <see cref="List"/> lists a link as what it leads to, with the final target's length, and a link that leads to
-/// no file as a file of length 0. Lookups follow the OS too: on a case-insensitive file system one spelling opens
-/// another. If the root directory is removed after construction, <see cref="GetEntryKind"/> answers
-/// <see cref="VfsEntryKind.None"/> for every path, the root included, every other operation fails with
-/// <see cref="ErrorKind.NotFound"/>, and none creates the root again.
+/// lexically; its <c>/</c> separators become the OS's, and the OS resolves the result. Lookups follow the OS too: on a
+/// case-insensitive file system one spelling opens another. If the root directory is removed after construction,
+/// <see cref="GetEntryKind"/> answers <see cref="VfsEntryKind.None"/> for every path, the root included, every other
+/// operation fails with <see cref="ErrorKind.NotFound"/>, and none creates the root again.
+/// </para>
+/// <para>
+/// <b>Symbolic links</b> are followed wherever they lead, except at the last name of a write or of a file's delete: the
+/// rename of <see cref="WriteAllBytes"/> replaces a link at the target name with a regular file, and
+/// <see cref="Delete"/> of a link to a file removes the link; both leave the link's target untouched.
+/// <see cref="List"/> lists a link as what it leads to, through any chain of links, with the final target's length.
+/// A link that leads to no file (dangling, or a loop) is a <see cref="VfsEntryKind.File"/> to
+/// <see cref="GetEntryKind"/> and a file of length 0 to <see cref="List"/>; <see cref="ReadAllBytes"/> of a dangling
+/// link fails with <see cref="ErrorKind.NotFound"/>, and <see cref="Delete"/> removes the link.
 /// </para>
 /// <para>
 /// <b>Writes:</b> <see cref="WriteAllBytes"/> creates missing parent directories, writes the bytes to a new temporary
