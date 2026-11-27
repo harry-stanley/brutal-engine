@@ -201,9 +201,14 @@ public sealed partial class GraphicsDevice
             }
         }
 
-        if (acquired.Status is SwapchainStatus.SurfaceLost or SwapchainStatus.DeviceLost)
+        if (acquired.Status == SwapchainStatus.SurfaceLost)
         {
-            return Lost(state, acquired.Status, new EngineError(ErrorKind.Unavailable, "AcquireImage reported device loss.", acquired.NativeCode), nameof(CommandList.AcquireSwapchainImage));
+            return RecordSurfaceLost(state);
+        }
+
+        if (acquired.Status == SwapchainStatus.DeviceLost)
+        {
+            return RecordDeviceLost(new EngineError(ErrorKind.Unavailable, "AcquireImage reported device loss.", acquired.NativeCode), nameof(CommandList.AcquireSwapchainImage));
         }
 
         state.NeedsRecreation = acquired.Status == SwapchainStatus.Suboptimal;
@@ -414,9 +419,9 @@ public sealed partial class GraphicsDevice
         switch (error.Kind)
         {
             case ErrorKind.Unavailable or ErrorKind.Timeout:
-                return Lost(state, SwapchainStatus.DeviceLost, error, nameof(CommandList.AcquireSwapchainImage));
+                return RecordDeviceLost(error, nameof(CommandList.AcquireSwapchainImage));
             case ErrorKind.NotFound:
-                return Lost(state, SwapchainStatus.SurfaceLost, error, nameof(CommandList.AcquireSwapchainImage));
+                return RecordSurfaceLost(state);
             case ErrorKind.Cancelled:
                 return AcquireStatus.Minimised;
             default:
@@ -425,15 +430,16 @@ public sealed partial class GraphicsDevice
         }
     }
 
-    // Records a lost surface on the swapchain (every later acquire reports it) or a lost device on the device.
-    private AcquireStatus Lost(SwapchainState state, SwapchainStatus status, in EngineError error, string operation)
+    // Records a lost surface on the swapchain: every later acquire reports it.
+    private static AcquireStatus RecordSurfaceLost(SwapchainState state)
     {
-        if (status == SwapchainStatus.SurfaceLost)
-        {
-            state.SurfaceLost = true;
-            return AcquireStatus.SurfaceLost;
-        }
+        state.SurfaceLost = true;
+        return AcquireStatus.SurfaceLost;
+    }
 
+    // Records a lost device on the device, unless it is lost already.
+    private AcquireStatus RecordDeviceLost(in EngineError error, string operation)
+    {
         if (!IsLostCore)
         {
             MarkLost(operation, error);
@@ -490,9 +496,13 @@ public sealed partial class GraphicsDevice
             SwapchainState state = _acquiredImages[i].State;
             BackendPresent presented = _backend.Present(_acquiredUses[i].Swapchain, _acquiredUses[i].ImageIndex);
             state.NeedsRecreation |= presented.Status is SwapchainStatus.Suboptimal or SwapchainStatus.OutOfDate;
-            if (presented.Status is SwapchainStatus.SurfaceLost or SwapchainStatus.DeviceLost)
+            if (presented.Status == SwapchainStatus.SurfaceLost)
             {
-                _ = Lost(state, presented.Status, new EngineError(ErrorKind.Unavailable, "Present reported device loss.", presented.NativeCode), nameof(SubmitFrame));
+                _ = RecordSurfaceLost(state);
+            }
+            else if (presented.Status == SwapchainStatus.DeviceLost)
+            {
+                _ = RecordDeviceLost(new EngineError(ErrorKind.Unavailable, "Present reported device loss.", presented.NativeCode), nameof(SubmitFrame));
             }
         }
 
