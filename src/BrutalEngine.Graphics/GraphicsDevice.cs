@@ -56,8 +56,10 @@ public sealed partial class GraphicsDevice : IDisposable
     private string[] _labelNames = [];
     private bool _disposed;
 
-    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner, GraphicsDeviceOptions options)
+    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner, GraphicsDeviceOptions options, WindowSurfaceSource? compatibleSurface)
     {
+        _compatibleWindow = options.CompatibleWindow;
+        _compatibleSurface = compatibleSurface;
         _slots = CreateSlots(options.FramesInFlight, options.Allocator);
         _allocator = options.Allocator;
         _planner = new FramePlanner(options.Allocator);
@@ -157,7 +159,8 @@ public sealed partial class GraphicsDevice : IDisposable
 
         try
         {
-            return new GraphicsDevice(device, objects, log, ThreadAffinity.CurrentThread(), options);
+            // The request's surface source is kept: the backend hands the selection surface over for that instance only.
+            return new GraphicsDevice(device, objects, log, ThreadAffinity.CurrentThread(), options, request.CompatibleSurface);
         }
         catch
         {
@@ -219,8 +222,9 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <summary>A snapshot of the device's counters.</summary>
     /// <value>
     /// The frames submitted (<see cref="FrameNumber"/>), the bytes the last submitted frame uploaded and the bytes ever
-    /// uploaded outside the ring (<see cref="WriteBuffer"/>), the live objects over every kind (default texture views
-    /// included) and the backend's validation counts.
+    /// uploaded outside the ring (<see cref="WriteBuffer"/>), the live objects over every kind (default texture views and
+    /// swapchains included; swapchain images and transient allocations' buffers never count) and the backend's
+    /// validation counts.
     /// </value>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Read from a thread other than the owner thread.</exception>
@@ -230,7 +234,7 @@ public sealed partial class GraphicsDevice : IDisposable
         get
         {
             ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(Statistics));
-            return new GraphicsStatistics(_frameNumber, _uploadBytesLastFrame, _uploadOverflowBytes, _handles.LiveCount, _backend.ValidationErrors, _backend.ValidationWarnings);
+            return new GraphicsStatistics(_frameNumber, _uploadBytesLastFrame, _uploadOverflowBytes, LiveObjectCount, _backend.ValidationErrors, _backend.ValidationWarnings);
         }
     }
 
@@ -322,29 +326,25 @@ public sealed partial class GraphicsDevice : IDisposable
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
-    /// <remarks>Default texture views count as objects. Owner thread. Allocates nothing when nothing leaks.</remarks>
+    /// <remarks>
+    /// Default texture views and swapchains (<c>Swapchain 'DebugName'</c>) count as objects; swapchain images never do.
+    /// Owner thread. Allocates nothing when nothing leaks.
+    /// </remarks>
     public void ThrowIfLeaks()
     {
         ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(ThrowIfLeaks));
-        if (_handles.LiveCount == 0)
+        if (LiveObjectCount == 0)
         {
             return;
         }
 
-        List<HandleTables.LiveObject> live = _handles.ListLive();
-        string[] lines = new string[live.Count];
-        for (int i = 0; i < lines.Length; i++)
-        {
-            lines[i] = Describe(live[i]);
-        }
-
-        throw new GpuResourceLeakException(lines);
+        throw new GpuResourceLeakException(LeakLines());
     }
 
     /// <summary>
     /// Waits for the GPU, destroys the objects deletion queues still hold and the upload staging buffers, logs every
-    /// object still alive as a leak, destroys them newest first, then disposes the backend device and frees the frame
-    /// slots, once; later calls do nothing.
+    /// object still alive as a leak, destroys the live swapchains (each before its surface) and then the other objects,
+    /// newest first, then disposes the backend device and frees the frame slots, once; later calls do nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>
@@ -377,11 +377,12 @@ public sealed partial class GraphicsDevice : IDisposable
 
         DestroyUploads();
 
-        foreach (HandleTables.LiveObject leaked in _handles.ListLive())
+        foreach (string leaked in LeakLines())
         {
-            _log.Error($"Leak: {Describe(leaked)} was still alive when the device was disposed.");
+            _log.Error($"Leak: {leaked} was still alive when the device was disposed.");
         }
 
+        DestroySwapchains();
         foreach (HandleTables.LiveObject live in _handles.TakeAll())
         {
             _backend.Destroy(live.Kind, live.Id);
@@ -494,7 +495,23 @@ public sealed partial class GraphicsDevice : IDisposable
         }
     }
 
-    private static string Describe(HandleTables.LiveObject live) => $"{live.Kind} '{live.DebugName}'";
+    // The live objects the leak report lists: every kind's, and the swapchains.
+    private int LiveObjectCount => _handles.LiveCount + _swapchainHandles.Count;
+
+    // One "Kind 'DebugName'" line per live object and swapchain, oldest first.
+    private List<string> LeakLines()
+    {
+        List<HandleTables.LiveObject> objects = _handles.ListLive();
+        var lines = new List<(long Sequence, string Line)>(objects.Count + _swapchainHandles.Count);
+        foreach (HandleTables.LiveObject live in objects)
+        {
+            lines.Add((live.Sequence, $"{live.Kind} '{live.DebugName}'"));
+        }
+
+        AddSwapchainLeaks(lines);
+        lines.Sort(static (a, b) => a.Sequence.CompareTo(b.Sequence));
+        return lines.ConvertAll(static line => line.Line);
+    }
 
     private void ThrowIfUnusable(string apiName)
     {

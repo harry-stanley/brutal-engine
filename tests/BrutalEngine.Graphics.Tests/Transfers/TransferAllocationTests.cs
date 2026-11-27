@@ -1,13 +1,15 @@
 using System;
+using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Tests.Device;
+using BrutalEngine.TestUtilities;
 using Xunit;
 
 namespace BrutalEngine.Graphics.Tests.Transfers;
 
 /// <summary>
 /// Steady-state frames with transient allocations, copies and readback allocate no managed memory (docs/design/graphics.md
-/// section 14).
+/// section 14), on a lost device too.
 /// </summary>
 public sealed class TransferAllocationTests : IDisposable
 {
@@ -102,5 +104,30 @@ public sealed class TransferAllocationTests : IDisposable
         // Every frame allocated and wrote; the settled buffer is readable from frame 2 on (two frames in flight).
         Assert.Equal((Frames + WarmUpFrames) + (Frames + WarmUpFrames - 2), checksum);
         Assert.True(device.WaitIdle().IsSuccess);
+
+        // Then the device is lost (outside the measured window: the detection logs). On a lost device every copy is still
+        // checked and records nothing, and both reads return false; none of it allocates either.
+        _fixture.Script.FailNext(FakeBackendOperation.WaitForFrame, new EngineError(ErrorKind.Unavailable, "device lost", -4));
+        Assert.Equal(FrameStatus.DeviceLost, device.BeginFrame(out CommandList lostFrame));
+        _ = device.SubmitFrame(lostFrame);
+        int lostReads = 0;
+        before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < Frames; i++)
+        {
+            FrameStatus begun = device.BeginFrame(out CommandList commands);
+            foreach (CommandKind kind in TransferResources.Kinds)
+            {
+                resources.Record(commands, kind);
+            }
+
+            lostReads += device.TryReadBuffer(resources.Readback, 0, read) || device.TryReadBuffer(settled, 48, read) ? 0 : 1;
+            FrameStatus submitted = device.SubmitFrame(commands);
+            lostReads += begun == FrameStatus.DeviceLost && submitted == FrameStatus.DeviceLost ? 0 : -100_000;
+        }
+
+        allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocatedBytes);
+        Assert.Equal(Frames, lostReads);
     }
 }

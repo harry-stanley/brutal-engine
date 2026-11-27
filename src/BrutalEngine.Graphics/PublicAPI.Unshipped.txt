@@ -574,6 +574,7 @@ BrutalEngine.Graphics.GraphicsDevice.CompletedFrameNumber.get -> long
 BrutalEngine.Graphics.GraphicsDevice.CreateBuffer(in BrutalEngine.Graphics.BufferDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.BufferHandle>
 BrutalEngine.Graphics.GraphicsDevice.CreateDebugLabel(string! name) -> BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.GraphicsDevice.CreateSampler(in BrutalEngine.Graphics.SamplerDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.SamplerHandle>
+BrutalEngine.Graphics.GraphicsDevice.CreateSwapchain(BrutalEngine.Platform.IWindow! window, BrutalEngine.Graphics.SwapchainOptions! options) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.SwapchainHandle>
 BrutalEngine.Graphics.GraphicsDevice.CreateTexture(in BrutalEngine.Graphics.TextureDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.TextureHandle>
 BrutalEngine.Graphics.GraphicsDevice.CreateTextureView(in BrutalEngine.Graphics.TextureViewDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.TextureViewHandle>
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.BindGroupHandle bindGroup) -> void
@@ -592,6 +593,7 @@ BrutalEngine.Graphics.GraphicsDevice.FrameNumber.get -> long
 BrutalEngine.Graphics.GraphicsDevice.GetDebugLabelName(BrutalEngine.Graphics.DebugLabel label) -> string!
 BrutalEngine.Graphics.GraphicsDevice.GetDefaultView(BrutalEngine.Graphics.TextureHandle texture) -> BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.GraphicsDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.GraphicsDevice.GetSwapchainInfo(BrutalEngine.Graphics.SwapchainHandle swapchain) -> BrutalEngine.Graphics.SwapchainInfo
 BrutalEngine.Graphics.GraphicsDevice.IsLost.get -> bool
 BrutalEngine.Graphics.GraphicsDevice.Statistics.get -> BrutalEngine.Graphics.GraphicsStatistics
 BrutalEngine.Graphics.GraphicsDevice.SubmitFrame(BrutalEngine.Graphics.CommandList commands) -> BrutalEngine.Graphics.FrameStatus

@@ -88,12 +88,14 @@ public sealed class TransientTests : IDisposable
         for (int frame = 0; frame <= framesInFlight; frame++)
         {
             _ = device.BeginFrame(out CommandList commands);
-            // A 3-byte allocation first, so the next offset shows the usage's alignment rather than the ring's start.
-            Assert.True(commands.AllocateTransient(3, TransientUsage.Vertex, out TransientAllocation first).IsSuccess);
+            // A 17-byte allocation first, so the next offset shows the usage's alignment rather than the ring's start. It is
+            // larger than the smallest alignment, 16, so a rounding mask of the wrong width lands elsewhere: 17 bytes round
+            // up to 32 for 16 and to the alignment itself for the larger ones.
+            Assert.True(commands.AllocateTransient(17, TransientUsage.Vertex, out TransientAllocation first).IsSuccess);
             Assert.True(commands.AllocateTransient(40, usage, out TransientAllocation second).IsSuccess);
 
-            Assert.Equal((0L, alignment), (first.Offset, second.Offset));
-            Assert.Equal((3, 40), (first.Data.Length, second.Data.Length));
+            Assert.Equal((0L, alignment == 16 ? 32 : alignment), (first.Offset, second.Offset));
+            Assert.Equal((17, 40), (first.Data.Length, second.Data.Length));
             Assert.Equal(first.Buffer, second.Buffer);
 
             // Data is the block's mapped memory at Offset, written until the submit.

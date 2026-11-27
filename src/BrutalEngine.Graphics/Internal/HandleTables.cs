@@ -9,7 +9,8 @@ namespace BrutalEngine.Graphics.Internal;
 /// A graphics device's handle tables: one Core <see cref="HandleAllocator"/> per <see cref="BackendObjectKind"/>, the
 /// handle-to-id entries of the device's <see cref="BackendObjectTable"/>, each live object's debug name and creation
 /// order, each texture's description and default view, each view's texture, each buffer's description, mapped pointer
-/// and last-written frame, and which buffer handles are transient aliases (docs/design/graphics.md sections 1 and 6).
+/// and last-written frame, and which handles the device owns itself: transient aliases and swapchain images
+/// (docs/design/graphics.md sections 1, 3 and 6).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,10 +20,11 @@ namespace BrutalEngine.Graphics.Internal;
 /// <see cref="StaleHandleException"/>.
 /// </para>
 /// <para>
-/// An alias (<see cref="AddAlias"/>) is a live buffer handle for a staging block the device owns: it resolves like any
-/// buffer, but <see cref="LiveCount"/>, <see cref="ListLive"/> and <see cref="TakeAll"/> leave it out, so it is never
-/// counted, reported as a leak or destroyed through the tables, and only <see cref="RemoveAlias"/> or <see cref="TakeAll"/>
-/// ends it.
+/// An alias (<see cref="AddAlias"/>) is a live buffer handle for a staging block the device owns, and a swapchain image
+/// (<see cref="AddSwapchainImage"/>) a live texture and view pair its swapchain owns. Both are <i>owned</i> entries: they
+/// resolve like any handle, but <see cref="LiveCount"/>, <see cref="ListLive"/> and <see cref="TakeAll"/> leave them out,
+/// so they are never counted, reported as leaks or destroyed through the tables; only <see cref="Remove"/> (which
+/// <see cref="RemoveAlias"/> calls), <see cref="TryRemoveViewOf"/> or <see cref="TakeAll"/> ends them.
 /// </para>
 /// <para>
 /// Not thread-safe: the device calls it on its owner thread only. <see cref="Remove"/>, <see cref="GetId"/> and
@@ -41,7 +43,7 @@ internal sealed class HandleTables
     private BufferDescription[] _buffers = [];
     private BufferMemory[] _memory = [];
     private long _nextSequence;
-    private int _aliasCount;
+    private int _ownedCount;
 
     /// <summary>Creates empty tables that record ids in <paramref name="objects"/>, the table the backend reads.</summary>
     /// <param name="objects">The device's backend object table, empty.</param>
@@ -55,12 +57,12 @@ internal sealed class HandleTables
         }
     }
 
-    /// <summary>The number of live objects over every kind, aliases left out.</summary>
+    /// <summary>The number of live objects over every kind, owned entries (aliases, swapchain images) left out.</summary>
     public int LiveCount
     {
         get
         {
-            int count = -_aliasCount;
+            int count = -_ownedCount;
             foreach (HandleAllocator allocator in _allocators)
             {
                 count += allocator.Count;
@@ -125,25 +127,55 @@ internal sealed class HandleTables
     public Handle AddAlias(ulong id, in BufferDescription description)
     {
         Handle alias = Add(BackendObjectKind.Buffer, id, debugName: null);
-        ref Entry entry = ref _entries[(int)BackendObjectKind.Buffer][alias.Index];
-        entry = entry with { Alias = true };
+        MarkOwned(BackendObjectKind.Buffer, alias);
         _buffers[alias.Index] = description;
-        _aliasCount++;
         return alias;
     }
 
     /// <summary>Makes a live alias stale; its block is the caller's, and nothing is destroyed.</summary>
     /// <param name="alias">A live alias from <see cref="AddAlias"/>.</param>
-    public void RemoveAlias(Handle alias)
-    {
-        _ = Remove(BackendObjectKind.Buffer, alias, nameof(alias));
-        _aliasCount--;
-    }
+    public void RemoveAlias(Handle alias) => _ = Remove(BackendObjectKind.Buffer, alias, nameof(alias));
 
     /// <summary>Whether a live buffer handle is an alias.</summary>
     /// <param name="buffer">A live buffer handle.</param>
     /// <returns><see langword="true"/> for a handle <see cref="AddAlias"/> issued.</returns>
-    public bool IsAlias(Handle buffer) => _entries[(int)BackendObjectKind.Buffer][buffer.Index].Alias;
+    public bool IsAlias(Handle buffer) => IsOwned(BackendObjectKind.Buffer, buffer);
+
+    /// <summary>
+    /// Issues the texture and view handles of one swapchain image, owned by its swapchain: the view is the texture's
+    /// default view, and the texture reports <paramref name="description"/>.
+    /// </summary>
+    /// <param name="textureId">The image's texture id, from the backend's swapchain-image query.</param>
+    /// <param name="viewId">The image's view id, from the same query.</param>
+    /// <param name="description">What the image reports as its texture's description.</param>
+    /// <returns>The new live texture and view handles.</returns>
+    /// <exception cref="OutOfMemoryException">A table couldn't grow; nothing was recorded.</exception>
+    /// <exception cref="InvalidOperationException">A kind's handle allocator is exhausted; nothing was recorded.</exception>
+    public (Handle Texture, Handle View) AddSwapchainImage(ulong textureId, ulong viewId, in TextureDescription description)
+    {
+        Handle texture = Add(BackendObjectKind.Texture, textureId, description.DebugName);
+        MarkOwned(BackendObjectKind.Texture, texture);
+        Handle view;
+        try
+        {
+            view = Add(BackendObjectKind.TextureView, viewId, description.DebugName, texture);
+        }
+        catch
+        {
+            _ = Remove(BackendObjectKind.Texture, texture, nameof(textureId));
+            throw;
+        }
+
+        MarkOwned(BackendObjectKind.TextureView, view);
+        SetTexture(texture, description, view);
+        return (texture, view);
+    }
+
+    /// <summary>Whether a live handle is owned by the device or a swapchain: an alias or a swapchain image.</summary>
+    /// <param name="kind">The handle's kind.</param>
+    /// <param name="handle">A live handle of that kind.</param>
+    /// <returns><see langword="true"/> for a handle <see cref="AddAlias"/> or <see cref="AddSwapchainImage"/> issued.</returns>
+    public bool IsOwned(BackendObjectKind kind, Handle handle) => _entries[(int)kind][handle.Index].Owned;
 
     /// <summary>Returns the backend id of a live object.</summary>
     /// <param name="kind">The object's kind.</param>
@@ -231,6 +263,7 @@ internal sealed class HandleTables
             if (views[cursor].Id != 0 && views[cursor].Link == texture)
             {
                 viewId = views[cursor].Id;
+                _ownedCount -= views[cursor].Owned ? 1 : 0;
                 Handle view = views[cursor].Handle;
                 _objects.Remove(View, view);
                 _allocators[(int)View].Free(view);
@@ -253,6 +286,7 @@ internal sealed class HandleTables
     public ulong Remove(BackendObjectKind kind, Handle handle, string parameterName)
     {
         ulong id = GetId(kind, handle, parameterName);
+        _ownedCount -= _entries[(int)kind][handle.Index].Owned ? 1 : 0;
         _objects.Remove(kind, handle);
         _allocators[(int)kind].Free(handle);
         _entries[(int)kind][handle.Index] = default;
@@ -268,7 +302,7 @@ internal sealed class HandleTables
         return id;
     }
 
-    /// <summary>Lists every live object but the aliases, oldest first, without changing anything.</summary>
+    /// <summary>Lists every live object but the owned entries, oldest first, without changing anything.</summary>
     /// <returns>Each object's kind, backend id and debug name, in creation order. Allocates the list.</returns>
     public List<LiveObject> ListLive()
     {
@@ -277,7 +311,7 @@ internal sealed class HandleTables
         {
             foreach (Entry entry in _entries[kind])
             {
-                if (entry.Id != 0 && !entry.Alias)
+                if (entry.Id != 0 && !entry.Owned)
                 {
                     live.Add(new LiveObject((BackendObjectKind)kind, entry.Id, entry.DebugName, entry.Sequence));
                 }
@@ -288,10 +322,10 @@ internal sealed class HandleTables
         return live;
     }
 
-    /// <summary>Removes every live object, aliases included, and returns them newest first.</summary>
+    /// <summary>Removes every live object, owned entries included, and returns them newest first.</summary>
     /// <returns>
-    /// Each object's kind, backend id and debug name, in reverse creation order, aliases left out (their blocks are the
-    /// device's to destroy). Allocates the list.
+    /// Each object's kind, backend id and debug name, in reverse creation order, owned entries left out (alias blocks are
+    /// the device's to destroy, swapchain images their swapchain's). Allocates the list.
     /// </returns>
     public List<LiveObject> TakeAll()
     {
@@ -305,7 +339,7 @@ internal sealed class HandleTables
 
         Array.Clear(_textures);
         Array.Clear(_buffers);
-        _aliasCount = 0;
+        _ownedCount = 0;
         _objects.Clear();
         return live;
     }
@@ -325,24 +359,24 @@ internal sealed class HandleTables
         }
     }
 
-    /// <summary>Throws for any swapchain handle: none can be created yet, so a non-null one is always stale.</summary>
-    /// <param name="handle">The handle to check.</param>
-    /// <param name="parameterName">The caller's parameter, named by the exceptions.</param>
-    /// <exception cref="ArgumentException"><paramref name="handle"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException">Always, for a non-null handle.</exception>
-    public static void ThrowSwapchainNotLive(Handle handle, string parameterName)
-    {
-        ThrowIfNull(null, handle, parameterName);
-        throw new StaleHandleException(handle);
-    }
+    /// <summary>Takes the next creation-order number, for an object the device tracks outside these tables (a swapchain).</summary>
+    /// <returns>A number larger than every one taken before, by this call or by <see cref="Add"/>.</returns>
+    public long NextSequence() => _nextSequence++;
 
-    // The kind is formatted only on the throw path: an enum's ToString allocates. Null stands for a swapchain.
-    private static void ThrowIfNull(BackendObjectKind? kind, Handle handle, string parameterName)
+    // The kind is formatted only on the throw path: an enum's ToString allocates.
+    private static void ThrowIfNull(BackendObjectKind kind, Handle handle, string parameterName)
     {
         if (handle.IsNull)
         {
-            throw new ArgumentException($"The {(kind is { } k ? k.ToString() : "Swapchain")} handle is null.", parameterName);
+            throw new ArgumentException($"The {kind} handle is null.", parameterName);
         }
+    }
+
+    private void MarkOwned(BackendObjectKind kind, Handle handle)
+    {
+        ref Entry entry = ref _entries[(int)kind][handle.Index];
+        entry = entry with { Owned = true };
+        _ownedCount++;
     }
 
     /// <summary>A buffer's host memory and write tracking, set at creation; an alias's entry is never read.</summary>
@@ -357,7 +391,7 @@ internal sealed class HandleTables
     /// <param name="Sequence">The object's creation order on this device, from 0.</param>
     internal readonly record struct LiveObject(BackendObjectKind Kind, ulong Id, string? DebugName, long Sequence);
 
-    // Id 0 marks a free slot: backends never issue it. Link is a texture's default view, or a view's texture. Alias marks
-    // a transient alias of a staging block.
-    private readonly record struct Entry(Handle Handle, ulong Id, string? DebugName, long Sequence, Handle Link, bool Alias = false);
+    // Id 0 marks a free slot: backends never issue it. Link is a texture's default view, or a view's texture. Owned marks
+    // a transient alias of a staging block or a swapchain image.
+    private readonly record struct Entry(Handle Handle, ulong Id, string? DebugName, long Sequence, Handle Link, bool Owned = false);
 }

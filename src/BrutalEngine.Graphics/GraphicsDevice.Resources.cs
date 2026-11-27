@@ -198,7 +198,8 @@ public sealed partial class GraphicsDevice
     /// <exception cref="ArgumentOutOfRangeException">The view's range lies outside its texture, or a value is outside its enum.</exception>
     /// <exception cref="OutOfMemoryException">The device's handle table couldn't grow; the new backend view is destroyed.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Every texture view handle slot is live or retired (the kind's handle allocator is exhausted); the new backend view
+    /// The texture is a swapchain image, whose only view is its own (<see cref="GetDefaultView"/>); nothing is created. Or
+    /// every texture view handle slot is live or retired (the kind's handle allocator is exhausted); the new backend view
     /// is destroyed.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
@@ -212,6 +213,7 @@ public sealed partial class GraphicsDevice
         ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(CreateTextureView));
         Handle texture = description.Texture.Value;
         _handles.ThrowIfNotLive(BackendObjectKind.Texture, texture, nameof(description));
+        ThrowIfSwapchainImage(BackendObjectKind.Texture, texture, nameof(CreateTextureView));
         ResourceValidator.Validate(description, _handles.GetTexture(texture));
         Result<ulong> created = _backend.CreateTextureView(description);
         return created.TryGetValue(out ulong id)
@@ -294,6 +296,9 @@ public sealed partial class GraphicsDevice
     /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
     /// here; one that matches can't be told apart from it, so that texture and its views are destroyed.
     /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="texture"/> is a swapchain image, which its swapchain owns; nothing is destroyed.
+    /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The open or last submitted frame's deletion queue couldn't grow. The views removed before it stay queued and stale;
     /// the texture and its other views stay live, so destroying the texture again finishes the job.
@@ -310,6 +315,7 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfUnusable(DestroyApi);
         _handles.ThrowIfNotLive(BackendObjectKind.Texture, texture.Value, nameof(texture));
+        ThrowIfSwapchainImage(BackendObjectKind.Texture, texture.Value, DestroyApi);
         int cursor = 0;
         DeletionQueue? queue = ReserveDeletion();
         while (_handles.TryRemoveViewOf(texture.Value, ref cursor, out ulong viewId))
@@ -332,7 +338,8 @@ public sealed partial class GraphicsDevice
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="view"/> is a texture's default view (<see cref="GetDefaultView"/>), which lives as long as its
-    /// texture; nothing is destroyed. The message names the view and its debug name (the texture's).
+    /// texture, or a swapchain image's view, which its swapchain owns; nothing is destroyed. The message names the view
+    /// and its debug name (the texture's).
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The open or last submitted frame's deletion queue couldn't grow; nothing was destroyed and the handle stays live.
@@ -349,6 +356,7 @@ public sealed partial class GraphicsDevice
         ThrowIfUnusable(DestroyApi);
         Handle handle = view.Value;
         _handles.ThrowIfNotLive(BackendObjectKind.TextureView, handle, nameof(view));
+        ThrowIfSwapchainImage(BackendObjectKind.TextureView, handle, DestroyApi);
         if (_handles.GetLink(BackendObjectKind.Texture, _handles.GetLink(BackendObjectKind.TextureView, handle)) == handle)
         {
             throw new InvalidOperationException(
@@ -466,23 +474,6 @@ public sealed partial class GraphicsDevice
     public void Destroy(ComputePipelineHandle pipeline) =>
         DestroyObject(BackendObjectKind.ComputePipeline, pipeline.Value, nameof(pipeline));
 
-    /// <summary>Destroys a swapchain: its handle and every copy become stale at once.</summary>
-    /// <param name="swapchain">A live swapchain of this device.</param>
-    /// <exception cref="ArgumentException"><paramref name="swapchain"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException">
-    /// <paramref name="swapchain"/> isn't a live swapchain of this device. Until swapchains can be created, every non-null
-    /// handle is stale.
-    /// </exception>
-    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
-    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
-    /// <remarks>Owner thread. Allocates nothing, except the exception.</remarks>
-    public void Destroy(SwapchainHandle swapchain)
-    {
-        ThrowIfUnusable(DestroyApi);
-        // TODO(#115): destroy a live swapchain and its surface once swapchains can be created; none can be live yet.
-        HandleTables.ThrowSwapchainNotLive(swapchain.Value, nameof(swapchain));
-    }
-
     // Records a new backend object under a new handle and names it; if recording fails, the backend object is destroyed
     // so nothing leaks, and the exception propagates.
     private Handle Register(BackendObjectKind kind, ulong id, string? debugName, Handle link)
@@ -519,6 +510,16 @@ public sealed partial class GraphicsDevice
         needed |= (usage & TextureUsage.CopyDestination) != 0 ? FormatSupport.CopyDestination : FormatSupport.None;
         needed |= description.SampleCount > 1 ? FormatSupport.Multisample : FormatSupport.None;
         return needed;
+    }
+
+    // Swapchain images (a texture and its view) belong to their swapchain: the caller never destroys them or adds views.
+    private void ThrowIfSwapchainImage(BackendObjectKind kind, Handle handle, string api)
+    {
+        if (_handles.IsOwned(kind, handle))
+        {
+            throw new InvalidOperationException(
+                $"{api}: {kind} '{_handles.GetDebugName(kind, handle)}' is a swapchain image, which its swapchain owns and destroys.");
+        }
     }
 
     private void DestroyObject(BackendObjectKind kind, Handle handle, string parameterName)
