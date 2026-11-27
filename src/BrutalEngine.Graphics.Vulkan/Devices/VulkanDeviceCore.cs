@@ -29,8 +29,13 @@ namespace BrutalEngine.Graphics.Vulkan.Devices;
 /// from it is destroyed.
 /// </para>
 /// <para>
+/// What the device reports (section 3, "Capabilities" and "The portability subset") is read from the adapter once,
+/// before the device is created (<see cref="CapabilityMapping.Read"/>), and never changes.
+/// </para>
+/// <para>
 /// Not thread-safe: the device's owner thread creates, uses and disposes it. Creation allocates (BRUTAL's wrapper, the
-/// extension set and this object); the properties of a live device allocate nothing.
+/// extension set, the report and this object); the properties of a live device and <see cref="GetFormatSupport"/>
+/// allocate nothing.
 /// </para>
 /// </remarks>
 internal sealed class VulkanDeviceCore : IDisposable
@@ -40,15 +45,19 @@ internal sealed class VulkanDeviceCore : IDisposable
 
     private readonly Device _device;
     private readonly InstanceFactory.DestroyTracker? _destroys;
+    private readonly FormatSupport[] _formats;
     private bool _disposed;
 
-    private VulkanDeviceCore(Device device, VkQueue queue, int queueFamily, FeatureChain.NegotiatedFeatures features, DeviceExtensionSet.Selection extensions, InstanceFactory.DestroyTracker? destroys)
+    private VulkanDeviceCore(Device device, int queueFamily, FeatureChain.NegotiatedFeatures features, DeviceExtensionSet.Selection extensions, CapabilityMapping.Report report, InstanceFactory.DestroyTracker? destroys)
     {
         _device = device;
-        Queue = queue;
+        Queue = device.GetQueue(queueFamily, 0).Handle;
         QueueFamily = queueFamily;
         Features = features;
         Extensions = extensions;
+        Capabilities = report.Capabilities;
+        Portability = report.Portability;
+        _formats = report.Formats;
         _destroys = destroys;
     }
 
@@ -75,8 +84,28 @@ internal sealed class VulkanDeviceCore : IDisposable
     /// <summary>Gets the enabled extensions.</summary>
     public DeviceExtensionSet.Selection Extensions { get; }
 
+    /// <summary>Gets the enabled features and the adapter's limits.</summary>
+    public GraphicsCapabilities Capabilities { get; }
+
+    /// <summary>Gets the portability restrictions; <see cref="PortabilityRestrictions.None"/> without <c>VK_KHR_portability_subset</c>.</summary>
+    public PortabilityRestrictions Portability { get; }
+
     /// <summary>Gets whether <see cref="Dispose"/> has run.</summary>
     public bool IsDisposed => _disposed;
+
+    /// <summary>Gets what the device can do with a format, worked out at creation (<see cref="FormatTable.Build"/>).</summary>
+    /// <param name="format">A defined format other than <see cref="TextureFormat.Undefined"/>.</param>
+    /// <returns>The format's support; <see cref="FormatSupport.None"/> when it can't be used at all.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="format"/> isn't one of the 16 formats.</exception>
+    public FormatSupport GetFormatSupport(TextureFormat format)
+    {
+        if ((uint)format - 1 >= FormatTable.Count)
+        {
+            ThrowUnknownFormat(format);
+        }
+
+        return _formats[(int)format];
+    }
 
     /// <summary>Creates a device on an adapter of a live instance.</summary>
     /// <param name="instance">The instance the adapter was enumerated from; it outlives the device.</param>
@@ -148,6 +177,8 @@ internal sealed class VulkanDeviceCore : IDisposable
             return gate.Check(injected, VulkanCall.CreateDevice).Error;
         }
 
+        // Read first: the queries are void commands that can't fail, so nothing is left to destroy if this throws.
+        CapabilityMapping.Report report = CapabilityMapping.Read(factory, features, extensions.PortabilitySubset);
         float priority = 1.0f;
         FeatureChain.Storage chain;
         VkPhysicalDeviceFeatures2* head = FeatureChain.Fill(&chain, features, extensions.SwapchainMaintenance1 is not null);
@@ -170,7 +201,7 @@ internal sealed class VulkanDeviceCore : IDisposable
             return VkCheck.FromException(error, CreateDeviceName);
         }
 
-        return new VulkanDeviceCore(device, device.GetQueue(queueFamily, 0).Handle, queueFamily, features, extensions, destroys);
+        return new VulkanDeviceCore(device, queueFamily, features, extensions, report, destroys);
     }
 
     /// <summary>Destroys the device once; later calls do nothing.</summary>
@@ -187,8 +218,11 @@ internal sealed class VulkanDeviceCore : IDisposable
         _destroys?.OnDestroyed();
     }
 
-    /// <summary>Makes BRUTAL's device creation, so tests can observe it or make it throw.</summary>
-    internal interface IFactory
+    private static void ThrowUnknownFormat(TextureFormat format) =>
+        throw new ArgumentOutOfRangeException(nameof(format), (int)format, "Not a defined TextureFormat other than Undefined.");
+
+    /// <summary>Makes BRUTAL's device creation and the adapter's queries, so tests can observe them or make creation throw.</summary>
+    internal interface IFactory : CapabilityMapping.ISource
     {
         /// <summary>Creates the device, as <c>PhysicalDevice.CreateDevice</c> does (<c>Brutal.Vulkan/Manual/Classes/PhysicalDevice.cs:200</c>).</summary>
         /// <param name="info">The creation description; its pointers are valid only during the call.</param>
@@ -199,9 +233,24 @@ internal sealed class VulkanDeviceCore : IDisposable
 
     /// <summary>The real factory: BRUTAL's wrapper on an adapter.</summary>
     /// <param name="adapter">The adapter; its instance outlives the device.</param>
-    internal readonly struct AdapterFactory(PhysicalDevice adapter) : IFactory
+    internal readonly unsafe struct AdapterFactory(PhysicalDevice adapter) : IFactory
     {
+        // Sound, for the queries: the pointers are to the caller's stack locals, which outlive the call; the commands
+        // fill them in place through the instance's raw table (Brutal.Vulkan/Generated/Handles/VkInstance.gen.cs:59-61).
+
         /// <inheritdoc/>
         public Device CreateDevice(Device.CreateInfo info) => adapter.CreateDevice(info);
+
+        /// <inheritdoc/>
+        public void GetProperties2(VkPhysicalDeviceProperties2* properties) =>
+            adapter.PInvoke.vkGetPhysicalDeviceProperties2.Invoke(adapter.Handle, properties);
+
+        /// <inheritdoc/>
+        public void GetFeatures2(VkPhysicalDeviceFeatures2* features) =>
+            adapter.PInvoke.vkGetPhysicalDeviceFeatures2.Invoke(adapter.Handle, features);
+
+        /// <inheritdoc/>
+        public void GetFormatProperties2(VkFormat format, VkFormatProperties2* properties) =>
+            adapter.PInvoke.vkGetPhysicalDeviceFormatProperties2.Invoke(adapter.Handle, format, properties);
     }
 }

@@ -32,6 +32,38 @@ public sealed class PortabilityRestrictionsTests
         Assert.Equal(expected, PortabilityRestrictions.Read(features, properties));
     }
 
+    [Theory]
+    [MemberData(nameof(Fields))]
+    public void Read_ThroughTheDeviceChains_EachField(string restricted, int alignment, bool comparison, bool beyondStride, bool arrays, bool constantAlpha)
+    {
+        PortabilityRestrictions expected = new(comparison, beyondStride, alignment, arrays, constantAlpha);
+        ScriptedAdapter adapter = new() { PortabilityFeatures = AllAllowed(), PortabilityAlignment = alignment };
+        adapter.PortabilityFeatures.MutableComparisonSamplers = restricted != "mutableComparisonSamplers";
+        adapter.PortabilityFeatures.VertexAttributeAccessBeyondStride = restricted != "vertexAttributeAccessBeyondStride";
+        adapter.PortabilityFeatures.MultisampleArrayImage = restricted != "multisampleArrayImage";
+        adapter.PortabilityFeatures.ConstantAlphaColorBlendFactors = restricted != "constantAlphaColorBlendFactors";
+
+        CapabilityMapping.Report report = CapabilityMapping.Read(adapter, default, portabilitySubset: true);
+
+        Assert.Equal(expected, report.Portability);
+        Assert.Equal(1, adapter.FeatureQueries);
+        Assert.Contains(VkStructureType.PhysicalDevicePortabilitySubsetPropertiesKHR, adapter.PropertyChain);
+    }
+
+    [Fact]
+    public void Absent_IsNone()
+    {
+        // Restricting features on the adapter, which a device without the extension must never read.
+        ScriptedAdapter adapter = new() { PortabilityAlignment = 8 };
+
+        CapabilityMapping.Report report = CapabilityMapping.Read(adapter, default, portabilitySubset: false);
+
+        Assert.Equal(new PortabilityRestrictions(true, true, 1, true, true), report.Portability);
+        Assert.Equal(PortabilityRestrictions.None, report.Portability);
+        Assert.Equal(0, adapter.FeatureQueries);
+        Assert.DoesNotContain(VkStructureType.PhysicalDevicePortabilitySubsetPropertiesKHR, adapter.PropertyChain);
+    }
+
     private static VkPhysicalDevicePortabilitySubsetFeaturesKHR AllAllowed() => new()
     {
         ConstantAlphaColorBlendFactors = true,

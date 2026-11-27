@@ -77,4 +77,21 @@ public sealed class CapabilityMappingTests
     [InlineData(VkSampleCountFlags._64Bit, SampleCounts.None)]
     public void ToSampleCounts_EachCount_MapsOrDrops(VkSampleCountFlags counts, SampleCounts expected) =>
         Assert.Equal(expected, CapabilityMapping.ToSampleCounts(counts));
+
+    [Theory]
+    [InlineData(GraphicsFeatures.None)]
+    [InlineData(GraphicsFeatures.SamplerAnisotropy | GraphicsFeatures.TextureCompressionAstc)]
+    [InlineData(GraphicsFeatures.TimestampQueries | GraphicsFeatures.TextureCompressionBC)]
+    public void Read_ScriptedAdapter_ReportsFeaturesAndLimits(GraphicsFeatures enabled)
+    {
+        ScriptedAdapter adapter = new() { Limits = HandBuilt() };
+
+        CapabilityMapping.Report report = CapabilityMapping.Read(adapter, new FeatureChain.NegotiatedFeatures(enabled), portabilitySubset: false);
+
+        // The period follows the enabled features, not the adapter.
+        double period = (enabled & GraphicsFeatures.TimestampQueries) != 0 ? 1.25 : 0;
+        Assert.Equal(enabled, report.Capabilities.Features);
+        Assert.Equal(Mapped with { TimestampPeriodNanoseconds = period }, report.Capabilities.Limits);
+        Assert.Equal([VkStructureType.PhysicalDeviceVulkan12Properties], adapter.PropertyChain);
+    }
 }
