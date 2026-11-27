@@ -9,10 +9,6 @@ namespace BrutalEngine.World;
 // (docs/design/world.md, section 2).
 public sealed partial class EcsWorld
 {
-    // The tick that new rows and writes are stamped with. Starts at 1 and stays there until the tick API arrives with
-    // queries (docs/design/world.md, section 5).
-    private uint _changeTick = 1;
-
     // What ColumnOf returns for a tag the archetype has (tags have no column) and for a component it lacks.
     private const int TagColumn = -1;
     private const int MissingColumn = -2;
@@ -32,9 +28,6 @@ public sealed partial class EcsWorld
             return _entities.PlacedCount;
         }
     }
-
-    /// <summary>The world's current change tick, which new rows and writes are stamped with. Starts at 1.</summary>
-    internal uint ChangeTick => _changeTick;
 
     /// <summary>
     /// Spawns an entity with no components: it is alive when this returns, stored in the empty archetype.
@@ -414,14 +407,6 @@ public sealed partial class EcsWorld
 
         value = ValueAt<T>(archetype, record.Chunk, record.Row, column);
         return true;
-    }
-
-    /// <summary>Test seam: sets the change tick, so stamps can be told apart. The engine never calls it.</summary>
-    /// <param name="tick">The new tick.</param>
-    internal void SetChangeTickForTesting(uint tick)
-    {
-        ThrowIfUnusable("EcsWorld.SetChangeTickForTesting");
-        _changeTick = tick;
     }
 
     /// <summary>

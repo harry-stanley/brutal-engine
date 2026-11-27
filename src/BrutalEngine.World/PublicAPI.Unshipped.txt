@@ -36,7 +36,9 @@ BrutalEngine.World.ComponentType.Size.get -> int
 BrutalEngine.World.ComponentType.Size.init -> void
 BrutalEngine.World.EcsWorld
 BrutalEngine.World.EcsWorld.Add<T>(BrutalEngine.World.Entity entity, in T value) -> void
+BrutalEngine.World.EcsWorld.AdvanceChangeTick() -> void
 BrutalEngine.World.EcsWorld.ArchetypeCount.get -> int
+BrutalEngine.World.EcsWorld.ChangeTick.get -> uint
 BrutalEngine.World.EcsWorld.ChunkCount.get -> int
 BrutalEngine.World.EcsWorld.Components.get -> BrutalEngine.World.ComponentRegistry!
 BrutalEngine.World.EcsWorld.Despawn(BrutalEngine.World.Entity entity) -> void
