@@ -41,16 +41,16 @@ namespace BrutalEngine.Platform.Vfs;
 /// </para>
 /// <para>
 /// <b>Failures</b> follow <see cref="IFileSystem"/>. On a read-only file system, writes, deletes and creates fail with
-/// <see cref="ErrorKind.Unsupported"/> before the disk is looked at; so does deleting the root, and so does
-/// <see cref="ReadAllBytes"/> for a file over <see cref="Array.MaxLength"/> bytes. When an OS call fails, the error has
-/// the OS message and the exception's <see cref="Exception.HResult"/> as <see cref="EngineError.NativeCode"/>: a
-/// missing entry, a file where a directory is expected or the reverse, and a removed root are
-/// <see cref="ErrorKind.NotFound"/>; access denied is <see cref="ErrorKind.Unavailable"/>; anything else, such as
-/// deleting a non-empty directory, is <see cref="ErrorKind.Io"/>. A failure found without a failing OS call has
-/// <see cref="EngineError.NativeCode"/> 0: the root read or written as a file, deleting a path where nothing is, and
-/// creating a directory under a removed root. Messages quote the relative path. A <see langword="null"/> path throws
-/// <see cref="ArgumentNullException"/>, and text that isn't a normalised relative path throws
-/// <see cref="ArgumentException"/>, before anything else.
+/// <see cref="ErrorKind.Unsupported"/> before the disk is looked at, and so does deleting the root;
+/// <see cref="ReadAllBytes"/> of a file over <see cref="Array.MaxLength"/> bytes is <see cref="ErrorKind.Unsupported"/>
+/// too, found once the file is open. When an OS call fails, the error has the OS message and the exception's
+/// <see cref="Exception.HResult"/> as <see cref="EngineError.NativeCode"/>: a missing entry, a file where a directory
+/// is expected or the reverse, and a removed root are <see cref="ErrorKind.NotFound"/>; access denied is
+/// <see cref="ErrorKind.Unavailable"/>; anything else, such as deleting a non-empty directory, is
+/// <see cref="ErrorKind.Io"/>. A failure found without a failing OS call has <see cref="EngineError.NativeCode"/> 0:
+/// the root read or written as a file, deleting a path where nothing is, and creating a directory under a removed
+/// root. Messages quote the relative path. A <see langword="null"/> path throws <see cref="ArgumentNullException"/>,
+/// and text that isn't a normalised relative path throws <see cref="ArgumentException"/>, before anything else.
 /// </para>
 /// <para>
 /// <b>Threads:</b> every member is safe on any thread, as far as the OS is: the file system holds no mutable state and
