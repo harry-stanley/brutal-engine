@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Validation;
@@ -37,7 +38,8 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
     [MemberData(nameof(EachKind))]
     public void CreateDestroy_EachKind(string kind, string? debugName)
     {
-        GraphicsDevice device = _fixture.Create();
+        var counting = new CountingBackend(_fixture.Backend);
+        using GraphicsDevice device = GraphicsDevice.Create(counting, _fixture.Options()).Value;
         FakeBackendDevice backend = _fixture.BackendDevice;
 
         Made made = Make(device, kind, debugName);
@@ -50,8 +52,11 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
         Assert.False(made.Handle.IsNull);
         Assert.Equal(creates[0].Id, made.TableId(backend.Objects));
         Assert.Equal(made.LiveBefore + made.ObjectCount, backend.LiveObjectCount);
-        ulong[] named = [.. backend.Calls.Skip(made.CallsBefore).Where(call => call.Operation == FakeBackendOperation.SetDebugName).Select(call => call.Id)];
-        Assert.Equal(string.IsNullOrEmpty(debugName) ? [] : creates.Select(call => call.Id), named);
+        // Each object it made (a texture's default view too) is named under its own kind and id, with the name's UTF-8.
+        (BackendObjectKind?, ulong, string)[] expectedNames = string.IsNullOrEmpty(debugName)
+            ? []
+            : [.. creates.Select(call => (call.Kind, call.Id, Convert.ToHexString(Encoding.UTF8.GetBytes(debugName))))];
+        Assert.Equal(expectedNames, counting.LastDevice!.Names.Select(name => ((BackendObjectKind?)name.Kind, name.Id, Convert.ToHexString(name.Utf8Name))));
         int beforeDestroy = backend.Calls.Count;
 
         made.Destroy();
@@ -95,6 +100,10 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
         { "Buffer", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
         { "Sampler", "Pixel art", [0x50, 0x69, 0x78, 0x65, 0x6C, 0x20, 0x61, 0x72, 0x74] },
         { "Sampler", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
+        { "Texture", "Atlas", [0x41, 0x74, 0x6C, 0x61, 0x73] },
+        { "Texture", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
+        { "TextureView", "Mip 1", [0x4D, 0x69, 0x70, 0x20, 0x31] },
+        { "TextureView", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
     };
 
     [Theory]
@@ -106,9 +115,14 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
 
         Made made = Make(device, kind, debugName);
 
-        (BackendObjectKind Kind, ulong Id, byte[] Utf8Name) name = Assert.Single(backend.LastDevice!.Names);
-        Assert.Equal((made.Kind, made.TableId(_fixture.BackendDevice.Objects)), (name.Kind, name.Id));
-        Assert.Equal(expected, name.Utf8Name);
+        // One name per object the call made, in creation order: a texture's default view is named after the texture.
+        FakeBackendCall[] creates = [.. _fixture.BackendDevice.Calls.Skip(made.CallsBefore).Where(call => call.Operation is FakeBackendOperation.CreateBuffer
+            or FakeBackendOperation.CreateSampler or FakeBackendOperation.CreateTexture or FakeBackendOperation.CreateTextureView)];
+        Assert.Equal(made.ObjectCount, creates.Length);
+        Assert.Equal(made.TableId(_fixture.BackendDevice.Objects), creates[0].Id);
+        Assert.Equal(creates.Select(call => call.Kind), backend.LastDevice!.Names.Select(name => (BackendObjectKind?)name.Kind));
+        Assert.Equal(creates.Select(call => call.Id), backend.LastDevice.Names.Select(name => name.Id));
+        Assert.All(backend.LastDevice.Names, name => Assert.Equal(expected, name.Utf8Name));
         made.Destroy();
     }
 
