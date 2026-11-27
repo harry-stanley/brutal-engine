@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "shaders": [
+    {
+      "source": "triangle.slang",
+      "entries": [
+        { "name": "vertMain", "stage": "vertex" },
+        { "name": "fragMain", "stage": "fragment" }
+      ],
+      "matrixLayout": "column-major"
+    },
+    {
+      "source": "compute.slang",
+      "entries": [{ "name": "csMain", "stage": "compute" }]
+    }
+  ]
+}

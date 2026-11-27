@@ -35,7 +35,31 @@ internal sealed class TempDirectory : IDisposable
 
 internal static class Fixture
 {
+    /// <summary>The fixture manifest's directory: its sources and their committed SPIR-V.</summary>
+    public static readonly string ShaderDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures", "Shaders");
+
+    /// <summary>The SPIR-V files the fixture manifest lists, as committed.</summary>
+    public static readonly string[] SpirvFiles = ["compute.csMain.spv", "triangle.fragMain.spv", "triangle.vertMain.spv"];
+
     public static string Path(string name) => System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures", name);
+
+    public static string Shader(string name) => System.IO.Path.Combine(ShaderDirectory, name);
+
+    /// <summary>Copies the fixture manifest and its sources, and the committed SPIR-V if asked, into <paramref name="directory"/>.</summary>
+    /// <returns>The copied manifest's path.</returns>
+    public static string CopyShaders(string directory, bool withSpirv)
+    {
+        Directory.CreateDirectory(directory);
+        foreach (string file in Directory.GetFiles(ShaderDirectory))
+        {
+            if (withSpirv || !file.EndsWith(".spv", StringComparison.Ordinal))
+            {
+                File.Copy(file, System.IO.Path.Combine(directory, System.IO.Path.GetFileName(file)));
+            }
+        }
+
+        return System.IO.Path.Combine(directory, "shaders.cook.json");
+    }
 }
 
 internal static class SpirV

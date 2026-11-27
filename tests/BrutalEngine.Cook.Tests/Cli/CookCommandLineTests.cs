@@ -91,4 +91,47 @@ public sealed class CookCommandLineTests
             Assert.Equal(expected, $"{options.Source}|{entries}|{options.OutputDirectory}|{options.MatrixLayout}");
         }
     }
+
+    // Each row: the arguments after `shader` in the manifest form, then either "manifest,...|Check" or "error: <text>".
+    public static TheoryData<string[], string> ManifestCases => new()
+    {
+        { ["--manifest", "a/shaders.cook.json"], "a/shaders.cook.json|False" },
+        { ["--manifest", "a.json", "--manifest", "b.json", "--check"], "a.json,b.json|True" },
+        { ["--check", "--manifest", "a.json"], "a.json|True" },
+        { ["--manifest", "a.json", "--manifest", "a.json"], "a.json,a.json|False" },
+        { ["--manifest", "-m"], "-m|False" },
+
+        { ["--check"], "error: --check needs at least one --manifest." },
+        { ["--manifest"], "error: --manifest needs a value." },
+        { ["--check", "--manifest"], "error: --manifest needs a value." },
+        { ["--manifest", ""], "error: --manifest is empty." },
+        { ["--manifest", "a.json", "--check", "--check"], "error: --check is given twice." },
+        { ["--manifest", "a.json", "b.slang"], "error: 'b.slang' can't be used with --manifest or --check" },
+        { ["--manifest", "a.json", "--entry", "vs:vertex"], "error: '--entry' can't be used with --manifest or --check" },
+        { ["--output-dir", "out", "--manifest", "a.json"], "error: '--output-dir' can't be used with --manifest or --check" },
+        { ["--manifest", "a.json", "--matrix-layout", "row-major"], "error: '--matrix-layout' can't be used with --manifest or --check" },
+        { ["--manifest", "a.json", "--Check"], "error: '--Check' can't be used with --manifest or --check" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ManifestCases))]
+    public void ParseManifests_Cases(string[] args, string expected)
+    {
+        bool parsed = CookCommandLine.TryParseShaderManifests(args, out ShaderManifestOptions? options, out string? error);
+
+        if (expected.StartsWith("error: ", StringComparison.Ordinal))
+        {
+            Assert.False(parsed);
+            Assert.Null(options);
+            Assert.NotNull(error);
+            Assert.Contains(expected["error: ".Length..], error, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.True(parsed, error);
+            Assert.Null(error);
+            Assert.NotNull(options);
+            Assert.Equal(expected, $"{string.Join(",", options.Manifests)}|{options.Check}");
+        }
+    }
 }

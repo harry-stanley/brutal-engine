@@ -2,10 +2,13 @@ using System.Collections.Generic;
 
 namespace BrutalEngine.Cook.Shaders;
 
-/// <summary>A parsed <c>shader</c> command line.</summary>
-/// <param name="Source">The Slang source file, as given (relative paths resolve against the working directory).</param>
-/// <param name="Entries">The entry points to compile, in command-line order: at least one, names unique ignoring case.</param>
-/// <param name="OutputDirectory">The directory the SPIR-V files go to; created if missing.</param>
+/// <summary>One Slang source to cook: a parsed <c>shader</c> command line, or one shader of a manifest.</summary>
+/// <param name="Source">
+/// The Slang source file: as given on the command line (relative paths resolve against the working directory), or
+/// the full path a manifest resolves.
+/// </param>
+/// <param name="Entries">The entry points to compile, in command-line or manifest order: at least one, names unique ignoring case.</param>
+/// <param name="OutputDirectory">The directory the SPIR-V files go to (a manifest's shader: its source's directory); created if missing.</param>
 /// <param name="MatrixLayout">The default matrix layout.</param>
 internal sealed record ShaderCookOptions(
     string Source,
