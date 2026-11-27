@@ -6,7 +6,7 @@ using Xunit;
 namespace BrutalEngine.Graphics.Tests.Transfers;
 
 /// <summary>
-/// Steady-state frames with transient allocations and copies allocate no managed memory (docs/design/graphics.md
+/// Steady-state frames with transient allocations, copies and readback allocate no managed memory (docs/design/graphics.md
 /// section 14).
 /// </summary>
 public sealed class TransferAllocationTests : IDisposable
@@ -66,9 +66,12 @@ public sealed class TransferAllocationTests : IDisposable
         _fixture.Script.RecordCalls = false;
         GraphicsDevice device = _fixture.Create();
         var resources = TransferResources.Create(device);
+        BufferHandle settled = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.CopyDestination, Memory = MemoryIntent.Readback }).Value;
+        Span<byte> read = stackalloc byte[16];
 
-        // Every frame records each copy kind, plus one from a transient allocation. The warm-up frames grow both slots'
-        // streams and rings and make an alias table slot.
+        // Every frame records each copy kind (one from a transient allocation into the readback buffer), writes the
+        // readback buffer, and reads it (pending: false) and a buffer written only in the first frame (true after the
+        // warm-up). The warm-up frames grow both slots' streams and rings and make an alias table slot.
         long checksum = 0;
         long before = 0;
         for (int i = 0; i < Frames + WarmUpFrames; i++)
@@ -85,15 +88,19 @@ public sealed class TransferAllocationTests : IDisposable
             }
 
             bool allocated = commands.AllocateTransient(16, TransientUsage.Vertex, out TransientAllocation source).IsSuccess;
-            commands.CopyBufferToBuffer(new BufferCopy { Source = source.Buffer, SourceOffset = source.Offset, Destination = resources.Readback, Size = 16 });
+            commands.CopyBufferToBuffer(new BufferCopy { Source = source.Buffer, SourceOffset = source.Offset, Destination = i == 0 ? settled : resources.Readback, Size = 16 });
+            bool wrote = device.WriteBuffer(resources.Readback, 16, read).IsSuccess;
+            bool pending = device.TryReadBuffer(resources.Readback, 0, read);
+            bool settledRead = device.TryReadBuffer(settled, 48, read);
             _ = device.SubmitFrame(commands);
-            checksum += allocated ? 1 : -100_000;
+            checksum += (allocated && wrote ? 1 : -100_000) + (pending ? -100_000 : 0) + (settledRead ? 1 : 0);
         }
 
         long allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(0, allocatedBytes);
-        Assert.Equal(Frames + WarmUpFrames, checksum);
+        // Every frame allocated and wrote; the settled buffer is readable from frame 2 on (two frames in flight).
+        Assert.Equal((Frames + WarmUpFrames) + (Frames + WarmUpFrames - 2), checksum);
         Assert.True(device.WaitIdle().IsSuccess);
     }
 }

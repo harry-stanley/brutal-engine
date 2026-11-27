@@ -36,7 +36,7 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
         "Destroy(BindGroupLayout)", "Destroy(PipelineLayout)", "Destroy(BindGroup)", "Destroy(GraphicsPipeline)",
         "Destroy(ComputePipeline)", "Destroy(Swapchain)", "CreateDebugLabel", "GetDebugLabelName", "Statistics", "ThrowIfLeaks",
         "BeginFrame", "SubmitFrame", "FrameNumber", "CompletedFrameNumber", "WaitIdle", "IsLost",
-        "WriteBuffer", "WriteTexture",
+        "WriteBuffer", "WriteTexture", "TryReadBuffer",
     ];
 
     [Theory]
@@ -157,6 +157,9 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
                 break;
             case "WriteTexture":
                 _ = device.WriteTexture(new TextureWrite { Target = new(prepared.TextureHandle), Region = new(0, 0, 1, 1) }, [1, 2, 3, 4]);
+                break;
+            case "TryReadBuffer":
+                _ = device.TryReadBuffer(prepared.Buffer, 0, new byte[4]);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(member), member, null);

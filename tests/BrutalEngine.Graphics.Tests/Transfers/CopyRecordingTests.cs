@@ -86,7 +86,7 @@ public sealed class CopyRecordingTests : IDisposable
         _ = Assert.Throws<InvalidOperationException>(() => resources.Record(default, kind));
         _ = Assert.Throws<InvalidOperationException>(() => resources.Record(stale, kind));
 
-        // Each case breaks one rule.
+        // Each case breaks one rule; the ones for the readback buffer prove a refused copy doesn't count as its write.
         foreach ((Type expected, Action<CommandList> record) in InvalidCopies(kind, resources, staleBuffer, staleTexture))
         {
             Exception thrown = Assert.Throws(expected, () => record(commands));
@@ -95,6 +95,7 @@ public sealed class CopyRecordingTests : IDisposable
                 Assert.Equal("copy", argument.ParamName);
             }
 
+            Assert.True(device.TryReadBuffer(resources.Readback, 0, new byte[4]));
         }
 
         Exception? offThread = null;

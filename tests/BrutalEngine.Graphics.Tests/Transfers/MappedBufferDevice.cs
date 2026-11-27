@@ -8,7 +8,9 @@ namespace BrutalEngine.Graphics.Tests.Transfers;
 /// <summary>
 /// Forwards every call to the fake's device and keeps what the fake doesn't expose: each buffer's description, memory and
 /// mapped pointer, so a test can read host memory, plus a hook that runs inside <see cref="Execute"/>, when the GPU would
-/// start reading the frame's memory.
+/// start reading the frame's memory. <see cref="Execute"/> also runs the plan's copies between two mapped buffers, as the
+/// GPU would, so a readback buffer holds what a frame copied into it; <see cref="ForbidWaits"/> turns every blocking call
+/// into a test failure.
 /// </summary>
 internal sealed unsafe class MappedBufferDevice(IBackendDevice inner) : IBackendDevice
 {
@@ -20,6 +22,9 @@ internal sealed unsafe class MappedBufferDevice(IBackendDevice inner) : IBackend
 
     /// <summary>Runs at the start of each <see cref="Execute"/>; <see langword="null"/> for none.</summary>
     public Action? OnExecute { get; set; }
+
+    /// <summary>While set, <see cref="WaitForFrame"/> and <see cref="WaitIdle"/> throw instead of waiting.</summary>
+    public bool ForbidWaits { get; set; }
 
     public GraphicsAdapterInfo Adapter => inner.Adapter;
 
@@ -51,6 +56,22 @@ internal sealed unsafe class MappedBufferDevice(IBackendDevice inner) : IBackend
     public Result Execute(in FramePlan plan)
     {
         OnExecute?.Invoke();
+        var reader = new CommandReader(plan.Commands);
+        while (reader.MoveNext())
+        {
+            if (reader.Kind == CommandKind.CopyBufferToBuffer)
+            {
+                ref readonly CopyBufferToBufferCommand copy = ref reader.Payload<CopyBufferToBufferCommand>();
+                nint source = Buffers[copy.Source].Pointer;
+                nint destination = Buffers[copy.Destination].Pointer;
+                if (source != 0 && destination != 0)
+                {
+                    new ReadOnlySpan<byte>((byte*)source + copy.SourceOffset, (int)copy.Size)
+                        .CopyTo(new Span<byte>((byte*)destination + copy.DestinationOffset, (int)copy.Size));
+                }
+            }
+        }
+
         return inner.Execute(plan);
     }
 
@@ -81,7 +102,8 @@ internal sealed unsafe class MappedBufferDevice(IBackendDevice inner) : IBackend
 
     public BackendPresent Present(ulong swapchain, int imageIndex) => inner.Present(swapchain, imageIndex);
 
-    public Result WaitForFrame(int frameSlot) => inner.WaitForFrame(frameSlot);
+    public Result WaitForFrame(int frameSlot) =>
+        ForbidWaits ? throw new InvalidOperationException("WaitForFrame while waits are forbidden.") : inner.WaitForFrame(frameSlot);
 
     public Result<bool> IsFrameComplete(int frameSlot) => inner.IsFrameComplete(frameSlot);
 
@@ -89,7 +111,8 @@ internal sealed unsafe class MappedBufferDevice(IBackendDevice inner) : IBackend
 
     public bool TryReadTimestamps(int frameSlot, Span<ulong> ticks) => inner.TryReadTimestamps(frameSlot, ticks);
 
-    public Result WaitIdle() => inner.WaitIdle();
+    public Result WaitIdle() =>
+        ForbidWaits ? throw new InvalidOperationException("WaitIdle while waits are forbidden.") : inner.WaitIdle();
 
     public void InjectValidationError() => inner.InjectValidationError();
 

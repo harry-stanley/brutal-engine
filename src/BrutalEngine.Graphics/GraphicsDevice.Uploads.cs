@@ -56,7 +56,9 @@ public sealed partial class GraphicsDevice
     /// between frames into a pending upload block, which is reused once the frame that copied it has completed. A write
     /// that doesn't fit gets a dedicated block for that frame only: counted in
     /// <see cref="GraphicsStatistics.UploadOverflowBytes"/>, and logged at <see cref="Core.Logging.LogLevel.Warning"/> at
-    /// most once per frame. <see cref="GraphicsStatistics.UploadBytesLastFrame"/> counts the bytes of both paths.
+    /// most once per frame. <see cref="GraphicsStatistics.UploadBytesLastFrame"/> counts the bytes of both paths. A write
+    /// into a <see cref="MemoryIntent.Readback"/> buffer is a write of the frame that lands it for
+    /// <see cref="TryReadBuffer"/>.
     /// </para>
     /// <para>
     /// Owner thread. Allocates nothing once the frame slot's ring exists, except the exception; making a ring, pending or
@@ -82,6 +84,7 @@ public sealed partial class GraphicsDevice
             DestinationOffset = offset,
             Size = data.Length,
         });
+        _handles.MarkWritten(buffer.Value, _frameNumber);
         if (overflow)
         {
             CountOverflow(data.Length, WriteBufferApi);
