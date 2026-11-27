@@ -190,16 +190,20 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         File.WriteAllBytes(target, [1, 2, 3]);
         CreateLink("written", Path.Join("data", "real.bin"), isDirectory: false);
         CreateLink("deleted", Path.Join("data", "real.bin"), isDirectory: false);
+        CreateLink("deleted-directory", "data", isDirectory: true);
         DirectoryFileSystem fileSystem = Create();
 
         Assert.True(fileSystem.WriteAllBytes("written", [7]).IsSuccess);
         Assert.True(fileSystem.Delete("deleted").IsSuccess);
+        Assert.True(fileSystem.Delete("deleted-directory").IsSuccess);
 
-        // The rename put a regular file where the link was, and the delete removed the other link; the file they
-        // pointed to is as it was.
+        // The rename put a regular file where the link was, and the deletes removed the other links, the one to a
+        // directory included; the directory and the file they pointed to are as they were.
         Assert.Null(new FileInfo(Path.Join(_root, "written")).LinkTarget);
         Assert.Equal([7], File.ReadAllBytes(Path.Join(_root, "written")));
         Assert.Empty(Directory.EnumerateFileSystemEntries(_root, "deleted"));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(_root, "deleted-directory"));
+        Assert.Equal([target], Directory.EnumerateFileSystemEntries(Path.Join(_root, "data")));
         Assert.Equal([1, 2, 3], File.ReadAllBytes(target));
         AssertNoTemporaryFiles();
     }

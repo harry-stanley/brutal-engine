@@ -23,9 +23,9 @@ namespace BrutalEngine.Platform.Vfs;
 /// to close.
 /// </para>
 /// <para>
-/// <b>Symbolic links</b> are followed wherever they lead, except at the last name of a write or of a file's delete: the
-/// rename of <see cref="WriteAllBytes"/> replaces a link at the target name with a regular file, and
-/// <see cref="Delete"/> of a link to a file removes the link; both leave the link's target untouched.
+/// <b>Symbolic links</b> are followed wherever they lead, except at the last name of a write or a delete: the rename of
+/// <see cref="WriteAllBytes"/> replaces a link at the target name with a regular file, and <see cref="Delete"/>
+/// removes the link itself, whatever it leads to (a file or a directory); both leave the link's target untouched.
 /// <see cref="List"/> lists a link as what it leads to, through any chain of links, with the final target's length.
 /// A link that leads to no file (dangling, or a loop) is a <see cref="VfsEntryKind.File"/> to
 /// <see cref="GetEntryKind"/> and a file of length 0 to <see cref="List"/>; <see cref="ReadAllBytes"/> of a dangling
