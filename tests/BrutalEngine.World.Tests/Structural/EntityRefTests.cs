@@ -120,9 +120,14 @@ public sealed class EntityRefTests
         tracking.ThrowIfLeaks();
     }
 
+    /// <summary>
+    /// <see cref="EcsWorld.Ref"/> rejects every entity the direct calls reject, and a disposed world or the wrong
+    /// thread, and the world is unchanged afterwards.
+    /// </summary>
     [Theory]
     [InlineData(StructuralTests.Misuse.Null, typeof(ArgumentException))]
     [InlineData(StructuralTests.Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(StructuralTests.Misuse.Retired, typeof(StaleHandleException))]
     [InlineData(StructuralTests.Misuse.OutOfRange, typeof(StaleHandleException))]
     [InlineData(StructuralTests.Misuse.Pending, typeof(InvalidOperationException))]
     [InlineData(StructuralTests.Misuse.Disposed, typeof(ObjectDisposedException))]
@@ -136,16 +141,25 @@ public sealed class EntityRefTests
             Entity alive = world.Spawn(new Health(1));
             Entity despawned = world.Spawn(new Health(2));
             world.Despawn(despawned);
+            Entity retiring = world.Spawn(new Health(3));
+            world.Entities.SetGenerationForTesting((int)retiring.Index, uint.MaxValue);
+            var retired = new Entity(retiring.Index, uint.MaxValue);
+            world.Despawn(retired);
             Entity pending = world.Entities.Reserve();
+            world.SetChangeTickForTesting(9);
             Entity target = misuse switch
             {
                 StructuralTests.Misuse.Null => Entity.Null,
                 StructuralTests.Misuse.Despawned => despawned,
+                StructuralTests.Misuse.Retired => retired,
                 StructuralTests.Misuse.OutOfRange => new Entity(4096, 1),
                 StructuralTests.Misuse.Pending => pending,
                 _ => alive,
             };
 
+            string before = Dump(world);
+            int slots = world.Entities.SlotCount;
+            int types = world.Components.Count;
             Exception? failure;
             if (misuse == StructuralTests.Misuse.WrongThread)
             {
@@ -167,6 +181,16 @@ public sealed class EntityRefTests
             if (failure is StaleHandleException stale)
             {
                 Assert.Equal(new Handle(target.Index, target.Generation), stale.Handle);
+            }
+
+            // A disposed world has no storage left to compare.
+            if (misuse != StructuralTests.Misuse.Disposed)
+            {
+                Assert.Equal(before, Dump(world));
+                Assert.Equal(slots, world.Entities.SlotCount);
+                Assert.Equal(types, world.Components.Count);
+                Assert.Equal(1, world.Entities.PendingCount);
+                Assert.True(world.IsAlive(alive));
             }
         }
         finally
@@ -265,6 +289,9 @@ public sealed class EntityRefTests
         Assert.Single(fields, field => field.FieldType == typeof(EcsWorld));
         Assert.Single(fields, field => field.FieldType == typeof(Entity));
         Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<EntityRef>());
+
+        // On the 64-bit targets: an 8-byte world reference, then the entity's 4-byte index and 4-byte generation.
+        Assert.Equal(16, Unsafe.SizeOf<EntityRef>());
     }
 
     /// <summary>
