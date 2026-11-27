@@ -24,6 +24,8 @@
   <!-- BRUTAL. All Ahwoo.Brutal.* packages move together in Dependabot's 'brutal' group. -->
   <ItemGroup>
     <PackageVersion Include="Ahwoo.Brutal.Sdl" Version="2026.10.3" />
+    <!-- Offline shader compilation in tools/BrutalEngine.Cook only; never referenced by src/ (ADR-0012). -->
+    <PackageVersion Include="Ahwoo.Brutal.Slang" Version="2026.10.3" />
     <PackageVersion Include="Ahwoo.Brutal.Vulkan" Version="2026.10.3" />
     <PackageVersion Include="Ahwoo.Brutal.Vulkan.Abstractions" Version="2026.10.3" />
     <!-- Transitive via Ahwoo.Brutal.Strings; ADR-0011. Remove when BRUTAL depends on a GA ObjectPool. -->

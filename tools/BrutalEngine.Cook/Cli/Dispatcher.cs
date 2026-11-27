@@ -2,6 +2,7 @@ using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
+using BrutalEngine.Cook.Shaders;
 
 namespace BrutalEngine.Cook.Cli;
 
@@ -15,12 +16,16 @@ internal static class Dispatcher
     public const string Usage = """
         Usage: brutal-cook <verb> [arguments]
 
+        Verbs:
+          shader    Compile a Slang source to SPIR-V, one file per entry point.
+
         'brutal-cook <verb> --help' describes a verb's arguments.
         """;
 
     // Immutable after the type initializer: verb name (exact, ordinal) to its entry point.
     private static readonly FrozenDictionary<string, CookVerb> _verbs =
-        new Dictionary<string, CookVerb>(StringComparer.Ordinal).ToFrozenDictionary(StringComparer.Ordinal);
+        new Dictionary<string, CookVerb>(StringComparer.Ordinal) { ["shader"] = ShaderCommand.Run }
+            .ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>Runs a brutal-cook command line.</summary>
     /// <param name="args">The process arguments, verb first.</param>

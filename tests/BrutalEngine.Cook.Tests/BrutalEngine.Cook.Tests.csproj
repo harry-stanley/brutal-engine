@@ -2,4 +2,8 @@
   <ItemGroup>
     <ProjectReference Include="../../tools/BrutalEngine.Cook/BrutalEngine.Cook.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Fixtures/*.slang" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
