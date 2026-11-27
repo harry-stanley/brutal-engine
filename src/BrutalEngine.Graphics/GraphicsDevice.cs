@@ -34,8 +34,11 @@ namespace BrutalEngine.Graphics;
 /// <b>Allocation.</b> <see cref="Create"/>, <see cref="EnumerateAdapters"/>, object creation, a new label,
 /// <see cref="ThrowIfLeaks"/> with leaks and <see cref="Dispose"/> allocate. <see cref="Adapter"/>,
 /// <see cref="Capabilities"/>, <see cref="GetFormatSupport"/>, every <c>Destroy</c>, <see cref="GetDefaultView"/>,
-/// <see cref="CreateDebugLabel"/> for a name already interned, <see cref="GetDebugLabelName"/> and
-/// <see cref="Statistics"/> allocate nothing, except an exception they throw.
+/// <see cref="CreateDebugLabel"/> for a name already interned, <see cref="GetDebugLabelName"/>,
+/// <see cref="Statistics"/>, <see cref="BeginFrame"/>, <see cref="SubmitFrame"/>, <see cref="FrameNumber"/>,
+/// <see cref="CompletedFrameNumber"/> and <see cref="IsLost"/> allocate nothing, except an exception they throw.
+/// <see cref="WaitIdle"/> may allocate. Unmanaged memory (frame slots) comes from
+/// <see cref="GraphicsDeviceOptions.Allocator"/> and is freed by <see cref="Dispose"/>.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice : IDisposable
@@ -52,8 +55,9 @@ public sealed partial class GraphicsDevice : IDisposable
     private string[] _labelNames = [];
     private bool _disposed;
 
-    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner)
+    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner, GraphicsDeviceOptions options)
     {
+        _slots = CreateSlots(options.FramesInFlight, options.Allocator);
         _backend = backend;
         _objects = objects;
         _handles = new HandleTables(objects);
@@ -89,6 +93,9 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <exception cref="ArgumentOutOfRangeException">An option is outside its range (see <see cref="GraphicsDeviceOptions"/>).</exception>
     /// <exception cref="ObjectDisposedException">The compatible window has been disposed.</exception>
     /// <exception cref="WrongThreadException">A compatible window is set and this isn't its thread.</exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The allocator couldn't provide the frame slots' memory; the backend device is disposed and nothing stays allocated.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Only suitable adapters (no rejection reasons) are candidates. An override narrows them first: the adapter at the
@@ -144,7 +151,16 @@ public sealed partial class GraphicsDevice : IDisposable
                 $"Create: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
         }
 
-        return new GraphicsDevice(device, objects, log, ThreadAffinity.CurrentThread());
+        try
+        {
+            return new GraphicsDevice(device, objects, log, ThreadAffinity.CurrentThread(), options);
+        }
+        catch
+        {
+            // The frame slots' memory couldn't be allocated: nothing else holds the backend device.
+            device.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Lists every adapter the backend can see for these options, each with the reasons it can't serve them.</summary>
@@ -198,8 +214,8 @@ public sealed partial class GraphicsDevice : IDisposable
 
     /// <summary>A snapshot of the device's counters.</summary>
     /// <value>
-    /// The live objects over every kind (default texture views included) and the backend's validation counts; the frame
-    /// and upload counters are 0 until frames land.
+    /// The frames submitted (<see cref="FrameNumber"/>), the live objects over every kind (default texture views included)
+    /// and the backend's validation counts; the upload counters are 0 until uploads land.
     /// </value>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Read from a thread other than the owner thread.</exception>
@@ -209,7 +225,7 @@ public sealed partial class GraphicsDevice : IDisposable
         get
         {
             ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(Statistics));
-            return new GraphicsStatistics(0, 0, 0, _handles.LiveCount, _backend.ValidationErrors, _backend.ValidationWarnings);
+            return new GraphicsStatistics(_frameNumber, 0, 0, _handles.LiveCount, _backend.ValidationErrors, _backend.ValidationWarnings);
         }
     }
 
@@ -321,11 +337,13 @@ public sealed partial class GraphicsDevice : IDisposable
     }
 
     /// <summary>
-    /// Logs every object still alive as a leak, destroys them newest first, then disposes the backend device, once; later
-    /// calls do nothing.
+    /// Waits for the GPU, logs every object still alive as a leak, destroys them newest first, then disposes the backend
+    /// device and frees the frame slots, once; later calls do nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>
+    /// The wait happens only when a frame was submitted and the device isn't lost; if it fails, that is logged at
+    /// <see cref="LogLevel.Error"/> and the objects are destroyed anyway. A frame may be open: it is never submitted.
     /// Each leaked object is one <see cref="LogLevel.Error"/> line under <c>"Graphics"</c>, oldest first, with its kind and
     /// debug name. Afterwards every member except <see cref="Dispose"/>, <see cref="Adapter"/> and <see cref="Capabilities"/>
     /// throws <see cref="ObjectDisposedException"/>. The backend, logger, allocator and compatible window are left alone.
@@ -340,6 +358,12 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         _disposed = true;
+        if (_frameNumber > 0 && !IsLostCore && _backend.WaitIdle().TryGetError(out EngineError idle))
+        {
+            // Destroying is still valid on a hung or lost device; the objects go anyway.
+            _log.Error($"Dispose: waiting for the GPU failed ({idle.Kind}, native code {idle.NativeCode}: {idle.Message}); destroying every object anyway.");
+        }
+
         foreach (HandleTables.LiveObject leaked in _handles.ListLive())
         {
             _log.Error($"Leak: {Describe(leaked)} was still alive when the device was disposed.");
@@ -351,6 +375,7 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         _backend.Dispose();
+        DisposeSlots(_slots);
     }
 
     private static bool TryBuildRequest(GraphicsDeviceOptions options, out BackendDeviceRequest request, out EngineError error)

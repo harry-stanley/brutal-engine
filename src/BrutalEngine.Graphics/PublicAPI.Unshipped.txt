@@ -467,6 +467,8 @@ BrutalEngine.Graphics.ColorValue.G.get -> float
 BrutalEngine.Graphics.ColorValue.G.init -> void
 BrutalEngine.Graphics.ColorValue.R.get -> float
 BrutalEngine.Graphics.ColorValue.R.init -> void
+BrutalEngine.Graphics.CommandList
+BrutalEngine.Graphics.CommandList.CommandList() -> void
 BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Always = 7 -> BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Equal = 2 -> BrutalEngine.Graphics.CompareFunction
@@ -561,7 +563,9 @@ BrutalEngine.Graphics.GraphicsCapabilities.Limits.get -> BrutalEngine.Graphics.G
 BrutalEngine.Graphics.GraphicsCapabilities.Limits.init -> void
 BrutalEngine.Graphics.GraphicsDevice
 BrutalEngine.Graphics.GraphicsDevice.Adapter.get -> BrutalEngine.Graphics.GraphicsAdapterInfo!
+BrutalEngine.Graphics.GraphicsDevice.BeginFrame(out BrutalEngine.Graphics.CommandList commands) -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.GraphicsDevice.Capabilities.get -> BrutalEngine.Graphics.GraphicsCapabilities!
+BrutalEngine.Graphics.GraphicsDevice.CompletedFrameNumber.get -> long
 BrutalEngine.Graphics.GraphicsDevice.CreateBuffer(in BrutalEngine.Graphics.BufferDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.BufferHandle>
 BrutalEngine.Graphics.GraphicsDevice.CreateDebugLabel(string! name) -> BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.GraphicsDevice.CreateSampler(in BrutalEngine.Graphics.SamplerDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.SamplerHandle>
@@ -579,11 +583,15 @@ BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.SwapchainHand
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureHandle texture) -> void
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureViewHandle view) -> void
 BrutalEngine.Graphics.GraphicsDevice.Dispose() -> void
+BrutalEngine.Graphics.GraphicsDevice.FrameNumber.get -> long
 BrutalEngine.Graphics.GraphicsDevice.GetDebugLabelName(BrutalEngine.Graphics.DebugLabel label) -> string!
 BrutalEngine.Graphics.GraphicsDevice.GetDefaultView(BrutalEngine.Graphics.TextureHandle texture) -> BrutalEngine.Graphics.TextureViewHandle
 BrutalEngine.Graphics.GraphicsDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
+BrutalEngine.Graphics.GraphicsDevice.IsLost.get -> bool
 BrutalEngine.Graphics.GraphicsDevice.Statistics.get -> BrutalEngine.Graphics.GraphicsStatistics
+BrutalEngine.Graphics.GraphicsDevice.SubmitFrame(BrutalEngine.Graphics.CommandList commands) -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.GraphicsDevice.ThrowIfLeaks() -> void
+BrutalEngine.Graphics.GraphicsDevice.WaitIdle() -> BrutalEngine.Core.Result
 BrutalEngine.Graphics.GraphicsDeviceOptions
 BrutalEngine.Graphics.GraphicsDeviceOptions.<Clone>$() -> BrutalEngine.Graphics.GraphicsDeviceOptions!
 BrutalEngine.Graphics.GraphicsDeviceOptions.Adapter.get -> BrutalEngine.Graphics.AdapterSelection
