@@ -35,6 +35,7 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
         "Destroy(Buffer)", "Destroy(Texture)", "Destroy(TextureView)", "Destroy(Sampler)", "Destroy(ShaderModule)",
         "Destroy(BindGroupLayout)", "Destroy(PipelineLayout)", "Destroy(BindGroup)", "Destroy(GraphicsPipeline)",
         "Destroy(ComputePipeline)", "Destroy(Swapchain)", "CreateDebugLabel", "GetDebugLabelName", "Statistics", "ThrowIfLeaks",
+        "BeginFrame", "SubmitFrame", "FrameNumber", "CompletedFrameNumber", "WaitIdle", "IsLost",
     ];
 
     [Theory]
@@ -131,6 +132,24 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
                 break;
             case "ThrowIfLeaks":
                 device.ThrowIfLeaks();
+                break;
+            case "BeginFrame":
+                _ = device.BeginFrame(out _);
+                break;
+            case "SubmitFrame":
+                _ = device.SubmitFrame(default);
+                break;
+            case "FrameNumber":
+                _ = device.FrameNumber;
+                break;
+            case "CompletedFrameNumber":
+                _ = device.CompletedFrameNumber;
+                break;
+            case "WaitIdle":
+                _ = device.WaitIdle();
+                break;
+            case "IsLost":
+                _ = device.IsLost;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(member), member, null);

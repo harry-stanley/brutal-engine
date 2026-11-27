@@ -255,11 +255,15 @@ public sealed partial class GraphicsDevice
     /// here. A handle from another device is detected only when its index or generation doesn't match a live buffer
     /// here; one that matches can't be told apart from it.
     /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The open or last submitted frame's deletion queue couldn't grow; nothing was destroyed and the handle stays live.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
-    /// With no frame submitted yet, the backend buffer is destroyed at once. Owner thread. Allocates nothing, except the
-    /// exception.
+    /// The backend buffer is destroyed once the frame that may still use it has completed: the open frame, else the last
+    /// submitted one. Before the first frame begins, it is destroyed at once. Owner thread. Allocates no managed memory,
+    /// except the exception.
     /// </remarks>
     public void Destroy(BufferHandle buffer) => DestroyObject(BackendObjectKind.Buffer, buffer.Value, nameof(buffer));
 
@@ -271,26 +275,31 @@ public sealed partial class GraphicsDevice
     /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
     /// here; one that matches can't be told apart from it, so that texture and its views are destroyed.
     /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The open or last submitted frame's deletion queue couldn't grow. The views removed before it stay queued and stale;
+    /// the texture and its other views stay live, so destroying the texture again finishes the job.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// The default view and every view <see cref="CreateTextureView"/> made of the texture are destroyed first, then the
-    /// texture. With no frame submitted yet, the backend objects are destroyed at once. Owner thread. Allocates nothing,
-    /// except the exception.
+    /// texture. The backend objects are destroyed once the frame that may still use them has completed: the open frame,
+    /// else the last submitted one. Before the first frame begins, they are destroyed at once. Owner thread. Allocates no
+    /// managed memory, except the exception.
     /// </remarks>
     public void Destroy(TextureHandle texture)
     {
         ThrowIfUnusable(DestroyApi);
         _handles.ThrowIfNotLive(BackendObjectKind.Texture, texture.Value, nameof(texture));
         int cursor = 0;
+        DeletionQueue? queue = ReserveDeletion();
         while (_handles.TryRemoveViewOf(texture.Value, ref cursor, out ulong viewId))
         {
-            // TODO(#113): queue the view on the frame's deletion queue, as DestroyObject will, once frames exist.
-            _backend.Destroy(BackendObjectKind.TextureView, viewId);
+            Release(queue, BackendObjectKind.TextureView, viewId);
+            queue = ReserveDeletion();
         }
 
-        // TODO(#113): queue the texture on the frame's deletion queue, after its views, once frames exist.
-        _backend.Destroy(BackendObjectKind.Texture, _handles.Remove(BackendObjectKind.Texture, texture.Value, nameof(texture)));
+        Release(queue, BackendObjectKind.Texture, _handles.Remove(BackendObjectKind.Texture, texture.Value, nameof(texture)));
     }
 
     /// <summary>Destroys a texture view made by <see cref="CreateTextureView"/>: its handle and every copy become stale at once.</summary>
@@ -306,11 +315,15 @@ public sealed partial class GraphicsDevice
     /// <paramref name="view"/> is a texture's default view (<see cref="GetDefaultView"/>), which lives as long as its
     /// texture; nothing is destroyed. The message names the view and its debug name (the texture's).
     /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The open or last submitted frame's deletion queue couldn't grow; nothing was destroyed and the handle stays live.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
-    /// With no frame submitted yet, the backend view is destroyed at once. Owner thread. Allocates nothing, except the
-    /// exception.
+    /// The backend view is destroyed once the frame that may still use it has completed: the open frame, else the last
+    /// submitted one. Before the first frame begins, it is destroyed at once. Owner thread. Allocates no managed memory,
+    /// except the exception.
     /// </remarks>
     public void Destroy(TextureViewHandle view)
     {
@@ -323,8 +336,8 @@ public sealed partial class GraphicsDevice
                 $"Destroy: {view} '{_handles.GetDebugName(BackendObjectKind.TextureView, handle)}' is its texture's default view, which is destroyed with the texture.");
         }
 
-        // TODO(#113): queue the view on the frame's deletion queue, as DestroyObject will, once frames exist.
-        _backend.Destroy(BackendObjectKind.TextureView, _handles.Remove(BackendObjectKind.TextureView, handle, nameof(view)));
+        DeletionQueue? queue = ReserveDeletion();
+        Release(queue, BackendObjectKind.TextureView, _handles.Remove(BackendObjectKind.TextureView, handle, nameof(view)));
     }
 
     /// <summary>Destroys a sampler: its handle and every copy become stale at once.</summary>
@@ -335,11 +348,15 @@ public sealed partial class GraphicsDevice
     /// here. A handle from another device is detected only when its index or generation doesn't match a live sampler
     /// here; one that matches can't be told apart from it.
     /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The open or last submitted frame's deletion queue couldn't grow; nothing was destroyed and the handle stays live.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
-    /// With no frame submitted yet, the backend sampler is destroyed at once. Owner thread. Allocates nothing, except the
-    /// exception.
+    /// The backend sampler is destroyed once the frame that may still use it has completed: the open frame, else the last
+    /// submitted one. Before the first frame begins, it is destroyed at once. Owner thread. Allocates no managed memory,
+    /// except the exception.
     /// </remarks>
     public void Destroy(SamplerHandle sampler) => DestroyObject(BackendObjectKind.Sampler, sampler.Value, nameof(sampler));
 
@@ -488,8 +505,22 @@ public sealed partial class GraphicsDevice
     private void DestroyObject(BackendObjectKind kind, Handle handle, string parameterName)
     {
         ThrowIfUnusable(DestroyApi);
-        // No frame has been submitted yet, so nothing can still use the object: it goes straight to the backend.
-        // TODO(#113): queue it on the open frame's deletion queue, or the last submitted frame's, once frames exist.
-        _backend.Destroy(kind, _handles.Remove(kind, handle, parameterName));
+        _handles.ThrowIfNotLive(kind, handle, parameterName);
+        DeletionQueue? queue = ReserveDeletion();
+        Release(queue, kind, _handles.Remove(kind, handle, parameterName));
+    }
+
+    // Hands a destroyed object to its deletion queue, whose room ReserveDeletion made before the handle was freed, or
+    // straight to the backend when no frame was ever submitted or opened: then nothing can still use it.
+    private void Release(DeletionQueue? queue, BackendObjectKind kind, ulong id)
+    {
+        if (queue is null)
+        {
+            _backend.Destroy(kind, id);
+        }
+        else
+        {
+            queue.Add(kind, id);
+        }
     }
 }
