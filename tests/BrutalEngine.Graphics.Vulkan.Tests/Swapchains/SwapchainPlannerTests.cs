@@ -301,6 +301,37 @@ public sealed class SwapchainPlannerTests
         Assert.Equal((requested, expected, false), (plan.PresentMode, plan.VkPresentMode, plan.PresentModeFellBack));
     }
 
+    // The requested mode at index 0 of the surface's list, ahead of every other mode, and as the only mode listed.
+    [Theory]
+    [InlineData(PresentMode.Fifo, VkPresentModeKHR.FifoKHR, false)]
+    [InlineData(PresentMode.Fifo, VkPresentModeKHR.FifoKHR, true)]
+    [InlineData(PresentMode.FifoRelaxed, VkPresentModeKHR.FifoRelaxedKHR, false)]
+    [InlineData(PresentMode.FifoRelaxed, VkPresentModeKHR.FifoRelaxedKHR, true)]
+    [InlineData(PresentMode.Mailbox, VkPresentModeKHR.MailboxKHR, false)]
+    [InlineData(PresentMode.Mailbox, VkPresentModeKHR.MailboxKHR, true)]
+    [InlineData(PresentMode.Immediate, VkPresentModeKHR.ImmediateKHR, false)]
+    [InlineData(PresentMode.Immediate, VkPresentModeKHR.ImmediateKHR, true)]
+    public void PresentMode_ListedFirstOrAlone_IsUsed(PresentMode requested, VkPresentModeKHR expected, bool alone)
+    {
+        VkPresentModeKHR[] modes = alone ? [expected] : [expected, .. AllVkModes.Where(m => m != expected)];
+        SurfaceFacts facts = Good with { PresentModes = modes };
+
+        SwapchainPlan plan = PlanOk(facts, _source, new SwapchainOptions { PresentMode = requested });
+
+        Assert.Equal((requested, expected, false), (plan.PresentMode, plan.VkPresentMode, plan.PresentModeFellBack));
+    }
+
+    [Fact]
+    public void PresentMode_DefaultRequest_FifoListedFirst_IsNoFallback()
+    {
+        // The default options ask for FIFO, which the good surface lists first, as most drivers do.
+        SwapchainPlan plan = PlanOk(Good, _source, new SwapchainOptions());
+
+        Assert.Equal(
+            (PresentMode.Fifo, VkPresentModeKHR.FifoKHR, false),
+            (plan.PresentMode, plan.VkPresentMode, plan.PresentModeFellBack));
+    }
+
     [Theory]
     [InlineData(PresentMode.Mailbox, "FifoKHR,ImmediateKHR")]
     [InlineData(PresentMode.Immediate, "FifoKHR,MailboxKHR,FifoRelaxedKHR")]
