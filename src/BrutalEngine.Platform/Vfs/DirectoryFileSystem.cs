@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Enumeration;
 using System.Security.Cryptography;
 using BrutalEngine.Core;
 
@@ -15,12 +16,30 @@ namespace BrutalEngine.Platform.Vfs;
 /// <remarks>
 /// <para>
 /// <b>Paths:</b> a relative path must be a normalised <see cref="VfsPath.RelativePath"/>, so it can't leave the root
-/// lexically; its <c>/</c> separators become the OS's, and the OS resolves the result. Lookups follow the OS too: on a
-/// case-insensitive file system one spelling opens another. If the root directory is removed after construction,
+/// lexically; its <c>/</c> separators become the OS's, and the OS resolves the result, after the letter-case check
+/// below. If the root directory is removed after construction,
 /// <see cref="GetEntryKind"/> answers <see cref="VfsEntryKind.None"/> for every path, the root included, every other
 /// operation fails with <see cref="ErrorKind.NotFound"/>, and none creates the root again unless the root is removed
 /// during the call, in the window between checking that it exists and creating a directory, which the OS gives no way
 /// to close.
+/// </para>
+/// <para>
+/// <b>Letter case:</b> with <see cref="DirectoryFileSystemOptions.VerifyCase"/> on (the default), every segment of a
+/// path is compared with the names its parent directory lists, from the root down, before the operation runs, on every
+/// OS. A segment that the listing has only in another spelling (equal under an ordinal comparison that ignores case) is
+/// a mismatch: <see cref="GetEntryKind"/> answers <see cref="VfsEntryKind.None"/>, and every other operation fails with
+/// <see cref="ErrorKind.NotFound"/> and changes nothing; the message quotes the path and the spelling on disk up to that
+/// segment (the first in ordinal order, when a case-sensitive file system lists several). A segment spelled exactly as
+/// listed passes, even when other spellings are listed too. The check stops, and leaves the rest of the path to the
+/// operation, at a segment the listing doesn't have in any spelling (so writes and creates spell new names as asked), at
+/// a file, and at a directory the OS reports missing (so a removed root keeps the rules above). It decides from what
+/// each listing read, and runs after the argument checks, the read-only refusals and the root rules; the empty path has
+/// no segments to check. The names compared are the path's own: a symbolic link's name is checked, and so are the names
+/// beyond a link to a directory, in that directory's listing, but the target a link holds is resolved by the OS as it
+/// is. A parent directory the OS refuses to list fails the operation with <see cref="ErrorKind.Unavailable"/> and the
+/// OS code, even when the OS would open the name inside it. With the check off, lookups follow the OS: on a
+/// case-insensitive file system (Windows) one spelling opens another, and on a case-sensitive one (Linux) a write or a
+/// create can add a second spelling next to the first. The check lists one directory per segment.
 /// </para>
 /// <para>
 /// <b>Symbolic links</b> are followed wherever they lead, except at the last name of a write or a delete: the rename of
@@ -50,8 +69,8 @@ namespace BrutalEngine.Platform.Vfs;
 /// is expected or the reverse, and a removed root are <see cref="ErrorKind.NotFound"/>; access denied is
 /// <see cref="ErrorKind.Unavailable"/>; anything else, such as deleting a non-empty directory, is
 /// <see cref="ErrorKind.Io"/>. A failure found without a failing OS call has <see cref="EngineError.NativeCode"/> 0:
-/// the root read or written as a file, deleting a path where nothing is, and creating a directory under a removed
-/// root. Messages quote the relative path. A <see langword="null"/> path throws <see cref="ArgumentNullException"/>,
+/// the root read or written as a file, deleting a path where nothing is, creating a directory under a removed root,
+/// and a letter-case mismatch. Messages quote the relative path. A <see langword="null"/> path throws <see cref="ArgumentNullException"/>,
 /// and text that isn't a normalised relative path throws <see cref="ArgumentException"/>, before anything else.
 /// </para>
 /// <para>
@@ -61,7 +80,7 @@ namespace BrutalEngine.Platform.Vfs;
 /// <para>
 /// <b>Ownership and allocation:</b> the file system holds nothing of the OS's between calls and isn't disposable;
 /// streams from <see cref="OpenRead"/> belong to the caller. Every operation allocates (paths, OS objects, results,
-/// arrays, lists, messages); <see cref="IsReadOnly"/> allocates nothing. File I/O is not a hot path. See
+/// arrays, lists, messages, and the letter-case check's listings); <see cref="IsReadOnly"/> allocates nothing. File I/O is not a hot path. See
 /// docs/design/platform.md section 5, "Mounts and operations".
 /// </para>
 /// </remarks>
@@ -69,12 +88,13 @@ public sealed class DirectoryFileSystem : IFileSystem
 {
     private readonly string _root;
     private readonly bool _isReadOnly;
+    private readonly bool _verifyCase;
     private readonly Action<Stream>? _afterTemporaryWrite;
     private readonly Action<FileInfo>? _beforeListedFileMeasured;
 
     /// <summary>Creates a file system over an existing directory.</summary>
     /// <remarks>Reads the options once. Allocates the normalised root path.</remarks>
-    /// <param name="options">The root directory, and whether the file system is read-only.</param>
+    /// <param name="options">The root directory, whether the file system is read-only, and whether it checks letter case.</param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="options"/> or its <see cref="DirectoryFileSystemOptions.RootDirectory"/> is
     /// <see langword="null"/>.
@@ -100,7 +120,7 @@ public sealed class DirectoryFileSystem : IFileSystem
     /// </param>
     /// <param name="beforeListedFileMeasured">
     /// Called by <see cref="List"/> with each file entry the OS listed, before its length is taken, or
-    /// <see langword="null"/>.
+    /// <see langword="null"/>; the letter-case check's listings don't call it.
     /// </param>
     internal DirectoryFileSystem(
         DirectoryFileSystemOptions options,
@@ -121,6 +141,7 @@ public sealed class DirectoryFileSystem : IFileSystem
         }
 
         _isReadOnly = options.IsReadOnly;
+        _verifyCase = options.VerifyCase;
         _afterTemporaryWrite = afterTemporaryWrite;
         _beforeListedFileMeasured = beforeListedFileMeasured;
     }
@@ -136,6 +157,17 @@ public sealed class DirectoryFileSystem : IFileSystem
     public Result<VfsEntryKind> GetEntryKind(string relativePath)
     {
         ThrowIfNotNormalised(relativePath);
+        Result<string?> mismatch = FindCaseMismatch(relativePath);
+        if (!mismatch.TryGetValue(out string? onDisk))
+        {
+            return mismatch.Error;
+        }
+
+        if (onDisk is not null)
+        {
+            return VfsEntryKind.None;
+        }
+
         try
         {
             return KindOf(GetFullPath(relativePath));
@@ -153,6 +185,11 @@ public sealed class DirectoryFileSystem : IFileSystem
         if (relativePath.Length == 0)
         {
             return RootIsNotAFile();
+        }
+
+        if (CheckCase(relativePath).TryGetError(out EngineError mismatch))
+        {
+            return mismatch;
         }
 
         string fullPath = GetFullPath(relativePath);
@@ -191,6 +228,11 @@ public sealed class DirectoryFileSystem : IFileSystem
             return RootIsNotAFile();
         }
 
+        if (CheckCase(relativePath).TryGetError(out EngineError mismatch))
+        {
+            return mismatch;
+        }
+
         string fullPath = GetFullPath(relativePath);
         try
         {
@@ -223,6 +265,11 @@ public sealed class DirectoryFileSystem : IFileSystem
         if (relativePath.Length == 0)
         {
             return RootIsNotAFile();
+        }
+
+        if (CheckCase(relativePath).TryGetError(out EngineError mismatch))
+        {
+            return mismatch;
         }
 
         string fullPath = GetFullPath(relativePath);
@@ -267,6 +314,11 @@ public sealed class DirectoryFileSystem : IFileSystem
             return new EngineError(ErrorKind.Unsupported, "'' is the root directory, which can't be deleted.");
         }
 
+        if (CheckCase(relativePath).TryGetError(out EngineError mismatch))
+        {
+            return mismatch;
+        }
+
         string fullPath = GetFullPath(relativePath);
         try
         {
@@ -297,6 +349,11 @@ public sealed class DirectoryFileSystem : IFileSystem
         if (_isReadOnly)
         {
             return ReadOnly(relativePath);
+        }
+
+        if (CheckCase(relativePath).TryGetError(out EngineError mismatch))
+        {
+            return mismatch;
         }
 
         try
@@ -333,6 +390,11 @@ public sealed class DirectoryFileSystem : IFileSystem
     public Result<IReadOnlyList<VfsEntry>> List(string relativePath)
     {
         ThrowIfNotNormalised(relativePath);
+        if (CheckCase(relativePath).TryGetError(out EngineError mismatch))
+        {
+            return mismatch;
+        }
+
         string fullPath = GetFullPath(relativePath);
         try
         {
@@ -493,7 +555,127 @@ public sealed class DirectoryFileSystem : IFileSystem
         }
     }
 
-    private string GetFullPath(string relativePath) => relativePath.Length == 0
+    /// <summary>
+    /// Lists the entries of a directory whose names equal a segment under an ordinal comparison that ignores case.
+    /// </summary>
+    /// <remarks>
+    /// Hidden and system entries are listed too, and a directory that can't be read throws instead of listing nothing.
+    /// Whether an entry is a directory is what the listing read, following a symbolic link on POSIX; on Windows a link
+    /// to a directory carries the directory attribute itself.
+    /// </remarks>
+    /// <param name="directory">The full path of the directory to list.</param>
+    /// <param name="segment">The segment to look for.</param>
+    /// <returns>
+    /// Whether an entry is spelled exactly as the segment, and if so whether it is a directory; otherwise the first other
+    /// spelling in ordinal order, or <see langword="null"/> when no spelling is listed.
+    /// </returns>
+    /// <exception cref="IOException">The OS can't list the directory (<see cref="DirectoryNotFoundException"/>: it is missing).</exception>
+    /// <exception cref="UnauthorizedAccessException">The OS denies listing it.</exception>
+    private static (bool Exact, bool IsDirectory, string? Other) FindListed(string directory, string segment)
+    {
+        EnumerationOptions options = new() { AttributesToSkip = 0, IgnoreInaccessible = false };
+        FileSystemEnumerable<(string Name, bool IsDirectory)> listed = new(
+            directory,
+            static (ref FileSystemEntry entry) => (entry.FileName.ToString(), entry.IsDirectory),
+            options)
+        {
+            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.FileName.Equals(segment, StringComparison.OrdinalIgnoreCase),
+        };
+
+        string? other = null;
+        foreach ((string name, bool isDirectory) in listed)
+        {
+            if (string.Equals(name, segment, StringComparison.Ordinal))
+            {
+                return (true, isDirectory, null);
+            }
+
+            if (other is null || string.CompareOrdinal(name, other) < 0)
+            {
+                other = name;
+            }
+        }
+
+        return (false, false, other);
+    }
+
+    /// <summary>The letter-case check for every operation but <see cref="GetEntryKind"/>.</summary>
+    /// <param name="relativePath">A normalised relative path.</param>
+    /// <returns>
+    /// Success when no segment is spelled differently on disk; a mismatch as <see cref="ErrorKind.NotFound"/> with
+    /// <see cref="EngineError.NativeCode"/> 0, naming the spelling on disk; or the listing's failure.
+    /// </returns>
+    private Result CheckCase(string relativePath)
+    {
+        Result<string?> mismatch = FindCaseMismatch(relativePath);
+        if (!mismatch.TryGetValue(out string? onDisk))
+        {
+            return mismatch.Error;
+        }
+
+        return onDisk is null
+            ? Result.Success
+            : new EngineError(ErrorKind.NotFound, $"'{relativePath}' isn't spelled as on disk, where it is '{onDisk}' (letter case must match).");
+    }
+
+    /// <summary>
+    /// Finds the first segment of a path that its parent directory lists only in another spelling, when
+    /// <see cref="DirectoryFileSystemOptions.VerifyCase"/> is on.
+    /// </summary>
+    /// <remarks>
+    /// Walks from the root, listing each segment's parent: an exact name that is a directory continues the walk, and an
+    /// exact name that is a file, the last segment, a name not listed in any spelling or a parent the OS reports missing
+    /// ends it with no mismatch, leaving the rest to the operation. Each decision uses what one listing read.
+    /// </remarks>
+    /// <param name="relativePath">A normalised relative path.</param>
+    /// <returns>
+    /// <see langword="null"/> when no segment mismatches or the check is off; otherwise the path up to the first
+    /// mismatched segment as spelled on disk. A failure when the OS can't list a parent for another reason, such as
+    /// access denied, with the OS code.
+    /// </returns>
+    private Result<string?> FindCaseMismatch(string relativePath)
+    {
+        if (!_verifyCase || relativePath.Length == 0)
+        {
+            return (string?)null;
+        }
+
+        try
+        {
+            for (int start = 0; ;)
+            {
+                int end = relativePath.IndexOf('/', start);
+                string segment = end < 0 ? relativePath[start..] : relativePath[start..end];
+                (bool exact, bool isDirectory, string? other) = FindListed(GetFullPath(start == 0 ? string.Empty : relativePath[..(start - 1)]), segment);
+                if (other is not null)
+                {
+                    return string.Concat(relativePath.AsSpan(0, start), other);
+                }
+
+                if (!exact || !isDirectory || end < 0)
+                {
+                    return (string?)null;
+                }
+
+                start = end + 1;
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // A parent is gone (a removed root, or a directory removed since it was listed): the operation finds that
+            // itself and reports it by its own rules.
+            return (string?)null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Failure(exception, relativePath);
+        }
+    }
+
+    /// <summary>Joins a normalised relative path under the root, with the OS's separators; internal for tests.</summary>
+    /// <param name="relativePath">A normalised relative path; the empty path is the root.</param>
+    /// <returns>The full path, which no OS call has looked at.</returns>
+    internal string GetFullPath(string relativePath) => relativePath.Length == 0
         ? _root
         : Path.Join(_root, Path.DirectorySeparatorChar == '/' ? relativePath : relativePath.Replace('/', Path.DirectorySeparatorChar));
 

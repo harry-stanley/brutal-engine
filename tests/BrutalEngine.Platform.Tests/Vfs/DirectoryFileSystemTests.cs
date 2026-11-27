@@ -2,10 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using BrutalEngine.Core;
 using BrutalEngine.Platform.Vfs;
+using CsCheck;
 using Xunit;
 
 namespace BrutalEngine.Platform.Tests.Vfs;
@@ -372,9 +375,13 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
     [InlineData("CreateDirectory", "dir")]
     [InlineData("CreateDirectory", "file.txt")]
     [InlineData("CreateDirectory", "")]
+    [InlineData("WriteAllBytes", "File.txt")]
+    [InlineData("Delete", "Dir")]
+    [InlineData("CreateDirectory", "DIR/new")]
     public void ReadOnly_WritesUnsupported(string operation, string path)
     {
-        // Several paths fail another way on a writable mount (ErrorRows), so a misordered check answers that instead.
+        // Several paths fail another way on a writable mount (ErrorRows, and the wrong-case rows VerifyCase rejects),
+        // so a misordered check answers that instead.
         Seed();
         string before = Snapshot();
         DirectoryFileSystem fileSystem = Create(isReadOnly: true);
@@ -577,7 +584,9 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         AssertFailure(result, expected, nativeCode, $"'{path}'");
         if (scenario == "root removed")
         {
+            // VerifyCase is on, and finding no root to list leaves every path to the operation: None, not a failure.
             Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind(string.Empty).Value);
+            Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("dir/inner.txt").Value);
             Assert.False(Directory.Exists(_root));
         }
         else
@@ -668,6 +677,263 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Assert.Equal(before, Snapshot());
     }
 
+    [Theory]
+    [InlineData("GetEntryKind", "assets", "")]
+    [InlineData("GetEntryKind", "Assets/hero.png", "")]
+    [InlineData("GetEntryKind", "Assets/maps", "")]
+    [InlineData("GetEntryKind", "ASSETS/Maps/level.bin", "")]
+    [InlineData("ReadAllBytes", "Assets/hero.png", "Assets/Hero.png")]
+    [InlineData("ReadAllBytes", "assets/Hero.png", "Assets")]
+    [InlineData("OpenRead", "Assets/HERO.PNG", "Assets/Hero.png")]
+    [InlineData("WriteAllBytes", "Assets/hero.png", "Assets/Hero.png")]
+    [InlineData("WriteAllBytes", "assets/new.png", "Assets")]
+    [InlineData("WriteAllBytes", "Assets/maps/new.bin", "Assets/Maps")]
+    [InlineData("Delete", "Assets/hero.png", "Assets/Hero.png")]
+    [InlineData("Delete", "Assets/maps", "Assets/Maps")]
+    [InlineData("CreateDirectory", "Assets/maps", "Assets/Maps")]
+    [InlineData("CreateDirectory", "assets/new", "Assets")]
+    [InlineData("CreateDirectory", "Assets/hero.png", "Assets/Hero.png")]
+    [InlineData("List", "assets", "Assets")]
+    [InlineData("List", "Assets/maps", "Assets/Maps")]
+    public void VerifyCase_WrongCase_IsNotFound(string operation, string path, string onDisk)
+    {
+        // Default options, so VerifyCase is on. Without it, each row reaches the entry on Windows (one spelling opens
+        // another) and, on Linux, fails with the OS's own code or makes a second spelling next to the first.
+        SeedCased();
+        string before = Snapshot();
+        DirectoryFileSystem fileSystem = Create();
+
+        Result result = Run(fileSystem, operation, path);
+
+        if (operation == "GetEntryKind")
+        {
+            Assert.True(result.IsSuccess);
+            Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind(path).Value);
+        }
+        else
+        {
+            AssertCaseMismatch(result, path, onDisk);
+        }
+
+        Assert.Equal(before, Snapshot());
+        AssertNoTemporaryFiles();
+    }
+
+    [Fact]
+    public void VerifyCase_ExactCase_Succeeds()
+    {
+        SeedCased();
+        DirectoryFileSystem fileSystem = Create();
+
+        Assert.Equal(VfsEntryKind.File, fileSystem.GetEntryKind("Assets/Hero.png").Value);
+        Assert.Equal(VfsEntryKind.Directory, fileSystem.GetEntryKind("Assets/Maps").Value);
+        Assert.Equal([1, 2, 3], fileSystem.ReadAllBytes("Assets/Hero.png").Value);
+        using (Stream stream = fileSystem.OpenRead("Assets/Hero.png").Value)
+        {
+            Assert.Equal([1, 2, 3], ReadToEnd(stream));
+        }
+
+        Assert.Equal(
+            [new VfsEntry("Hero.png", VfsEntryKind.File, 3), new VfsEntry("Maps", VfsEntryKind.Directory, 0)],
+            fileSystem.List("Assets").Value);
+
+        // Segments that don't exist yet aren't checked, and writes and creates spell them as asked.
+        Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("Assets/Missing/hero.png").Value);
+        Assert.True(fileSystem.WriteAllBytes("Assets/Hero.png", [4]).IsSuccess);
+        Assert.True(fileSystem.WriteAllBytes("Assets/Maps/New/Level.bin", [5]).IsSuccess);
+        Assert.True(fileSystem.CreateDirectory("Assets/Maps").IsSuccess);
+        Assert.True(fileSystem.CreateDirectory("Assets/Maps/Other").IsSuccess);
+        Assert.Equal([4], File.ReadAllBytes(Path.Join(_root, "Assets", "Hero.png")));
+        Assert.Equal(
+            [new VfsEntry("New", VfsEntryKind.Directory, 0), new VfsEntry("Other", VfsEntryKind.Directory, 0)],
+            fileSystem.List("Assets/Maps").Value);
+        Assert.Equal([new VfsEntry("Level.bin", VfsEntryKind.File, 1)], fileSystem.List("Assets/Maps/New").Value);
+
+        Assert.True(fileSystem.Delete("Assets/Maps/Other").IsSuccess);
+        Assert.True(fileSystem.Delete("Assets/Hero.png").IsSuccess);
+        Assert.Equal([new VfsEntry("Maps", VfsEntryKind.Directory, 0)], fileSystem.List("Assets").Value);
+        AssertNoTemporaryFiles();
+    }
+
+    [Fact]
+    public void VerifyCase_SeveralSpellings_ExactOneWins()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "NTFS can't hold two names that differ only in case.");
+        File.WriteAllBytes(Path.Join(_root, "Hero.png"), [1]);
+        File.WriteAllBytes(Path.Join(_root, "hERO.png"), [2]);
+        File.WriteAllBytes(Path.Join(_root, "HERO.png"), [3]);
+        DirectoryFileSystem fileSystem = Create();
+
+        Assert.Equal([1], fileSystem.ReadAllBytes("Hero.png").Value);
+        Assert.Equal([2], fileSystem.ReadAllBytes("hERO.png").Value);
+        Assert.Equal([3], fileSystem.ReadAllBytes("HERO.png").Value);
+
+        // With no exact spelling, the error names the first in ordinal order: 'E' (U+0045) sorts before 'e' (U+0065),
+        // and 'H' (U+0048) before 'h' (U+0068).
+        var result = fileSystem.ReadAllBytes("hero.png").ToResult();
+        AssertCaseMismatch(result, "hero.png", "HERO.png");
+        Assert.DoesNotContain("'Hero.png'", result.Error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("'hERO.png'", result.Error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VerifyCase_SymbolicLinks_ChecksLinkNamesNotTargetText()
+    {
+        Directory.CreateDirectory(Path.Join(_root, "data"));
+        string target = Path.Join(_root, "data", "real.bin");
+        File.WriteAllBytes(target, [1, 2, 3, 4, 5, 6, 7, 8]);
+        CreateLink("Link", Path.Join("data", "real.bin"), isDirectory: false);
+        CreateLink("DataLink", "data", isDirectory: true);
+        CreateLink("upper", Path.Join("DATA", "REAL.BIN"), isDirectory: false);
+        DirectoryFileSystem fileSystem = Create();
+
+        // A link's own name is checked, and so are the names inside a linked directory, through the link.
+        Assert.Equal(8, fileSystem.ReadAllBytes("Link").Value.Length);
+        Assert.Equal(8, fileSystem.ReadAllBytes("DataLink/real.bin").Value.Length);
+        Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("link").Value);
+        AssertCaseMismatch(fileSystem.ReadAllBytes("link").ToResult(), "link", "Link");
+        AssertCaseMismatch(fileSystem.ReadAllBytes("DataLink/Real.bin").ToResult(), "DataLink/Real.bin", "DataLink/real.bin");
+        AssertCaseMismatch(fileSystem.List("datalink").ToResult(), "datalink", "DataLink");
+
+        // A write or a delete at a wrong-case link name leaves the link, and what it leads to, as they were.
+        AssertCaseMismatch(fileSystem.WriteAllBytes("link", [7]), "link", "Link");
+        AssertCaseMismatch(fileSystem.Delete("LINK"), "LINK", "Link");
+        AssertCaseMismatch(fileSystem.Delete("datalink"), "datalink", "DataLink");
+        Assert.NotNull(new FileInfo(Path.Join(_root, "Link")).LinkTarget);
+        Assert.NotNull(new DirectoryInfo(Path.Join(_root, "DataLink")).LinkTarget);
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], File.ReadAllBytes(target));
+
+        // A link's target text is left to the OS: Windows finds data/real.bin through "DATA\REAL.BIN", Linux finds
+        // nothing, so the link dangles there.
+        Assert.Equal(VfsEntryKind.File, fileSystem.GetEntryKind("upper").Value);
+        Result<byte[]> throughUpper = fileSystem.ReadAllBytes("upper");
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Equal(8, throughUpper.Value.Length);
+        }
+        else
+        {
+            AssertFailure(throughUpper.ToResult(), ErrorKind.NotFound, null, "'upper'");
+        }
+    }
+
+    [Fact]
+    [UnsupportedOSPlatform("windows")] // Skipped there, before the POSIX calls.
+    public void VerifyCase_ParentThatCannotBeListed_IsUnavailable()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Skip("Denies listing with POSIX permissions.");
+        }
+
+        Assert.SkipWhen(Environment.IsPrivilegedProcess, "Running as root, which ignores POSIX permissions, so listing can't be denied.");
+        string locked = Path.Join(_root, "locked");
+        Directory.CreateDirectory(locked);
+        File.WriteAllBytes(Path.Join(locked, "inner.txt"), [1]);
+        DirectoryFileSystem verifying = Create();
+        DirectoryFileSystem trusting = new(Options() with { VerifyCase = false });
+
+        // Execute permission alone: the OS opens names inside the directory but won't list it.
+        File.SetUnixFileMode(locked, UnixFileMode.UserExecute);
+        try
+        {
+            AssertFailure(verifying.ReadAllBytes("locked/inner.txt").ToResult(), ErrorKind.Unavailable, AccessDenied, "'locked/inner.txt'");
+            AssertFailure(verifying.GetEntryKind("locked/inner.txt").ToResult(), ErrorKind.Unavailable, AccessDenied, "'locked/inner.txt'");
+            Assert.Equal([1], trusting.ReadAllBytes("locked/inner.txt").Value);
+            Assert.Equal(VfsEntryKind.File, trusting.GetEntryKind("locked/inner.txt").Value);
+        }
+        finally
+        {
+            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
+    public void VerifyCaseOff_DefersToOs()
+    {
+        SeedCased();
+        DirectoryFileSystem fileSystem = new(Options() with { VerifyCase = false });
+
+        // Probed through System.IO: NTFS folds case on Windows, and Linux's file systems don't.
+        bool foldsCase = File.Exists(Path.Join(_root, "assets", "hero.png"));
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.True(foldsCase);
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            Assert.False(foldsCase);
+        }
+
+        Result<byte[]> read = fileSystem.ReadAllBytes("assets/hero.png");
+        Assert.True(fileSystem.CreateDirectory("assets").IsSuccess);
+
+        if (foldsCase)
+        {
+            // One spelling opens the other, and creating "assets" finds "Assets" there already.
+            Assert.Equal([1, 2, 3], read.Value);
+            Assert.Equal(VfsEntryKind.File, fileSystem.GetEntryKind("assets/HERO.PNG").Value);
+            Assert.Equal([new VfsEntry("Assets", VfsEntryKind.Directory, 0)], fileSystem.List(string.Empty).Value);
+        }
+        else
+        {
+            // The OS's own failure, with its code, and a second directory next to the first.
+            AssertFailure(read.ToResult(), ErrorKind.NotFound, null, "'assets/hero.png'");
+            Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("assets/HERO.PNG").Value);
+            Assert.Equal(
+                [new VfsEntry("Assets", VfsEntryKind.Directory, 0), new VfsEntry("assets", VfsEntryKind.Directory, 0)],
+                fileSystem.List(string.Empty).Value);
+        }
+    }
+
+    [Fact]
+    public void AnyParsedPath_ResolvesInsideRoot()
+    {
+        // Text built from the pieces that could lead out of a root or change what a name means on some OS: traversal,
+        // both separators, drive and share syntax, look-alike dots and slashes, device names, trailing dots and spaces.
+        DirectoryFileSystem fileSystem = Create();
+        string inside = _root + Path.DirectorySeparatorChar;
+        int parsed = 0;
+        var texts = Gen.Select(
+            Pick("r://", "res://", "user://", "res:///", "/", "", "res:/"),
+            Gen.Frequency(
+                    (3, Pick(
+                        "", ".", "..", "...", "a", "Hero.png", "..a", "a..b", "~", "~1", "C:", "c$", "\\", "..\\..", "%2e%2e",
+                        "\u2024\u2024", "\uFF0F", "\u2215", "e\u0301", "\U0001F600", "CON", "nul.txt", " ", "a ", "a.")),
+                    (1, Gen.Char["./\\:a~ \u0000\u00E9\u65E5"].Array[1, 6].Select(chars => new string(chars))))
+                .Array[0, 8],
+            (prefix, segments) => prefix + string.Join('/', segments));
+
+        texts.Sample(text =>
+        {
+            if (!VfsPath.TryParse(text, out VfsPath path))
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref parsed);
+            string relative = path.RelativePath;
+            string full = fileSystem.GetFullPath(relative);
+
+            // Already canonical (the OS would normalise nothing away), and segment for segment under the root.
+            Assert.Equal(full, Path.GetFullPath(full));
+            if (relative.Length == 0)
+            {
+                Assert.Equal(_root, full);
+            }
+            else
+            {
+                Assert.StartsWith(inside, full, StringComparison.Ordinal);
+                Assert.Equal(relative.Split('/'), full[inside.Length..].Split(Path.DirectorySeparatorChar));
+            }
+
+            // The file system takes every parsed path, and the OS finds nothing outside an empty root.
+            Assert.Equal(relative.Length == 0 ? VfsEntryKind.Directory : VfsEntryKind.None, fileSystem.GetEntryKind(relative).Value);
+        }, iter: 20_000);
+
+        Assert.True(parsed > 200, $"Only {parsed} samples parsed.");
+    }
+
     [GeneratedRegex(@"^\.[0-9a-f]{16}\.betmp$")]
     private static partial Regex TemporaryName();
 
@@ -724,6 +990,15 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
 
     private DirectoryFileSystem Create(bool isReadOnly = false) => new(Options(isReadOnly));
 
+    private static Gen<string> Pick(params string[] values) => Gen.Int[0, values.Length - 1].Select(i => values[i]);
+
+    /// <summary>Asserts a VerifyCase failure: NotFound with no OS code, quoting the path and the spelling on disk.</summary>
+    private static void AssertCaseMismatch(Result result, string path, string onDisk)
+    {
+        AssertFailure(result, ErrorKind.NotFound, 0, $"'{path}'");
+        Assert.Contains($"'{onDisk}'", result.Error.Message, StringComparison.Ordinal);
+    }
+
     private DirectoryFileSystem ListingWith(Action<FileInfo> beforeListedFileMeasured) => new(Options(), null, beforeListedFileMeasured);
 
     /// <summary>Seeds the root through System.IO: file.txt ("abc"), dir/inner.txt ([1]) and an empty directory.</summary>
@@ -733,6 +1008,13 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Directory.CreateDirectory(Path.Join(_root, "dir"));
         File.WriteAllBytes(Path.Join(_root, "dir", "inner.txt"), [1]);
         Directory.CreateDirectory(Path.Join(_root, "empty"));
+    }
+
+    /// <summary>Seeds the root through System.IO with mixed-case names: Assets/Hero.png ([1, 2, 3]) and Assets/Maps/.</summary>
+    private void SeedCased()
+    {
+        Directory.CreateDirectory(Path.Join(_root, "Assets", "Maps"));
+        File.WriteAllBytes(Path.Join(_root, "Assets", "Hero.png"), [1, 2, 3]);
     }
 
     /// <summary>Creates a symbolic link under the root, or skips the test where the OS doesn't let this process.</summary>
