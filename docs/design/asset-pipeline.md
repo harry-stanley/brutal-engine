@@ -406,3 +406,113 @@ Sources are untrusted input: a mod, a downloaded asset pack or a pull request ca
 All JSON is read with `Utf8JsonReader` or `JsonDocument` with `MaxDepth` set, comments and trailing commas rejected. Native decoders (stb, SDL_mixer, FreeType, Slang) only receive input that passed the managed checks above; their own robustness is upstream's, and a crash in one found by fuzzing goes to the BRUTAL issue draft, not to a workaround here.
 
 **Fuzz targets** (SharpFuzz, nightly, 30 minutes per target, docs/05's fuzz tier, `docs/05-testing-strategy.md:19`): `AssetMeta.Read`; the image header check plus decode; the atlas definition reader; the Aseprite parser and compositor; Tiled JSON; Tiled XML; LDtk; the Ogg and Vorbis header reader; the audio importer end to end. Each target runs the whole importer over an in-memory file system, so native code is exercised too (SharpFuzz instruments managed code only, so coverage guidance stops at the native boundary). The corpus is seeded from the fixtures of section 8; every crash becomes a regression row in the importer's tests.
+
+## 7. Packaging
+
+- **The dotnet tool.** `BrutalEngine.Cook` is packed as a .NET tool (`PackAsTool`, `ToolCommandName` `brutal-cook`) in 0.3.0, carrying Importers, Importers.Shaders and their natives, as ADR-0012 defers to M2. Its package size (the Slang native alone is about 99 MB, `docs/02-tech-stack.md:32`) and whether it ships as one package or one per RID are questions for the publishing note.
+- **The importer libraries.** `BrutalEngine.Importers` and `BrutalEngine.Importers.Shaders` are packed as ordinary libraries in 0.3.0, with `PublicAPI.Unshipped.txt` and XML docs like every engine library. `BrutalEngine.Cook` is an executable with no public API and no PublicAPI files.
+- **The ship gate today.** Nothing under `tools/` can pack for 0.2.0: the root `Directory.Build.props` makes every project unpackable unless `src/Directory.Build.props` says otherwise (`Directory.Build.props:32-33`), and CI's Pack step packs the whole solution (`.github/workflows/ci.yml:191`) and then `check-packages.sh`, which expects only `src/*/*.csproj` (`.github/scripts/check-packages.sh:70`), fails on any package it doesn't expect (`.github/scripts/check-packages.sh:109`). So a tool project that set `IsPackable` early would fail CI. The architecture tests' ship-gate rule reads `src/` only (`tests/BrutalEngine.Architecture.Tests/Repository.cs:48-50`).
+- **The gate for 0.3.0** must cover the three tool projects the way it covers libraries: each declares `BrutalEngineMilestone` 2; `IsPackable` is derived from it as `src/Directory.Build.targets` does; and `ShipGateRule` and `check-packages.sh` include the packable `tools/*/*.csproj`. Where tools read `BrutalEngineReleaseMilestone` (today set only in `src/Directory.Build.props`, which is frozen until the 0.2.0 tag) is a question for the publishing note; this note names it and doesn't solve it. The packaging issue is blocked by that note and lands after the tag.
+- **Debug-only reference.** A game references the importers in its Debug configuration only and creates the importer in `#if DEBUG` code, so a Release build neither compiles against nor ships it:
+
+```xml
+<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+  <PackageReference Include="BrutalEngine.Importers" />
+  <!-- Optional: in-process shader import and hot reload; brings the Slang native package. -->
+  <PackageReference Include="BrutalEngine.Importers.Shaders" />
+</ItemGroup>
+```
+
+```csharp
+#if DEBUG
+static IAssetImporter? CreateImporter(Logger logger)
+{
+    ImporterRegistry registry = ImporterRegistry.CreateDefault();
+    registry.Freeze();
+    return new SourceAssetImporter(new SourceAssetImporterOptions { Registry = registry, Logger = logger });
+}
+#else
+static IAssetImporter? CreateImporter(Logger logger) => null;
+#endif
+```
+
+  The constructor has no expected failure: an unfrozen registry is misuse and throws. Without the shader package, a shader sidecar's import fails with `Unsupported` ("importer 'shader' isn't registered"), and the game uses cooked shaders from a pack. The Release check is the asset database note's ([section 7](assets.md#7-development-mode)): the M2 sample game's Release publish must contain no importer assembly.
+
+## 8. Testing
+
+All on Windows and Linux CI, in `tests/BrutalEngine.Importers.Tests`, `tests/BrutalEngine.Importers.Shaders.Tests` (run only in the shader job that restores Slang) and `tests/BrutalEngine.Cook.Tests`, over `InMemoryFileSystem` (`src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:582`) unless a test needs real files.
+
+- **Fixtures.** Committed source files under `tests/fixtures/assets/` (the cook fixture project) and each test project's `Fixtures/`. Each directory has a `LICENSES.md` listing every file, its author and licence; fixtures are made for the tests (CC0 or MIT, by the contributor) or taken from sources whose licence allows redistribution, never from games. Binary fixtures are small (under 64 KiB each) and include hand-made edge cases: every PNG colour type and bit depth, every TGA image type, each Aseprite colour depth and cel type, Tiled maps in every encoding and compression, LDtk with external levels.
+- **Unit tests per importer** for every rule of sections 1-3 and every limit of section 6, a row on each side of each limit, with expected values written from outside the code under test: hand-computed texels (premultiplication rounding at 0, 127, 128 and 255), packer layouts worked by hand for small sets, Aseprite composition of two layers at known opacities, tile ids with every flip bit.
+- **Golden outputs.** Each fixture's cooked payload is committed beside it (`<fixture>.golden.bin` for this note's formats, and for owners' formats once their notes land). A golden test fails when output bytes change; the fix is to raise the importer's `Version` and regenerate the goldens in the same commit, which the review checks. Golden files are produced by the importer, so they guard against change, not correctness; correctness comes from the unit tests above and a reference reader in the tests for `SHDR`, written from section 3's table.
+- **Packer properties** (CsCheck): random sprite sets never overlap, keep padding, stay within pages, and give the same layout for every input order.
+- **`.meta` round trips:** `Read` then `ToJson` gives canonical bytes; random valid sidecars round-trip; every rule's rejection; settings migration from version 1 when an importer reaches version 2.
+- **Determinism tests:** the fixture project cooked with `--jobs 1` and `--jobs 8`, cold and warm cache and `--no-cache`, from two directories, gives identical bytes; a test importer that reads files in a shuffled order still gives sorted outputs; plus the cross-OS job of section 5.
+- **Cache tests:** each key input changed alone causes exactly that source's re-import (counted through a test importer), an unchanged rewrite (same bytes) doesn't, a corrupt entry is a miss, a second process on a locked cache exits 74.
+- **Command tests:** every option and exit code; the JSON diagnostics against hand-written expected lines; `--locked` with a missing, outdated or orphan sidecar; a failed cook leaving the old pack untouched.
+- **Cook-to-load round trips** (ADR-0005), in `tests/BrutalEngine.Integration.Tests`: cook the fixture project, open the pack with `AssetPack.Open` and mount it in an `AssetDatabase`, load every asset through its loader, and compare with a development-mode database using `SourceAssetImporter` over the same sources, byte for byte, as the asset database note's [section 12](assets.md#12-testing) asks.
+- **Fuzz targets** of section 6, nightly.
+- **Mutation self-checks**, for example: iterate a dictionary when ordering pack entries; skip re-hashing a recorded read on a cache hit; drop the colour-map check of the TGA header; accept a zlib cel longer than its size; premultiply with truncation instead of rounding.
+
+## 9. Issue split
+
+Sized from measured files on `main`: `VfsPath.cs` plus `VfsPathParser.cs` are 528 source lines for 23 `PublicAPI` lines with 801 test lines (a parser: about 23 lines per API line, tests 1.5x); `VirtualFileSystem.cs` is 330 lines for 13 API lines with 952 test lines (a thread-safe service: about 25 lines per API line, tests 2.9x); `Entity.cs` is 105 lines for 14 members with 135 test lines (a value type: 7.5 lines per member, tests 1.3x). Internal code (the importers, the cook command) is counted by the analogue it resembles, with no API lines. A positional record struct of three fields is 8 API lines (`VfsEntry`, `src/BrutalEngine.Platform/PublicAPI.Unshipped.txt:593-600`). The Importers rows share one `PublicAPI.Unshipped.txt` and the `CreateDefault` list (one line per importer), so they run in order unless the column says otherwise. Every row is blocked by this note.
+
+| Issue | Scope | Blocked by | Arithmetic: src + tests + API | Est. |
+|-------|-------|------------|-------------------------------|-----:|
+| P1 feat(importers): add the Importers project and read `.meta` files | Project, test project, solution and Architecture.Tests lines (40); `AssetMeta` read side and `AssetMetaEntry`, the JSON context, section 1's rules | Assets A1 (`AssetId`, `AssetKind`) | src 40 + 5 members x 7.5 + `Read` 100 + entry 33 + context 40 = 251; tests (71 x 1.3) + (140 x 1.5) = 302; API 26 | ~580 |
+| P2 feat(importers): write canonical `.meta` files and add diagnostics | `ToJson`, `CreateNew`, `WithAssets`, `AssetCompression`; `ImportDiagnostic`, `DiagnosticSeverity` | P1 | src 3 x 25 + writer 30 + enum 26 + diagnostic 62 + severity 22 = 215; tests 105 x 1.5 + 110 x 1.3 = 301; API 34 | ~550 |
+| P3 feat(importers): add the importer contract | `IImporter`, `ImporterInfo`, `ImportOutput`, `ImportLimits` | P2 | src 70 + 40 + 40 + 47 = 197; tests 157 x 1.3 = 204; API 24 + 4 + 10 + 18 = 56 | ~460 |
+| P4 feat(importers): add the importer registry | `ImporterRegistry` with every lookup rule and `Freeze` (frozen, so tested as a parser, not a concurrent service) | P3 | src 9 x 23 = 207; tests x 1.5 = 311; API 9 | ~530 |
+| P5 feat(importers): add the import context | `ImportContext`: reads, hashes, limits, `ResolveAsset`, `GetOutputId`, outputs, reports | P4 | src 4 x 7.5 + 6 x 25 = 180; tests 30 x 1.3 + 150 x 1.5 = 264; API 11 | ~455 |
+| P6 feat(importers): run one import for the cooker and the runtime | `SourceImport.Run`, `SourceImportRequest`, `SourceImportResult`, `ImportRead`; output checks | P5 | src 100 + 62 + 55 + 25 = 242; tests 100 x 1.5 + 142 x 1.3 = 335; API 48 | ~625 |
+| P7 feat(importers): implement the asset database's import seam | `SourceAssetImporter`, its options, `ReadMeta`, `Import` | P6; Assets A9 (the seam types) | src 100 + 40 = 140; tests 100 x 2.9 + 40 x 1.3 = 342; API 19 | ~500 |
+| P8 feat(importers): reuse multi-output imports in development mode | The memo with re-hashing, the byte bound and the per-source lock | P7 | src 80; tests x 2.9 = 232 | ~310 |
+| P9 feat(importers): import PNG and TGA images | Header checks, stb decoding, premultiplication, the texture payload; fixtures and goldens | P6 | src 80 + 60 + 60 + 40 = 240; tests x 1.5 = 360 | ~600 |
+| P10 feat(importers): import input maps | The `input-map` importer | P6; the input note's `FromJson`/`ToJson` on `main` | src 50; tests x 1.5 = 75 | ~125 |
+| P11 feat(importers): add the atlas packer | MaxRects, trimming, extrusion, page sizing; the property tests | P6 | src 250; tests x 1.5 = 375 | ~625 |
+| P12 feat(importers): import sprite atlases | `.atlas.json`, member globbing, pages and the atlas output | P9, P11; the 2D renderer note merged | src 200; tests x 1.5 = 300 | ~500 |
+| P13 feat(importers): parse Aseprite headers, frames and layers | Header, frame and chunk framing, layers, palette, limits | P6 | src 200; tests x 1.5 = 300 | ~500 |
+| P14 feat(importers): parse Aseprite cels, tags and slices | Raw, linked and zlib cels, tags, slices | P13 | src 150; tests x 1.5 = 225 | ~375 |
+| P15 feat(importers): import Aseprite sprites | Composition, packing, the atlas output | P11, P14; the 2D renderer note merged | src 110 + 80 = 190; tests x 1.5 = 285 | ~475 |
+| P16 feat(importers): decode audio clips | SDL_mixer decoding with every status checked, modes and the threshold, the clip output | P6; ADR-0017 merged; the audio note merged | src 150 + 40 + 30 = 220; tests x 1.5 = 330 | ~550 |
+| P17 feat(importers): cook streamed music | The Ogg and Vorbis header reader, the stream output | P16 | src 110 + 20 = 130; tests x 1.5 = 195 | ~325 |
+| P18 feat(importers): bake fonts | Settings, rasterising through Text, packing, the font output | P11; the text note merged and Text's rasteriser on `main` | src 200; tests x 1.5 = 300 | ~500 |
+| P19 feat(importers): add the shader importer project and compile Slang | `tools/BrutalEngine.Importers.Shaders` and tests, the two layer edges, the compile function moved from the cook tool, imported files, diagnostics | P6; M1's cook tool on `main` | src 40 + 180 = 220; tests 180 x 1.5 = 270 | ~490 |
+| P20 feat(importers): reflect shader bindings and entry points | Section 3's reflection and its mappings | P19 | src 200; tests x 1.5 = 300 | ~500 |
+| P21 feat(importers): write the shader payload | `SHDR` writer, `SlangShaderImporter` (6 API lines), the reference reader in the tests | P20 | src 120 + 60 = 180; tests x 1.5 = 270; API 6 | ~455 |
+| P22 feat(importers): add the tilemap model and its output | The shared model, tile-data decoding (CSV, base64, zlib, gzip), the tilemap output | P6; the tilemap note merged | src 200; tests x 1.5 = 300 | ~500 |
+| P23 feat(importers): import Tiled JSON maps | `.tmj`, `.tsj` | P22 | src 220; tests x 1.5 = 330 | ~550 |
+| P24 feat(importers): import Tiled XML maps | `.tmx`, `.tsx`, the XML hardening | P23 (same model, shared tests) | src 200; tests x 1.5 = 300 | ~500 |
+| P25 feat(importers): import LDtk projects | `.ldtk`, `.ldtkl`, level outputs | P22 | src 250; tests x 1.5 = 375 | ~625 |
+| K1 feat(cook): add the assets command line and diagnostics | Usage, options, exit codes, text and JSON diagnostics | P6; M1's cook tool on `main` | src 230; tests x 1.5 = 345 | ~575 |
+| K2 feat(cook): scan sources and maintain `.meta` files | Mounting, scanning, orphans, duplicates, creation, `--locked`, the `meta` command | K1; Platform's `DirectoryFileSystem` on `main` | src 250; tests x 1.5 = 375 | ~625 |
+| K3 feat(cook): check asset dependencies | Unresolved ids, reference packs, cycles | K2; Assets A2 (`AssetPack.Open`) | src 120; tests x 1.5 = 180 | ~300 |
+| K4 feat(cook): import in parallel with ordered output | The worker pool, results by index, ordered diagnostics | K3 | src 130; tests x 2.9 = 377 | ~505 |
+| K5 feat(cook): add the cache index | Keys, hit tests by content hash, entry files | K4 | src 150; tests x 1.5 = 225 | ~375 |
+| K6 feat(cook): add the cache's payload store | Content-addressed payloads, atomic writes, the lock file, collection | K5 | src 120; tests x 2.9 = 348 | ~470 |
+| K7 feat(cook): write packs and manifests | Section 4's pack writing and compression, the manifest, the round trip through `AssetPack` | K4; Assets A3 (`ReadContent`) | src 250; tests x 1.5 = 375 | ~625 |
+| K8 ci: check cooked packs are byte-identical on Windows and Linux | The fixture project, the `cook-determinism` job, its compare script and self-test, the `ci-tier.sh` paths and cases | K7, P9, P10 (the job grows as importers land) | scripts 80 + self-test 80 + workflow 40 + fixtures index 50 | ~250 |
+| K9 test(cook): cook-to-load round trips | The integration tests of section 8 | K7, P7; Assets A6 | tests 300 + harness 50 | ~350 |
+| K10 test(importers): fuzz the importers | Section 6's targets, the seeded corpus, the nightly job | P9, P15, P17, P23-P25 | 9 targets x 30 + job 40 | ~310 |
+| K11 build(cook): pack the dotnet tool and the importer libraries | `PackAsTool`, the ship gate over `tools/` (section 7) | K7; the publishing note merged; the 0.2.0 tag | sized from the publishing note | — |
+
+P10 and P17 are small because their blockers differ from their neighbours'; P6, P11, P25, K2 and K7 are about 625, the parsers and the packer, where the measured 1.5x test ratio is the cost of one row per limit and rule. Each issue's CHANGELOG entry goes under `## Next: 0.3.0 (not in the next release)`. Order: P1-P8 first (the seam unblocks development mode), K1-K7 once M1's cook tool is on `main`, importers as their owners' notes merge.
+
+## Consistency with the ADRs
+
+- **ADR-0005:** the cooker writes versioned packs; development builds import in-process through the same importer code (`SourceImport.Run` serves both); identity is a GUID in `.meta` sidecars; cooked output is deterministic and tested (section 5); cook-to-load round trips and fuzzing are tested (sections 6 and 8). It holds.
+- **ADR-0012:** the shader command is unchanged; its compile function moves into Importers.Shaders with byte-identical output, proven by M1's own re-cook job; built-in shaders keep committed SPIR-V and C# layouts until their own ADR. Slang stays out of the general build jobs because the shader importer has its own project. The packaging ADR-0012 defers to M2 is section 7. It holds.
+- **ADR-0017 (in progress, #279):** used as #279 records it. The 10-second threshold and the "streams are Ogg Vorbis sources" rule are this note's, within that decision.
+- **ADR-0011:** Importers takes `Microsoft.Extensions.ObjectPool` through Stb, as allowed for L6 tools. **ADR-0016:** milestone 2 work, nothing packed for 0.2.0, no frozen file changed before the tag (section 7).
+- **docs/03 3.13** lists importers "in the cooker"; here they are a library the cooker and the development runtime share, which is ADR-0005's consequence. Animations, localisation tables, scenes and prefabs are deferred (section 3). docs/03 3.11's "cooked to PCM or ADPCM" becomes PCM only, per #279's decision.
+
+Nothing here deviates from an ADR.
+
+## Not verified
+
+- The note is design only; nothing in it has run. BRUTAL APIs are cited from the BRUTAL source, not observed: in particular stb's format detection (the TGA colour-map argument of section 3) is from stb's documented signatures, and the Slang reflection calls follow what spike S4 used on Windows (`docs/spikes/README.md:95`).
+- SDL_mixer's lifetime and threading rules, and whether its float decoders agree across OSes, are ADR-0017's prototype's to measure (#279).
+- Cross-OS equality of Slang, FreeType and the BCL's compressors (section 5): the determinism job decides.
+- The owners' payload layouts (atlases, fonts, tile data, audio clips) don't exist yet; their notes do that.
+- The Text rasteriser, `DirectoryFileSystem` and the Assets project are not on `main` yet; the rows that need them say so.
