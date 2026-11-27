@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Vma;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Vulkan.Resources;
 
 namespace BrutalEngine.Graphics.Vulkan.Tests.Resources;
@@ -45,6 +46,9 @@ internal sealed unsafe class RecordingBuffers : BufferFactory.INative
     /// <summary>Gets the names given to Vulkan, with their object types and handles.</summary>
     public List<(VkObjectType Type, ulong Handle, string Name)> ObjectNames { get; } = [];
 
+    /// <summary>Gets the category each budget log was asked to write to.</summary>
+    public List<LogCategory> BudgetLogs { get; } = [];
+
     public VkResult CreateBuffer(VkBufferCreateInfo* info, VmaAllocationCreateInfo* placement, VkBuffer* buffer, VmaAllocation* allocation, VmaAllocationInfo* allocated)
     {
         CreateCalls++;
@@ -80,6 +84,12 @@ internal sealed unsafe class RecordingBuffers : BufferFactory.INative
     {
         AllocationNames.Add((allocation, Read(name)));
         Inner?.SetAllocationName(allocation, name);
+    }
+
+    public void WriteBudgets(LogCategory log)
+    {
+        BudgetLogs.Add(log);
+        Inner?.WriteBudgets(log);
     }
 
     public VkResult SetName(VkDebugUtilsObjectNameInfoEXT* info)

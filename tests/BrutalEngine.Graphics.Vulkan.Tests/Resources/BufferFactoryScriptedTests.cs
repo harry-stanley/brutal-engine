@@ -3,6 +3,7 @@ using System.Text;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Vma;
 using BrutalEngine.Core;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Vulkan.Devices;
 using BrutalEngine.Graphics.Vulkan.Memory;
@@ -93,12 +94,17 @@ public sealed unsafe class BufferFactoryScriptedTests
     {
         RecordingBuffers native = new() { Result = code };
         VulkanCallGate gate = new();
-        BufferFactory factory = Factory(native, gate);
+        using Logger logger = new(new LoggerOptions { Sinks = [] });
+        LogCategory log = logger.CreateCategory("Graphics.Vulkan");
+        BufferFactory factory = Factory(native, gate, log: log);
 
         Result<BackendBuffer> result = factory.Create(Description(64, BufferUsage.Uniform, "failed"), BackendMemory.HostUpload);
 
         Assert.Equal(new EngineError(kind, "vmaCreateBuffer failed", (int)code), result.Error);
         Assert.Equal(lost, gate.IsLost);
+
+        // The budgets are logged for out of memory only, to the factory's category.
+        Assert.Equal(kind == ErrorKind.OutOfMemory ? [log] : [], native.BudgetLogs);
         Assert.Equal(1, native.CreateCalls);
         Assert.Equal(0, factory.Table.Count);
         Assert.Empty(native.Destroyed);
@@ -127,6 +133,7 @@ public sealed unsafe class BufferFactoryScriptedTests
         Assert.Equal(occurrence - 1, native.CreateCalls);
         Assert.Equal(occurrence - 1, factory.Table.Count);
         Assert.Empty(native.ObjectNames);
+        Assert.Single(native.BudgetLogs);
 
         // The fault fired once: the next creation reaches VMA.
         Assert.True(factory.Create(Description(64, BufferUsage.Uniform), BackendMemory.DeviceLocal).IsSuccess);
@@ -150,6 +157,7 @@ public sealed unsafe class BufferFactoryScriptedTests
 
         Assert.Contains(parameter, error.ParamName, StringComparison.Ordinal);
         Assert.Equal(0, native.CreateCalls);
+        Assert.Empty(native.BudgetLogs);
         Assert.Equal(0, factory.Table.Count);
 
         // The check ran before the gate, so the fault is still pending for the next valid creation.
@@ -293,19 +301,19 @@ public sealed unsafe class BufferFactoryScriptedTests
         DebugNames.Naming naming = new(true, gate, default);
         ObjectTable<BufferFactory.Entry> table = new();
 
-        Assert.Throws<ArgumentNullException>("native", () => new BufferFactory(null!, naming, gate, table));
-        Assert.Throws<ArgumentNullException>("naming", () => new BufferFactory(native, null!, gate, table));
-        Assert.Throws<ArgumentNullException>("gate", () => new BufferFactory(native, naming, null!, table));
-        Assert.Throws<ArgumentNullException>("table", () => new BufferFactory(native, naming, gate, null!));
-        Assert.Throws<ArgumentNullException>("core", () => new BufferFactory(null!, default, gate));
+        Assert.Throws<ArgumentNullException>("native", () => new BufferFactory(null!, naming, gate, table, default));
+        Assert.Throws<ArgumentNullException>("naming", () => new BufferFactory(native, null!, gate, table, default));
+        Assert.Throws<ArgumentNullException>("gate", () => new BufferFactory(native, naming, null!, table, default));
+        Assert.Throws<ArgumentNullException>("table", () => new BufferFactory(native, naming, gate, null!, default));
+        Assert.Throws<ArgumentNullException>("core", () => new BufferFactory(null!, default, gate, default));
     }
 
     private static BufferDescription Description(long size, BufferUsage usage, string? name = null) =>
         new() { Size = size, Usage = usage, DebugName = name };
 
-    private static BufferFactory Factory(RecordingBuffers native, VulkanCallGate? gate = null, ObjectTable<BufferFactory.Entry>? table = null, bool naming = true)
+    private static BufferFactory Factory(RecordingBuffers native, VulkanCallGate? gate = null, ObjectTable<BufferFactory.Entry>? table = null, bool naming = true, LogCategory log = default)
     {
         gate ??= new VulkanCallGate();
-        return new BufferFactory(native, new DebugNames.Naming(naming, gate, default), gate, table ?? new ObjectTable<BufferFactory.Entry>());
+        return new BufferFactory(native, new DebugNames.Naming(naming, gate, default), gate, table ?? new ObjectTable<BufferFactory.Entry>(), log);
     }
 }

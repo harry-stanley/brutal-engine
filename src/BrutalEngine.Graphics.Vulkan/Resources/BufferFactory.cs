@@ -4,6 +4,7 @@ using Brutal;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Vma;
 using BrutalEngine.Core;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Vulkan.Devices;
 using BrutalEngine.Graphics.Vulkan.Memory;
@@ -21,7 +22,8 @@ namespace BrutalEngine.Graphics.Vulkan.Resources;
 /// with exclusive sharing, through the device's gate: an injected fault replaces the call, so nothing is created behind
 /// it. Out of host or device memory is <see cref="ErrorKind.OutOfMemory"/>, a lost device
 /// <see cref="ErrorKind.Unavailable"/> (and marked on the gate), anything else <see cref="ErrorKind.Native"/>, each with
-/// the code; a failure leaves nothing to destroy.
+/// the code; a failure leaves nothing to destroy. Every <see cref="ErrorKind.OutOfMemory"/>, injected or not, first logs
+/// each heap's usage and budget at <c>Warning</c> (<see cref="HeapBudgetLog"/>).
 /// </para>
 /// <para>
 /// A buffer in <see cref="BackendMemory.HostUpload"/> or <see cref="BackendMemory.HostReadback"/> memory returns VMA's
@@ -44,16 +46,18 @@ internal sealed class BufferFactory
     private readonly INative _native;
     private readonly DebugNames.Naming _naming;
     private readonly VulkanCallGate _gate;
+    private readonly LogCategory _log;
 
     /// <summary>Creates the factory of a live device.</summary>
     /// <param name="core">The device; it outlives the factory.</param>
     /// <param name="vma">The device's allocator; it outlives every buffer.</param>
     /// <param name="gate">The device's gate.</param>
+    /// <param name="log">Where out-of-memory budgets are logged (the device's <c>Graphics.Vulkan</c> category); <see langword="default"/> for nowhere.</param>
     /// <exception cref="ArgumentNullException"><paramref name="core"/> or <paramref name="gate"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="vma"/> is the null handle.</exception>
     /// <exception cref="ObjectDisposedException"><paramref name="core"/> is disposed.</exception>
-    public BufferFactory(VulkanDeviceCore core, VmaHandle vma, VulkanCallGate gate)
-        : this(new NativeBuffers(Live(core).Device, vma), core.Naming, gate, new ObjectTable<Entry>())
+    public BufferFactory(VulkanDeviceCore core, VmaHandle vma, VulkanCallGate gate, LogCategory log)
+        : this(new NativeBuffers(Live(core).Device, vma), core.Naming, gate, new ObjectTable<Entry>(), log)
     {
     }
 
@@ -62,13 +66,15 @@ internal sealed class BufferFactory
     /// <param name="naming">The device's naming state.</param>
     /// <param name="gate">The device's gate.</param>
     /// <param name="table">The table buffers are kept in.</param>
+    /// <param name="log">Where out-of-memory budgets are logged.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    internal BufferFactory(INative native, DebugNames.Naming naming, VulkanCallGate gate, ObjectTable<Entry> table)
+    internal BufferFactory(INative native, DebugNames.Naming naming, VulkanCallGate gate, ObjectTable<Entry> table, LogCategory log)
     {
         _native = native ?? throw new ArgumentNullException(nameof(native));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         Table = table ?? throw new ArgumentNullException(nameof(table));
+        _log = log;
     }
 
     /// <summary>Gets the live buffers, by id.</summary>
@@ -103,6 +109,11 @@ internal sealed class BufferFactory
             : _native.CreateBuffer(&info, &placement, &buffer, &allocation, &allocated);
         if (_gate.Check(result, VulkanCall.CreateBuffer).TryGetError(out EngineError error))
         {
+            if (error.Kind == ErrorKind.OutOfMemory)
+            {
+                _native.WriteBudgets(_log);
+            }
+
             return error;
         }
 
@@ -182,6 +193,10 @@ internal sealed class BufferFactory
         /// <param name="allocation">The allocation.</param>
         /// <param name="name">The NUL-terminated UTF-8 name; valid during the call only.</param>
         public void SetAllocationName(VmaAllocation allocation, byte* name);
+
+        /// <summary>Logs every heap's usage and budget (<see cref="HeapBudgetLog.Write(VmaHandle, LogCategory)"/>).</summary>
+        /// <param name="log">Where the warnings go.</param>
+        public void WriteBudgets(LogCategory log);
     }
 
     /// <summary>The real calls: BRUTAL's generated VMA binding and the device's raw function table.</summary>
@@ -189,19 +204,20 @@ internal sealed class BufferFactory
     /// <param name="vma">The device's allocator.</param>
     internal sealed unsafe class NativeBuffers(Device device, VmaHandle vma) : INative
     {
-        private readonly VmaAllocatorHandle _vma = vma.IsNull
-            ? throw new ArgumentException("The allocator is the null handle.", nameof(vma))
-            : vma.VkHandle;
+        private readonly VmaHandle _vma = vma.IsNull ? throw new ArgumentException("The allocator is the null handle.", nameof(vma)) : vma;
 
         /// <inheritdoc/>
         public VkResult CreateBuffer(VkBufferCreateInfo* info, VmaAllocationCreateInfo* placement, VkBuffer* buffer, VmaAllocation* allocation, VmaAllocationInfo* allocated) =>
-            Vma.PInvoke.vmaCreateBuffer(_vma, info, placement, buffer, allocation, allocated);
+            Vma.PInvoke.vmaCreateBuffer(_vma.VkHandle, info, placement, buffer, allocation, allocated);
 
         /// <inheritdoc/>
-        public void DestroyBuffer(VkBuffer buffer, VmaAllocation allocation) => Vma.PInvoke.vmaDestroyBuffer(_vma, buffer, allocation);
+        public void DestroyBuffer(VkBuffer buffer, VmaAllocation allocation) => Vma.PInvoke.vmaDestroyBuffer(_vma.VkHandle, buffer, allocation);
 
         /// <inheritdoc/>
-        public void SetAllocationName(VmaAllocation allocation, byte* name) => Vma.PInvoke.vmaSetAllocationName(_vma, allocation, name);
+        public void SetAllocationName(VmaAllocation allocation, byte* name) => Vma.PInvoke.vmaSetAllocationName(_vma.VkHandle, allocation, name);
+
+        /// <inheritdoc/>
+        public void WriteBudgets(LogCategory log) => HeapBudgetLog.Write(_vma, log);
 
         /// <inheritdoc/>
         public VkResult SetName(VkDebugUtilsObjectNameInfoEXT* info) => new DebugNames.DeviceNamer(device).SetName(info);
