@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Text;
 using Brutal.VulkanApi;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Vulkan.Devices;
@@ -31,12 +32,25 @@ public sealed unsafe class CapabilityTests
             using VulkanInstance instance = GpuDevices.CreateInstance(category, []);
             foreach (GpuDevices.Adapter adapter in GpuDevices.Suitable(instance))
             {
-                using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanCallGate(), null).Value;
+                VulkanCallGate gate = new();
+                using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, gate, null).Value;
                 VkPhysicalDeviceProperties raw = default;
                 adapter.Device.PInvoke.vkGetPhysicalDeviceProperties.Invoke(adapter.Device.Handle, &raw);
                 AssertLimits(raw.Limits, core);
                 AssertFormats(adapter.Device, core);
 
+                Assert.True(core.Naming.Enabled);
+                byte[] longName = Encoding.UTF8.GetBytes(new string('d', 254) + "\u20AC device");
+                DebugNames.Set(core, VkObjectType.Device, (ulong)core.Device.Handle.VkHandle, longName);
+                DebugNames.Set(core, VkObjectType.Queue, (ulong)core.Queue.VkHandle, "graphics queue"u8);
+                Assert.False(core.Naming.FailureLogged);
+
+                // The public path reaches the device's own gate: an injected failure is swallowed and logged.
+                VulkanFaultInjector faults = new();
+                faults.FailNth(VulkanCall.SetDebugUtilsObjectName, 1, VkResult.ErrorOutOfHostMemory);
+                gate.Faults = faults;
+                DebugNames.Set(core, VkObjectType.Queue, (ulong)core.Queue.VkHandle, "queue"u8);
+                Assert.True(core.Naming.FailureLogged);
                 devices++;
             }
         }
@@ -47,26 +61,66 @@ public sealed unsafe class CapabilityTests
 
     [Fact]
     [Trait("Category", "Gpu")]
+    public void RealDevice_WrongObjectType_ReachesValidation()
+    {
+        // Proves names reach the driver's layers: a handle named as the wrong type is a validation error.
+        ValidationLog sink = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(sink);
+        using (logger)
+        {
+            using VulkanInstance instance = GpuDevices.CreateInstance(category, []);
+            using VulkanDeviceCore core = GpuDevices.Create(instance, GpuDevices.Suitable(instance)[0], new VulkanCallGate(), null).Value;
+
+            DebugNames.Set(core, VkObjectType.Image, (ulong)core.Device.Handle.VkHandle, "not an image"u8);
+
+            Assert.True(instance.ValidationErrors > 0);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void RealDevice_WithoutDebugUtils_NamingIsOff()
+    {
+        using Logger logger = new(new LoggerOptions { Sinks = [] });
+        using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
+        GpuDevices.Adapter adapter = GpuDevices.Suitable(instance)[0];
+        VulkanFaultInjector faults = new();
+        faults.FailNth(VulkanCall.SetDebugUtilsObjectName, 1, VkResult.ErrorDeviceLost);
+        VulkanCallGate gate = new() { Faults = faults };
+
+        // The factory overload, told the instance lacks VK_EXT_debug_utils.
+        using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanDeviceCore.AdapterFactory(adapter.Device), gate, null).Value;
+        DebugNames.Set(core, VkObjectType.Device, (ulong)core.Device.Handle.VkHandle, "name"u8);
+
+        Assert.False(core.Naming.Enabled);
+        Assert.False(gate.IsLost);
+        Assert.True(faults.TryTake(VulkanCall.SetDebugUtilsObjectName, out _));
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
     public void RealDevice_ReadsAndNamesAllocateNothing()
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });
         using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
         using VulkanDeviceCore core = GpuDevices.Create(instance, GpuDevices.Suitable(instance)[0], new VulkanCallGate(), null).Value;
-        long checksum = Read(core);
+        ulong device = (ulong)core.Device.Handle.VkHandle;
+        long checksum = Read(core, device);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 100; i++)
         {
-            checksum += Read(core);
+            checksum += Read(core, device);
         }
 
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(0, allocated);
         Assert.NotEqual(0, checksum);
+        Assert.False(core.Naming.FailureLogged);
 
-        // Every format's support, the capabilities and the restrictions, folded into one number.
-        static long Read(VulkanDeviceCore core)
+        // Every format's support, the capabilities, the restrictions and one name, folded into one number.
+        static long Read(VulkanDeviceCore core, ulong device)
         {
             long sum = 0;
             for (int format = 1; format <= FormatTable.Count; format++)
@@ -76,6 +130,7 @@ public sealed unsafe class CapabilityTests
 
             GraphicsCapabilities capabilities = core.Capabilities;
             sum += capabilities.Limits.MaxTextureDimension2D + (long)capabilities.Features + core.Portability.MinVertexInputBindingStrideAlignment;
+            DebugNames.Set(core, VkObjectType.Device, device, "device"u8);
             return sum;
         }
     }

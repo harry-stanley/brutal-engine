@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Vulkan.Instances;
 
 namespace BrutalEngine.Graphics.Vulkan.Devices;
@@ -48,7 +49,7 @@ internal sealed class VulkanDeviceCore : IDisposable
     private readonly FormatSupport[] _formats;
     private bool _disposed;
 
-    private VulkanDeviceCore(Device device, int queueFamily, FeatureChain.NegotiatedFeatures features, DeviceExtensionSet.Selection extensions, CapabilityMapping.Report report, InstanceFactory.DestroyTracker? destroys)
+    private VulkanDeviceCore(Device device, int queueFamily, FeatureChain.NegotiatedFeatures features, DeviceExtensionSet.Selection extensions, CapabilityMapping.Report report, DebugNames.Naming naming, InstanceFactory.DestroyTracker? destroys)
     {
         _device = device;
         Queue = device.GetQueue(queueFamily, 0).Handle;
@@ -58,6 +59,7 @@ internal sealed class VulkanDeviceCore : IDisposable
         Capabilities = report.Capabilities;
         Portability = report.Portability;
         _formats = report.Formats;
+        Naming = naming;
         _destroys = destroys;
     }
 
@@ -90,6 +92,9 @@ internal sealed class VulkanDeviceCore : IDisposable
     /// <summary>Gets the portability restrictions; <see cref="PortabilityRestrictions.None"/> without <c>VK_KHR_portability_subset</c>.</summary>
     public PortabilityRestrictions Portability { get; }
 
+    /// <summary>Gets the device's naming state, for <see cref="DebugNames"/>.</summary>
+    public DebugNames.Naming Naming { get; }
+
     /// <summary>Gets whether <see cref="Dispose"/> has run.</summary>
     public bool IsDisposed => _disposed;
 
@@ -115,9 +120,11 @@ internal sealed class VulkanDeviceCore : IDisposable
     /// <param name="extensions">The chosen extensions (<see cref="DeviceExtensionSet.Choose"/>).</param>
     /// <param name="gate">The device's gate.</param>
     /// <param name="destroys">A test's counter of destroyed devices, or <see langword="null"/>.</param>
+    /// <param name="log">Where the device logs (a failed debug name); <c>default</c> for nowhere.</param>
     /// <returns>
-    /// The device, owned by the caller; or the injected fault, or BRUTAL's <see cref="VkResultError"/> as an error with
-    /// <see cref="VkCheck.KindOf"/>'s kind and the code. Nothing is left to destroy after a failure.
+    /// The device, owned by the caller, naming objects when <paramref name="instance"/> enabled <c>VK_EXT_debug_utils</c>;
+    /// or the injected fault, or BRUTAL's <see cref="VkResultError"/> as an error with <see cref="VkCheck.KindOf"/>'s kind
+    /// and the code. Nothing is left to destroy after a failure.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="instance"/>, <paramref name="adapter"/>, <paramref name="gate"/> or the extension list is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="adapter"/> belongs to another instance.</exception>
@@ -130,7 +137,8 @@ internal sealed class VulkanDeviceCore : IDisposable
         in FeatureChain.NegotiatedFeatures features,
         in DeviceExtensionSet.Selection extensions,
         VulkanCallGate gate,
-        InstanceFactory.DestroyTracker? destroys = null)
+        InstanceFactory.DestroyTracker? destroys = null,
+        LogCategory log = default)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(adapter);
@@ -142,10 +150,11 @@ internal sealed class VulkanDeviceCore : IDisposable
             throw new ArgumentException("The adapter belongs to another instance.", nameof(adapter));
         }
 
-        return Create(new AdapterFactory(adapter), queueFamily, features, extensions, gate, destroys);
+        bool debugUtils = instance.IsExtensionEnabled(VK.EXT_DEBUG_UTILS_EXTENSION_NAME);
+        return Create(new AdapterFactory(adapter), queueFamily, features, extensions, gate, destroys, debugUtils, log);
     }
 
-    /// <summary><see cref="Create(VulkanInstance, PhysicalDevice, int, in FeatureChain.NegotiatedFeatures, in DeviceExtensionSet.Selection, VulkanCallGate, InstanceFactory.DestroyTracker?)"/> through a given factory.</summary>
+    /// <summary><see cref="Create(VulkanInstance, PhysicalDevice, int, in FeatureChain.NegotiatedFeatures, in DeviceExtensionSet.Selection, VulkanCallGate, InstanceFactory.DestroyTracker?, LogCategory)"/> through a given factory.</summary>
     /// <typeparam name="TFactory">Makes BRUTAL's call; the real one is a struct, so nothing is boxed.</typeparam>
     /// <param name="factory">Makes BRUTAL's call.</param>
     /// <param name="queueFamily">The Vulkan index of the queue family.</param>
@@ -153,6 +162,8 @@ internal sealed class VulkanDeviceCore : IDisposable
     /// <param name="extensions">The chosen extensions.</param>
     /// <param name="gate">The device's gate.</param>
     /// <param name="destroys">A test's counter of destroyed devices, or <see langword="null"/>.</param>
+    /// <param name="debugUtils">Whether the instance enabled <c>VK_EXT_debug_utils</c>.</param>
+    /// <param name="log">Where the device logs.</param>
     /// <returns>As the public overload.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="gate"/> or the extension list is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="queueFamily"/> is negative.</exception>
@@ -162,7 +173,9 @@ internal sealed class VulkanDeviceCore : IDisposable
         in FeatureChain.NegotiatedFeatures features,
         in DeviceExtensionSet.Selection extensions,
         VulkanCallGate gate,
-        InstanceFactory.DestroyTracker? destroys)
+        InstanceFactory.DestroyTracker? destroys,
+        bool debugUtils = false,
+        LogCategory log = default)
         where TFactory : IFactory
     {
         ArgumentOutOfRangeException.ThrowIfNegative(queueFamily);
@@ -201,7 +214,9 @@ internal sealed class VulkanDeviceCore : IDisposable
             return VkCheck.FromException(error, CreateDeviceName);
         }
 
-        return new VulkanDeviceCore(device, queueFamily, features, extensions, report, destroys);
+        // The entry point is checked too, so a loader that left it null can never be called.
+        bool canName = debugUtils && device.PInvoke.vkSetDebugUtilsObjectNameEXT.Invoke != null;
+        return new VulkanDeviceCore(device, queueFamily, features, extensions, report, new DebugNames.Naming(canName, gate, log), destroys);
     }
 
     /// <summary>Destroys the device once; later calls do nothing.</summary>
