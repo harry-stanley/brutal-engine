@@ -592,6 +592,8 @@ BrutalEngine.Graphics.GraphicsDevice.Statistics.get -> BrutalEngine.Graphics.Gra
 BrutalEngine.Graphics.GraphicsDevice.SubmitFrame(BrutalEngine.Graphics.CommandList commands) -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.GraphicsDevice.ThrowIfLeaks() -> void
 BrutalEngine.Graphics.GraphicsDevice.WaitIdle() -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.GraphicsDevice.WriteBuffer(BrutalEngine.Graphics.BufferHandle buffer, long offset, System.ReadOnlySpan<byte> data) -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.GraphicsDevice.WriteTexture(in BrutalEngine.Graphics.TextureWrite write, System.ReadOnlySpan<byte> data) -> BrutalEngine.Core.Result
 BrutalEngine.Graphics.GraphicsDeviceOptions
 BrutalEngine.Graphics.GraphicsDeviceOptions.<Clone>$() -> BrutalEngine.Graphics.GraphicsDeviceOptions!
 BrutalEngine.Graphics.GraphicsDeviceOptions.Adapter.get -> BrutalEngine.Graphics.AdapterSelection

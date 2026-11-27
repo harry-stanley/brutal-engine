@@ -355,7 +355,7 @@ public sealed class FrameLifecycleTests : IDisposable
     [InlineData(3)]
     public void Create_SlotMemoryFails_DisposesBackendDeviceAndFreesEverything(int successes)
     {
-        // Two slots of two blocks each (command stream, deletion queue): each row fails a different one.
+        // Two slots of three blocks each (command stream, deletion queue, upload stream): each row fails a different one.
         var failing = new FailingAllocator(_fixture.Allocator) { FailAfter = successes };
 
         Assert.ThrowsAny<OutOfMemoryException>(() => GraphicsDevice.Create(_fixture.Backend, _fixture.Options() with { Allocator = failing }));

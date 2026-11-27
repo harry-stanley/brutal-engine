@@ -36,8 +36,9 @@ namespace BrutalEngine.Graphics;
 /// <see cref="Capabilities"/>, <see cref="GetFormatSupport"/>, every <c>Destroy</c>, <see cref="GetDefaultView"/>,
 /// <see cref="CreateDebugLabel"/> for a name already interned, <see cref="GetDebugLabelName"/>,
 /// <see cref="Statistics"/>, <see cref="BeginFrame"/>, <see cref="SubmitFrame"/>, <see cref="FrameNumber"/>,
-/// <see cref="CompletedFrameNumber"/> and <see cref="IsLost"/> allocate nothing, except an exception they throw.
-/// <see cref="WaitIdle"/> may allocate. Unmanaged memory (frame slots, deletion queues) comes from
+/// <see cref="CompletedFrameNumber"/> and <see cref="IsLost"/> allocate nothing, except an exception they throw; so do
+/// <see cref="WriteBuffer"/> and <see cref="WriteTexture"/> once their staging block exists.
+/// <see cref="WaitIdle"/> may allocate. Unmanaged memory (frame slots, deletion queues, upload copies) comes from
 /// <see cref="GraphicsDeviceOptions.Allocator"/> and is freed by <see cref="Dispose"/>.
 /// </para>
 /// </remarks>
@@ -58,6 +59,9 @@ public sealed partial class GraphicsDevice : IDisposable
     private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner, GraphicsDeviceOptions options)
     {
         _slots = CreateSlots(options.FramesInFlight, options.Allocator);
+        _allocator = options.Allocator;
+        _planner = new FramePlanner(options.Allocator);
+        _ringBytes = options.UploadRingBytesPerFrame;
         _backend = backend;
         _objects = objects;
         _handles = new HandleTables(objects);
@@ -214,8 +218,9 @@ public sealed partial class GraphicsDevice : IDisposable
 
     /// <summary>A snapshot of the device's counters.</summary>
     /// <value>
-    /// The frames submitted (<see cref="FrameNumber"/>), the live objects over every kind (default texture views included)
-    /// and the backend's validation counts; the upload counters are 0 until uploads land.
+    /// The frames submitted (<see cref="FrameNumber"/>), the bytes the last submitted frame uploaded and the bytes ever
+    /// uploaded outside the ring (<see cref="WriteBuffer"/>), the live objects over every kind (default texture views
+    /// included) and the backend's validation counts.
     /// </value>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Read from a thread other than the owner thread.</exception>
@@ -225,7 +230,7 @@ public sealed partial class GraphicsDevice : IDisposable
         get
         {
             ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(Statistics));
-            return new GraphicsStatistics(_frameNumber, 0, 0, _handles.LiveCount, _backend.ValidationErrors, _backend.ValidationWarnings);
+            return new GraphicsStatistics(_frameNumber, _uploadBytesLastFrame, _uploadOverflowBytes, _handles.LiveCount, _backend.ValidationErrors, _backend.ValidationWarnings);
         }
     }
 
@@ -337,9 +342,9 @@ public sealed partial class GraphicsDevice : IDisposable
     }
 
     /// <summary>
-    /// Waits for the GPU, destroys the objects deletion queues still hold, logs every object still alive as a leak,
-    /// destroys them newest first, then disposes the backend device and frees the frame slots, once; later calls do
-    /// nothing.
+    /// Waits for the GPU, destroys the objects deletion queues still hold and the upload staging buffers, logs every
+    /// object still alive as a leak, destroys them newest first, then disposes the backend device and frees the frame
+    /// slots, once; later calls do nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>
@@ -370,6 +375,8 @@ public sealed partial class GraphicsDevice : IDisposable
             slot.Deletions.Retire(_backend);
         }
 
+        DestroyUploads();
+
         foreach (HandleTables.LiveObject leaked in _handles.ListLive())
         {
             _log.Error($"Leak: {Describe(leaked)} was still alive when the device was disposed.");
@@ -382,6 +389,8 @@ public sealed partial class GraphicsDevice : IDisposable
 
         _backend.Dispose();
         DisposeSlots(_slots);
+        _planner.Dispose();
+        _deferred?.Dispose();
     }
 
     private static bool TryBuildRequest(GraphicsDeviceOptions options, out BackendDeviceRequest request, out EngineError error)

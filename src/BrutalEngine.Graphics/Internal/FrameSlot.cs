@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.Graphics.Recording;
 
 namespace BrutalEngine.Graphics.Internal;
 
 /// <summary>
-/// One of the device's frames in flight (docs/design/graphics.md section 4): its command stream, its deletion queue and
-/// the number of the frame last submitted from it.
+/// One of the device's frames in flight (docs/design/graphics.md sections 4 and 6): its command stream, its upload copies
+/// and ring slice, the pending upload blocks its frame copies from, its deletion queue and the number of the frame last
+/// submitted from it.
 /// </summary>
 /// <remarks>Owned by the device, which disposes it. Not thread-safe: the device's owner thread only.</remarks>
 internal sealed class FrameSlot : IDisposable
@@ -20,9 +22,11 @@ internal sealed class FrameSlot : IDisposable
         try
         {
             Deletions = new DeletionQueue(allocator);
+            Uploads = new CommandWriter(allocator);
         }
         catch
         {
+            Deletions?.Dispose();
             Commands.Dispose();
             throw;
         }
@@ -31,15 +35,33 @@ internal sealed class FrameSlot : IDisposable
     /// <summary>The command stream the open frame records into; reset when the slot begins a frame.</summary>
     internal CommandWriter Commands { get; }
 
-    /// <summary>The backend objects to destroy once the slot's frame completes.</summary>
-    internal DeletionQueue Deletions { get; }
+    /// <summary>
+    /// The copies of every write the slot's next frame lands, in call order: the pending writes made before it began, then
+    /// its own. Reset once that frame is submitted.
+    /// </summary>
+    internal CommandWriter Uploads { get; }
+
+    /// <summary>The slot's upload ring slice, made at the first write in one of its frames; reset when the slot begins a frame.</summary>
+    internal UploadRing? Ring { get; set; }
+
+    /// <summary>The pending upload blocks the slot's frame copies from, returned to the pool once it has completed.</summary>
+    internal List<UploadRing> PendingBlocks { get; } = [];
+
+    /// <summary>
+    /// The backend objects to destroy once the slot's frame completes. Swapped with the device's deferred queue when the
+    /// slot begins a frame, so objects destroyed while pending copies may still use them wait for that frame.
+    /// </summary>
+    internal DeletionQueue Deletions { get; set; }
 
     /// <summary>The number of the frame last submitted from the slot; -1 before the first.</summary>
     internal long LastSubmittedFrame { get; set; } = -1;
 
-    /// <summary>Frees the slot's memory. Queued objects aren't destroyed: the device retires them first.</summary>
+    /// <summary>
+    /// Frees the slot's memory. Queued objects and upload buffers aren't destroyed: the device destroys them first.
+    /// </summary>
     public void Dispose()
     {
+        Uploads.Dispose();
         Deletions.Dispose();
         Commands.Dispose();
     }
