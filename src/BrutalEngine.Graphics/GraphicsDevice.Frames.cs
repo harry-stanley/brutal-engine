@@ -1,6 +1,7 @@
 using System;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
+using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Internal;
 
 namespace BrutalEngine.Graphics;
@@ -13,6 +14,7 @@ public sealed partial class GraphicsDevice
     private const string WaitIdleApi = nameof(GraphicsDevice) + "." + nameof(WaitIdle);
 
     private readonly FrameSlot[] _slots;
+    private readonly FramePlanner _planner;
     private long _frameNumber;
     private long _completedFrameNumber = -1;
     private bool _frameOpen;
@@ -117,12 +119,15 @@ public sealed partial class GraphicsDevice
     /// No frame is open, or <paramref name="commands"/> isn't the open frame's: a copy from a submitted frame, another
     /// device's, or <c>default</c>.
     /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The plan's memory couldn't grow; the frame stays open and nothing was submitted.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
-    /// The plan holds the frame's recorded commands. A failed submission marks the device lost; on a lost device the
-    /// backend isn't called and the frame completes empty. Owner thread. Allocates nothing, except the exception and the
-    /// log line of a newly detected loss.
+    /// The plan holds the frame's upload copies, in call order, then its recorded commands. A failed submission marks
+    /// the device lost; on a lost device the backend isn't called and the frame completes empty. Owner thread.
+    /// Allocates nothing, except the exception and the log line of a newly detected loss.
     /// </remarks>
     public FrameStatus SubmitFrame(CommandList commands)
     {
@@ -130,17 +135,13 @@ public sealed partial class GraphicsDevice
         ThrowIfNotOpenFrame(commands, nameof(SubmitFrame));
         int slotIndex = CurrentSlot();
         FrameSlot slot = _slots[slotIndex];
+        FramePlan plan = IsLostCore ? default : _planner.Plan(slotIndex, _frameNumber, slot.Uploads, slot.Commands);
         long frame = _frameNumber++;
         _frameOpen = false;
         slot.LastSubmittedFrame = frame;
-        if (IsLostCore)
-        {
-            return FrameStatus.DeviceLost;
-        }
-
-        return CheckFrameCall(_backend.Execute(FramePlanner.Plan(slotIndex, frame, slot.Commands)), nameof(SubmitFrame))
-            ? FrameStatus.Ready
-            : FrameStatus.DeviceLost;
+        bool submitted = !IsLostCore && CheckFrameCall(_backend.Execute(plan), nameof(SubmitFrame));
+        slot.Uploads.Reset();
+        return submitted ? FrameStatus.Ready : FrameStatus.DeviceLost;
     }
 
     /// <summary>Waits until the GPU has finished every submitted frame.</summary>

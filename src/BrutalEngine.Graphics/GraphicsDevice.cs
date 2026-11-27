@@ -58,6 +58,7 @@ public sealed partial class GraphicsDevice : IDisposable
     private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner, GraphicsDeviceOptions options)
     {
         _slots = CreateSlots(options.FramesInFlight, options.Allocator);
+        _planner = new FramePlanner(options.Allocator);
         _backend = backend;
         _objects = objects;
         _handles = new HandleTables(objects);
@@ -382,6 +383,7 @@ public sealed partial class GraphicsDevice : IDisposable
 
         _backend.Dispose();
         DisposeSlots(_slots);
+        _planner.Dispose();
     }
 
     private static bool TryBuildRequest(GraphicsDeviceOptions options, out BackendDeviceRequest request, out EngineError error)
