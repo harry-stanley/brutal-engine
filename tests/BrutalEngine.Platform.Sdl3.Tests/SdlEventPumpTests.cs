@@ -771,6 +771,28 @@ public sealed unsafe class SdlEventPumpTests
         Assert.Equal(1, live.Refreshes);
     }
 
+    // A display event pumped and not acknowledged, then a wait for a non-display event: the pump that hands out the
+    // held event keeps the flag set.
+    [Fact]
+    public void WaitForEvents_HeldEventAfterUnacknowledgedDisplay_KeepsDisplaysChanged()
+    {
+        using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
+        using SdlVideoSession session = StartDummy();
+        FakeWindows windows = new();
+        SdlEventPump pump = new(Capacity, TextCapacity, new ScriptedClock(), windows);
+        Push(new SdlEvent { display = new SdlDisplayEvent { type = SdlEventType.DisplayMoved, displayID = DisplayIdValue } });
+        _ = pump.Pump();
+        Assert.True(pump.DisplaysChanged);
+
+        Push(Motion(1f));
+        Assert.True(pump.WaitForEvents(TimeSpan.FromSeconds(30)));
+        PlatformEventBatch batch = pump.Pump();
+
+        Assert.Equal(PlatformEventKind.MouseMotion, Assert.Single(batch.Events.ToArray()).Kind);
+        Assert.True(pump.DisplaysChanged);
+        Assert.Equal(0, Sdl.PInvoke.HasEvents(FirstType, LastType));
+    }
+
     // The OS takes a window created fullscreen out of fullscreen by itself (a raw SDL_SetWindowFullscreen, as a
     // window-manager shortcut would). The pump's refresh sees it windowed and drops the size kept for SetMode, so it
     // isn't applied now, nor by the next fullscreen round trip. Created at a content scale of 2, so SDL's own windowed
