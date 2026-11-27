@@ -61,7 +61,10 @@ internal sealed unsafe class DeletionQueue : IDisposable
     }
 
     /// <summary>Queues a swapchain and then its surface; <see cref="Reserve"/> must have made room first.</summary>
-    /// <param name="swapchain">The swapchain's backend id.</param>
+    /// <param name="swapchain">
+    /// The swapchain's backend id, or 0 when a failed recreation left the handle without one: then only the surface is
+    /// destroyed.
+    /// </param>
     /// <param name="surface">The backend id of the swapchain's surface, destroyed right after it.</param>
     internal void AddSwapchain(ulong swapchain, ulong surface)
     {
@@ -71,7 +74,7 @@ internal sealed unsafe class DeletionQueue : IDisposable
 
     /// <summary>
     /// Destroys every queued object on the backend, oldest first, and empties the queue; a swapchain entry destroys the
-    /// swapchain, then its surface.
+    /// swapchain (if it has one), then its surface.
     /// </summary>
     /// <param name="backend">The device's backend device.</param>
     internal void Retire(IBackendDevice backend)
@@ -82,7 +85,12 @@ internal sealed unsafe class DeletionQueue : IDisposable
             Entry entry = _entries[i];
             if (entry.IsSwapchain)
             {
-                backend.DestroySwapchain(entry.Id);
+                // A failed recreation leaves no swapchain, only the surface; the backend never sees id 0.
+                if (entry.Id != 0)
+                {
+                    backend.DestroySwapchain(entry.Id);
+                }
+
                 backend.DestroySurface(entry.Surface);
             }
             else

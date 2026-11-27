@@ -280,7 +280,8 @@ public sealed partial class GraphicsDevice
         Array.Clear(_swapchains);
     }
 
-    // Ends the images' handles, then destroys the swapchain and its surface at once, or queues both in that order.
+    // Ends the images' handles, then destroys the swapchain and its surface at once, or queues both in that order (the
+    // queue skips the swapchain id 0 a failed recreation leaves, as the immediate path does).
     private void TearDown(SwapchainState state, DeletionQueue? queue)
     {
         foreach (SwapchainImage image in state.Images)

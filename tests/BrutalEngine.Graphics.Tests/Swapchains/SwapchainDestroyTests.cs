@@ -4,6 +4,7 @@ using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Tests.Backend;
 using BrutalEngine.Graphics.Tests.Device;
+using BrutalEngine.Platform;
 using BrutalEngine.TestUtilities;
 using Xunit;
 using static BrutalEngine.Graphics.Tests.Swapchains.SwapchainTestKit;
@@ -61,6 +62,41 @@ public sealed class SwapchainDestroyTests : IDisposable
 
         Assert.Equal([(FakeBackendOperation.DestroySwapchain, id), (FakeBackendOperation.DestroySurface, surface)], Lifetime(backend).Skip(2));
         Assert.Equal(0, backend.LiveObjectCount);
+    }
+
+    [Theory]
+    [InlineData(ErrorKind.NotFound, AcquireStatus.SurfaceLost)]
+    [InlineData(ErrorKind.OutOfMemory, AcquireStatus.Skipped)]
+    [InlineData(ErrorKind.Cancelled, AcquireStatus.Minimised)]
+    [InlineData(ErrorKind.Unavailable, AcquireStatus.DeviceLost)]
+    public void Destroy_AfterFailedRecreation_DestroysOnlyTheSurface(ErrorKind kind, AcquireStatus failed)
+    {
+        FakeWindow window = Window();
+        GraphicsDevice device = NewDevice(_fixture, window);
+        FakeBackendDevice backend = _fixture.BackendDevice;
+        SwapchainHandle swapchain = device.CreateSwapchain(window, new SwapchainOptions()).Value;
+        ulong surface = LastId(backend, FakeBackendOperation.CreateSurface);
+        window.PixelSize = new WindowSize(320, 200);
+        _fixture.Script.FailNext(FakeBackendOperation.CreateSwapchain, new EngineError(kind, "recreation failed", -9));
+
+        // The failed recreation leaves the handle with its surface and no swapchain; it is destroyed in that frame.
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.Equal(failed, commands.AcquireSwapchainImage(swapchain, out _));
+        int calls = Lifetime(backend).Count;
+        device.Destroy(swapchain);
+        _ = device.SubmitFrame(commands);
+        for (int frame = 0; frame < 3; frame++)
+        {
+            _ = device.BeginFrame(out commands);
+            _ = device.SubmitFrame(commands);
+        }
+
+        // A lost device retires the frame's queue at Dispose instead.
+        device.Dispose();
+
+        Assert.Equal(
+            [(FakeBackendOperation.DestroySurface, surface)],
+            Lifetime(backend).Skip(calls).Where(call => call.Operation != FakeBackendOperation.WaitIdle));
     }
 
     [Fact]
