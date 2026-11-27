@@ -50,32 +50,41 @@ check() {
   fi
 }
 
-# Every place a manifest may live, nested at any depth or directly under the top directory, printed in index order
-# (byte order: 'B' < 'a' < 's'), with spaces and non-ASCII names raw.
+# Every place a manifest may live: nested at any depth, and directly under each of the four top directories (so each
+# pathspec is pinned on its own), printed in index order (byte order: 'B' < 'S' < 'a' < 's'), with spaces and
+# non-ASCII names raw.
 repo all \
   tools/BrutalEngine.Cook/shaders.cook.json \
   "tests/a b/ünï/shaders.cook.json" \
   src/shaders.cook.json \
+  tests/shaders.cook.json \
+  samples/shaders.cook.json \
+  tools/shaders.cook.json \
   samples/SpriteStress/Shaders/shaders.cook.json \
   tests/BrutalEngine.Cook.Tests/Fixtures/Shaders/shaders.cook.json \
   src/BrutalEngine.Graphics.Vulkan/Shaders/shaders.cook.json
-all="samples/SpriteStress/Shaders/shaders.cook.json${nl}src/BrutalEngine.Graphics.Vulkan/Shaders/shaders.cook.json"
-all+="${nl}src/shaders.cook.json${nl}tests/BrutalEngine.Cook.Tests/Fixtures/Shaders/shaders.cook.json"
-all+="${nl}tests/a b/ünï/shaders.cook.json${nl}tools/BrutalEngine.Cook/shaders.cook.json"
+all="samples/SpriteStress/Shaders/shaders.cook.json${nl}samples/shaders.cook.json"
+all+="${nl}src/BrutalEngine.Graphics.Vulkan/Shaders/shaders.cook.json${nl}src/shaders.cook.json"
+all+="${nl}tests/BrutalEngine.Cook.Tests/Fixtures/Shaders/shaders.cook.json${nl}tests/a b/ünï/shaders.cook.json"
+all+="${nl}tests/shaders.cook.json${nl}tools/BrutalEngine.Cook/shaders.cook.json${nl}tools/shaders.cook.json"
 check "every top directory, any depth, index order, raw names" 0 "$all" "$work" all
 check "no argument: the current directory" 0 "$all" "$work/all"
 check "a relative root" 0 "$all" "$work/all/src" ..
 
-# Paths that aren't manifests, or aren't under the four top directories, or aren't tracked.
+# Paths that aren't manifests, or aren't under the four top directories, or aren't tracked. The near-miss names
+# appear under each top directory, so each pathspec must match the last segment exactly.
+near_misses=()
+for top in src tests samples tools; do
+  near_misses+=("$top/x/xshaders.cook.json" "$top/x/shaders.cook.json/inner.json")
+done
 repo others \
   tests/ok/shaders.cook.json \
   shaders.cook.json \
   docs/shaders.cook.json \
   srcx/shaders.cook.json \
-  tests/x/xshaders.cook.json \
   tests/x/shaders.cook.json.bak \
   tests/x/Shaders.Cook.json \
-  tests/x/shaders.cook.json/inner.json
+  "${near_misses[@]}"
 untracked others tests/new/shaders.cook.json
 untracked others tests/BrutalEngine.Cook.Tests/bin/Release/net11.0/Fixtures/Shaders/shaders.cook.json
 check "only tracked files named exactly shaders.cook.json under the four directories" 0 "tests/ok/shaders.cook.json" "$work" others
