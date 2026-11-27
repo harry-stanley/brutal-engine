@@ -449,7 +449,7 @@ public sealed partial class GraphicsDeviceResourceTests
         }
     }
 
-    private static Made MakeTextureKind(GraphicsDevice device, string kind, string? debugName)
+    private Made MakeTextureKind(GraphicsDevice device, string kind, string? debugName)
     {
         switch (kind)
         {
@@ -463,12 +463,15 @@ public sealed partial class GraphicsDeviceResourceTests
                 };
             case "TextureView":
                 TextureHandle parent = device.CreateTexture(Texture() with { MipLevels = 2 }).Value;
+                // The view's own creation begins after the parent's calls and objects, however many those are.
+                FakeBackendDevice backend = _fixture.BackendDevice;
+                int callsBefore = backend.Calls.Count;
+                int liveBefore = backend.LiveObjectCount;
                 TextureViewHandle view = device.CreateTextureView(new TextureViewDescription { Texture = parent, BaseMipLevel = 1, DebugName = debugName }).Value;
                 return new Made(BackendObjectKind.TextureView, FakeBackendOperation.CreateTextureView, view.Value, () => device.Destroy(view), objects => objects.GetId(view))
                 {
-                    // The parent's GetFormatSupport, CreateTexture and default CreateTextureView calls, and its two objects.
-                    CallsBefore = 3,
-                    LiveBefore = 2,
+                    CallsBefore = callsBefore,
+                    LiveBefore = liveBefore,
                 };
             default:
                 throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
