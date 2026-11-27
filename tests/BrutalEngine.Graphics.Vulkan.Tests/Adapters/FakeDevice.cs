@@ -31,6 +31,9 @@ internal sealed unsafe class FakeDevice : CandidateReader.ISource
     public bool Synchronization2 { get; init; }
     public string[] Extensions { get; init; } = ["VK_KHR_swapchain"];
 
+    /// <summary>How many extensions the successful fill writes; all of them by default.</summary>
+    public int? ExtensionsWritten { get; init; }
+
     /// <summary>The count query's result.</summary>
     public VkResult CountResult { get; init; } = VkResult.Success;
 
@@ -98,13 +101,14 @@ internal sealed unsafe class FakeDevice : CandidateReader.ISource
             }
         }
 
-        count = written;
         if (IncompleteFills > 0)
         {
+            count = written;
             IncompleteFills--;
             return VkResult.Incomplete;
         }
 
+        count = Math.Min(written, ExtensionsWritten ?? written);
         return VkResult.Success;
     }
 

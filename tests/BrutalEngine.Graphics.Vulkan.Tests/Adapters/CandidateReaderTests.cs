@@ -226,6 +226,29 @@ public sealed class CandidateReaderTests
         Assert.Equal(1, device.ExtensionCalls);
     }
 
+    // Occurrence 1 is the count query, 2 the fill: an injected fault replaces the native call, which never runs.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ReadExtensions_InjectedFault_SkipsTheCall(int occurrence)
+    {
+        FakeDevice device = new();
+
+        Result<string[]> result = CandidateReader.ReadExtensions(device, Faulted(VulkanCall.EnumerateDeviceExtensionProperties, occurrence));
+
+        Assert.Equal(new EngineError(ErrorKind.OutOfMemory, ExtensionsFailed, (int)VkResult.ErrorOutOfHostMemory), result.Error);
+        Assert.Equal(occurrence - 1, device.ExtensionCalls);
+    }
+
+    // A fill that succeeds with fewer entries than the count asked for: only the written names are kept.
+    [Fact]
+    public void ReadExtensions_FewerWritten_KeepsOnlyTheWrittenOnes()
+    {
+        FakeDevice device = new() { Extensions = ["VK_KHR_swapchain", "VK_EXT_memory_budget", "VK_KHR_maintenance5"], ExtensionsWritten = 2 };
+
+        Assert.Equal(["VK_KHR_swapchain", "VK_EXT_memory_budget"], CandidateReader.ReadExtensions(device, new VulkanCallGate()).Value);
+    }
+
     private static VulkanCallGate Faulted(VulkanCall call, int occurrence)
     {
         VulkanFaultInjector faults = new();
