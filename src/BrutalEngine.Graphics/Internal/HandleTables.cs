@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 
@@ -24,7 +25,7 @@ namespace BrutalEngine.Graphics.Internal;
 /// (<see cref="AddSwapchainImage"/>) a live texture and view pair its swapchain owns. Both are <i>owned</i> entries: they
 /// resolve like any handle, but <see cref="LiveCount"/>, <see cref="ListLive"/> and <see cref="TakeAll"/> leave them out,
 /// so they are never counted, reported as leaks or destroyed through the tables; only <see cref="Remove"/> (which
-/// <see cref="RemoveAlias"/> calls), <see cref="TryRemoveViewOf"/> or <see cref="TakeAll"/> ends them.
+/// <see cref="RemoveAlias"/> calls) or <see cref="TakeAll"/> ends them.
 /// </para>
 /// <para>
 /// Not thread-safe: the device calls it on its owner thread only. <see cref="Remove"/>, <see cref="GetId"/> and
@@ -249,7 +250,7 @@ internal sealed class HandleTables
     public Handle GetLink(BackendObjectKind kind, Handle handle) => _entries[(int)kind][handle.Index].Link;
 
     /// <summary>Removes the next live view of a texture, scanning the view table from a cursor.</summary>
-    /// <param name="texture">The texture whose views are removed.</param>
+    /// <param name="texture">The texture whose views are removed; not a swapchain image (its view is owned).</param>
     /// <param name="cursor">Where the scan resumes; start at 0 and pass the same variable back each time.</param>
     /// <param name="viewId">The removed view's backend id, for the caller to destroy.</param>
     /// <returns><see langword="true"/> when a view was removed; <see langword="false"/> once none is left.</returns>
@@ -263,7 +264,8 @@ internal sealed class HandleTables
             if (views[cursor].Id != 0 && views[cursor].Link == texture)
             {
                 viewId = views[cursor].Id;
-                _ownedCount -= views[cursor].Owned ? 1 : 0;
+                // Owned views (swapchain images) never get here: Destroy(TextureHandle) rejects their textures first.
+                Debug.Assert(!views[cursor].Owned, "A swapchain image's view is removed with its swapchain only.");
                 Handle view = views[cursor].Handle;
                 _objects.Remove(View, view);
                 _allocators[(int)View].Free(view);
