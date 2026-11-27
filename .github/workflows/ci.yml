@@ -109,7 +109,7 @@ jobs:
             tier=$(printf '%s' "$paths" | bash .github/scripts/ci-tier.sh)
           fi
 
-          # build: format, build, test and pack. smoke: the Vulkan smoke job, over smoke_matrix.
+          # build: format, build, test and pack, and the cook job. smoke: the Vulkan smoke job, over smoke_matrix.
           case "$tier" in
             full) build=true smoke=true matrix="[$linux,$windows]" ;;
             fast) build=true smoke=true matrix="[$linux]" ;;
@@ -135,10 +135,10 @@ jobs:
           smoke_os=$(printf '%s' "$matrix" | grep -o '"os":"[^"]*"' | cut -d'"' -f4 | paste -sd, -)
           case "$tier" in
             docs)
-              echo "CI tier: **docs** (documentation only: format, build, test, pack and Vulkan smoke skipped)" ;;
+              echo "CI tier: **docs** (documentation only: format, build, test, pack, cook and Vulkan smoke skipped)" ;;
             verified)
               echo "CI tier: **verified** (same tree as $pr_url, whose [CI passed]($proof_url) in the full tier:" \
-                "format, build, test, pack and Vulkan smoke skipped)" ;;
+                "format, build, test, pack, cook and Vulkan smoke skipped)" ;;
             smoke-delta)
               echo "CI tier: **smoke-delta** (same tree as $pr_url, whose [CI passed]($proof_url) in the fast tier:" \
                 "only the Vulkan smoke on $smoke_os runs)" ;;
@@ -238,6 +238,46 @@ jobs:
           path: TestResults/
           if-no-files-found: warn
           retention-days: 14
+
+  # The cook tool and the built-in shaders (ADR-0012): the only job that builds BrutalEngine.Tools.slnx and restores
+  # the Slang native. It re-cooks every shader that a committed shaders.cook.json lists and fails if the code differs
+  # by a byte from the committed SPIR-V (docs/design/cook.md, "Manifests").
+  cook:
+    name: Cook tool and shader re-cook check
+    needs: tier
+    if: needs.tier.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - uses: ./.github/actions/dotnet-restore
+        with:
+          project: BrutalEngine.Tools.slnx
+      - name: Check formatting
+        run: dotnet format BrutalEngine.Tools.slnx --verify-no-changes --no-restore
+      - name: Build
+        run: dotnet build BrutalEngine.Tools.slnx -c Release --no-restore
+      - name: Test
+        run: dotnet test --solution BrutalEngine.Tools.slnx -c Release --no-build
+      - name: Re-cook the built-in shaders and compare
+        run: |
+          set -euo pipefail
+          found=$(bash .github/scripts/find-shader-manifests.sh)
+          if [ -z "$found" ]; then
+            echo "::error::No shaders.cook.json found, but the cook tool's test fixture has one: check find-shader-manifests.sh."
+            exit 1
+          fi
+          args=()
+          while IFS= read -r manifest; do
+            echo "Manifest: $manifest"
+            args+=(--manifest "$manifest")
+          done <<< "$found"
+          dotnet run --project tools/BrutalEngine.Cook -c Release --no-build -- shader --check "${args[@]}"
 
   # Linux runs in the fast and full tiers, Windows in the full and smoke-delta tiers. The name must match
   # SMOKE_JOB_PREFIX in .github/scripts/ci-merge-check.sh, which reads it from the merged PR's check runs.
@@ -448,11 +488,11 @@ jobs:
 
   # Single required status check for branch protection (its name is also CI_PASSED_JOB in ci-merge-check.sh). Passes
   # only if the tier was selected and every other job passed. A job may be skipped only where its tier skips it on
-  # purpose: everything in the docs and verified tiers, and format and build-test in the smoke-delta tier.
+  # purpose: everything in the docs and verified tiers, and format, build-test and cook in the smoke-delta tier.
   ci-ok:
     name: CI passed
     if: always()
-    needs: [tier, format, build-test, vulkan-smoke]
+    needs: [tier, format, build-test, cook, vulkan-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -472,8 +512,8 @@ jobs:
           fi
           case "$TIER" in
             fast | full) may_skip="" ;;
-            smoke-delta) may_skip="format build-test" ;;
-            docs | verified) may_skip="format build-test vulkan-smoke" ;;
+            smoke-delta) may_skip="format build-test cook" ;;
+            docs | verified) may_skip="format build-test cook vulkan-smoke" ;;
             *)
               echo "::error::Unknown CI tier '$TIER'."
               exit 1

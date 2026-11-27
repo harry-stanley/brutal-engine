@@ -39,6 +39,9 @@ check fast "lock file outside the smoke harness" "tests/BrutalEngine.Core.Tests/
 check fast "ECS world (no native code)" "src/BrutalEngine.World/EcsWorld.cs"
 check fast "ECS world tests" "tests/BrutalEngine.World.Tests/EntityTests.cs"
 check fast "shared test utilities" "tests/TestUtilities/FakeGraphicsBackend.cs"
+# Build-time tools aren't shipped, so they are fast tier; the cook job builds and tests them in every build tier.
+check fast "cook tool" "tools/BrutalEngine.Cook/Program.cs"
+check fast "cook tool tests and the tools solution" "tests/BrutalEngine.Cook.Tests/Shaders/ShaderManifestTests.cs${nl}BrutalEngine.Tools.slnx"
 
 # Full tier.
 check full "empty list" ""
