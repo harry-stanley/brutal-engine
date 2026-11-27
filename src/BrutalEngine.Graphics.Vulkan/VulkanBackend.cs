@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
+using BrutalEngine.Graphics.Backend;
+using BrutalEngine.Graphics.Vulkan.Adapters;
 using BrutalEngine.Graphics.Vulkan.Loader;
 
 namespace BrutalEngine.Graphics.Vulkan;
@@ -18,8 +21,9 @@ namespace BrutalEngine.Graphics.Vulkan;
 /// </para>
 /// <para>
 /// Immutable, and holds no native object: the loader it chose belongs to the process and stays loaded until the
-/// process exits, so there is nothing to dispose. Every member except <see cref="Create(VulkanBackendOptions)"/> may be called from any
-/// thread and allocates nothing.
+/// process exits, so there is nothing to dispose. <see cref="Name"/> and <see cref="LoaderPath"/> may be read from any
+/// thread and allocate nothing; <see cref="EnumerateAdapters"/> creates and destroys its own native objects within the
+/// call.
 /// </para>
 /// </remarks>
 public sealed class VulkanBackend
@@ -127,6 +131,40 @@ public sealed class VulkanBackend
         }
 
         return new VulkanBackend(decision.PreloadedPath, allowList);
+    }
+
+    /// <summary>
+    /// Lists every Vulkan physical device, each with the reasons it can't serve <paramref name="request"/> (empty when it
+    /// can), as <c>IGraphicsBackend.EnumerateAdapters</c> describes (docs/design/graphics-vulkan.md section 3).
+    /// </summary>
+    /// <param name="request">
+    /// The device request. Its <see cref="BackendDeviceRequest.ApplicationName"/>, <see cref="BackendDeviceRequest.Validation"/>
+    /// and <see cref="BackendDeviceRequest.CompatibleSurface"/> shape the temporary instance; its
+    /// <see cref="BackendDeviceRequest.RequiredFeatures"/> and surface decide the rejection reasons.
+    /// </param>
+    /// <returns>
+    /// The adapters in BRUTAL's enumeration order, <see cref="GraphicsAdapterInfo.Index"/> equal to the position, each
+    /// with its name, type, driver (a fixed name such as <c>NvidiaProprietary</c>), version (<c>Vulkan 1.3.280</c>) and
+    /// reasons, every one logged at <see cref="LogLevel.Information"/> in the <c>Graphics.Vulkan</c> category; an empty
+    /// list or one with only rejected adapters is a success. Or the failure of instance creation (for example
+    /// <see cref="ErrorKind.Unavailable"/> when the validation layer isn't installed), of the surface's creation, or of
+    /// a device query, with the call's kind and code.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// Creates a <c>VkInstance</c> (with the surface's instance extensions and, when asked, validation) and, with a
+    /// compatible surface, one temporary <c>VkSurfaceKHR</c> to ask each queue family about presentation; it destroys
+    /// both before returning, on every path, so nothing outlives the call. With a compatible surface it must run on the
+    /// main thread, and not while a device presents to that window: a window has at most one surface at a time.
+    /// </para>
+    /// <para>The owner thread, never re-entrantly. Allocates.</para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException">The request's logger, or the compatible surface's window, is disposed.</exception>
+    public Result<IReadOnlyList<GraphicsAdapterInfo>> EnumerateAdapters(BackendDeviceRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return AdapterEnumeration.Enumerate(AdapterEnumeration.Request.From(request, _validationAllowList), new VulkanCallGate());
     }
 
     // The decision's own words, from a table rather than Enum.ToString (no reflection in the backend).
