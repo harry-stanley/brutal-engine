@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Internal;
@@ -14,6 +15,8 @@ public sealed partial class GraphicsDevice
     private readonly List<RetiringSwapchain> _retiring = [];
     private readonly IWindow? _compatibleWindow;
     private readonly WindowSurfaceSource? _compatibleSurface;
+    private readonly List<SwapchainImageUse> _acquiredUses = [];
+    private readonly List<AcquiredImage> _acquiredImages = [];
     private SwapchainState?[] _swapchains = [];
 
     /// <summary>Creates the swapchain a window is presented through.</summary>
@@ -149,6 +152,68 @@ public sealed partial class GraphicsDevice
     internal SwapchainImage GetSwapchainImage(SwapchainHandle swapchain, int imageIndex) =>
         LiveSwapchain(swapchain, nameof(swapchain)).Images[imageIndex];
 
+    /// <summary>The device side of <see cref="CommandList.AcquireSwapchainImage"/>; the list's documentation is the contract.</summary>
+    internal AcquireStatus AcquireSwapchainImage(CommandList commands, SwapchainHandle swapchain, out SwapchainImage image)
+    {
+        const string Api = nameof(CommandList) + "." + nameof(CommandList.AcquireSwapchainImage);
+        ThrowIfUnusable(Api);
+        ThrowIfNotOpenFrame(commands, Api);
+        SwapchainState state = LiveSwapchain(swapchain, nameof(swapchain));
+        if (state.AcquiredFrame == _frameNumber)
+        {
+            throw new InvalidOperationException($"{Api}: swapchain '{state.Options.DebugName}' already has an image acquired in frame {_frameNumber}.");
+        }
+
+        image = default;
+        if (IsLostCore || state.SurfaceLost)
+        {
+            return IsLostCore ? AcquireStatus.DeviceLost : AcquireStatus.SurfaceLost;
+        }
+
+        state.Source.Refresh();
+        if (state.Source.IsMinimised)
+        {
+            return AcquireStatus.Minimised;
+        }
+
+        // Recreate only for a real size change (SDL reports a resize right after creation), a marked or missing swapchain.
+        bool recreated = state.Id == 0 || state.NeedsRecreation || state.CreatedWidth != state.Source.PixelWidth || state.CreatedHeight != state.Source.PixelHeight;
+        AcquireStatus status = recreated ? Recreate(state) : AcquireStatus.Recreated;
+        if (status != AcquireStatus.Recreated)
+        {
+            return status;
+        }
+
+        BackendAcquire acquired = _backend.AcquireImage(state.Id, CurrentSlot());
+        if (acquired.Status == SwapchainStatus.OutOfDate)
+        {
+            // Out of date (an acquire timeout too): recreate and retry once; still out of date skips the frame.
+            (recreated, status) = (true, Recreate(state));
+            if (status != AcquireStatus.Recreated)
+            {
+                return status;
+            }
+
+            acquired = _backend.AcquireImage(state.Id, CurrentSlot());
+            if (acquired.Status == SwapchainStatus.OutOfDate)
+            {
+                return AcquireStatus.Skipped;
+            }
+        }
+
+        if (acquired.Status is SwapchainStatus.SurfaceLost or SwapchainStatus.DeviceLost)
+        {
+            return Lost(state, acquired.Status, new EngineError(ErrorKind.Unavailable, "AcquireImage reported device loss.", acquired.NativeCode), nameof(CommandList.AcquireSwapchainImage));
+        }
+
+        state.NeedsRecreation = acquired.Status == SwapchainStatus.Suboptimal;
+        state.AcquiredFrame = _frameNumber;
+        image = state.Images[acquired.ImageIndex];
+        _acquiredUses.Add(new SwapchainImageUse(state.Id, acquired.ImageIndex));
+        _acquiredImages.Add(new AcquiredImage(state, _handles.GetId(BackendObjectKind.Texture, image.Texture.Value, nameof(image))));
+        return recreated ? AcquireStatus.Recreated : AcquireStatus.Acquired;
+    }
+
     /// <summary>Destroys a swapchain and its surface: the handle, its images' handles and every copy become stale at once.</summary>
     /// <param name="swapchain">A live swapchain of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="swapchain"/> is the null handle.</exception>
@@ -223,24 +288,18 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        _backend.DestroySwapchain(state.Id);
+        // A failed recreation leaves no swapchain, only the surface.
+        if (state.Id != 0)
+        {
+            _backend.DestroySwapchain(state.Id);
+        }
+
         _backend.DestroySurface(state.Surface);
     }
 
     // Records a created swapchain under a new handle, with its images as textures and views it owns.
     private Handle Register(IWindow window, WindowSurfaceSource source, ulong surface, in BackendSwapchain swapchain, SwapchainOptions options)
     {
-        SwapchainInfo info = swapchain.Info;
-        var description = new TextureDescription
-        {
-            Format = info.Format,
-            Width = info.Width,
-            Height = info.Height,
-            Usage = TextureUsage.ColorTarget | (info.SupportsCopyDestination ? TextureUsage.CopyDestination : TextureUsage.None),
-            DebugName = options.DebugName,
-        };
-        var images = new SwapchainImage[info.ImageCount];
-        int registered = 0;
         Handle handle = _swapchainHandles.Allocate();
         try
         {
@@ -249,15 +308,41 @@ public sealed partial class GraphicsDevice
                 Array.Resize(ref _swapchains, Math.Max(_swapchains.Length * 2, (int)handle.Index + 1));
             }
 
+            var state = new SwapchainState(window, source, surface, options, _handles.NextSequence());
+            RegisterImages(state, swapchain);
+            _swapchains[handle.Index] = state;
+            return handle;
+        }
+        catch
+        {
+            _swapchainHandles.Free(handle);
+            throw;
+        }
+    }
+
+    // Makes a created swapchain the state's own: its id and info, the window size it was made for, and its images as
+    // textures and views it owns. If the tables can't grow, nothing stays registered and the state has no swapchain.
+    private void RegisterImages(SwapchainState state, in BackendSwapchain swapchain)
+    {
+        SwapchainInfo info = swapchain.Info;
+        var description = new TextureDescription
+        {
+            Format = info.Format,
+            Width = info.Width,
+            Height = info.Height,
+            Usage = TextureUsage.ColorTarget | (info.SupportsCopyDestination ? TextureUsage.CopyDestination : TextureUsage.None),
+            DebugName = state.Options.DebugName,
+        };
+        var images = new SwapchainImage[info.ImageCount];
+        int registered = 0;
+        try
+        {
             for (; registered < images.Length; registered++)
             {
                 _backend.GetSwapchainImage(swapchain.Id, registered, out ulong textureId, out ulong viewId);
                 (Handle texture, Handle view) = _handles.AddSwapchainImage(textureId, viewId, description);
                 images[registered] = new SwapchainImage(new TextureHandle(texture), new TextureViewHandle(view), info.Width, info.Height, info.Format);
             }
-
-            _swapchains[handle.Index] = new SwapchainState(window, source, surface, swapchain.Id, info, options, images, _handles.NextSequence());
-            return handle;
         }
         catch
         {
@@ -266,9 +351,103 @@ public sealed partial class GraphicsDevice
                 ReleaseImage(images[i]);
             }
 
-            _swapchainHandles.Free(handle);
             throw;
         }
+
+        (state.Id, state.Info, state.Images) = (swapchain.Id, info, images);
+        (state.CreatedWidth, state.CreatedHeight) = (state.Source.PixelWidth, state.Source.PixelHeight);
+    }
+
+    // Recreation, as M0 does it: wait for the GPU, create from the old swapchain, destroy the old one whatever the result.
+    // A failure leaves the state without a swapchain, so the next acquire creates one with no old swapchain.
+    private AcquireStatus Recreate(SwapchainState state)
+    {
+        if (WaitIdle().TryGetError(out EngineError error))
+        {
+            return RecreationFailed(state, error);
+        }
+
+        ulong old = state.Id;
+        foreach (SwapchainImage image in state.Images)
+        {
+            ReleaseImage(image);
+        }
+
+        (state.Id, state.Images) = (0, []);
+        Result<BackendSwapchain> created = _backend.CreateSwapchain(new BackendSwapchainRequest(state.Surface, state.Source, state.Options, old));
+        if (old != 0)
+        {
+            _backend.DestroySwapchain(old);
+        }
+
+        if (!created.TryGetValue(out BackendSwapchain swapchain))
+        {
+            return RecreationFailed(state, created.Error);
+        }
+
+        try
+        {
+            RegisterImages(state, swapchain);
+        }
+        catch
+        {
+            _backend.DestroySwapchain(swapchain.Id);
+            throw;
+        }
+
+        state.NeedsRecreation = false;
+        return AcquireStatus.Recreated;
+    }
+
+    // Maps a failed recreation (the contract's swapchain-creation row): device loss, a lost surface, a zero extent, or else a
+    // skipped frame that is logged.
+    private AcquireStatus RecreationFailed(SwapchainState state, in EngineError error)
+    {
+        switch (error.Kind)
+        {
+            case ErrorKind.Unavailable or ErrorKind.Timeout:
+                return Lost(state, SwapchainStatus.DeviceLost, error, nameof(CommandList.AcquireSwapchainImage));
+            case ErrorKind.NotFound:
+                return Lost(state, SwapchainStatus.SurfaceLost, error, nameof(CommandList.AcquireSwapchainImage));
+            case ErrorKind.Cancelled:
+                return AcquireStatus.Minimised;
+            default:
+                _log.Error($"Recreating swapchain '{state.Options.DebugName}' failed ({error.Kind}, native code {error.NativeCode}): {error.Message}. The next acquire tries again.");
+                return AcquireStatus.Skipped;
+        }
+    }
+
+    // Records a lost surface on the swapchain (every later acquire reports it) or a lost device on the device.
+    private AcquireStatus Lost(SwapchainState state, SwapchainStatus status, in EngineError error, string operation)
+    {
+        if (status == SwapchainStatus.SurfaceLost)
+        {
+            state.SurfaceLost = true;
+            return AcquireStatus.SurfaceLost;
+        }
+
+        if (!IsLostCore)
+        {
+            MarkLost(operation, error);
+        }
+
+        return AcquireStatus.DeviceLost;
+    }
+
+    // At submit: the plan with the acquired list. Allocates nothing.
+    private FramePlan PlanFrame(int slotIndex, FrameSlot slot)
+    {
+        FramePlan plan = _planner.Plan(slotIndex, _frameNumber, slot.Uploads, slot.Commands);
+        return new FramePlan(plan.FrameSlot, plan.FrameNumber, plan.Commands, CollectionsMarshal.AsSpan(_acquiredUses));
+    }
+
+    // After Execute: empties the acquired lists.
+    private FrameStatus PresentAcquired(bool submitted)
+    {
+        // TODO(#115): present every acquired image.
+        _acquiredUses.Clear();
+        _acquiredImages.Clear();
+        return submitted && !IsLostCore ? FrameStatus.Ready : FrameStatus.DeviceLost;
     }
 
     // Ends an image's two handles; the backend objects are the swapchain's, destroyed with it. An image has no other
@@ -315,9 +494,41 @@ public sealed partial class GraphicsDevice
         return _swapchainHandles.IsValid(swapchain.Value) ? _swapchains[swapchain.Value.Index]! : throw new StaleHandleException(swapchain.Value);
     }
 
-    /// <summary>A live swapchain: its window, surface, backend id, what it is, its images and its creation order.</summary>
-    private sealed record SwapchainState(
-        IWindow Window, WindowSurfaceSource Source, ulong Surface, ulong Id, SwapchainInfo Info, SwapchainOptions Options, SwapchainImage[] Images, long Sequence);
+    /// <summary>
+    /// A live swapchain: its window, surface and creation order, and what recreation changes: the backend id (0 after a failed
+    /// recreation), what it is, its images, the window size it was made for, and the marks acquires and presents leave.
+    /// </summary>
+    private sealed class SwapchainState(IWindow window, WindowSurfaceSource source, ulong surface, SwapchainOptions options, long sequence)
+    {
+        public IWindow Window { get; } = window;
+
+        public WindowSurfaceSource Source { get; } = source;
+
+        public ulong Surface { get; } = surface;
+
+        public SwapchainOptions Options { get; } = options;
+
+        public long Sequence { get; } = sequence;
+
+        public ulong Id { get; set; }
+
+        public SwapchainInfo Info { get; set; }
+
+        public SwapchainImage[] Images { get; set; } = [];
+
+        public int CreatedWidth { get; set; }
+
+        public int CreatedHeight { get; set; }
+
+        public bool NeedsRecreation { get; set; }
+
+        public bool SurfaceLost { get; set; }
+
+        public long AcquiredFrame { get; set; } = -1;
+    }
+
+    /// <summary>An image acquired in the open frame: its swapchain, and its texture's backend id for the clear scan.</summary>
+    private readonly record struct AcquiredImage(SwapchainState State, ulong Texture);
 
     /// <summary>A destroyed swapchain still in a deletion queue, retired once <paramref name="Frame"/> has completed.</summary>
     private readonly record struct RetiringSwapchain(IWindow Window, long Frame);

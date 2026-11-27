@@ -131,6 +131,48 @@ public readonly struct CommandList
     /// <remarks>No scaling. Ordering, lost-device behaviour and allocation as for <see cref="CopyBufferToBuffer"/>.</remarks>
     public void CopyTextureToTexture(in TextureCopy copy) => DeviceFor(nameof(CopyTextureToTexture)).CopyTextureToTexture(this, copy);
 
+    /// <summary>Acquires the next image of a swapchain for this frame, recreating the swapchain first when it needs it.</summary>
+    /// <param name="swapchain">A live swapchain of the list's device, not yet acquired in this frame.</param>
+    /// <param name="image">
+    /// The acquired image (its texture, view, size and format), valid in this frame only, when the result is
+    /// <see cref="AcquireStatus.Acquired"/> or <see cref="AcquireStatus.Recreated"/>; <c>default</c> otherwise.
+    /// </param>
+    /// <returns>
+    /// What happened (docs/design/graphics.md section 3): <see cref="AcquireStatus.Acquired"/>;
+    /// <see cref="AcquireStatus.Recreated"/> after the swapchain was recreated (a real size change, a suboptimal or out-of-date
+    /// acquire or present, or an earlier failed recreation); <see cref="AcquireStatus.Minimised"/> for a minimised window or
+    /// a zero side, without recreating; <see cref="AcquireStatus.Skipped"/> when it is still out of date after one
+    /// recreation, or a recreation failed for another reason (logged at <see cref="Core.Logging.LogLevel.Error"/>);
+    /// <see cref="AcquireStatus.SurfaceLost"/> once the surface is gone, from then on; or
+    /// <see cref="AcquireStatus.DeviceLost"/>. Only the first two come with an image.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// The list isn't its device's open frame (<c>default</c>, or a copy from a submitted frame), or the swapchain already
+    /// has an image acquired in this frame.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="swapchain"/> is the null handle.</exception>
+    /// <exception cref="StaleHandleException"><paramref name="swapchain"/> isn't a live swapchain of this device.</exception>
+    /// <exception cref="OutOfMemoryException">The device's handle tables couldn't grow while recreating; the swapchain is left without images, so the next acquire creates it again.</exception>
+    /// <exception cref="ObjectDisposedException">The device or the window has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the device's owner thread.</exception>
+    /// <remarks>
+    /// <para>
+    /// The window's size and state are read first (snapshots, no native call). The swapchain is recreated only when its
+    /// window's pixel size really differs from the size it was created for, when an acquire or present marked it, or when an
+    /// earlier recreation failed (then it is created again with no old swapchain). Recreation waits for the GPU to go idle,
+    /// creates the new swapchain from the old one, and destroys the old one whatever the result. An out-of-date acquire
+    /// recreates and retries once; an acquire timeout reports out of date, so a GPU that is really hung turns into a loss
+    /// at the recreation's bounded wait.
+    /// </para>
+    /// <para>
+    /// The device presents an acquired image when the frame is submitted, and clears it to black first if no recorded copy
+    /// wrote it. Owner thread. Allocates nothing on the steady path (no recreation, no loss), except the exception; a
+    /// recreation allocates.
+    /// </para>
+    /// </remarks>
+    public AcquireStatus AcquireSwapchainImage(SwapchainHandle swapchain, out SwapchainImage image) =>
+        DeviceFor(nameof(AcquireSwapchainImage)).AcquireSwapchainImage(this, swapchain, out image);
+
     // The list's device, for a member that needs its open frame; the device checks that the frame is open.
     private GraphicsDevice DeviceFor(string member) => Device ?? throw new InvalidOperationException(
         $"CommandList.{member}: the command list is default and belongs to no frame. Use the one BeginFrame returned.");

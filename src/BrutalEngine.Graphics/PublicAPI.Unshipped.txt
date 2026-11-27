@@ -468,6 +468,7 @@ BrutalEngine.Graphics.ColorValue.G.init -> void
 BrutalEngine.Graphics.ColorValue.R.get -> float
 BrutalEngine.Graphics.ColorValue.R.init -> void
 BrutalEngine.Graphics.CommandList
+BrutalEngine.Graphics.CommandList.AcquireSwapchainImage(BrutalEngine.Graphics.SwapchainHandle swapchain, out BrutalEngine.Graphics.SwapchainImage image) -> BrutalEngine.Graphics.AcquireStatus
 BrutalEngine.Graphics.CommandList.AllocateTransient(long byteCount, BrutalEngine.Graphics.TransientUsage usage, out BrutalEngine.Graphics.TransientAllocation allocation) -> BrutalEngine.Core.Result
 BrutalEngine.Graphics.CommandList.CommandList() -> void
 BrutalEngine.Graphics.CommandList.CopyBufferToBuffer(in BrutalEngine.Graphics.BufferCopy copy) -> void

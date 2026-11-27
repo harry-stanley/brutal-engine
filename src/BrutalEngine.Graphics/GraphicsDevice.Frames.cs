@@ -140,13 +140,13 @@ public sealed partial class GraphicsDevice
         ThrowIfNotOpenFrame(commands, nameof(SubmitFrame));
         int slotIndex = CurrentSlot();
         FrameSlot slot = _slots[slotIndex];
-        FramePlan plan = IsLostCore ? default : _planner.Plan(slotIndex, _frameNumber, slot.Uploads, slot.Commands);
+        FramePlan plan = IsLostCore ? default : PlanFrame(slotIndex, slot);
         long frame = _frameNumber++;
         _frameOpen = false;
         slot.LastSubmittedFrame = frame;
         bool submitted = !IsLostCore && CheckFrameCall(_backend.Execute(plan), nameof(SubmitFrame));
         EndUploads(slot);
-        return submitted ? FrameStatus.Ready : FrameStatus.DeviceLost;
+        return PresentAcquired(submitted);
     }
 
     /// <summary>Waits until the GPU has finished every submitted frame.</summary>
