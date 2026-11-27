@@ -47,9 +47,14 @@ public sealed partial class GraphicsDevice
         };
 
         Result<BackendBuffer> created = _backend.CreateBuffer(description, memory);
-        return created.TryGetValue(out BackendBuffer buffer)
-            ? new BufferHandle(Register(BackendObjectKind.Buffer, buffer.Id, description.DebugName, link: default))
-            : created.Error;
+        if (!created.TryGetValue(out BackendBuffer buffer))
+        {
+            return created.Error;
+        }
+
+        Handle handle = Register(BackendObjectKind.Buffer, buffer.Id, description.DebugName, link: default);
+        _handles.SetBuffer(handle, description);
+        return new BufferHandle(handle);
     }
 
     /// <summary>Creates a texture and its default view.</summary>

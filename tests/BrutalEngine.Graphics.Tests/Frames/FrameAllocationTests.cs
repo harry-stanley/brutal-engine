@@ -43,6 +43,54 @@ public sealed class FrameAllocationTests : IDisposable
         device.ThrowIfLeaks();
     }
 
+    [Fact]
+    public void SteadyFramesWithWrites_DoNotAllocate()
+    {
+        _fixture.Script.RecordCalls = false;
+        GraphicsDevice device = _fixture.Create();
+        BufferHandle buffer = device.CreateBuffer(new BufferDescription { Size = 4096, Usage = BufferUsage.CopyDestination | BufferUsage.Uniform }).Value;
+        TextureHandle texture = device.CreateTexture(new TextureDescription
+        {
+            Format = TextureFormat.Rgba8Unorm,
+            Width = 64,
+            Height = 64,
+            Usage = TextureUsage.CopyDestination | TextureUsage.Sampled,
+        }).Value;
+        byte[] uniforms = new byte[256];
+        byte[] texels = new byte[(16 * 4 * 15) + (10 * 4)];
+        var write = new TextureWrite { Target = new(texture), Region = new(4, 4, 10, 16), BytesPerRow = 16 * 4 };
+
+        // Every frame writes a buffer and a texture inside the ring, and the buffer again between frames, through a
+        // pending block that the warm-up frames have already made and returned.
+        long checksum = 0;
+        long before = 0;
+        for (int i = 0; i < Frames + 8; i++)
+        {
+            if (i == 8)
+            {
+                before = GC.GetAllocatedBytesForCurrentThread();
+            }
+
+            uniforms[0] = (byte)i;
+            FrameStatus begun = device.BeginFrame(out CommandList commands);
+            bool written = device.WriteBuffer(buffer, 0, uniforms).IsSuccess & device.WriteTexture(write, texels).IsSuccess;
+            FrameStatus submitted = device.SubmitFrame(commands);
+            written &= device.WriteBuffer(buffer, 256, uniforms.AsSpan(0, 16)).IsSuccess;
+            GraphicsStatistics statistics = device.Statistics;
+            checksum += (long)begun + (long)submitted + statistics.UploadBytesLastFrame + statistics.UploadOverflowBytes + (written ? 1 : -100_000);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        // Each frame uploaded 256 + 10 * 16 * 4 bytes in its ring and the 16 pending bytes before it, with no overflow.
+        Assert.Equal((Frames + 8) * (1 + 256 + 640 + 16L) - 16, checksum);
+        Assert.True(device.WaitIdle().IsSuccess);
+        device.Destroy(texture);
+        device.Destroy(buffer);
+        device.ThrowIfLeaks();
+    }
+
     private static long RunFrame(GraphicsDevice device, SamplerHandle sampler, bool insideFrame)
     {
         FrameStatus begun = device.BeginFrame(out CommandList commands);

@@ -81,10 +81,12 @@ public sealed partial class GraphicsDevice
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// The frame uses slot <see cref="FrameNumber"/> modulo the frames in flight. The call waits for the frame last
-    /// submitted from that slot (for at most the GPU timeout), advances <see cref="CompletedFrameNumber"/> to it, destroys
-    /// the backend objects that slot's frame queued, and opens the slot. A failed wait or open marks the device lost
-    /// (a timeout as a hung GPU) and logs it at <see cref="Core.Logging.LogLevel.Error"/>; on a lost device the backend
-    /// isn't called. Owner thread. Allocates nothing, except the exception and the log line of a newly detected loss.
+    /// submitted from that slot (for at most the GPU timeout), advances <see cref="CompletedFrameNumber"/> to it,
+    /// destroys the backend objects that slot's frame queued, takes back the pending upload blocks that frame copied
+    /// from, frees the slot's upload ring slice, and opens the slot. The pending blocks of writes made since then go to
+    /// the new frame. A failed wait or open marks the device lost (a timeout as a hung GPU) and logs it at <see
+    /// cref="Core.Logging.LogLevel.Error"/>; on a lost device the backend isn't called. Owner thread. Allocates
+    /// nothing, except the exception and the log line of a newly detected loss.
     /// </remarks>
     public FrameStatus BeginFrame(out CommandList commands)
     {
@@ -105,6 +107,7 @@ public sealed partial class GraphicsDevice
 
         _completedFrameNumber = Math.Max(_completedFrameNumber, slot.LastSubmittedFrame);
         slot.Deletions.Retire(_backend);
+        BeginUploads(slot);
         slot.Commands.Reset();
         return CheckFrameCall(_backend.BeginFrame(slotIndex), nameof(BeginFrame)) ? FrameStatus.Ready : FrameStatus.DeviceLost;
     }
@@ -125,9 +128,10 @@ public sealed partial class GraphicsDevice
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
-    /// The plan holds the frame's upload copies, in call order, then its recorded commands. A failed submission marks
-    /// the device lost; on a lost device the backend isn't called and the frame completes empty. Owner thread.
-    /// Allocates nothing, except the exception and the log line of a newly detected loss.
+    /// The plan holds the copies of every write the frame lands (the pending ones made before it began, then its own,
+    /// in call order), then its recorded commands. A failed submission marks the device lost; on a lost device the
+    /// backend isn't called and the frame completes empty, its writes dropped. Owner thread. Allocates nothing, except
+    /// the exception and the log line of a newly detected loss.
     /// </remarks>
     public FrameStatus SubmitFrame(CommandList commands)
     {
@@ -140,7 +144,7 @@ public sealed partial class GraphicsDevice
         _frameOpen = false;
         slot.LastSubmittedFrame = frame;
         bool submitted = !IsLostCore && CheckFrameCall(_backend.Execute(plan), nameof(SubmitFrame));
-        slot.Uploads.Reset();
+        EndUploads(slot);
         return submitted ? FrameStatus.Ready : FrameStatus.DeviceLost;
     }
 
@@ -154,7 +158,8 @@ public sealed partial class GraphicsDevice
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// For tests, teardown and recreation; never in steady frames. Destroys the backend objects every submitted frame
-    /// queued; an open frame's queue waits for that frame. Owner thread. May allocate.
+    /// queued and takes back the pending upload blocks they copied from; an open frame's queue waits for that frame, and
+    /// objects pending writes may use wait for the frame that copies them. Owner thread. May allocate.
     /// </remarks>
     public Result WaitIdle()
     {
@@ -181,6 +186,7 @@ public sealed partial class GraphicsDevice
             if (!_frameOpen || i != CurrentSlot())
             {
                 _slots[i].Deletions.Retire(_backend);
+                _pendingUploads.Return(_slots[i].PendingBlocks);
             }
         }
 
@@ -218,10 +224,17 @@ public sealed partial class GraphicsDevice
 
     private int CurrentSlot() => (int)(_frameNumber % _slots.Length);
 
-    // The deletion queue a destroyed object waits on, with room reserved for one entry: the open frame's, else the last
-    // submitted frame's; null before the first submission, when nothing can still use the object.
+    // The deletion queue a destroyed object waits on, with room reserved for one entry: the open frame's; between frames
+    // the deferred one while the next frame has pending copies, else the last submitted frame's; null before the first
+    // frame when nothing is pending, when nothing can still use the object.
     private DeletionQueue? ReserveDeletion()
     {
+        if (!_frameOpen && !CurrentUploads.Written.IsEmpty)
+        {
+            // Pending copies of the next frame may still use the object.
+            return DeferredDeletions();
+        }
+
         if (!_frameOpen && _frameNumber == 0)
         {
             return null;

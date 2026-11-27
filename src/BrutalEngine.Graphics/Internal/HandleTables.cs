@@ -31,6 +31,7 @@ internal sealed class HandleTables
     private readonly HandleAllocator[] _allocators = new HandleAllocator[KindCount];
     private readonly Entry[][] _entries = new Entry[KindCount][];
     private TextureDescription[] _textures = [];
+    private BufferDescription[] _buffers = [];
     private long _nextSequence;
 
     /// <summary>Creates empty tables that record ids in <paramref name="objects"/>, the table the backend reads.</summary>
@@ -85,6 +86,11 @@ internal sealed class HandleTables
                 Array.Resize(ref _textures, entries.Length);
             }
 
+            if (kind == BackendObjectKind.Buffer && handle.Index >= (uint)_buffers.Length)
+            {
+                Array.Resize(ref _buffers, entries.Length);
+            }
+
             _objects.Set(kind, handle, id);
             entries[handle.Index] = new Entry(handle, id, debugName, _nextSequence++, link);
             return handle;
@@ -125,6 +131,16 @@ internal sealed class HandleTables
         ref Entry entry = ref _entries[(int)BackendObjectKind.Texture][texture.Index];
         entry = entry with { Link = defaultView };
     }
+
+    /// <summary>Records a live buffer's description.</summary>
+    /// <param name="buffer">A live buffer.</param>
+    /// <param name="description">The description it was created from.</param>
+    public void SetBuffer(Handle buffer, in BufferDescription description) => _buffers[buffer.Index] = description;
+
+    /// <summary>Returns the description a live buffer was created from.</summary>
+    /// <param name="buffer">A live buffer.</param>
+    /// <returns>The description, by reference into the table; valid until the buffer is removed.</returns>
+    public ref readonly BufferDescription GetBuffer(Handle buffer) => ref _buffers[buffer.Index];
 
     /// <summary>Returns the description a live texture was created from.</summary>
     /// <param name="texture">A live texture.</param>
@@ -181,6 +197,10 @@ internal sealed class HandleTables
         {
             _textures[handle.Index] = default;
         }
+        else if (kind == BackendObjectKind.Buffer)
+        {
+            _buffers[handle.Index] = default;
+        }
 
         return id;
     }
@@ -218,6 +238,7 @@ internal sealed class HandleTables
         }
 
         Array.Clear(_textures);
+        Array.Clear(_buffers);
         _objects.Clear();
         return live;
     }
