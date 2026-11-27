@@ -304,7 +304,7 @@ public sealed partial class GraphicsDevice
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="view"/> is a texture's default view (<see cref="GetDefaultView"/>), which lives as long as its
-    /// texture; nothing is destroyed.
+    /// texture; nothing is destroyed. The message names the view and its debug name (the texture's).
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -319,7 +319,8 @@ public sealed partial class GraphicsDevice
         _handles.ThrowIfNotLive(BackendObjectKind.TextureView, handle, nameof(view));
         if (_handles.GetLink(BackendObjectKind.Texture, _handles.GetLink(BackendObjectKind.TextureView, handle)) == handle)
         {
-            throw new InvalidOperationException($"Destroy: {view} is its texture's default view, which is destroyed with the texture.");
+            throw new InvalidOperationException(
+                $"Destroy: {view} '{_handles.GetDebugName(BackendObjectKind.TextureView, handle)}' is its texture's default view, which is destroyed with the texture.");
         }
 
         // TODO(#113): queue the view on the frame's deletion queue, as DestroyObject will, once frames exist.

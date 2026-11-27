@@ -90,12 +90,12 @@ public sealed partial class GraphicsDeviceResourceTests
     public void DestroyView_DefaultView_ThrowsAndKeepsIt()
     {
         GraphicsDevice device = _fixture.Create();
-        TextureHandle texture = device.CreateTexture(Texture()).Value;
+        TextureHandle texture = device.CreateTexture(Texture() with { DebugName = "Atlas" }).Value;
         TextureViewHandle defaultView = device.GetDefaultView(texture);
 
         InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(() => device.Destroy(defaultView));
 
-        Assert.Contains("default view", thrown.Message, StringComparison.Ordinal);
+        Assert.Equal($"Destroy: {defaultView} 'Atlas' is its texture's default view, which is destroyed with the texture.", thrown.Message);
         Assert.Equal(2, _fixture.BackendDevice.LiveObjectCount);
         Assert.Equal(defaultView, device.GetDefaultView(texture));
     }
