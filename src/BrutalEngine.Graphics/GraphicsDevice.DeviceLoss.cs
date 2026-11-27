@@ -6,7 +6,10 @@ using BrutalEngine.Graphics.Internal;
 
 namespace BrutalEngine.Graphics;
 
-/// <content>Device loss: the fault seam, the DeviceLost event, resource owners and recovery (docs/design/graphics.md section 12).</content>
+/// <content>
+/// Device loss: the fault seam, the DeviceLost event, resource owners, recovery and the validation canary seam
+/// (docs/design/graphics.md sections 12 and 15).
+/// </content>
 public sealed partial class GraphicsDevice
 {
     private const string LostSuffix = ": the device is lost.";
@@ -166,6 +169,29 @@ public sealed partial class GraphicsDevice
     {
         _owner.ThrowIfNotCurrentThread(nameof(GpuOwnerRegistration) + "." + nameof(GpuOwnerRegistration.Dispose));
         _ = _owners.Remove(registration);
+    }
+
+    /// <summary>
+    /// The negative canary's seam (section 15): the backend records one known validation violation in the next submitted
+    /// frame. Internal: the graphics tests and the conformance suite only.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The device was created without <see cref="GraphicsDeviceOptions.Validation"/> (with no layer to catch it, the
+    /// violation would be undefined behaviour), or it is lost; the backend isn't called.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
+    internal void InjectValidationError()
+    {
+        ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(InjectValidationError));
+        if (!_options.Validation || IsLostCore)
+        {
+            throw new InvalidOperationException(_options.Validation
+                ? "InjectValidationError: the device is lost."
+                : "InjectValidationError: the device was created without Validation, so no layer would catch the violation.");
+        }
+
+        _backend.InjectValidationError();
     }
 
     // Raises the event of the loss this call detected, as its last step, so a throwing handler leaves the device as the
