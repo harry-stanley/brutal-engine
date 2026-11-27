@@ -130,7 +130,7 @@ public sealed class ImportContext                 // one per import; the importe
     public void Report(ImportDiagnostic diagnostic);                 // warnings and infos; and the error a failed Result explains
 }
 
-public readonly record struct ImportOutput(string Name, AssetKind Kind, ReadOnlyMemory<byte> Data, IReadOnlyList<AssetId> Dependencies);
+public readonly record struct ImportOutput(string Name, AssetKind Kind, ReadOnlyMemory<byte> Data, IReadOnlyList<AssetId> Dependencies);   // immutable; any thread
 
 public sealed record ImportLimits                 // immutable; any thread
 {
@@ -141,7 +141,7 @@ public sealed record ImportLimits                 // immutable; any thread
     public long MaxOutputBytes { get; init; } = 1L << 30;           // per output; the database's MaxAssetBytes default
 }
 
-public readonly record struct ImportDiagnostic
+public readonly record struct ImportDiagnostic    // immutable; any thread
 {
     public required DiagnosticSeverity Severity { get; init; }
     public required string Code { get; init; }                       // "BEC2201"; section 4
@@ -199,7 +199,7 @@ public static class SourceImport                  // stateless; thread-safe
     public static SourceImportResult Run(SourceImportRequest request);   // expected failures in Error; allocates per import
 }
 
-public sealed record SourceImportRequest
+public sealed record SourceImportRequest          // immutable; any thread
 {
     public required VirtualFileSystem Files { get; init; }
     public required VfsPath MetaPath { get; init; }
@@ -209,7 +209,7 @@ public sealed record SourceImportRequest
     public CancellationToken CancellationToken { get; init; }
 }
 
-public sealed record SourceImportResult
+public sealed record SourceImportResult           // immutable; any thread
 {
     public EngineError? Error { get; init; }                         // null: success; otherwise Outputs is empty
     public AssetMeta? Meta { get; init; }                            // the sidecar as it should be (new outputs, migrated settings); null if unreadable
@@ -219,7 +219,7 @@ public sealed record SourceImportResult
     public required IReadOnlyList<ImportDiagnostic> Diagnostics { get; init; }   // in report order
 }
 
-public readonly record struct ImportRead(VfsPath Path, long Length, ReadOnlyMemory<byte> Sha256);
+public readonly record struct ImportRead(VfsPath Path, long Length, ReadOnlyMemory<byte> Sha256);   // immutable; any thread
 ```
 
 `Run` reads and checks the sidecar, finds its importer, normalises the settings, runs the import with a fresh context, then checks the outputs: every sidecar entry produced with its declared kind, sizes within `Limits`, dependency ids not all zero and not the output's own. Expected failures (a bad sidecar, an unknown importer, the importer's own failed `Result`, a broken output rule) set `Error` with its `ErrorKind` and keep every diagnostic reported so far, so the cooker can print them all; when the importer reported no error diagnostic, `Run` adds one from the error's message. `Reads` is kept on failure too, so a failed source is re-imported only when one of its inputs changes. An importer that throws fails the import with `ErrorKind.Unspecified` and `BEC0002` carrying the exception's message (the cooker prints the stack with `--verbose`). `SourceAssetImporter.Import` turns `Error` into its failed `Result`.
@@ -240,7 +240,7 @@ public sealed record AssetMeta                     // immutable; any thread
     public byte[] ToJson();                                          // the canonical form of section 1
 }
 
-public readonly record struct AssetMetaEntry(string Name, AssetId Id, AssetKind Kind);
+public readonly record struct AssetMetaEntry(string Name, AssetId Id, AssetKind Kind);   // immutable; any thread
 
 public enum AssetCompression { Auto = 0, None, Deflate, Brotli }
 ```
@@ -279,7 +279,22 @@ Entries are paths relative to the definition's folder; `*` matches within one pa
 
 **Fonts (`font`).** TrueType and OpenType files (collections are `Unsupported`). Settings: `sizes` (1-16 pixel sizes, 4-512), `mode` (`bitmap` or `sdf`), `characters` (`ascii`, `latin1`, or a list of code point ranges), `sdfSpread` (1-32 px), `padding`, `hinting` (`normal`, `light`, `none`). For each size the importer rasterises every requested glyph through the Text module's rasteriser (the text note), so pre-baked and runtime glyphs are the same, packs them with the packer of the sprite atlases into `R8Unorm` pages, and writes the font output: per size, the line metrics, each glyph's code point, advance, bearing and atlas region, and the kerning pairs, in the text note's layout. Characters missing from the font are listed in a `BEC2401` warning.
 
-**Shaders (`shader`, in `BrutalEngine.Importers.Shaders`).** Settings: `entryPoints`, 1-16 names (required). The importer compiles with the function M1's shader command uses: the first shader-importer issue moves that function from `tools/BrutalEngine.Cook` into this project without changing its output (M1's re-cook job, which compares the committed SPIR-V byte for byte, proves it), and the shader command calls it through the `Cook -> Importers.Shaders` edge, so the command's behaviour, ADR-0012's subject, is unchanged. What the pipeline requires of it: a global session (`Slang.CreateGlobalSession`, `Brutal.Slang/Slang.cs:59`) per importer instance (the importer is `IDisposable` and releases it), a session per import (`CreateSession`, `Brutal.Slang/Generated/InterfacesExt.gen.cs:89`) targeting SPIR-V (`CompileTarget.Spirv`, `Brutal.Slang/Generated/Enumerations.gen.cs:261`) with no debug information (`DebugInformation`, `Brutal.Slang/Generated/Enumerations.gen.cs:49`, set to `DebugInfoLevel.None`, `:434`), so no absolute path or source text reaches the SPIR-V, and the assets root as the only search path; the module loaded from the source bytes (`LoadModuleFromSource`, `Brutal.Slang/ISessionExtensions.cs:80`) under its `res://`-relative name, linked (`Link`, `Brutal.Slang/Generated/InterfacesExt.gen.cs:222`), and the code taken with `GetTargetCode` (`Brutal.Slang/Generated/Interfaces.gen.cs:568`). The files the module imported, from `GetDependencyFileCount` and `GetDependencyFilePath` (`Brutal.Slang/Generated/Interfaces.gen.cs:638`, `:641`), are read again through `ReadFile` so they are hashed; one outside the assets root is `BEC2502`. Slang's diagnostics (`error[E…] --> path:line:col`, `docs/spikes/README.md:96`) become `BEC2501` diagnostics at that position.
+**Shaders (`shader`, in `BrutalEngine.Importers.Shaders`).** Settings: `entryPoints`, 1-16 names (required). The importer compiles with the function M1's shader command uses: the first shader-importer issue moves that function from `tools/BrutalEngine.Cook` into this project without changing its output (M1's re-cook job, which compares the committed SPIR-V byte for byte, proves it), and the shader command calls it through the `Cook -> Importers.Shaders` edge, so the command's behaviour, ADR-0012's subject, is unchanged. What the pipeline requires of it: a global session per importer instance, created by `Create` (below), a session per import (`CreateSession`, `Brutal.Slang/Generated/InterfacesExt.gen.cs:89`) targeting SPIR-V (`CompileTarget.Spirv`, `Brutal.Slang/Generated/Enumerations.gen.cs:261`) with no debug information (`DebugInformation`, `Brutal.Slang/Generated/Enumerations.gen.cs:49`, set to `DebugInfoLevel.None`, `:434`), so no absolute path or source text reaches the SPIR-V, and the assets root as the only search path; the module loaded from the source bytes (`LoadModuleFromSource`, `Brutal.Slang/ISessionExtensions.cs:80`) under its `res://`-relative name, linked (`Link`, `Brutal.Slang/Generated/InterfacesExt.gen.cs:222`), and the code taken with `GetTargetCode` (`Brutal.Slang/Generated/Interfaces.gen.cs:568`). The files the module imported, from `GetDependencyFileCount` and `GetDependencyFilePath` (`Brutal.Slang/Generated/Interfaces.gen.cs:638`, `:641`), are read again through `ReadFile` so they are hashed; one outside the assets root is `BEC2502`. Slang's diagnostics (`error[E…] --> path:line:col`, `docs/spikes/README.md:96`) become `BEC2501` diagnostics at that position.
+
+```csharp
+namespace BrutalEngine.Importers.Shaders;
+
+public sealed class SlangShaderImporter : IImporter, IDisposable   // thread-safe; one lock serialises its Slang calls (below)
+{
+    public static Result<SlangShaderImporter> Create();             // Native: Slang's global session can't be created; allocates
+    public ImporterInfo Info { get; }                                // "shader", ".slang", SHDR, CreatesMetaAutomatically false, Fingerprint the build tag
+    public Result<ReadOnlyMemory<byte>> NormalizeSettings(JsonElement settings, int settingsVersion);   // allocates
+    public Result Import(ImportContext context);                     // ObjectDisposedException after Dispose; allocates per import
+    public void Dispose();                                           // idempotent; waits for a running import, then releases the global session
+}
+```
+
+`Create` calls `Slang.TryCreateGlobalSession` (`Brutal.Slang/Slang.cs:68`) and returns a failed status as `ErrorKind.Native` with its code: a missing or broken native library is an expected failure on a machine without the package, so it isn't an exception. **Threading.** Neither BRUTAL's binding nor Slang's header says which calls may run concurrently on one global session, so the importer holds one lock around every Slang call, from creating an import's session to releasing it: shader imports of one importer run one at a time, and other importers' imports run beside them. Each import releases its proxies with `Slang.Release` (`Brutal.Slang/Slang.cs:204`) on its own thread, children before parents, as the binding requires (`Brutal.Slang/Slang.cs:9-11`); `Dispose` takes the same lock, so it waits for a running import, then releases the global session. The importer issue may drop the lock only with a stress test that shows concurrent sessions are safe. A game or the cooker adds the importer with `registry.Add(created.Value)` before `Freeze` and disposes it after the last import.
 
 **Reflection** comes from `GetLayout` (`Brutal.Slang/Generated/Interfaces.gen.cs:495`), whose `ProgramLayout` is the `Reflection` the raw entry points take (`Brutal.Slang/Generated/GlobalUsings.gen.cs:59`); the binding's layout types are empty structs, so the importer calls those entry points directly, as spike S4 did (`docs/spikes/README.md:99`): parameters with `spReflection_GetParameterCount`, `spReflection_GetParameterByIndex`, `spReflectionParameter_GetBindingIndex` and `spReflectionParameter_GetBindingSpace` (`Brutal.Slang/Generated/Slang.gen.cs:1175`, `:1178`, `:1070`, `:1073`), their categories and binding-range types with `spReflectionTypeLayout_GetParameterCategory` and `spReflectionTypeLayout_getBindingRangeType` (`:621`, `:665`), push-constant sizes with `spReflectionTypeLayout_GetSize` (`:561`), entry points with `spReflection_getEntryPointCount`, `spReflection_getEntryPointByIndex`, `spReflectionEntryPoint_getName` and `spReflectionEntryPoint_getStage` (`:1236`, `:1239`, `:1091`, `:1115`), vertex inputs through the entry point's parameters (`spReflectionEntryPoint_getParameterCount`, `:1106`; `spReflectionVariableLayout_GetTypeLayout`, `:849`), and compute group sizes with `GetComputeThreadGroupSize` (`Brutal.Slang/EntryPointLayoutExtensions.cs:14`). Each binding maps to the render interface's `BindingType` (`docs/design/graphics.md:575`): constant buffers to `UniformBuffer`, read-write structured buffers to `StorageBuffer`, structured buffers to `ReadOnlyStorageBuffer`, textures to `SampledTexture`, read-write textures to `StorageTexture`, sampler states to `Sampler`. Anything else (combined texture-samplers, unbounded arrays, acceleration structures) is `BEC2503`, `Unsupported`. Vertex inputs map to the shader-side `VertexFormat` (`docs/design/graphics.md:553`): `float` to `Float32` through `float4` to `Float32x4`, `uint` to `Uint32`, `uint2` to `Uint32x2`, `int` to `Sint32`; a buffer-side format such as `Unorm8x4` is the material's choice, not the shader's.
 
@@ -542,6 +557,7 @@ Nothing here deviates from an ADR.
 ## Not verified
 
 - The note is design only; nothing in it has run. BRUTAL APIs are cited from the BRUTAL source, not observed: in particular stb's format detection (the TGA colour-map argument of section 3) is from stb's documented signatures, and the Slang reflection calls follow what spike S4 used on Windows (`docs/spikes/README.md:95`).
+- Slang's thread-safety on one global session isn't documented; the shader importer serialises its calls until a stress test shows otherwise (section 3).
 - SDL_mixer's lifetime and threading rules, and whether its float decoders agree across OSes, are ADR-0017's prototype's to measure (#279).
 - Cross-OS equality of Slang, FreeType and the BCL's compressors (section 5): the determinism job decides.
 - The owners' payload layouts (atlases, fonts, tile data, audio clips) don't exist yet; their notes do that.
