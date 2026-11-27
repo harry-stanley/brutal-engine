@@ -36,7 +36,8 @@ namespace BrutalEngine.Platform.Vfs;
 /// <b>Ownership and allocation:</b> the file system holds only managed memory and isn't disposable; drop it when no
 /// longer mounted. Any operation may allocate, on success as well as on failure: a non-empty path is checked by
 /// parsing it (a string and a <see cref="VfsPath"/>), and copies, streams, entry lists, new nodes and error messages
-/// allocate too. Only <see cref="IsReadOnly"/> and <see cref="Freeze"/> never allocate. File I/O is not a hot path.
+/// allocate too. <see cref="IsReadOnly"/> never allocates, and <see cref="Freeze"/> allocates nothing unless it has to
+/// wait for the lock. File I/O is not a hot path.
 /// See docs/design/platform.md section 5, "Mounts and operations".
 /// </para>
 /// </remarks>
@@ -68,7 +69,8 @@ public sealed class InMemoryFileSystem : IFileSystem
     /// <remarks>
     /// An operation that started before the call either completes or fails with <see cref="ErrorKind.Unsupported"/>;
     /// every write, delete and create that starts after it returns fails with <see cref="ErrorKind.Unsupported"/>.
-    /// Reads keep working. Calling it again does nothing. Any thread. Allocates nothing.
+    /// Reads keep working. Calling it again does nothing. Any thread. Allocates nothing unless it has to wait for the
+    /// lock (entering a contended lock allocates on the waiting thread).
     /// </remarks>
     public void Freeze()
     {
