@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 
 namespace BrutalEngine.Graphics.Internal;
@@ -9,8 +11,8 @@ namespace BrutalEngine.Graphics.Internal;
 /// </summary>
 /// <remarks>
 /// The device owns the backend buffer and destroys it. Offsets are multiples of <see cref="Alignment"/>, which every texel
-/// size and 4 divide, so a texture copy may start at any of them. Not thread-safe: the device's owner thread only. No
-/// member allocates.
+/// size and 4 divide, so a texture copy may start at any of them; a transient allocation asks for a larger alignment
+/// when its usage needs one. Not thread-safe: the device's owner thread only. No member allocates.
 /// </remarks>
 internal sealed unsafe class UploadRing
 {
@@ -36,12 +38,30 @@ internal sealed unsafe class UploadRing
     /// <summary>The buffer's size in bytes.</summary>
     internal long Capacity { get; }
 
-    /// <summary>Reserves <paramref name="size"/> bytes at the next aligned offset.</summary>
+    /// <summary>
+    /// The open frame's alias handle of the buffer, which its transient allocations hand out; the null handle while it
+    /// has none. Set and cleared by the device.
+    /// </summary>
+    internal Handle Alias { get; set; }
+
+    /// <summary>Reserves <paramref name="size"/> bytes at the next offset that is a multiple of <see cref="Alignment"/>.</summary>
     /// <param name="size">The bytes needed; positive.</param>
     /// <returns>The offset of the reserved bytes, or -1 when they don't fit (nothing is reserved).</returns>
-    internal long TryReserve(long size)
+    internal long TryReserve(long size) => TryReserve(size, Alignment);
+
+    /// <summary>Reserves <paramref name="size"/> bytes at the next offset that is a multiple of <paramref name="alignment"/>.</summary>
+    /// <param name="size">The bytes needed; positive.</param>
+    /// <param name="alignment">
+    /// The offset's alignment: a power of two, as Vulkan guarantees for its offset alignment limits, and at least 16.
+    /// </param>
+    /// <returns>The offset of the reserved bytes, or -1 when they don't fit, padding included (nothing is reserved).</returns>
+    internal long TryReserve(long size, long alignment)
     {
-        long offset = (_used + Alignment - 1) & ~(long)(Alignment - 1);
+        Debug.Assert(alignment >= Alignment && (alignment & (alignment - 1)) == 0, "The alignment must be a power of two of at least 16.");
+
+        // _used <= Capacity and the alignment is small, so the rounding can't overflow; an offset past the end leaves
+        // Capacity - offset negative, which no positive size fits.
+        long offset = (_used + alignment - 1) & ~(alignment - 1);
         if (size > Capacity - offset)
         {
             return -1;

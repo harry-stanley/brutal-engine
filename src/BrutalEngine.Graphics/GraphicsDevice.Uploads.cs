@@ -15,6 +15,11 @@ public sealed partial class GraphicsDevice
     private const string WriteBufferApi = nameof(GraphicsDevice) + "." + nameof(WriteBuffer);
     private const string WriteTextureApi = nameof(GraphicsDevice) + "." + nameof(WriteTexture);
 
+    // The usages of a block made inside a frame (the slot's ring, or an overflow block), which transient allocations may
+    // alias and bind; blocks made between frames (pending and their overflow blocks) only serve writes, as copy sources.
+    private const BufferUsage StagingUsage = BufferUsage.CopySource | BufferUsage.Vertex | BufferUsage.Index | BufferUsage.Uniform
+        | BufferUsage.Storage | BufferUsage.Indirect;
+
     private readonly PendingUploadPool _pendingUploads = new();
     private readonly long _ringBytes;
     private readonly INativeAllocator _allocator;
@@ -63,7 +68,7 @@ public sealed partial class GraphicsDevice
         ThrowIfUnusable(WriteBufferApi);
         _handles.ThrowIfNotLive(BackendObjectKind.Buffer, buffer.Value, nameof(buffer));
         CopyValidator.ValidateWriteBuffer(_handles.GetBuffer(buffer.Value), offset, data.Length);
-        if (!TryStage(data.Length, WriteBufferApi, out UploadRing? block, out long staged, out bool overflow, out EngineError error))
+        if (!TryStage(data.Length, UploadRing.Alignment, WriteBufferApi, out UploadRing? block, out long staged, out bool overflow, out EngineError error))
         {
             return error;
         }
@@ -122,7 +127,7 @@ public sealed partial class GraphicsDevice
         int sourcePitch = write.BytesPerRow == 0 ? rowBytes : write.BytesPerRow;
         int pitch = (rowBytes + TextureBufferCopy.RowPitchAlignment - 1) & ~(TextureBufferCopy.RowPitchAlignment - 1);
         long size = ((long)pitch * (write.Region.Height - 1)) + rowBytes;
-        if (!TryStage(size, WriteTextureApi, out UploadRing? block, out long staged, out bool overflow, out EngineError error))
+        if (!TryStage(size, UploadRing.Alignment, WriteTextureApi, out UploadRing? block, out long staged, out bool overflow, out EngineError error))
         {
             return error;
         }
@@ -155,11 +160,18 @@ public sealed partial class GraphicsDevice
     // The copies the next submitted frame lands: the open frame's slot, or the next frame's between frames.
     private CommandWriter CurrentUploads => _slots[CurrentSlot()].Uploads;
 
-    // Finds room for a write: the open slot's ring, else the pending blocks, else a dedicated overflow block that the frame
-    // copying it destroys once done (overflow; the caller counts it once the copy is recorded). Fails, staging nothing,
-    // on a lost device or when a block can't be created.
+    // Finds room for a write or transient allocation: the open slot's ring at the alignment given, else (between frames,
+    // writes only) the pending blocks, else a dedicated overflow block that the frame using it destroys once done
+    // (overflow; the caller counts it once the copy or alias is recorded). Fails, staging nothing, on a lost device or
+    // when a block can't be created.
     private bool TryStage(
-        long size, string api, [NotNullWhen(true)] out UploadRing? block, out long offset, out bool overflow, out EngineError error)
+        long size,
+        long alignment,
+        string api,
+        [NotNullWhen(true)] out UploadRing? block,
+        out long offset,
+        out bool overflow,
+        out EngineError error)
     {
         (block, offset, overflow, error) = (null, -1, false, default);
         if (IsLostCore)
@@ -177,7 +189,7 @@ public sealed partial class GraphicsDevice
             }
 
             block = slot.Ring ??= block;
-            offset = block!.TryReserve(size);
+            offset = block!.TryReserve(size, alignment);
         }
         else
         {
@@ -214,7 +226,8 @@ public sealed partial class GraphicsDevice
 
     private bool TryCreateBlock(long size, [NotNullWhen(true)] out UploadRing? block, out EngineError error)
     {
-        var description = new BufferDescription { Size = size, Usage = BufferUsage.CopySource, Memory = MemoryIntent.Upload };
+        BufferUsage usage = _frameOpen ? StagingUsage : BufferUsage.CopySource;
+        var description = new BufferDescription { Size = size, Usage = usage, Memory = MemoryIntent.Upload };
         Result<BackendBuffer> created = _backend.CreateBuffer(description, BackendMemory.HostUpload);
         block = created.TryGetValue(out BackendBuffer buffer) ? new UploadRing(buffer, size) : null;
         error = block is null ? created.Error : default;
@@ -253,10 +266,12 @@ public sealed partial class GraphicsDevice
         slot.Ring?.Reset();
     }
 
-    // At SubmitFrame, after Execute: the copies are submitted, and the counters move on to the next frame.
+    // At SubmitFrame, after Execute: the copies are submitted, the frame's transient aliases go stale, and the counters
+    // move on to the next frame.
     private void EndUploads(FrameSlot slot)
     {
         slot.Uploads.Reset();
+        EndTransients();
         _uploadBytesLastFrame = _uploadBytes;
         _uploadBytes = 0;
         _overflowLogged = false;

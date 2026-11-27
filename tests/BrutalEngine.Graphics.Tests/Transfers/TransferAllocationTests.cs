@@ -1,0 +1,58 @@
+using System;
+using BrutalEngine.Graphics.Tests.Device;
+using Xunit;
+
+namespace BrutalEngine.Graphics.Tests.Transfers;
+
+/// <summary>Steady-state frames with transient allocations allocate no managed memory (docs/design/graphics.md section 14).</summary>
+public sealed class TransferAllocationTests : IDisposable
+{
+    private const int Frames = 1000;
+    private const int WarmUpFrames = 8;
+
+    private static readonly TransientUsage[] _usages =
+        [TransientUsage.Vertex, TransientUsage.Index, TransientUsage.Uniform, TransientUsage.Storage, TransientUsage.Indirect];
+
+    private readonly DeviceFixture _fixture = new();
+
+    public void Dispose() => _fixture.Dispose();
+
+    [Fact]
+    public void SteadyTransientFrames_DoNotAllocate()
+    {
+        _fixture.Script.RecordCalls = false;
+        GraphicsDevice device = _fixture.Create();
+
+        // Every frame allocates once per usage from its slot's ring, writes the memory and reads every field, then
+        // submits, which makes the frame's alias stale; the warm-up frames make both slots' rings and an alias table slot.
+        long checksum = 0;
+        long before = 0;
+        for (int i = 0; i < Frames + WarmUpFrames; i++)
+        {
+            if (i == WarmUpFrames)
+            {
+                before = GC.GetAllocatedBytesForCurrentThread();
+            }
+
+            FrameStatus begun = device.BeginFrame(out CommandList commands);
+            foreach (TransientUsage usage in _usages)
+            {
+                bool allocated = commands.AllocateTransient(64, usage, out TransientAllocation allocation).IsSuccess;
+                allocation.Data.Fill((byte)i);
+                checksum += allocation.Offset + allocation.Data.Length + (allocation.Buffer.IsNull ? -100_000 : 0) + (allocated ? 0 : -100_000);
+            }
+
+            FrameStatus submitted = device.SubmitFrame(commands);
+            GraphicsStatistics statistics = device.Statistics;
+            checksum += (long)begun + (long)submitted + statistics.LiveObjects + statistics.UploadOverflowBytes;
+        }
+
+        long allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocatedBytes);
+        // The fake's uniform and storage alignments are 256: offsets 0, 64, 256, 512 and 576, 64 bytes each.
+        Assert.Equal((Frames + WarmUpFrames) * (0 + 64 + 256 + 512 + 576 + (5 * 64L)), checksum);
+        Assert.True(device.WaitIdle().IsSuccess);
+        device.ThrowIfLeaks();
+    }
+}

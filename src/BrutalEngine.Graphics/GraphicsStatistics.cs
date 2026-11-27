@@ -8,7 +8,12 @@ namespace BrutalEngine.Graphics;
 /// The bytes the last submitted frame's writes uploaded, through the upload ring, pending upload blocks or overflow blocks
 /// (a texture write counts its texels); 0 for a frame without writes.
 /// </param>
-/// <param name="UploadOverflowBytes">The bytes uploaded outside the ring because it was full; 0 until uploads land.</param>
+/// <param name="UploadOverflowBytes">
+/// The bytes placed in dedicated blocks because they didn't fit, over the device's whole life: in-frame writes and
+/// transient allocations that didn't fit the upload ring, and writes between frames larger than a pending upload block
+/// (a texture write counts its staged rows, padding included). Counted when the write or allocation succeeds; 0 until one
+/// overflows.
+/// </param>
 /// <param name="LiveObjects">The GPU objects alive on the device, over every kind, default texture views included.</param>
 /// <param name="ValidationErrors">The error messages the backend's validation layer has reported; 0 without validation.</param>
 /// <param name="ValidationWarnings">The warning messages the backend's validation layer has reported; 0 without validation.</param>

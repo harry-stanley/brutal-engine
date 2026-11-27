@@ -8,7 +8,8 @@ namespace BrutalEngine.Graphics.Internal;
 /// <summary>
 /// A graphics device's handle tables: one Core <see cref="HandleAllocator"/> per <see cref="BackendObjectKind"/>, the
 /// handle-to-id entries of the device's <see cref="BackendObjectTable"/>, each live object's debug name and creation
-/// order, each texture's description and default view, and each view's texture (docs/design/graphics.md section 1).
+/// order, each texture's description and default view, each view's texture, and which buffer handles are transient
+/// aliases (docs/design/graphics.md sections 1 and 6).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,6 +17,12 @@ namespace BrutalEngine.Graphics.Internal;
 /// moves on, so every copy is stale. Validation never dereferences a handle: a null handle throws
 /// <see cref="ArgumentException"/>, any handle the kind's allocator doesn't hold as live throws
 /// <see cref="StaleHandleException"/>.
+/// </para>
+/// <para>
+/// An alias (<see cref="AddAlias"/>) is a live buffer handle for a staging block the device owns: it resolves like any
+/// buffer, but <see cref="LiveCount"/>, <see cref="ListLive"/> and <see cref="TakeAll"/> leave it out, so it is never
+/// counted, reported as a leak or destroyed through the tables, and only <see cref="RemoveAlias"/> or <see cref="TakeAll"/>
+/// ends it.
 /// </para>
 /// <para>
 /// Not thread-safe: the device calls it on its owner thread only. <see cref="Remove"/>, <see cref="GetId"/> and
@@ -33,6 +40,7 @@ internal sealed class HandleTables
     private TextureDescription[] _textures = [];
     private BufferDescription[] _buffers = [];
     private long _nextSequence;
+    private int _aliasCount;
 
     /// <summary>Creates empty tables that record ids in <paramref name="objects"/>, the table the backend reads.</summary>
     /// <param name="objects">The device's backend object table, empty.</param>
@@ -46,12 +54,12 @@ internal sealed class HandleTables
         }
     }
 
-    /// <summary>The number of live objects over every kind.</summary>
+    /// <summary>The number of live objects over every kind, aliases left out.</summary>
     public int LiveCount
     {
         get
         {
-            int count = 0;
+            int count = -_aliasCount;
             foreach (HandleAllocator allocator in _allocators)
             {
                 count += allocator.Count;
@@ -101,6 +109,35 @@ internal sealed class HandleTables
             throw;
         }
     }
+
+    /// <summary>Issues an alias: a live buffer handle for a staging block the device owns, resolving to its id.</summary>
+    /// <param name="id">The block's backend id.</param>
+    /// <param name="description">What the alias reports as its buffer's description.</param>
+    /// <returns>The new live handle.</returns>
+    /// <exception cref="OutOfMemoryException">A table couldn't grow; nothing was recorded.</exception>
+    /// <exception cref="InvalidOperationException">The buffer handle allocator is exhausted; nothing was recorded.</exception>
+    public Handle AddAlias(ulong id, in BufferDescription description)
+    {
+        Handle alias = Add(BackendObjectKind.Buffer, id, debugName: null);
+        ref Entry entry = ref _entries[(int)BackendObjectKind.Buffer][alias.Index];
+        entry = entry with { Alias = true };
+        _buffers[alias.Index] = description;
+        _aliasCount++;
+        return alias;
+    }
+
+    /// <summary>Makes a live alias stale; its block is the caller's, and nothing is destroyed.</summary>
+    /// <param name="alias">A live alias from <see cref="AddAlias"/>.</param>
+    public void RemoveAlias(Handle alias)
+    {
+        _ = Remove(BackendObjectKind.Buffer, alias, nameof(alias));
+        _aliasCount--;
+    }
+
+    /// <summary>Whether a live buffer handle is an alias.</summary>
+    /// <param name="buffer">A live buffer handle.</param>
+    /// <returns><see langword="true"/> for a handle <see cref="AddAlias"/> issued.</returns>
+    public bool IsAlias(Handle buffer) => _entries[(int)BackendObjectKind.Buffer][buffer.Index].Alias;
 
     /// <summary>Returns the backend id of a live object.</summary>
     /// <param name="kind">The object's kind.</param>
@@ -205,7 +242,7 @@ internal sealed class HandleTables
         return id;
     }
 
-    /// <summary>Lists every live object, oldest first, without changing anything.</summary>
+    /// <summary>Lists every live object but the aliases, oldest first, without changing anything.</summary>
     /// <returns>Each object's kind, backend id and debug name, in creation order. Allocates the list.</returns>
     public List<LiveObject> ListLive()
     {
@@ -214,7 +251,7 @@ internal sealed class HandleTables
         {
             foreach (Entry entry in _entries[kind])
             {
-                if (entry.Id != 0)
+                if (entry.Id != 0 && !entry.Alias)
                 {
                     live.Add(new LiveObject((BackendObjectKind)kind, entry.Id, entry.DebugName, entry.Sequence));
                 }
@@ -225,8 +262,11 @@ internal sealed class HandleTables
         return live;
     }
 
-    /// <summary>Removes every live object and returns them newest first.</summary>
-    /// <returns>Each object's kind, backend id and debug name, in reverse creation order. Allocates the list.</returns>
+    /// <summary>Removes every live object, aliases included, and returns them newest first.</summary>
+    /// <returns>
+    /// Each object's kind, backend id and debug name, in reverse creation order, aliases left out (their blocks are the
+    /// device's to destroy). Allocates the list.
+    /// </returns>
     public List<LiveObject> TakeAll()
     {
         List<LiveObject> live = ListLive();
@@ -239,6 +279,7 @@ internal sealed class HandleTables
 
         Array.Clear(_textures);
         Array.Clear(_buffers);
+        _aliasCount = 0;
         _objects.Clear();
         return live;
     }
@@ -285,6 +326,7 @@ internal sealed class HandleTables
     /// <param name="Sequence">The object's creation order on this device, from 0.</param>
     internal readonly record struct LiveObject(BackendObjectKind Kind, ulong Id, string? DebugName, long Sequence);
 
-    // Id 0 marks a free slot: backends never issue it. Link is a texture's default view, or a view's texture.
-    private readonly record struct Entry(Handle Handle, ulong Id, string? DebugName, long Sequence, Handle Link);
+    // Id 0 marks a free slot: backends never issue it. Link is a texture's default view, or a view's texture. Alias marks
+    // a transient alias of a staging block.
+    private readonly record struct Entry(Handle Handle, ulong Id, string? DebugName, long Sequence, Handle Link, bool Alias = false);
 }
