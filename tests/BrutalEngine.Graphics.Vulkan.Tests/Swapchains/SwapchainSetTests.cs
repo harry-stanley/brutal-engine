@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Vulkan.Swapchains;
 using Xunit;
@@ -130,7 +131,7 @@ public sealed class SwapchainSetTests
     }
 
     [Fact]
-    public void TryGet_IdFromAnotherSet_ReturnsFalseOnceThatSlotIsReissued()
+    public void TryGet_IdFromAnotherSet_ReturnsFalseOnceTheAliasedSlotIsFreed()
     {
         // Ids are per set: an id of another set reads as stale here unless the same raw value is live here too.
         SwapchainSet<object> mine = new();
@@ -171,12 +172,45 @@ public sealed class SwapchainSetTests
     }
 
     [Fact]
+    public void Remove_ReleasesTheComponent()
+    {
+        // The set owns ids, not components: once removed, the set holds no reference, so nothing else keeps it alive.
+        // Another live id keeps the set's storage in use. Background GC is off in this project, so collections are
+        // blocking; the loop is bounded.
+        SwapchainSet<object> set = new();
+        object kept = new();
+        ulong keptId = set.Add(kept);
+        WeakReference removed = AddAndRemove(set);
+
+        for (int i = 0; i < 10 && removed.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+
+        Assert.False(removed.IsAlive, "the removed component is still reachable");
+        Assert.True(set.TryGet(keptId, out object? found));
+        Assert.Same(kept, found);
+    }
+
+    [Fact]
     public void Add_Null_Throws()
     {
         SwapchainSet<object> set = new();
 
         Assert.Throws<ArgumentNullException>("swapchain", () => set.Add(null!));
         Assert.Equal(0, set.Count);
+    }
+
+    // Adds and removes in a frame of its own, so no local of the test keeps the component alive.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference AddAndRemove(SwapchainSet<object> set)
+    {
+        object swapchain = new();
+        ulong id = set.Add(swapchain);
+        Assert.True(set.Remove(id, out object? back));
+        Assert.Same(swapchain, back);
+        return new WeakReference(swapchain);
     }
 
     [Fact]
