@@ -222,6 +222,10 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> is empty: <c>default(DebugLabel)</c> already means no label.</exception>
     /// <exception cref="OutOfMemoryException">A table couldn't grow; no label was created.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Every label slot is in use (the label handle allocator is exhausted; labels are never removed); no label was
+    /// created.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -269,9 +273,13 @@ public sealed partial class GraphicsDevice : IDisposable
     }
 
     /// <summary>Returns the name a debug label was interned with.</summary>
-    /// <param name="label">A label of this device, or <c>default</c> for no label.</param>
+    /// <param name="label">A label this device interned, or <c>default</c> for no label.</param>
     /// <returns>The interned string itself, not a copy; empty for <c>default</c>.</returns>
-    /// <exception cref="StaleHandleException"><paramref name="label"/> isn't null and wasn't interned by this device.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="label"/> isn't null and isn't a live label of this device. A label of another device is detected
+    /// only when its index or generation doesn't match a label here; one that matches can't be told apart from it, and
+    /// this device's name for that label is returned.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>Owner thread. Allocates nothing, except the exception.</remarks>
