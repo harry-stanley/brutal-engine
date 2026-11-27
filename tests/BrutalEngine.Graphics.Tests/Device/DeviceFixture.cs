@@ -4,6 +4,7 @@ using System.Text;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Logging.Sinks;
 using BrutalEngine.Core.Memory;
+using BrutalEngine.Graphics.Backend;
 using BrutalEngine.TestUtilities;
 using Xunit;
 
@@ -12,7 +13,7 @@ namespace BrutalEngine.Graphics.Tests.Device;
 /// <summary>
 /// What each device test needs: a fake backend with its script, a logger that keeps its entries, and a tracking
 /// allocator that must end with no live allocations. One fixture per test, never shared. <see cref="Dispose"/> disposes
-/// every device <see cref="Create"/> made (on the calling thread, which must be the test's), then checks for leaks.
+/// every device either <c>Create</c> overload made (on the calling thread, which must be the test's), then checks for leaks.
 /// </summary>
 internal sealed class DeviceFixture : IDisposable
 {
@@ -42,9 +43,12 @@ internal sealed class DeviceFixture : IDisposable
     public GraphicsDeviceOptions Options() => new() { Logger = Logger, Allocator = Allocator };
 
     /// <summary>Creates a device on the fake backend, asserting success; the fixture disposes it.</summary>
-    public GraphicsDevice Create(GraphicsDeviceOptions? options = null)
+    public GraphicsDevice Create(GraphicsDeviceOptions? options = null) => Create(Backend, options);
+
+    /// <summary>Creates a device on <paramref name="backend"/> (a wrapper over this fixture's fake), asserting success; the fixture disposes it.</summary>
+    public GraphicsDevice Create(IGraphicsBackend backend, GraphicsDeviceOptions? options = null)
     {
-        GraphicsDevice device = GraphicsDevice.Create(Backend, options ?? Options()).Value;
+        GraphicsDevice device = GraphicsDevice.Create(backend, options ?? Options()).Value;
         _devices.Add(device);
         return device;
     }
