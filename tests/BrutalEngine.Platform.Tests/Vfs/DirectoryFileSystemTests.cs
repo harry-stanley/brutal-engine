@@ -695,10 +695,15 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
     [InlineData("CreateDirectory", "Assets/hero.png", "Assets/Hero.png")]
     [InlineData("List", "assets", "Assets")]
     [InlineData("List", "Assets/maps", "Assets/Maps")]
+    [InlineData("GetEntryKind", ".hidden/x.bin", "")]
+    [InlineData("ReadAllBytes", ".hidden/x.bin", ".Hidden")]
+    [InlineData("ReadAllBytes", "Assets/.meta", "Assets/.Meta")]
+    [InlineData("WriteAllBytes", "Assets/.meta", "Assets/.Meta")]
     public void VerifyCase_WrongCase_IsNotFound(string operation, string path, string onDisk)
     {
         // Default options, so VerifyCase is on. Without it, each row reaches the entry on Windows (one spelling opens
-        // another) and, on Linux, fails with the OS's own code or makes a second spelling next to the first.
+        // another) and, on Linux, fails with the OS's own code or makes a second spelling next to the first. The
+        // dot-names are hidden entries (by name on Unix, by attribute on Windows), which a listing skips by default.
         SeedCased();
         string before = Snapshot();
         DirectoryFileSystem fileSystem = Create();
@@ -734,8 +739,10 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         }
 
         Assert.Equal(
-            [new VfsEntry("Hero.png", VfsEntryKind.File, 3), new VfsEntry("Maps", VfsEntryKind.Directory, 0)],
+            [new VfsEntry(".Meta", VfsEntryKind.File, 1), new VfsEntry("Hero.png", VfsEntryKind.File, 3), new VfsEntry("Maps", VfsEntryKind.Directory, 0)],
             fileSystem.List("Assets").Value);
+        Assert.Equal([4], fileSystem.ReadAllBytes("Assets/.Meta").Value);
+        Assert.Equal([5], fileSystem.ReadAllBytes(".Hidden/x.bin").Value);
 
         // Segments that don't exist yet aren't checked, and writes and creates spell them as asked.
         Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("Assets/Missing/hero.png").Value);
@@ -751,7 +758,7 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
 
         Assert.True(fileSystem.Delete("Assets/Maps/Other").IsSuccess);
         Assert.True(fileSystem.Delete("Assets/Hero.png").IsSuccess);
-        Assert.Equal([new VfsEntry("Maps", VfsEntryKind.Directory, 0)], fileSystem.List("Assets").Value);
+        Assert.Equal([new VfsEntry(".Meta", VfsEntryKind.File, 1), new VfsEntry("Maps", VfsEntryKind.Directory, 0)], fileSystem.List("Assets").Value);
         AssertNoTemporaryFiles();
     }
 
@@ -873,7 +880,9 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
             // One spelling opens the other, and creating "assets" finds "Assets" there already.
             Assert.Equal([1, 2, 3], read.Value);
             Assert.Equal(VfsEntryKind.File, fileSystem.GetEntryKind("assets/HERO.PNG").Value);
-            Assert.Equal([new VfsEntry("Assets", VfsEntryKind.Directory, 0)], fileSystem.List(string.Empty).Value);
+            Assert.Equal(
+                [new VfsEntry(".Hidden", VfsEntryKind.Directory, 0), new VfsEntry("Assets", VfsEntryKind.Directory, 0)],
+                fileSystem.List(string.Empty).Value);
         }
         else
         {
@@ -881,7 +890,11 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
             AssertFailure(read.ToResult(), ErrorKind.NotFound, null, "'assets/hero.png'");
             Assert.Equal(VfsEntryKind.None, fileSystem.GetEntryKind("assets/HERO.PNG").Value);
             Assert.Equal(
-                [new VfsEntry("Assets", VfsEntryKind.Directory, 0), new VfsEntry("assets", VfsEntryKind.Directory, 0)],
+                [
+                    new VfsEntry(".Hidden", VfsEntryKind.Directory, 0),
+                    new VfsEntry("Assets", VfsEntryKind.Directory, 0),
+                    new VfsEntry("assets", VfsEntryKind.Directory, 0),
+                ],
                 fileSystem.List(string.Empty).Value);
         }
     }
@@ -1010,11 +1023,29 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Directory.CreateDirectory(Path.Join(_root, "empty"));
     }
 
-    /// <summary>Seeds the root through System.IO with mixed-case names: Assets/Hero.png ([1, 2, 3]) and Assets/Maps/.</summary>
+    /// <summary>
+    /// Seeds the root through System.IO with mixed-case names: Assets/Hero.png ([1, 2, 3]), Assets/Maps/, and the hidden
+    /// entries Assets/.Meta ([4]) and .Hidden/x.bin ([5]).
+    /// </summary>
     private void SeedCased()
     {
         Directory.CreateDirectory(Path.Join(_root, "Assets", "Maps"));
         File.WriteAllBytes(Path.Join(_root, "Assets", "Hero.png"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Join(_root, "Assets", ".Meta"), [4]);
+        Directory.CreateDirectory(Path.Join(_root, ".Hidden"));
+        File.WriteAllBytes(Path.Join(_root, ".Hidden", "x.bin"), [5]);
+
+        // A leading dot is what makes an entry hidden on Unix; Windows needs the attribute.
+        if (OperatingSystem.IsWindows())
+        {
+            foreach (string hidden in new[] { Path.Join(_root, "Assets", ".Meta"), Path.Join(_root, ".Hidden") })
+            {
+                File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
+            }
+        }
+
+        Assert.True((File.GetAttributes(Path.Join(_root, "Assets", ".Meta")) & FileAttributes.Hidden) != 0);
+        Assert.True((File.GetAttributes(Path.Join(_root, ".Hidden")) & FileAttributes.Hidden) != 0);
     }
 
     /// <summary>Creates a symbolic link under the root, or skips the test where the OS doesn't let this process.</summary>
