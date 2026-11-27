@@ -125,6 +125,40 @@ public sealed class SwapchainAcquireTests : IDisposable
     }
 
     [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void NoSizeChange_ClampedExtent_NoRecreation(int framesInFlight)
+    {
+        // The surface clamps the extent below the window's size: the swapchain is compared with the size it was created
+        // for, so the smaller extent alone never recreates it.
+        _fixture.Script.SwapchainInfo = request =>
+        {
+            _requests.Add(request);
+            return FakeBackendScript.DefaultSwapchainInfo(request) with { Width = request.Source.PixelWidth - 40, Height = request.Source.PixelHeight - 80 };
+        };
+        Setup(framesInFlight);
+        for (int frame = 0; frame < 5; frame++)
+        {
+            (AcquireStatus status, SwapchainImage image) = Frame();
+            Assert.Equal((AcquireStatus.Acquired, 600, 400), (status, image.Width, image.Height));
+        }
+
+        Assert.Equal(1, Creates());
+
+        // A real size change still recreates once, then the new clamped extent is steady too.
+        _window.PixelSize = new WindowSize(800, 600);
+        (AcquireStatus resized, SwapchainImage clamped) = Frame();
+        Assert.Equal((AcquireStatus.Recreated, 760, 520), (resized, clamped.Width, clamped.Height));
+        for (int frame = 0; frame < 3; frame++)
+        {
+            Assert.Equal(AcquireStatus.Acquired, Frame().Status);
+        }
+
+        Assert.Equal(2, Creates());
+    }
+
+    [Theory]
     [InlineData(ErrorKind.Unavailable, AcquireStatus.DeviceLost)]
     [InlineData(ErrorKind.NotFound, AcquireStatus.SurfaceLost)]
     [InlineData(ErrorKind.Cancelled, AcquireStatus.Minimised)]
