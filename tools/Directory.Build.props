@@ -1,0 +1,25 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!--
+    Build-time tools (docs/04-repo-layout.md): programs that run on a developer machine or in CI, never inside a game.
+    They live in BrutalEngine.Tools.slnx, not BrutalEngine.slnx, so the build and test jobs never restore their
+    natives (the Slang native is about 99 MB, ADR-0012). Tools aren't packed (dotnet-tool packaging is M2 work), so
+    they set no BrutalEngineMilestone, and their code is internal: no tracked public API and no XML docs required.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+
+    <!-- Every supported RID in each lock file, as in src/Directory.Build.props, so a RID-specific publish or restore of a tool works in locked mode. -->
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-arm64</RuntimeIdentifiers>
+
+    <!-- Needed so IDE0005 (unnecessary usings) runs in the build. Tool code is internal, so CS1591 is off. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Only the matching test project may see internals (docs/07-coding-standards.md). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(MSBuildProjectName).Tests" />
+  </ItemGroup>
+</Project>

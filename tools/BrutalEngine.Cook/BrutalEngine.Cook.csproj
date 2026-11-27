@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    brutal-cook, the offline cook tool (docs/design/cook.md). M1 has one verb, `shader`, which compiles Slang to SPIR-V
+    (ADR-0012). It runs with the JIT only: nothing requires a NativeAOT build of the tool in M1.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>brutal-cook</AssemblyName>
+    <RootNamespace>BrutalEngine.Cook</RootNamespace>
+  </PropertyGroup>
+</Project>
