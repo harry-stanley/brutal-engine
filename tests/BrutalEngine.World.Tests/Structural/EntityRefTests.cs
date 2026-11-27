@@ -206,6 +206,50 @@ public sealed class EntityRefTests
     }
 
     /// <summary>
+    /// Making references and calling every member through them allocates no managed memory and makes no allocator
+    /// call once the archetypes exist: reads, a write, an in-place set, add and remove moves of data and a tag between
+    /// existing archetypes, a remove of an unregistered type, and a despawn followed by a spawn into an existing
+    /// archetype. Measured on this thread, with background collection off in this test host
+    /// (AllocationMeasurementTests).
+    /// </summary>
+    [Fact]
+    public void RefAndForwarders_DoNotAllocate()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // More than a chunk, so the moves and the despawns take rows out of the middle of chunks.
+            const int Count = 150;
+            var entities = new Entity[Count];
+            for (int i = 0; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Health(i), new Payload(i));
+            }
+
+            // Warm up: create the archetypes, cache the edges, grow the tables, fill the pool and JIT every path.
+            long checksum = ForwardingChurn(world, entities);
+            checksum += ForwardingChurn(world, entities);
+
+            long nativeAllocations = tracking.TotalAllocationCount;
+            int archetypes = world.ArchetypeCount;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int round = 0; round < 50; round++)
+            {
+                checksum += ForwardingChurn(world, entities);
+            }
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(0, allocated);
+            Assert.Equal(nativeAllocations, tracking.TotalAllocationCount);
+            Assert.Equal(archetypes, world.ArchetypeCount);
+            Assert.Equal(Count, world.EntityCount);
+            Assert.NotEqual(0, checksum);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
     /// A read-only struct of exactly a world reference and an entity, so it holds a reference and can't be unmanaged
     /// (it can't be stored in a component).
     /// </summary>
@@ -221,6 +265,39 @@ public sealed class EntityRefTests
         Assert.Single(fields, field => field.FieldType == typeof(EcsWorld));
         Assert.Single(fields, field => field.FieldType == typeof(Entity));
         Assert.True(RuntimeHelpers.IsReferenceOrContainsReferences<EntityRef>());
+    }
+
+    /// <summary>
+    /// Calls every member through a fresh reference to each entity, in a cycle that ends where it started (every third
+    /// entity is despawned and replaced by a new one with the same components), and folds each result into a checksum.
+    /// </summary>
+    private static long ForwardingChurn(EcsWorld world, Entity[] entities)
+    {
+        long checksum = 0;
+        for (int i = 0; i < entities.Length; i++)
+        {
+            EntityRef handle = world.Ref(entities[i]);
+            checksum += handle.Has<Health>() ? 1 : 0;
+            checksum += handle.Get<Health>().Value;
+            handle.Write<Health>() = new Health(i + 1);
+            checksum += handle.TryGet(out Health health) ? health.Value : 0;
+            handle.Set(new Health(i));
+            handle.Add(new Position(i, -i));
+            handle.Set(default(Marker));
+            checksum += handle.Remove<Marker>() ? 1 : 0;
+            checksum += handle.Remove<Position>() ? 1 : 0;
+            checksum += handle.Remove<Unused>() ? 1 : 0;
+            checksum += handle.IsAlive() ? 1 : 0;
+            checksum += handle.Entity.Generation + (ReferenceEquals(handle.World, world) ? 1 : 0);
+            if (i % 3 == 0)
+            {
+                handle.Despawn();
+                checksum += handle.IsAlive() ? 0 : 1;
+                entities[i] = world.Spawn(new Health(i), new Payload(i));
+            }
+        }
+
+        return checksum;
     }
 
     /// <summary>
