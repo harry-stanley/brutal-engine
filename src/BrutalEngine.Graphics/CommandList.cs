@@ -166,8 +166,8 @@ public readonly struct CommandList
     /// </para>
     /// <para>
     /// The device presents an acquired image when the frame is submitted, and clears it to black first if nothing in the
-    /// frame wrote it: no recorded copy, and no <see cref="GraphicsDevice.WriteTexture"/> the frame lands. Owner thread. Allocates nothing on the steady path (no recreation, no loss), except the exception; a
-    /// recreation allocates.
+    /// frame wrote it: no recorded copy, and no <see cref="GraphicsDevice.WriteTexture"/> the frame lands. Owner thread.
+    /// Allocates nothing on the steady path (no recreation, no loss), except the exception; a recreation allocates.
     /// </para>
     /// </remarks>
     public AcquireStatus AcquireSwapchainImage(SwapchainHandle swapchain, out SwapchainImage image) =>
