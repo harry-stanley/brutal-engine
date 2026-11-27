@@ -36,7 +36,7 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
         "Destroy(BindGroupLayout)", "Destroy(PipelineLayout)", "Destroy(BindGroup)", "Destroy(GraphicsPipeline)",
         "Destroy(ComputePipeline)", "Destroy(Swapchain)", "CreateDebugLabel", "GetDebugLabelName", "Statistics", "ThrowIfLeaks",
         "BeginFrame", "SubmitFrame", "FrameNumber", "CompletedFrameNumber", "WaitIdle", "IsLost",
-        "WriteBuffer", "WriteTexture", "TryReadBuffer",
+        "WriteBuffer", "WriteTexture", "TryReadBuffer", "CreateSwapchain", "GetSwapchainInfo",
     ];
 
     [Theory]
@@ -160,6 +160,12 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
                 break;
             case "TryReadBuffer":
                 _ = device.TryReadBuffer(prepared.Buffer, 0, new byte[4]);
+                break;
+            case "CreateSwapchain":
+                _ = device.CreateSwapchain(new Tests.Backend.FakeWindow(), new SwapchainOptions());
+                break;
+            case "GetSwapchainInfo":
+                _ = device.GetSwapchainInfo(new SwapchainHandle(anyHandle));
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(member), member, null);

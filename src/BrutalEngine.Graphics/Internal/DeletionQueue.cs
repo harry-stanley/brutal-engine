@@ -5,8 +5,8 @@ using BrutalEngine.Graphics.Backend;
 namespace BrutalEngine.Graphics.Internal;
 
 /// <summary>
-/// One frame slot's deletion queue: the backend objects destroyed while that slot's frame could still use them, destroyed
-/// in queue order once the frame completes (docs/design/graphics.md section 1).
+/// One frame slot's deletion queue: the backend objects and swapchains destroyed while that slot's frame could still use
+/// them, destroyed in queue order once the frame completes (docs/design/graphics.md sections 1 and 3).
 /// </summary>
 /// <remarks>
 /// The entries live in one block from the device's allocator, grown by doubling and kept across frames, so a queue that
@@ -57,17 +57,38 @@ internal sealed unsafe class DeletionQueue : IDisposable
     internal void Add(BackendObjectKind kind, ulong id)
     {
         // Sound: Reserve left _count < _capacity, so the entry lies inside the block.
-        _entries[_count++] = new Entry(kind, id);
+        _entries[_count++] = new Entry(kind, id, Surface: 0, IsSwapchain: false);
     }
 
-    /// <summary>Destroys every queued object on the backend, oldest first, and empties the queue.</summary>
+    /// <summary>Queues a swapchain and then its surface; <see cref="Reserve"/> must have made room first.</summary>
+    /// <param name="swapchain">The swapchain's backend id.</param>
+    /// <param name="surface">The backend id of the swapchain's surface, destroyed right after it.</param>
+    internal void AddSwapchain(ulong swapchain, ulong surface)
+    {
+        // Sound: Reserve left _count < _capacity, so the entry lies inside the block.
+        _entries[_count++] = new Entry(default, swapchain, surface, IsSwapchain: true);
+    }
+
+    /// <summary>
+    /// Destroys every queued object on the backend, oldest first, and empties the queue; a swapchain entry destroys the
+    /// swapchain, then its surface.
+    /// </summary>
     /// <param name="backend">The device's backend device.</param>
     internal void Retire(IBackendDevice backend)
     {
         for (int i = 0; i < _count; i++)
         {
             // Sound: i < _count <= _capacity.
-            backend.Destroy(_entries[i].Kind, _entries[i].Id);
+            Entry entry = _entries[i];
+            if (entry.IsSwapchain)
+            {
+                backend.DestroySwapchain(entry.Id);
+                backend.DestroySurface(entry.Surface);
+            }
+            else
+            {
+                backend.Destroy(entry.Kind, entry.Id);
+            }
         }
 
         _count = 0;
@@ -85,5 +106,6 @@ internal sealed unsafe class DeletionQueue : IDisposable
         }
     }
 
-    private readonly record struct Entry(BackendObjectKind Kind, ulong Id);
+    // A swapchain entry has IsSwapchain set, the swapchain's id in Id and its surface in Surface; Kind is unused then.
+    private readonly record struct Entry(BackendObjectKind Kind, ulong Id, ulong Surface, bool IsSwapchain);
 }
