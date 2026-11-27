@@ -54,6 +54,7 @@ public sealed class StructuralModelTests
     private static bool MatchesModel(EcsWorld world, int growthShare, int shrinkShare, int[] operations, int[] picks)
     {
         Model model = new();
+        Reached reached = new();
         int chunksSeen = 0;
         int moves = 0;
         for (int step = 0; step < operations.Length; step++)
@@ -74,11 +75,11 @@ public sealed class StructuralModelTests
                 ok = (pick % 10) switch
                 {
                     0 or 1 => Despawn(world, model, entity),
-                    2 or 3 => Add(world, model, entity, bit, seed),
-                    4 or 5 => Set(world, model, entity, bit, seed),
-                    6 or 7 => Remove(world, model, entity, bit),
+                    2 or 3 => Add(world, model, reached, entity, bit, seed),
+                    4 or 5 => Set(world, model, reached, entity, bit, seed),
+                    6 or 7 => Remove(world, model, reached, entity, bit),
                     8 => Reads(world, model, entity, bit),
-                    _ => model.Despawned.Count == 0 || StaleAccessThrows(world, model.Despawned[pick / 40 % model.Despawned.Count], pick / 40),
+                    _ => model.Despawned.Count == 0 || StaleAccessThrows(world, reached, model.Despawned[pick / 40 % model.Despawned.Count], pick / 40),
                 };
 
                 if (model.Alive.TryGetValue(entity, out (int Mask, int[] Seeds) after) && after.Mask != before)
@@ -98,8 +99,9 @@ public sealed class StructuralModelTests
             }
         }
 
-        // The sample exercised what it is for: rows in a second chunk, and many moves.
-        return chunksSeen >= 2 && moves >= 100;
+        // The sample exercised what it is for: rows in a second chunk, many moves, and each operation that doesn't move.
+        return chunksSeen >= 2 && moves >= 100
+            && reached.SetsInPlace > 0 && reached.FailingAdds > 0 && reached.AbsentRemoves > 0 && reached.StaleAccesses > 0;
     }
 
     private static bool Spawn(EcsWorld world, Model model, int mask, int seed)
@@ -135,7 +137,7 @@ public sealed class StructuralModelTests
     }
 
     /// <summary>Add: a move for an absent component; for a present one, InvalidOperationException naming Set.</summary>
-    private static bool Add(EcsWorld world, Model model, Entity entity, int bit, int seed)
+    private static bool Add(EcsWorld world, Model model, Reached reached, Entity entity, int bit, int seed)
     {
         Action add = bit switch
         {
@@ -147,6 +149,7 @@ public sealed class StructuralModelTests
 
         if ((model.Alive[entity].Mask & bit) != 0)
         {
+            reached.FailingAdds++;
             return Record.Exception(add) is InvalidOperationException failure
                 && failure.Message.Contains("already has", StringComparison.Ordinal);
         }
@@ -157,7 +160,7 @@ public sealed class StructuralModelTests
     }
 
     /// <summary>Set: a replacement in place for a present component (none for a tag), a move for an absent one.</summary>
-    private static bool Set(EcsWorld world, Model model, Entity entity, int bit, int seed)
+    private static bool Set(EcsWorld world, Model model, Reached reached, Entity entity, int bit, int seed)
     {
         switch (bit)
         {
@@ -178,6 +181,7 @@ public sealed class StructuralModelTests
         int mask = model.Alive[entity].Mask;
         if ((mask & bit) != 0)
         {
+            reached.SetsInPlace++;
             model.Replace(entity, bit, seed);
             return true;
         }
@@ -187,7 +191,7 @@ public sealed class StructuralModelTests
     }
 
     /// <summary>Remove: a move for a present component, false and no change for an absent one.</summary>
-    private static bool Remove(EcsWorld world, Model model, Entity entity, int bit)
+    private static bool Remove(EcsWorld world, Model model, Reached reached, Entity entity, int bit)
     {
         bool removed = bit switch
         {
@@ -200,6 +204,7 @@ public sealed class StructuralModelTests
         int mask = model.Alive[entity].Mask;
         if ((mask & bit) == 0)
         {
+            reached.AbsentRemoves++;
             return !removed;
         }
 
@@ -229,8 +234,9 @@ public sealed class StructuralModelTests
     }
 
     /// <summary>A despawned entity throws StaleHandleException naming its handle from every member, structural ones included.</summary>
-    private static bool StaleAccessThrows(EcsWorld world, Entity stale, int pick)
+    private static bool StaleAccessThrows(EcsWorld world, Reached reached, Entity stale, int pick)
     {
+        reached.StaleAccesses++;
         Action access = (pick % 7) switch
         {
             0 => () => world.Despawn(stale),
@@ -328,6 +334,18 @@ public sealed class StructuralModelTests
     private static Position NewPosition(int seed) => new(seed, -seed);
 
     private static Health NewHealth(int seed) => new(seed * 7);
+
+    /// <summary>How often a sample took each path that changes nothing or fails, so a sample that never does fails.</summary>
+    private sealed class Reached
+    {
+        public int SetsInPlace { get; set; }
+
+        public int FailingAdds { get; set; }
+
+        public int AbsentRemoves { get; set; }
+
+        public int StaleAccesses { get; set; }
+    }
 
     /// <summary>
     /// The reference model: slot generations with a first-in, first-out free queue, each alive entity's component set
