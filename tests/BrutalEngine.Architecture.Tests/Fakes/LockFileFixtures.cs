@@ -6,7 +6,7 @@ namespace BrutalEngine.Architecture.Tests.Fakes;
 /// </summary>
 internal static class LockFileFixtures
 {
-    /// <summary><c>Ahwoo.Brutal.Strings</c> in the target framework section, brought by a binding package.</summary>
+    /// <summary><c>Ahwoo.BRUTAL.Strings</c> in the target framework section, brought by a binding package.</summary>
     public const string WithStrings =
         """
         {
@@ -19,10 +19,10 @@ internal static class LockFileFixtures
                 "resolved": "2026.10.3",
                 "contentHash": "fake",
                 "dependencies": {
-                  "Ahwoo.Brutal.Strings": "2026.10.2"
+                  "Ahwoo.BRUTAL.Strings": "2026.10.2"
                 }
               },
-              "Ahwoo.Brutal.Strings": {
+              "Ahwoo.BRUTAL.Strings": {
                 "type": "Transitive",
                 "resolved": "2026.10.2",
                 "contentHash": "fake"
@@ -96,11 +96,11 @@ internal static class LockFileFixtures
           "version": 2,
           "dependencies": {
             "net11.0": {
-              "Ahwoo.Brutal.Strings": { "type": "Transitive", "resolved": "2026.10.2", "contentHash": "fake" },
+              "Ahwoo.BRUTAL.Strings": { "type": "Transitive", "resolved": "2026.10.2", "contentHash": "fake" },
               "Microsoft.Extensions.ObjectPool": { "type": "CentralTransitive", "resolved": "11.0.0", "contentHash": "fake" }
             },
             "net11.0/linux-x64": {
-              "Ahwoo.Brutal.Strings": { "type": "Transitive", "resolved": "2026.10.2", "contentHash": "fake" },
+              "Ahwoo.BRUTAL.Strings": { "type": "Transitive", "resolved": "2026.10.2", "contentHash": "fake" },
               "Microsoft.Extensions.ObjectPool": { "type": "CentralTransitive", "resolved": "11.0.0", "contentHash": "fake" }
             }
           }
