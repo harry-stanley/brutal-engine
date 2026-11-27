@@ -343,9 +343,8 @@ public sealed partial class GraphicsDevice : IDisposable
 
     /// <summary>
     /// Waits for the GPU, destroys the objects deletion queues still hold and the upload staging buffers, logs every
-    /// object still alive as a leak,
-    /// destroys them newest first, then disposes the backend device and frees the frame slots, once; later calls do
-    /// nothing.
+    /// object still alive as a leak, destroys them newest first, then disposes the backend device and frees the frame
+    /// slots, once; later calls do nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>

@@ -4,7 +4,10 @@ namespace BrutalEngine.Graphics;
 
 /// <summary>A snapshot of a graphics device's counters (docs/design/graphics.md section 13).</summary>
 /// <param name="FramesSubmitted">The frames submitted so far; 0 until frames land.</param>
-/// <param name="UploadBytesLastFrame">The bytes the last frame uploaded through the upload ring; 0 until uploads land.</param>
+/// <param name="UploadBytesLastFrame">
+/// The bytes the last submitted frame's writes uploaded, through the upload ring, pending upload blocks or overflow blocks
+/// (a texture write counts its texels); 0 for a frame without writes.
+/// </param>
 /// <param name="UploadOverflowBytes">The bytes uploaded outside the ring because it was full; 0 until uploads land.</param>
 /// <param name="LiveObjects">The GPU objects alive on the device, over every kind, default texture views included.</param>
 /// <param name="ValidationErrors">The error messages the backend's validation layer has reported; 0 without validation.</param>
