@@ -48,6 +48,71 @@ public sealed class StructuralAllocationTests
         tracking.ThrowIfLeaks();
     }
 
+    [Fact]
+    public void AddRemoveChurn_DoesNotAllocate()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            const int Count = 150;
+            var entities = new Entity[Count];
+            for (int i = 0; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Health(i), new Payload(i));
+            }
+
+            // Warm up: create the archetypes, cache the edges, grow the tables, fill the pool and JIT every path.
+            AddRemoveChurn(world, entities);
+            AddRemoveChurn(world, entities);
+
+            long nativeAllocations = tracking.TotalAllocationCount;
+            int archetypes = world.ArchetypeCount;
+            long checksum = 0;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int round = 0; round < Rounds; round++)
+            {
+                checksum += AddRemoveChurn(world, entities);
+            }
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(0, allocated);
+            Assert.Equal(nativeAllocations, tracking.TotalAllocationCount);
+            Assert.Equal(archetypes, world.ArchetypeCount);
+            Assert.Equal(Count, world.EntityCount);
+            Assert.NotEqual(0, checksum);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// Moves every entity through a cycle of adds and removes (data and tag, first, middle and last columns) that ends
+    /// where it started, plus removes of absent and unregistered components, which return false.
+    /// </summary>
+    private static long AddRemoveChurn(EcsWorld world, Entity[] entities)
+    {
+        long checksum = 0;
+        foreach (Entity entity in entities)
+        {
+            world.Add(entity, new Position(1, 1));
+            world.Add(entity, default(Marker));
+            checksum += world.Remove<Health>(entity) ? 1 : 0;
+            checksum += world.Remove<Health>(entity) ? 1 : 0;
+            checksum += world.Remove<Unused>(entity) ? 1 : 0;
+        }
+
+        for (int i = entities.Length - 1; i >= 0; i--)
+        {
+            Entity entity = entities[i];
+            checksum += world.Remove<Marker>(entity) ? 1 : 0;
+            checksum += world.Remove<Position>(entity) ? 1 : 0;
+            world.Add(entity, new Health(i));
+            checksum += world.Get<Health>(entity).Value;
+        }
+
+        return checksum;
+    }
+
     /// <summary>
     /// Spawns entities in two archetypes, adds a data component to each (from the empty archetype and from one with
     /// columns), then a tag, in an order that moves rows out of the middle of chunks, and despawns them all.
