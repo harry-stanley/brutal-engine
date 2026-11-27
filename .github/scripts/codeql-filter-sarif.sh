@@ -8,8 +8,9 @@
 # judge by. The locations are the result's own (SARIF "locations", where code scanning shows the alert), not its
 # related locations, which CodeQL uses for context such as the declaration of a type the result mentions, often in
 # src/ or a referenced assembly. Nothing else in the file changes. Prints "removed <count> <rule>" per rule.
-# Fails closed: a missing input, anything that isn't one SARIF log with a runs array, or any jq error exits non-zero
-# and leaves no output file, so the upload step has nothing partial to send.
+# Fails closed: a missing input, anything that isn't one SARIF log with at least one run, each with a results array
+# (empty is fine), or any jq error exits non-zero and leaves no output file, so the upload step has nothing partial to
+# send. An upload with no runs, or a run without results, would close every open alert of the category.
 # Self-test: codeql-filter-sarif-test.sh. The CodeQL configuration is described in docs/06-ci-cd-and-release.md
 # ("Code scanning"). Keep the two in sync.
 set -euo pipefail
@@ -66,10 +67,11 @@ readonly DEFINITIONS='
     if length != 1 then error("expected one JSON document, found \(length)") else .[0] end
     | if type != "object" then error("the SARIF log is not an object")
       elif (.runs | type) != "array" then error("the SARIF log has no runs array")
+      elif (.runs | length) < 1 then error("the SARIF log has no runs")
       else . end
     | .runs[] |= (
         if type != "object" then error("a run is not an object")
-        elif has("results") and (.results | type) != "array" then error("a run has a results field that is not an array")
+        elif (.results | type) != "array" then error("a run has no results array")
         else . end);
   def under_tests:
     .physicalLocation.artifactLocation.uri | if type == "string" then startswith("tests/") else false end;
@@ -84,14 +86,15 @@ trap 'rm -f -- "$temporary"' EXIT
 
 counts=$(jq -r -s --argjson listed "$listed" "$DEFINITIONS"'
   checked
-  | [.runs[] | (.results // [])[] | select(removable) | .ruleId // .rule.id]
+  | [.runs[].results[] | select(removable) | .ruleId // .rule.id]
   | group_by(.)[] | "removed \(length) \(.[0])"' "$input")
 jq -c -s --argjson listed "$listed" "$DEFINITIONS"'
   checked
-  | .runs[] |= if has("results") then .results |= map(select(removable | not)) else . end' "$input" > "$temporary"
+  | .runs[].results |= map(select(removable | not))' "$input" > "$temporary"
 
 # The output must be one SARIF log again before it replaces anything.
-jq -e -s 'length == 1 and (.[0].runs | type) == "array"' "$temporary" > /dev/null
+jq -e -s 'length == 1 and (.[0].runs | type) == "array" and (.[0].runs | length) >= 1
+  and all(.[0].runs[]; (.results | type) == "array")' "$temporary" > /dev/null
 mv -- "$temporary" "$output"
 trap - EXIT
 

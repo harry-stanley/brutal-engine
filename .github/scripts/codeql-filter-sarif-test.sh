@@ -129,6 +129,15 @@ expect_failure() {
   fi
 }
 
+# expect_message <description> <text>: the last run's output names the reason (checked after expect_failure).
+expect_message() {
+  if grep -Fq "$2" <<< "$log"; then
+    pass "$1: says \"$2\""
+  else
+    fail "$1: says \"$2\"" "the message is missing"
+  fi
+}
+
 uris='.runs[].results[] | [.ruleId, (.locations | map(.physicalLocation.artifactLocation.uri))]'
 
 # The script's list is exactly EXPECTED_RULES: the cases below catch a rule missing from it, this catches an extra one.
@@ -225,7 +234,8 @@ expect_results "listed_rule_mixed_locations_kept" "$uris" <<'EOF'
 ["cs/dispose-not-called-on-throw",["tests/A.cs","samples/D.cs","tests/C.cs"]]
 EOF
 
-# other_results_byte_identical: everything but the removed results is unchanged, as compact JSON: the log's top-level
+# other_results_byte_identical (the issue's name): everything but the removed results is identical as JSON values, with
+# key order and number literals preserved (the output is compact JSON, so whitespace isn't kept): the log's top-level
 # fields, the run metadata (tool and its rules, invocations, artifacts, a number too big for a double) and every kept
 # result, in order.
 fresh
@@ -258,21 +268,22 @@ else
   pass "other_results_byte_identical: nothing removed"
 fi
 
-# multiple_runs_each_filtered: each run is filtered on its own; a run without results stays as it is.
+# multiple_runs_each_filtered: each run is filtered on its own; a run with an empty results array stays as it is.
 fresh
 sarif \
   "$(run_of "$(result cs/call-to-gc tests/A.cs)" "$(result cs/sql-injection tests/A.cs)")" \
   "$(run_of "$(result cs/path-combine src/A.cs)" "$(result cs/path-combine tests/A.cs)")" \
   "$(run_of "$(result cs/call-to-gc tests/A.cs)")" \
-  "$(jq -c 'del(.results)' <<< "$(run_of)")" > "$in"
-expect_results "multiple_runs_each_filtered" '[.runs[] | if has("results") then .results | map(.ruleId) else "none" end]' \
-  <<< '[["cs/sql-injection"],["cs/path-combine"],[],"none"]'
+  "$(run_of)" > "$in"
+expect_results "multiple_runs_each_filtered" '[.runs[] | .results | map(.ruleId)]' \
+  <<< '[["cs/sql-injection"],["cs/path-combine"],[],[]]'
 if ! grep -Eq '^removed 2 cs/call-to-gc$' <<< "$log" || ! grep -Eq '^removed 1 cs/path-combine$' <<< "$log"; then
   fail "multiple_runs_each_filtered: counted across runs" "expected 'removed 2 cs/call-to-gc' and 'removed 1 cs/path-combine'"
 fi
 
-# malformed_sarif_fails: anything that isn't one SARIF log with a runs array of runs (each with a results array or
-# none) fails, and leaves no output file to upload.
+# malformed_sarif_fails: anything that isn't one SARIF log with a non-empty runs array of runs, each with a results
+# array (empty is fine), fails, and leaves no output file to upload. An upload with no runs, or a run without results,
+# would close every open alert of the category.
 fresh
 printf '{"version": "2.1.0", "runs": [' > "$in"
 expect_failure "malformed_sarif_fails: truncated JSON"
@@ -291,6 +302,18 @@ expect_failure "malformed_sarif_fails: no runs"
 fresh
 printf '{"version": "2.1.0", "runs": {}}' > "$in"
 expect_failure "malformed_sarif_fails: runs not an array"
+fresh
+sarif > "$in"
+expect_failure "empty_runs_fails"
+expect_message "empty_runs_fails" "the SARIF log has no runs"
+fresh
+sarif "$(run_of "$(result cs/sql-injection src/A.cs)")" "$(jq -c 'del(.results)' <<< "$(run_of)")" > "$in"
+expect_failure "run_without_results_fails"
+expect_message "run_without_results_fails" "a run has no results array"
+fresh
+sarif "$(jq -c '.results = null' <<< "$(run_of)")" > "$in"
+expect_failure "run_without_results_fails: results null"
+expect_message "run_without_results_fails: results null" "a run has no results array"
 fresh
 printf '{"version": "2.1.0", "runs": [[]]}' > "$in"
 expect_failure "malformed_sarif_fails: run not an object"
