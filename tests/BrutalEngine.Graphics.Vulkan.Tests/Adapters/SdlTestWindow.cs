@@ -24,15 +24,15 @@ internal sealed unsafe class SdlTestWindow : IWindow, IVulkanSurfaceSource
 
     public SdlTestWindow()
     {
+        // SDL's Vulkan setup makes global commands itself (the offscreen driver's extension list calls
+        // vkEnumerateInstanceExtensionProperties), which crash when they overlap another test's (graphics-vulkan.md
+        // section 1), so it runs inside the backend's gate.
+        using Lock.Scope scope = GlobalCommands.Gate.EnterScope();
         if (!OperatingSystem.IsWindows())
         {
             _ = Sdl.PInvoke.SetHint(VideoDriverHint, "offscreen");
         }
 
-        // SDL's Vulkan setup makes global commands itself (the offscreen driver's extension list calls
-        // vkEnumerateInstanceExtensionProperties), which crash when they overlap another test's (graphics-vulkan.md
-        // section 1), so it runs inside the backend's gate.
-        using Lock.Scope scope = GlobalCommands.Gate.EnterScope();
         try
         {
             Assert.True(Sdl.PInvoke.InitSubSystem(SdlInitFlags.Video) != 0, Sdl.PInvoke.GetError());

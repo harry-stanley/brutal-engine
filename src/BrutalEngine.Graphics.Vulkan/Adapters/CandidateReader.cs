@@ -54,6 +54,10 @@ internal static class CandidateReader
         where TSource : ISource
     {
         ArgumentNullException.ThrowIfNull(gate);
+
+        // Sound: properties, driver, vulkan13 and features are stack locals of this method, so their addresses (the
+        // queries' arguments and pNext chains) stay valid until it returns; the queries fill them in place and keep no
+        // pointer. Each chained structure is one the device's reported version supports.
         VkPhysicalDeviceProperties2 properties = new();
         source.GetProperties2(&properties);
         int version = properties.Properties.ApiVersion;
