@@ -2,6 +2,7 @@ using System;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.World.Tests.Entities;
+using BrutalEngine.World.Ticks;
 using Xunit;
 
 namespace BrutalEngine.World.Tests.Ticks;
@@ -105,6 +106,48 @@ public sealed class ChangeTickTests
         tracking.ThrowIfLeaks();
     }
 
+    /// <summary>
+    /// The steady-state per-frame tick work allocates nothing: off-boundary advances with the tick read back, and a
+    /// consumer registered into a released slot, set, read and released again, as queries and systems will.
+    /// </summary>
+    [Fact]
+    public void SteadyAdvanceAndConsumerChurn_DoNotAllocate()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            const int Rounds = 1000;
+            TickConsumers consumers = world.TickConsumers;
+
+            // Warm up: the first registration grows the list; then one released slot to reuse, and every path once.
+            int kept = consumers.Register(1);
+            int freed = consumers.Register(1);
+            consumers.Release(freed);
+            long checksum = Round(world, consumers);
+
+            long nativeAllocations = tracking.TotalAllocationCount;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < Rounds; i++)
+            {
+                checksum += Round(world, consumers);
+            }
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(0, allocated);
+            Assert.Equal(nativeAllocations, tracking.TotalAllocationCount);
+
+            // Every round ran: ticks 2 to Rounds + 2, each read twice (ChangeTick and the consumer's), plus the slots.
+            long ticks = Rounds + 1;
+            long expected = (ticks * (2 + Rounds + 2) / 2 * 2) + (ticks * freed);
+            Assert.Equal(expected, checksum);
+            Assert.Equal((uint)Rounds + 2, world.ChangeTick);
+            Assert.Equal(1u, consumers.Get(kept));
+            Assert.Equal(1, consumers.Count);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     [Fact]
     public void AfterDispose_ChangeTickMembersThrow()
     {
@@ -115,5 +158,19 @@ public sealed class ChangeTickTests
         Assert.Throws<ObjectDisposedException>(() => world.ChangeTick);
         Assert.Throws<ObjectDisposedException>(world.AdvanceChangeTick);
         tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>One steady frame's tick work; returns a checksum of what it read, so nothing is optimised away.</summary>
+    private static long Round(EcsWorld world, TickConsumers consumers)
+    {
+        world.AdvanceChangeTick();
+        uint tick = world.ChangeTick;
+        // The released slot comes back each time; a different slot would change the checksum (and growth would
+        // show as an allocator call).
+        int slot = consumers.Register(tick);
+        consumers.Set(slot, tick);
+        long sum = (long)tick + consumers.Get(slot) + slot;
+        consumers.Release(slot);
+        return sum;
     }
 }
