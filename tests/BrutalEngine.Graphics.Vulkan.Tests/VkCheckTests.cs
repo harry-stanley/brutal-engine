@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
+using BrutalEngine.Graphics.Backend;
 using Xunit;
 
 namespace BrutalEngine.Graphics.Vulkan.Tests;
@@ -45,6 +46,67 @@ public sealed class VkCheckTests
                 Assert.True(expected == VkCheck.Error(result, call).Kind, $"{call}, {result}: expected {expected}.");
             }
         }
+    }
+
+    // SwapchainStatusOf: section 4's table, written out from the note, for both an acquire and a present.
+    [Theory]
+    [InlineData(VkResult.Success, true, SwapchainStatus.Success)]
+    [InlineData(VkResult.Success, false, SwapchainStatus.Success)]
+    [InlineData(VkResult.SuboptimalKHR, true, SwapchainStatus.Suboptimal)]
+    [InlineData(VkResult.SuboptimalKHR, false, SwapchainStatus.Suboptimal)]
+    [InlineData(VkResult.ErrorOutOfDateKHR, true, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.ErrorOutOfDateKHR, false, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.ErrorSurfaceLostKHR, true, SwapchainStatus.SurfaceLost)]
+    [InlineData(VkResult.ErrorSurfaceLostKHR, false, SwapchainStatus.SurfaceLost)]
+    [InlineData(VkResult.Timeout, true, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.Timeout, false, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.NotReady, true, SwapchainStatus.OutOfDate)]
+    [InlineData(VkResult.NotReady, false, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorDeviceLost, true, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorDeviceLost, false, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorOutOfHostMemory, true, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorOutOfDeviceMemory, false, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorUnknown, true, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.ErrorUnknown, false, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.Incomplete, true, SwapchainStatus.DeviceLost)]
+    [InlineData(VkResult.Incomplete, false, SwapchainStatus.DeviceLost)]
+    [InlineData((VkResult)(-999_999), true, SwapchainStatus.DeviceLost)]
+    [InlineData((VkResult)999_999, false, SwapchainStatus.DeviceLost)]
+    public void SwapchainStatusOf_Table(VkResult result, bool acquire, SwapchainStatus expected)
+    {
+        Assert.Equal(expected, VkCheck.SwapchainStatusOf(result, acquire));
+    }
+
+    [Fact]
+    public void SwapchainStatusOf_EveryUnnamedValue_IsDeviceLost()
+    {
+        // Every value of the pinned enum, plus unnamed ones, that the table's named rows don't cover.
+        VkResult[] named =
+        [
+            VkResult.SuboptimalKHR, VkResult.ErrorOutOfDateKHR, VkResult.ErrorSurfaceLostKHR, VkResult.Timeout,
+            VkResult.NotReady,
+        ];
+
+        foreach (VkResult result in VkResultCases.Failures.Where(r => !named.Contains(r)))
+        {
+            Assert.True(SwapchainStatus.DeviceLost == VkCheck.SwapchainStatusOf(result, acquire: true), $"{result}, acquire");
+            Assert.True(SwapchainStatus.DeviceLost == VkCheck.SwapchainStatusOf(result, acquire: false), $"{result}, present");
+        }
+    }
+
+    [Fact]
+    public void SwapchainStatusOf_DoesNotAllocate()
+    {
+        // Every value of the table and of the pinned enum, for both an acquire and a present.
+        VkResult[] values = [VkResult.Success, .. VkResultCases.Failures];
+        int sum = SumStatuses(values); // warm-up: JIT and first-call costs stay outside the window
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        sum += SumStatuses(values);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.True(sum > 0);
     }
 
     [Fact]
@@ -107,5 +169,17 @@ public sealed class VkCheckTests
         Assert.Throws<ArgumentNullException>(() => VkCheck.FromException(null!, "vkCreateInstance"));
         Assert.Throws<ArgumentNullException>(() => VkCheck.FromException(exception, null!));
         Assert.Throws<ArgumentException>(() => VkCheck.FromException(exception, ""));
+    }
+
+    private static int SumStatuses(VkResult[] values)
+    {
+        int sum = 0;
+        foreach (VkResult result in values)
+        {
+            sum += (int)VkCheck.SwapchainStatusOf(result, acquire: true);
+            sum += (int)VkCheck.SwapchainStatusOf(result, acquire: false);
+        }
+
+        return sum;
     }
 }

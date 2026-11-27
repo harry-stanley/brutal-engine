@@ -201,7 +201,7 @@ The other flags (triangle fans, point polygons, events, swizzles, LOD bias, 3D-a
 
 **Creation** ports `samples/HelloWindow/SwapchainPlanner.cs` as a pure `SwapchainPlanner` with the same rules, plus the interface's options:
 
-- **Extent:** the surface's `currentExtent`, or the source's `PixelWidth`/`PixelHeight` clamped to the surface limits when the extent is undefined (headless, Wayland), checked for zero before clamping (`samples/HelloWindow/SwapchainPlanner.cs:17-37`). A zero extent at creation (the window was minimised after the front end's check) returns `Unavailable` ("surface extent is zero"), because a zero-sized swapchain is invalid.
+- **Extent:** the surface's `currentExtent`, or the source's `PixelWidth`/`PixelHeight` clamped to the surface limits when the extent is undefined (headless, Wayland), checked for zero before clamping (`samples/HelloWindow/SwapchainPlanner.cs:17-37`). A zero extent at creation (the window was minimised after the front end's check) returns `Cancelled` ("surface extent is zero"), because a zero-sized swapchain is invalid; the front end reports it as `AcquireStatus.Minimised`, and `Unavailable` stays reserved for device loss.
 - **Image count:** one more than the minimum, within the maximum (`samples/HelloWindow/SwapchainPlanner.cs:58-63`). **Composite alpha:** opaque when supported, else the lowest bit (`:91-101`).
 - **Usage:** colour attachment, plus transfer destination when the surface offers it (`samples/HelloWindow/SwapchainPlanner.cs:44-52`), reported as `SwapchainInfo.SupportsCopyDestination`. A surface without colour-attachment usage is `Unsupported`.
 - **Format** (all with `SRGB_NONLINEAR`): `SwapchainFormat.Srgb` picks the first offered of `B8G8R8A8_SRGB`, `R8G8B8A8_SRGB`, `B8G8R8A8_UNORM`, `R8G8B8A8_UNORM`; `Unorm` picks the first offered of `B8G8R8A8_UNORM`, `R8G8B8A8_UNORM`, `B8G8R8A8_SRGB`, `R8G8B8A8_SRGB`. The graphics note's "otherwise the first format" can't be honoured literally, because `SwapchainInfo.Format` is a `TextureFormat` and an arbitrary surface format may have none, so a surface with none of the four is `Unsupported`. Surface formats use the raw two-call query with the `VK_INCOMPLETE` retry (`samples/HelloWindow/Swapchain.cs:141-164`).
@@ -388,7 +388,7 @@ internal enum VulkanCall                               // one member per result-
 internal static class VkCheck                          // pure; unit-tested as a table
 {
     public static ErrorKind KindOf(VkResult result);    // below
-    public static SwapchainStatus SwapchainStatusOf(VkResult result); // section 4's table
+    public static SwapchainStatus SwapchainStatusOf(VkResult result, bool acquire); // section 4's table
     public static EngineError Error(VkResult result, VulkanCall call); // message: a constant per call; no allocation
     public static EngineError FromException(VkResultError error, string call); // BRUTAL-wrapper creation sites only
 }
@@ -462,7 +462,7 @@ Every gap below is worked around as described. The numbers are entries in the ma
 
 ## 17. The issue split
 
-All Graphics.Vulkan issues edit one project and its `PublicAPI.Unshipped.txt`, so they run in sequence. Until the device facade (G9e) lands, each issue builds internal components and tests them directly through `InternalsVisibleTo`, with their GPU cases under the `Gpu` trait; no `IBackendDevice` member ever exists as a stub. `VulkanBackend` gains its public members as they become real: `Create`, `Name` and `LoaderPath` in G3c, `EnumerateAdapters` in G4, and `IGraphicsBackend` with `CreateDevice` in G9e.
+Graphics.Vulkan issues that add PublicAPI lines or share files run in sequence. Until the device facade (G9e) lands, each issue builds internal components and tests them directly through `InternalsVisibleTo`, with their GPU cases under the `Gpu` trait; no `IBackendDevice` member ever exists as a stub. `VulkanBackend` gains its public members as they become real: `Create`, `Name` and `LoaderPath` in G3c, `EnumerateAdapters` in G4, and `IGraphicsBackend` with `CreateDevice` in G9e.
 
 G3 and G9 are estimated line by line (source, XML docs, tests, then PublicAPI, CI and harness lines), because recent issues ran 2-2.5 times over source-only estimates; each part over about 600 became its own row. G4-G8 keep their first estimates and get the same treatment when they are drafted.
 
