@@ -77,7 +77,7 @@ public sealed class GraphicsDevice : IDisposable
 }
 ```
 
-`GraphicsDevice` implements `IDisposable` and is owned by whoever created it (the Runtime host, a test, a sample). `Dispose` waits for the GPU to go idle (ignoring a lost device, because destroying objects stays valid then, `samples/HelloWindow/HelloWindowApp.cs:225-235`), logs every live object as a leak (section 13), destroys everything in reverse creation order, then the backend device. Every member except `Dispose` throws `ObjectDisposedException` afterwards.
+`GraphicsDevice` implements `IDisposable` and is owned by whoever created it (the Runtime host, a test, a sample). `Dispose` waits for the GPU to go idle (ignoring a lost device, because destroying objects stays valid then, `samples/HelloWindow/HelloWindowApp.cs:225-235`), logs every live object as a leak (section 13), destroys everything in reverse creation order, then the backend device. Every member except `Dispose`, `Adapter` and `Capabilities` throws `ObjectDisposedException` afterwards; those two keep returning the values read at creation (section 14).
 
 ## 2. Device creation, adapters and capabilities
 
@@ -108,7 +108,7 @@ public sealed record GraphicsDeviceOptions
 ```
 
 - `Create` returns a failed `Result` for expected failures: no backend runtime (`ErrorKind.Unavailable`, "Vulkan loader missing"), no suitable adapter (`Unsupported`, "No Vulkan 1.3 GPU found", with every rejection reason in the message), validation requested but the layer missing (`Unavailable`), out of memory. Invalid options (`FramesInFlight` outside 1..3, a null logger, required and optional features overlapping) throw `ArgumentException`.
-- `EnumerateAdapters` fails the same way as `Create` when there is no backend runtime. A suitable-or-not list, with `RejectionReasons`, is a success.
+- `EnumerateAdapters` fails the same way as `Create` when there is no backend runtime. A suitable-or-not list, with `RejectionReasons`, is a success. With a `CompatibleWindow` the backend creates a temporary surface for that window, so `EnumerateAdapters` must not be called while any device presents to it; nothing checks this, because devices don't know each other.
 - **The backend object belongs to the host.** `IGraphicsBackend` is stateless (section "The backend interface"): `Create` neither takes ownership of it nor disposes it, whether it succeeds or fails. Every native object lives in the `IBackendDevice` the device creates and disposes.
 - `GpuTimeout` bounds every internal fence wait; the M0 sample uses the same 10 s rule, so a hung GPU fails a CI job instead of hanging it (`samples/HelloWindow/FrameRenderer.cs:32-34`). A timeout is treated as device loss (section 12).
 

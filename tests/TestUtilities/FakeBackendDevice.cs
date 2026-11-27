@@ -40,7 +40,8 @@ namespace BrutalEngine.TestUtilities;
 /// appended to <see cref="Calls"/>, which allocates when the list grows; while <see cref="FakeBackendScript.RecordPlans"/>
 /// is on, <see cref="Execute"/> copies its plan into <see cref="Plans"/>. With both off, <see cref="WaitForFrame"/>,
 /// <see cref="IsFrameComplete"/>, <see cref="BeginFrame"/>, <see cref="AcquireImage"/>, <see cref="Execute"/>,
-/// <see cref="Present"/> and <see cref="CompleteFrame"/> allocate nothing (measured by the fake's own tests).
+/// <see cref="Present"/>, <see cref="TryReadTimestamps"/> and <see cref="CompleteFrame"/> allocate nothing (measured by the
+/// fake's own tests).
 /// </para>
 /// <para>
 /// <b>Surfaces and swapchains.</b> With a <see cref="BackendDeviceRequest.CompatibleSurface"/>, the device makes the
@@ -544,7 +545,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <remarks>
     /// Takes a pending <see cref="FakeBackendOperation.WaitForFrame"/> failure, which leaves the slot closed. Otherwise the
     /// slot's pending frame completes (a real GPU finishes eventually; script a timeout to model one that doesn't), and
-    /// <see cref="BeginFrame"/> may follow. Allocates nothing.
+    /// <see cref="BeginFrame"/> may follow. Allocates nothing while <see cref="FakeBackendScript.RecordCalls"/> is off; with it
+    /// on, recording the call grows <see cref="Calls"/>.
     /// </remarks>
     public Result WaitForFrame(int frameSlot)
     {
@@ -572,7 +574,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <remarks>
     /// Takes a pending <see cref="FakeBackendOperation.IsFrameComplete"/> failure; otherwise reports whether the slot's last
     /// submitted frame completed (<see cref="CompleteFrame"/>, <see cref="WaitForFrame"/> or <see cref="WaitIdle"/>).
-    /// Allocates nothing.
+    /// Allocates nothing while <see cref="FakeBackendScript.RecordCalls"/> is off; with it on, recording the call grows
+    /// <see cref="Calls"/>.
     /// </remarks>
     public Result<bool> IsFrameComplete(int frameSlot)
     {
@@ -590,7 +593,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <remarks>
     /// Takes a pending <see cref="FakeBackendOperation.BeginFrame"/> failure, which leaves the slot closed. Otherwise opens the
     /// slot and resets its queries, as a real backend resets the slot's query pool: <see cref="TryReadTimestamps"/> returns
-    /// <see langword="false"/> until the slot's next frame completes. Allocates nothing.
+    /// <see langword="false"/> until the slot's next frame completes. Allocates nothing while
+    /// <see cref="FakeBackendScript.RecordCalls"/> is off; with it on, recording the call grows <see cref="Calls"/>.
     /// </remarks>
     public Result BeginFrame(int frameSlot)
     {
@@ -678,7 +682,8 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <remarks>
     /// When the slot's last submitted frame completed, no <see cref="BeginFrame"/> of the slot came after it, and
     /// <see cref="GraphicsFeatures.TimestampQueries"/> is enabled, writes <see cref="FakeBackendScript.TimestampTicks"/> for that
-    /// frame's number and each index. Allocates nothing.
+    /// frame's number and each index. Allocates nothing while <see cref="FakeBackendScript.RecordCalls"/> is off; with it
+    /// on, recording the call grows <see cref="Calls"/>.
     /// </remarks>
     public bool TryReadTimestamps(int frameSlot, Span<ulong> ticks)
     {
