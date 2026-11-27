@@ -113,8 +113,11 @@ internal static partial class ShipGateRule
             : throw new InvalidDataException($"{propsPath}: {problem} It is the milestone the next release ships; see ADR-0016.");
     }
 
-    /// <summary>Returns null and the value, or the reason the property isn't one unconditional integer.</summary>
-    private static string? ReadMilestone(XDocument document, string property, out int milestone)
+    /// <summary>
+    /// Returns null and the value, or the reason the property isn't one unconditional integer. The milestone-reference
+    /// rule reads milestones through this method too, so the two rules can't disagree on a value.
+    /// </summary>
+    internal static string? ReadMilestone(XDocument document, string property, out int milestone)
     {
         milestone = 0;
         List<XElement> elements = Properties(document, property);
