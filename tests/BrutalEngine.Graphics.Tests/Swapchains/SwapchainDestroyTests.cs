@@ -241,6 +241,24 @@ public sealed class SwapchainDestroyTests : IDisposable
     }
 
     [Fact]
+    public void Destroy_PrunesRetiredRecords()
+    {
+        GraphicsDevice device = NewDevice(_fixture, Window());
+        SwapchainHandle[] swapchains = [.. Enumerable.Range(0, 6).Select(_ => device.CreateSwapchain(Window(), new SwapchainOptions()).Value)];
+
+        // One destroy per frame and no CreateSwapchain: destroy alone must drop the records whose frame completed.
+        for (int frame = 0; frame < swapchains.Length; frame++)
+        {
+            _ = device.BeginFrame(out CommandList commands);
+            device.Destroy(swapchains[frame]);
+            _ = device.SubmitFrame(commands);
+        }
+
+        // Two frames in flight: frame 5 began once frame 3 had completed, so only frames 4 and 5 still wait.
+        Assert.Equal(2, device.RetiringSwapchainCount);
+    }
+
+    [Fact]
     public void Recreate_WaitFails_ReturnsTheFailure()
     {
         GraphicsDevice device = NewDevice(_fixture, Window());

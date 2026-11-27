@@ -237,7 +237,9 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfUnusable(DestroyApi);
         SwapchainState state = LiveSwapchain(swapchain, nameof(swapchain));
-        // Room for the retiring record first: an out-of-memory failure must leave everything as it was.
+        // Drop the records already retired, then make room for this one first: an out-of-memory failure must leave
+        // everything as it was.
+        PruneRetiring();
         _ = _retiring.EnsureCapacity(_retiring.Count + 1);
         DeletionQueue? queue = ReserveDeletion();
         _swapchainHandles.Free(swapchain.Value);
@@ -499,7 +501,7 @@ public sealed partial class GraphicsDevice
     // still wait for a submitted frame; a frame not yet submitted can't be waited for.
     private Result WaitForRetiredSwapchain(IWindow window)
     {
-        _ = _retiring.RemoveAll(retired => retired.Frame <= _completedFrameNumber);
+        PruneRetiring();
         long frame = -1;
         foreach (RetiringSwapchain retired in _retiring)
         {
@@ -519,6 +521,22 @@ public sealed partial class GraphicsDevice
 
         // Success retires every submitted frame's queue, so the record goes at the next call.
         return WaitIdle();
+    }
+
+    /// <summary>The destroyed swapchains whose deletion queue hasn't been retired yet, as last pruned; for tests.</summary>
+    internal int RetiringSwapchainCount => _retiring.Count;
+
+    // Drops the records of destroyed swapchains whose frame has completed (their queue is retired), so the list stays
+    // bounded by the frames in flight however many swapchains are destroyed.
+    private void PruneRetiring()
+    {
+        for (int i = _retiring.Count - 1; i >= 0; i--)
+        {
+            if (_retiring[i].Frame <= _completedFrameNumber)
+            {
+                _retiring.RemoveAt(i);
+            }
+        }
     }
 
     private SwapchainState LiveSwapchain(SwapchainHandle swapchain, string parameterName)
