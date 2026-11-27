@@ -165,6 +165,48 @@ public sealed class UploadTests : IDisposable
     }
 
     [Fact]
+    public void WaitIdleInFrame_KeepsTheOpenFramesPendingBlocks()
+    {
+        GraphicsDevice device = Create();
+        BufferHandle buffer = device.CreateBuffer(_target).Value;
+        Assert.True(device.WriteBuffer(buffer, 0, [1]).IsSuccess);
+        ulong first = _gpu.Device!.HostBuffers[^1];
+
+        // Frame 0 takes the pending block; waiting for idle inside it must not free a block the frame hasn't copied yet.
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.True(device.WaitIdle().IsSuccess);
+        _ = device.SubmitFrame(commands);
+        Assert.Equal((first, (byte)1), (_gpu.Device.Plans[^1].Single().Buffer.Source, _gpu.Device.Plans[^1].Single().Staged[0]));
+
+        // Frame 0 may still be running, so the next pending write gets a new block.
+        int created = _gpu.Device.HostBuffers.Count;
+        Assert.True(device.WriteBuffer(buffer, 0, [2]).IsSuccess);
+        Assert.Equal(created + 1, _gpu.Device.HostBuffers.Count);
+        RunFrame(device);
+        Assert.Equal((_gpu.Device.HostBuffers[^1], (byte)2), (_gpu.Device.Plans[^1].Single().Buffer.Source, _gpu.Device.Plans[^1].Single().Staged[0]));
+    }
+
+    [Theory]
+    [InlineData(RingBytes, false)]
+    [InlineData(RingBytes + 1, true)]
+    public void WriteBetweenFrames_LargerThanRingOnly_Overflows(long size, bool overflows)
+    {
+        GraphicsDevice device = Create();
+        BufferHandle buffer = device.CreateBuffer(_target).Value;
+        RunFrame(device);
+
+        // A pending block holds one ring's worth, so a write of exactly that size still fits one.
+        Assert.True(device.WriteBuffer(buffer, 0, new byte[size]).IsSuccess);
+        ulong block = _gpu.Device!.HostBuffers[^1];
+        RunFrame(device);
+
+        Assert.Equal(overflows ? size : RingBytes, _gpu.Device.Sizes[block]);
+        Assert.Equal(overflows ? size : 0, device.Statistics.UploadOverflowBytes);
+        Assert.Equal(overflows ? 1 : 0, Warnings().Count);
+        Assert.Equal(block, _gpu.Device.Plans[^1].Single().Buffer.Source);
+    }
+
+    [Fact]
     public void Overflow_CountedAndLoggedOnce()
     {
         GraphicsDevice device = Create();
@@ -224,6 +266,7 @@ public sealed class UploadTests : IDisposable
     public void WriteTexture_RepacksTo256(int width, int bytesPerRow, int pitch)
     {
         GraphicsDevice device = Create();
+        BufferHandle buffer = device.CreateBuffer(_target).Value;
         TextureHandle texture = device.CreateTexture(new TextureDescription
         {
             Format = TextureFormat.Rgba8Unorm,
@@ -243,22 +286,27 @@ public sealed class UploadTests : IDisposable
 
         var write = new TextureWrite { Target = new(texture, MipLevel: 1, ArrayLayer: 1), Region = new(3, 2, width, 3), BytesPerRow = bytesPerRow };
         _ = device.BeginFrame(out CommandList commands);
+        // A 3-byte write first, so the texels must start at the next 16-byte boundary of the same ring, not at 3.
+        Assert.True(device.WriteBuffer(buffer, 0, [1, 2, 3]).IsSuccess);
         Assert.True(device.WriteTexture(write, data).IsSuccess);
         _ = device.SubmitFrame(commands);
 
-        StagedCopy copy = _gpu.Device!.Plans[^1].Single();
+        StagedCopy[] plan = _gpu.Device!.Plans[^1];
+        Assert.Equal(2, plan.Length);
+        StagedCopy copy = plan[1];
         Assert.Equal(CommandKind.CopyBufferToTexture, copy.Kind);
+        Assert.Equal(plan[0].Buffer.Source, copy.Texture.Buffer);
         CopyBufferTextureCommand command = copy.Texture;
         Assert.Equal(
             (_fixture.BackendDevice.Objects.GetId(texture), 1, 1, TextureAspect.Color, write.Region, pitch),
             (command.Texture, command.MipLevel, command.ArrayLayer, command.Aspect, command.Region, command.BytesPerRow));
-        Assert.Equal(0, command.BufferOffset % 16);
+        Assert.Equal(16, command.BufferOffset);
         for (int row = 0; row < 3; row++)
         {
             Assert.Equal(data.AsSpan(row * sourcePitch, rowBytes), copy.Staged.AsSpan(row * pitch, rowBytes));
         }
 
-        Assert.Equal(3L * rowBytes, device.Statistics.UploadBytesLastFrame);
+        Assert.Equal(3 + (3L * rowBytes), device.Statistics.UploadBytesLastFrame);
     }
 
     public static TheoryData<string> FailingBlocks() => ["ring", "pending block", "overflow block"];
