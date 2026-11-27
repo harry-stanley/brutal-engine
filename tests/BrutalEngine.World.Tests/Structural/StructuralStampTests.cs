@@ -10,7 +10,8 @@ namespace BrutalEngine.World.Tests.Structural;
 /// The change ticks a move stamps (docs/design/world.md, section 4, "Moves"): in the target chunk, <c>Changed</c> for
 /// every column and <c>Added</c> for the added component (none for a remove); in the source chunk that received the
 /// moved last row, <c>Changed</c> for every column; nothing in any other chunk. Every check covers every chunk of the
-/// archetypes involved, on archetypes of two or three chunks, so a stamp in the wrong chunk or column fails.
+/// archetypes involved, on archetypes of two or three chunks, so a stamp in the wrong chunk or column fails. A set of
+/// a present value stamps only that value's <c>Changed</c> tick in the entity's chunk, as a write does.
 /// </summary>
 public sealed class StructuralStampTests
 {
@@ -212,6 +213,89 @@ public sealed class StructuralStampTests
             AssertChunks(p, ([15, 15], [14, 14]));
             AssertChunks(s, ([15, 15, 15], [2, 2, 2]));
             AssertChunks(t, ([3, 3], [3, 3]), ([10, 10], [10, 10]), ([13, 13], [11, 11]));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Set_StampRules()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // Columns: S = {Position, Health, Payload} has [Position, Health, Payload]; H = S - Position has [Health,
+            // Payload]; SM = S + Marker has S's three columns.
+            RegisterInOrder(world);
+
+            // On a world whose tick was never set, replacing a value stamps tick 1 in the value's column. The chunk's
+            // ticks are cleared first, so a missing stamp, or a stamp in another column, shows.
+            Entity zero = world.Spawn(new Position(-1, -1), new Health(-1), new Payload(-1));
+            Entity zeroNext = world.Spawn(new Position(-2, -2), new Health(-2), new Payload(-2));
+            Archetype s = ArchetypeOf(world, zero);
+            s.Chunks.GetChanged(0).Clear();
+            s.Chunks.GetAdded(0).Clear();
+            world.Set(zero, new Health(-3));
+            AssertChunks(s, ([0, 1, 0], [0, 0, 0]));
+            world.Despawn(zero);
+            world.Despawn(zeroNext);
+            Assert.Equal(0, s.Chunks.ChunkCount);
+
+            // S: a full chunk 0 and four rows in chunk 1, at tick 2. SM: two rows at tick 3. H: two rows at tick 4.
+            world.SetChangeTickForTesting(2);
+            var e = new Entity[s.Layout.Capacity + 4];
+            for (int i = 0; i < e.Length; i++)
+            {
+                e[i] = world.Spawn(new Position(i, i), new Health(i), new Payload(i));
+            }
+
+            world.SetChangeTickForTesting(3);
+            Entity tagged = world.Spawn(new Position(0, 0), new Health(0), new Payload(0), default(Marker));
+            _ = world.Spawn(new Position(0, 0), new Health(0), new Payload(0), default(Marker));
+            Archetype sm = ArchetypeOf(world, tagged);
+            world.SetChangeTickForTesting(4);
+            Entity noPosition = world.Spawn(new Health(0), new Payload(0));
+            _ = world.Spawn(new Health(0), new Payload(0));
+            Archetype h = ArchetypeOf(world, noPosition);
+            int cap = s.Layout.Capacity;
+            AssertChunks(s, ([2, 2, 2], [2, 2, 2]), ([2, 2, 2], [2, 2, 2]));
+
+            // A present value, in each column: only that column's Changed tick in the entity's own chunk, no Added
+            // tick, and nothing moves.
+            world.SetChangeTickForTesting(7);
+            world.Set(e[cap + 1], new Health(70));
+            Assert.Equal((s.Index, 1, 1), Where(world, e[cap + 1]));
+            AssertChunks(s, ([2, 2, 2], [2, 2, 2]), ([2, 7, 2], [2, 2, 2]));
+            world.SetChangeTickForTesting(8);
+            world.Set(e[5], new Payload(80));
+            Assert.Equal((s.Index, 0, 5), Where(world, e[5]));
+            AssertChunks(s, ([2, 2, 8], [2, 2, 2]), ([2, 7, 2], [2, 2, 2]));
+            world.SetChangeTickForTesting(9);
+            world.Set(e[cap + 3], new Position(9, 9));
+            AssertChunks(s, ([2, 2, 8], [2, 2, 2]), ([9, 7, 2], [2, 2, 2]));
+            AssertChunks(sm, ([3, 3, 3], [3, 3, 3]));
+            AssertChunks(h, ([4, 4], [4, 4]));
+
+            // A present tag: nothing anywhere, though the entity's chunk holds another row.
+            world.SetChangeTickForTesting(10);
+            world.Set(tagged, default(Marker));
+            Assert.Equal((sm.Index, 0, 0), Where(world, tagged));
+            AssertChunks(sm, ([3, 3, 3], [3, 3, 3]));
+            AssertChunks(s, ([2, 2, 8], [2, 2, 2]), ([9, 7, 2], [2, 2, 2]));
+
+            // An absent value: the move stamps of Add. S's last chunk (1) gets Changed everywhere and Added for
+            // Position (column 0); H's chunk received H's last row and gets Changed everywhere; S's chunk 0 is unchanged.
+            world.SetChangeTickForTesting(11);
+            world.Set(noPosition, new Position(11, 11));
+            Assert.Equal((s.Index, 1, 4), Where(world, noPosition));
+            AssertChunks(s, ([2, 2, 8], [2, 2, 2]), ([11, 11, 11], [11, 2, 2]));
+            AssertChunks(h, ([11, 11], [4, 4]));
+            AssertChunks(sm, ([3, 3, 3], [3, 3, 3]));
+
+            // Replacing the value it just gained: back to a single column of the same chunk.
+            world.SetChangeTickForTesting(12);
+            world.Set(noPosition, new Position(12, 12));
+            AssertChunks(s, ([2, 2, 8], [2, 2, 2]), ([12, 11, 11], [11, 2, 2]));
         }
 
         tracking.ThrowIfLeaks();

@@ -9,15 +9,17 @@ using static BrutalEngine.World.Tests.Structural.StructuralSupport;
 namespace BrutalEngine.World.Tests.Structural;
 
 /// <summary>
-/// Adding and removing components on live entities (docs/design/world.md, sections 2 and 4, "Moves"): the entity
-/// moves to the archetype with or without the component, keeps its other values, and the archetypes stay dense.
+/// Adding, setting and removing components on live entities (docs/design/world.md, sections 2 and 4, "Moves"): the
+/// entity moves to the archetype with or without the component, or a set replaces a present value in place, it keeps
+/// its other values, and the archetypes stay dense.
 /// </summary>
 public sealed class StructuralTests
 {
     /// <summary>
-    /// The misuse a row of <see cref="Add_Misuse_Table"/> or <see cref="Remove_Misuse_Table"/> makes (the remove table
-    /// uses the entity and world rows only: a remove of a present component is the normal case, and of an absent one
-    /// returns false).
+    /// The misuse a row of <see cref="Add_Misuse_Table"/>, <see cref="Remove_Misuse_Table"/> or
+    /// <see cref="Set_Misuse_Table"/> makes. The remove table uses the entity and world rows only (a remove of a present
+    /// component is the normal case, and of an absent one returns false); the set table adds the too-wide row (a set
+    /// of a present component replaces it).
     /// </summary>
     public enum Misuse
     {
@@ -565,6 +567,252 @@ public sealed class StructuralTests
         }
 
         tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void Set_ReplaceAndAdd()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // Position sorts before Health and Payload, so a Set that adds Position shifts the shared columns.
+            RegisterInOrder(world);
+
+            // A full first chunk and three rows in a second, all with Position, Health and Payload.
+            Expected expected = new();
+            Entity first = world.Spawn(new Position(0, 0), new Health(0), new Payload(0));
+            expected[first] = new Values(new Position(0, 0), 0, 0, false);
+            int capacity = ArchetypeOf(world, first).Layout.Capacity;
+            var entities = new Entity[capacity + 3];
+            entities[0] = first;
+            for (int i = 1; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Position(i, -i), new Health(i), new Payload(i));
+                expected[entities[i]] = new Values(new Position(i, -i), i, i, false);
+            }
+
+            // Present data, in each column and in both chunks: replaced in place, nothing moves.
+            SetInPlace(world, expected, entities[4], new Health(100), values => values with { Health = 100 });
+            SetInPlace(world, expected, entities[capacity + 1], new Position(7, 7), values => values with { Position = new Position(7, 7) });
+            SetInPlace(world, expected, entities[capacity + 2], new Payload(-50), values => values with { Payload = -50 });
+
+            // A present tag: nothing changes at all.
+            Entity tagged = world.Spawn(new Health(-1), default(Marker));
+            Entity taggedNext = world.Spawn(new Health(-2), default(Marker));
+            expected[tagged] = new Values(null, -1, null, true);
+            expected[taggedNext] = new Values(null, -2, null, true);
+            string before = Dump(world);
+            world.Set(tagged, default(Marker));
+            Assert.Equal(before, Dump(world));
+            expected.AssertWorld(world);
+
+            // Absent data: moves like Add. Position comes first in the target, so Health and Payload shift by one
+            // column, and the source's last row fills the hole.
+            Entity withoutPosition = world.Spawn(new Health(20), new Payload(20));
+            Entity filler = world.Spawn(new Health(21), new Payload(21));
+            expected[withoutPosition] = new Values(null, 20, 20, false);
+            expected[filler] = new Values(null, 21, 21, false);
+            Archetype withoutPositionSource = ArchetypeOf(world, withoutPosition);
+            world.Set(withoutPosition, new Position(20, -20));
+            expected[withoutPosition] = expected[withoutPosition] with { Position = new Position(20, -20) };
+            Assert.Equal(ArchetypeOf(world, first).Index, ArchetypeOf(world, withoutPosition).Index);
+            Assert.Equal((withoutPositionSource.Index, 0, 0), Where(world, filler));
+            AssertDense(world);
+            expected.AssertWorld(world);
+
+            // An absent tag: moves to the archetype with the tag, keeping all three columns.
+            world.Set(entities[2], default(Marker));
+            expected[entities[2]] = expected[entities[2]] with { Marker = true };
+            Assert.NotEqual(ArchetypeOf(world, first).Index, ArchetypeOf(world, entities[2]).Index);
+            AssertDense(world);
+            expected.AssertWorld(world);
+
+            // An unregistered type: registered on first use, then added.
+            int types = world.Components.Count;
+            world.Set(entities[5], new Unused(55));
+            Assert.Equal(types + 1, world.Components.Count);
+            Assert.Equal(55, world.Get<Unused>(entities[5]).Value);
+            AssertDense(world);
+            expected.AssertWorld(world);
+
+            // Set again on the moved entity: now present, so replaced in place.
+            SetInPlace(world, expected, withoutPosition, new Position(30, -30), values => values with { Position = new Position(30, -30) });
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Theory]
+    [InlineData(Misuse.Null, typeof(ArgumentException))]
+    [InlineData(Misuse.Despawned, typeof(StaleHandleException))]
+    [InlineData(Misuse.Retired, typeof(StaleHandleException))]
+    [InlineData(Misuse.OutOfRange, typeof(StaleHandleException))]
+    [InlineData(Misuse.Pending, typeof(InvalidOperationException))]
+    [InlineData(Misuse.Disposed, typeof(ObjectDisposedException))]
+    [InlineData(Misuse.WrongThread, typeof(WrongThreadException))]
+    [InlineData(Misuse.TooWide, typeof(InvalidOperationException))]
+    public void Set_Misuse_Table(Misuse misuse, Type expected)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        EcsWorld world = EntityTestSupport.NewWorld(tracking);
+        try
+        {
+            Entity alive = world.Spawn(new Position(1, 2), new Health(3), default(Marker));
+            Entity other = world.Spawn(new Position(4, 5), new Health(6), default(Marker));
+            Entity despawned = world.Spawn(new Position(0, 0));
+            world.Despawn(despawned);
+            Entity retiring = world.Spawn();
+            world.Entities.SetGenerationForTesting((int)retiring.Index, uint.MaxValue);
+            var retired = new Entity(retiring.Index, uint.MaxValue);
+            world.Despawn(retired);
+            Entity pending = world.Entities.Reserve();
+            world.SetChangeTickForTesting(9);
+            Entity target = misuse switch
+            {
+                Misuse.Null => Entity.Null,
+                Misuse.Despawned => despawned,
+                Misuse.Retired => retired,
+                Misuse.OutOfRange => new Entity(4096, 1),
+                Misuse.Pending => pending,
+                _ => alive,
+            };
+
+            // A component the alive entity has, so a misordered check would replace and stamp it; and a type no test
+            // registers, so a registration or a move before the entity check would show.
+            Action call = misuse == Misuse.TooWide ? () => world.Set(target, new Huge(1)) : () => world.Set(target, new Health(99));
+            Action callUnregistered = () => world.Set(target, new Unused(5));
+            string before = Dump(world);
+            int slots = world.Entities.SlotCount;
+            int types = world.Components.Count;
+            Exception? failure;
+            Exception? unregisteredFailure = null;
+            if (misuse == Misuse.WrongThread)
+            {
+                failure = EntityTestSupport.RunOnOtherThread(call);
+                Assert.Equal("EcsWorld.Set", Assert.IsType<WrongThreadException>(failure).ApiName);
+                unregisteredFailure = EntityTestSupport.RunOnOtherThread(callUnregistered);
+            }
+            else
+            {
+                if (misuse == Misuse.Disposed)
+                {
+                    world.Dispose();
+                }
+
+                failure = Record.Exception(call);
+                if (misuse != Misuse.TooWide)
+                {
+                    unregisteredFailure = Record.Exception(callUnregistered);
+                }
+            }
+
+            Assert.NotNull(failure);
+            Assert.IsType(expected, failure);
+            if (misuse != Misuse.TooWide)
+            {
+                Assert.IsType(expected, unregisteredFailure);
+            }
+
+            if (misuse == Misuse.TooWide)
+            {
+                AssertNames(failure, null, "Huge", "rows in a chunk");
+            }
+
+            if (misuse == Misuse.Disposed)
+            {
+                Assert.Equal(typeof(EcsWorld).FullName, Assert.IsType<ObjectDisposedException>(failure).ObjectName);
+            }
+            else
+            {
+                // Thrown before any effect. Only the too-wide type, which is new and valid, stays registered.
+                Assert.Equal(before, Dump(world));
+                AssertDense(world);
+                Assert.Equal(slots, world.Entities.SlotCount);
+                Assert.Equal(misuse == Misuse.TooWide ? types + 1 : types, world.Components.Count);
+                Assert.True(world.IsPending(pending));
+                Assert.Equal(3, world.Get<Health>(alive).Value);
+                Assert.Equal(new Position(4, 5), world.Get<Position>(other));
+
+                // Still usable: a replace, then an add that moves the entity.
+                world.Set(alive, new Health(30));
+                world.Set(alive, new Payload(7));
+                Assert.Equal(30, world.Get<Health>(alive).Value);
+                Assert.True(EntityComponents.Same(new Payload(7), world.Get<Payload>(alive)));
+                Assert.Equal(new Position(1, 2), world.Get<Position>(alive));
+                Assert.True(world.Has<Marker>(alive));
+                AssertDense(world);
+            }
+        }
+        finally
+        {
+            world.Dispose();
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// A Set that adds, whose target archetype's new chunk can't be allocated: the entity stays where it was with its
+    /// values and stamps, nothing else changes, and the Set then succeeds.
+    /// </summary>
+    [Fact]
+    public void Set_AllocationFails_LeavesWorldUnchanged()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        FailingAllocator allocator = new(tracking);
+        using (EcsWorld world = EntityTestSupport.NewWorld(allocator, initialEntityCapacity: 4096))
+        {
+            RegisterInOrder(world);
+            Entity[] sources = [world.Spawn(new Health(0), new Payload(0)), world.Spawn(new Health(1), new Payload(1)), world.Spawn(new Health(2), new Payload(2)), world.Spawn(new Health(3), new Payload(3))];
+
+            // The first Set creates the target archetype and opens its chunk arrays; the despawn empties it again.
+            world.Set(sources[0], new Position(0, 0));
+            Archetype target = ArchetypeOf(world, sources[0]);
+            world.Despawn(sources[0]);
+            Assert.Equal(0, target.Chunks.ChunkCount);
+
+            // An empty pool, so the target's new chunk needs the allocator.
+            world.TrimMemory();
+            world.SetChangeTickForTesting(9);
+            string before = Dump(world);
+            long liveBlocks = tracking.LiveAllocationCount;
+            allocator.FailNext = true;
+
+            // A row that isn't the source's last, so a swap-remove before the failure would show.
+            _ = Assert.Throws<InsufficientMemoryException>(() => world.Set(sources[1], new Position(-1, -1)));
+
+            Assert.False(allocator.FailNext);
+            Assert.Equal(before, Dump(world));
+            AssertDense(world);
+            Assert.Equal(liveBlocks, tracking.LiveAllocationCount);
+            Assert.False(world.Has<Position>(sources[1]));
+            Assert.Equal(1, world.Get<Health>(sources[1]).Value);
+
+            // Still usable: the same Set now succeeds and keeps the other values.
+            world.Set(sources[1], new Position(-1, -1));
+            Assert.Equal(new Position(-1, -1), world.Get<Position>(sources[1]));
+            Assert.Equal(1, world.Get<Health>(sources[1]).Value);
+            Assert.True(EntityComponents.Same(new Payload(1), world.Get<Payload>(sources[1])));
+            AssertDense(world);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// Sets a component the entity has: the entity keeps its location, the value is replaced, and every entity's
+    /// expected components still match.
+    /// </summary>
+    private static void SetInPlace<T>(EcsWorld world, Expected expected, Entity entity, in T value, Func<Values, Values> change)
+        where T : unmanaged, IComponent
+    {
+        Assert.True(world.Has<T>(entity));
+        (int Archetype, int Chunk, int Row) location = Where(world, entity);
+        world.Set(entity, value);
+        expected[entity] = change(expected[entity]);
+        Assert.Equal(location, Where(world, entity));
+        AssertDense(world);
+        expected.AssertWorld(world);
     }
 
     private static void Remove<T>(EcsWorld world, Expected expected, Entity entity)
