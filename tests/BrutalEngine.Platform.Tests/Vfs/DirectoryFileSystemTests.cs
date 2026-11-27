@@ -148,6 +148,62 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Assert.NotSame(first, second);
     }
 
+    [Fact]
+    public void List_SymbolicLinks_MatchWhatTheyLeadTo()
+    {
+        // The link texts are longer than the 8-byte file, so a link's own size (its target text on POSIX, 0 on
+        // Windows) can't pass for the file's length.
+        Directory.CreateDirectory(Path.Join(_root, "data"));
+        File.WriteAllBytes(Path.Join(_root, "data", "real.bin"), [1, 2, 3, 4, 5, 6, 7, 8]);
+        CreateLink("file-link", Path.Join("data", "real.bin"), isDirectory: false);
+        CreateLink("chain-link", "file-link", isDirectory: false);
+        CreateLink("directory-link", "data", isDirectory: true);
+        DirectoryFileSystem fileSystem = Create();
+
+        IReadOnlyList<VfsEntry> entries = fileSystem.List(string.Empty).Value;
+
+        VfsEntry[] expected =
+        [
+            new("chain-link", VfsEntryKind.File, 8),
+            new("data", VfsEntryKind.Directory, 0),
+            new("directory-link", VfsEntryKind.Directory, 0),
+            new("file-link", VfsEntryKind.File, 8),
+        ];
+        Assert.Equal(expected, entries);
+        foreach (VfsEntry entry in entries)
+        {
+            Assert.Equal(entry.Kind, fileSystem.GetEntryKind(entry.Name).Value);
+            if (entry.Kind == VfsEntryKind.File)
+            {
+                Assert.Equal(entry.Length, fileSystem.ReadAllBytes(entry.Name).Value.Length);
+            }
+        }
+
+        Assert.Equal([new VfsEntry("real.bin", VfsEntryKind.File, 8)], fileSystem.List("directory-link").Value);
+    }
+
+    [Fact]
+    public void List_LinkToNothing_IsAnEmptyFile()
+    {
+        // A link to a missing file, and a link to itself: both lead nowhere.
+        CreateLink("dangling", Path.Join("missing", "target.bin"), isDirectory: false);
+        CreateLink("loop", "loop", isDirectory: false);
+        DirectoryFileSystem fileSystem = Create();
+
+        Assert.Equal(
+            [new VfsEntry("dangling", VfsEntryKind.File, 0), new VfsEntry("loop", VfsEntryKind.File, 0)],
+            fileSystem.List(string.Empty).Value);
+        Assert.Equal(VfsEntryKind.File, fileSystem.GetEntryKind("dangling").Value);
+        AssertFailure(fileSystem.ReadAllBytes("dangling").ToResult(), ErrorKind.NotFound, null, "'dangling'");
+        Assert.Equal(VfsEntryKind.File, fileSystem.GetEntryKind("loop").Value);
+        Assert.True(fileSystem.ReadAllBytes("loop").IsFailure);
+
+        // Deleting removes the link, and nothing is created where it pointed.
+        Assert.True(fileSystem.Delete("dangling").IsSuccess);
+        Assert.Equal([new VfsEntry("loop", VfsEntryKind.File, 0)], fileSystem.List(string.Empty).Value);
+        Assert.False(Directory.Exists(Path.Join(_root, "missing")));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -559,6 +615,33 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Directory.CreateDirectory(Path.Join(_root, "dir"));
         File.WriteAllBytes(Path.Join(_root, "dir", "inner.txt"), [1]);
         Directory.CreateDirectory(Path.Join(_root, "empty"));
+    }
+
+    /// <summary>Creates a symbolic link under the root, or skips the test where the OS doesn't let this process.</summary>
+    /// <param name="name">The link's name in the root.</param>
+    /// <param name="target">The link's target, relative to the root.</param>
+    /// <param name="isDirectory">Whether to create a directory link.</param>
+    private void CreateLink(string name, string target, bool isDirectory)
+    {
+        // ERROR_PRIVILEGE_NOT_HELD: Windows without Developer Mode or elevation can't create symbolic links.
+        const int privilegeNotHeld = unchecked((int)0x80070522);
+        string path = Path.Join(_root, name);
+        try
+        {
+            if (isDirectory)
+            {
+                Directory.CreateSymbolicLink(path, target);
+            }
+            else
+            {
+                File.CreateSymbolicLink(path, target);
+            }
+        }
+        catch (Exception exception) when (OperatingSystem.IsWindows()
+            && exception is UnauthorizedAccessException or IOException { HResult: privilegeNotHeld })
+        {
+            Assert.Skip($"This Windows process can't create symbolic links (it needs Developer Mode or elevation): {exception.Message}");
+        }
     }
 
     /// <summary>Denies, or allows again, the access an "access denied" row needs, on the seeded tree.</summary>

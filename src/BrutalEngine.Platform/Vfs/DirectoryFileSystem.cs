@@ -16,10 +16,11 @@ namespace BrutalEngine.Platform.Vfs;
 /// <para>
 /// <b>Paths:</b> a relative path must be a normalised <see cref="VfsPath.RelativePath"/>, so it can't leave the root
 /// lexically; its <c>/</c> separators become the OS's, and the OS resolves the result, following symbolic links as it
-/// does. Lookups follow the OS too: on a case-insensitive file system one spelling opens another. If the root directory
-/// is removed after construction, <see cref="GetEntryKind"/> answers <see cref="VfsEntryKind.None"/> for every path,
-/// the root included, every other operation fails with <see cref="ErrorKind.NotFound"/>, and none creates the root
-/// again.
+/// does; <see cref="List"/> lists a link as what it leads to, with the final target's length, and a link that leads to
+/// no file as a file of length 0. Lookups follow the OS too: on a case-insensitive file system one spelling opens
+/// another. If the root directory is removed after construction, <see cref="GetEntryKind"/> answers
+/// <see cref="VfsEntryKind.None"/> for every path, the root included, every other operation fails with
+/// <see cref="ErrorKind.NotFound"/>, and none creates the root again.
 /// </para>
 /// <para>
 /// <b>Writes:</b> <see cref="WriteAllBytes"/> creates missing parent directories, writes the bytes to a new temporary
@@ -301,7 +302,9 @@ public sealed class DirectoryFileSystem : IFileSystem
     /// <inheritdoc/>
     /// <remarks>
     /// Lists every entry the OS reports, including names a <see cref="VfsPath"/> can't address and temporary files. A
-    /// symbolic link is listed as what it points to, as the OS reports it; a file removed while listing is left out.
+    /// symbolic link is listed as what it leads to, through any chain of links: a directory, or a file with the final
+    /// target's length; a link that leads to no file (dangling, or a loop) is a file of length 0. A file removed while
+    /// listing is left out.
     /// </remarks>
     public Result<IReadOnlyList<VfsEntry>> List(string relativePath)
     {
@@ -320,7 +323,7 @@ public sealed class DirectoryFileSystem : IFileSystem
 
                 try
                 {
-                    entries.Add(new VfsEntry(file.Name, VfsEntryKind.File, file.Length));
+                    entries.Add(new VfsEntry(file.Name, VfsEntryKind.File, file.LinkTarget is null ? file.Length : LinkedLength(file)));
                 }
                 catch (FileNotFoundException)
                 {
@@ -374,6 +377,32 @@ public sealed class DirectoryFileSystem : IFileSystem
         return (int)attributes == -1 ? VfsEntryKind.None
             : (attributes & FileAttributes.Directory) != 0 ? VfsEntryKind.Directory
             : VfsEntryKind.File;
+    }
+
+    /// <summary>The length of the file a symbolic link leads to, through any chain of links.</summary>
+    /// <remarks>
+    /// A link's own length is its target text on POSIX and 0 on Windows, so the final target is measured instead.
+    /// </remarks>
+    /// <param name="link">A file entry that is a symbolic link.</param>
+    /// <returns>
+    /// The final target's length, or 0 if the link leads to no file: its target is missing or not a file, or the OS
+    /// can't follow the links to the end (a loop, or a link it may not read).
+    /// </returns>
+    /// <exception cref="FileNotFoundException">The link itself is gone.</exception>
+    private static long LinkedLength(FileInfo link)
+    {
+        FileSystemInfo? target;
+        try
+        {
+            target = link.ResolveLinkTarget(returnFinalTarget: true);
+        }
+        catch (Exception exception) when (exception is IOException and not FileNotFoundException or UnauthorizedAccessException)
+        {
+            // The links can't be followed to a file, so there is no file to measure; one link isn't a failure of List.
+            return 0;
+        }
+
+        return target is FileInfo { Exists: true } file ? file.Length : 0;
     }
 
     /// <summary>Maps an OS exception to the <see cref="IFileSystem"/> kinds, keeping its message and code.</summary>
