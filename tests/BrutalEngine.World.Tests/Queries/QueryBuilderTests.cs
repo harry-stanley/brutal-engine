@@ -239,7 +239,7 @@ public sealed class QueryBuilderTests
             using Query query = world.Query().Build();
 
             Assert.Equal(0, query.Terms.Count);
-            query.Cache.Refresh();
+            Assert.Equal(3, query.CountEntities());
             Assert.Equal(world.ArchetypeCount, query.Cache.Count);
         }
 

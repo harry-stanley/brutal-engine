@@ -86,6 +86,7 @@ BrutalEngine.World.EntityRef.Write<T>() -> T
 BrutalEngine.World.IComponent
 BrutalEngine.World.IComponent.Info.get -> BrutalEngine.World.ComponentInfo
 BrutalEngine.World.Query
+BrutalEngine.World.Query.CountEntities() -> int
 BrutalEngine.World.Query.Dispose() -> void
 BrutalEngine.World.Query.HasRun.get -> bool
 BrutalEngine.World.Query.LastRunTick.get -> uint

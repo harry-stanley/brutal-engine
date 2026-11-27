@@ -117,6 +117,35 @@ public sealed class Query : IDisposable
     internal Query? Next { get; set; }
 
     /// <summary>
+    /// Counts the entities in the matching archetypes. <c>Changed</c> and <c>Added</c> terms count only as required
+    /// components here: their chunk filters are ignored.
+    /// </summary>
+    /// <returns>The number of matching rows.</returns>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The allocator can't grow the cache while it refreshes. The archetypes cached before the failure stay cached, and
+    /// the next call examines the rest again.
+    /// </exception>
+    /// <remarks>
+    /// Refreshes the cache first, so archetypes created since the last refresh are counted. Allocates no managed
+    /// memory, the refresh included; a refresh that finds more matching archetypes than the cache holds grows it through
+    /// the world's allocator. Takes time proportional to the new archetypes and to the matching archetypes.
+    /// </remarks>
+    public int CountEntities()
+    {
+        ThrowIfUnusable("Query.CountEntities");
+        _cache.Refresh();
+        int count = 0;
+        for (int entry = 0; entry < _cache.Count; entry++)
+        {
+            count += _cache.GetArchetype(entry).RowCount;
+        }
+
+        return count;
+    }
+
+    /// <summary>
     /// Releases the query: frees its cache, releases its last-run tick slot (a later query reuses it) and removes it from
     /// the world. Idempotent, and does nothing once the world is disposed, which has released the query already.
     /// </summary>

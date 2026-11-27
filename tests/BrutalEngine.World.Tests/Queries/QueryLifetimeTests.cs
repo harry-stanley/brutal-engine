@@ -15,7 +15,7 @@ namespace BrutalEngine.World.Tests.Queries;
 public sealed class QueryLifetimeTests
 {
     // Every member but Dispose.
-    private static readonly string[] _members = ["Query.World", "Query.LastRunTick", "Query.HasRun"];
+    private static readonly string[] _members = ["Query.World", "Query.LastRunTick", "Query.HasRun", "Query.CountEntities"];
 
     public static TheoryData<string> Members() => [.. _members];
 
@@ -267,6 +267,8 @@ public sealed class QueryLifetimeTests
                 return query.LastRunTick;
             case "Query.HasRun":
                 return query.HasRun;
+            case "Query.CountEntities":
+                return query.CountEntities();
             case "Query.Dispose":
                 query.Dispose();
                 return query;
