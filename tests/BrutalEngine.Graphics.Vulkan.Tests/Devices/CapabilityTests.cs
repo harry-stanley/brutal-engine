@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
 using Brutal.VulkanApi;
+using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Vulkan.Devices;
 using BrutalEngine.Graphics.Vulkan.Instances;
@@ -25,15 +27,19 @@ public sealed unsafe class CapabilityTests
     public void RealDevice_LimitsArePlausibleAndNamingIsClean()
     {
         ValidationLog sink = new();
+        ValidationLog deviceSink = new();
         (Logger logger, LogCategory category) = ValidationLog.Create(sink);
+        (Logger deviceLogger, LogCategory deviceLog) = ValidationLog.Create(deviceSink);
         int devices = 0;
+        using (deviceLogger)
         using (logger)
         {
             using VulkanInstance instance = GpuDevices.CreateInstance(category, []);
             foreach (GpuDevices.Adapter adapter in GpuDevices.Suitable(instance))
             {
+                // The public overload with its own log, which a failed name must reach.
                 VulkanCallGate gate = new();
-                using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, gate, null).Value;
+                using VulkanDeviceCore core = CreateWithLog(instance, adapter, gate, deviceLog).Value;
                 VkPhysicalDeviceProperties raw = default;
                 adapter.Device.PInvoke.vkGetPhysicalDeviceProperties.Invoke(adapter.Device.Handle, &raw);
                 AssertLimits(raw.Limits, core);
@@ -57,6 +63,12 @@ public sealed unsafe class CapabilityTests
 
         Assert.True(devices > 0);
         Assert.DoesNotContain(sink.Entries, e => e.Level >= LogLevel.Warning);
+
+        // Exactly the one injected failure per device, at Debug, in the device's log and not the validation one.
+        Assert.Equal(devices, deviceSink.Entries.Count);
+        Assert.All(deviceSink.Entries, e => Assert.Equal(LogLevel.Debug, e.Level));
+        Assert.All(deviceSink.Entries, e => Assert.Contains("vkSetDebugUtilsObjectNameEXT failed", e.Message, StringComparison.Ordinal));
+        Assert.DoesNotContain(sink.Entries, e => e.Message.Contains("vkSetDebugUtilsObjectNameEXT failed", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -148,6 +160,15 @@ public sealed unsafe class CapabilityTests
         Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport((TextureFormat)17));
         Assert.NotEqual(FormatSupport.None, core.GetFormatSupport(TextureFormat.R8Unorm));
         Assert.NotEqual(FormatSupport.None, core.GetFormatSupport(TextureFormat.Depth32Float));
+    }
+
+    // Creates a device through the public overload, with every optional feature the adapter has and the table's extensions.
+    private static Result<VulkanDeviceCore> CreateWithLog(VulkanInstance instance, GpuDevices.Adapter adapter, VulkanCallGate gate, LogCategory log)
+    {
+        FeatureChain.NegotiatedFeatures features = FeatureChain.Negotiate(adapter.Candidate, adapter.Family, GraphicsFeatures.None, FeatureChain.Negotiable);
+        HashSet<string> offered = new(adapter.Candidate.DeviceExtensions.ToArray(), StringComparer.Ordinal);
+        DeviceExtensionSet.Selection extensions = DeviceExtensionSet.Choose(offered, instance.EnabledExtensions);
+        return VulkanDeviceCore.Create(instance, adapter.Device, adapter.Family, features, extensions, gate, log: log);
     }
 
     // Each limit is the driver's own field (read through the plain query, not the code under test's chain), and each is
