@@ -41,8 +41,9 @@ public sealed partial class GraphicsDevice
     /// A buffer is written by a recorded copy into it (<see cref="CommandList.CopyBufferToBuffer"/>,
     /// <see cref="CommandList.CopyTextureToBuffer"/>) in that frame, and by <see cref="WriteBuffer"/> in the frame that
     /// lands it: the open one, or the next submitted one between frames. A buffer nothing has written yet reads
-    /// <see langword="true"/>, with its memory as it is. Never waits and never calls the backend: the result changes only
-    /// when <see cref="CompletedFrameNumber"/> advances (<see cref="BeginFrame"/>, <see cref="WaitIdle"/>).
+    /// <see langword="true"/>, with its memory as it is. Never waits and never calls the backend: a pending read turns
+    /// <see langword="true"/> only when <see cref="CompletedFrameNumber"/> advances (<see cref="BeginFrame"/>,
+    /// <see cref="WaitIdle"/>); a later copy, <see cref="WriteBuffer"/> or device loss also changes the result.
     /// </para>
     /// <para>Owner thread. Allocates nothing, except the exception.</para>
     /// </remarks>
