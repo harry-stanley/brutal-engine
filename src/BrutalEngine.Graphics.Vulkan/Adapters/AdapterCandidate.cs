@@ -16,8 +16,8 @@ namespace BrutalEngine.Graphics.Vulkan.Adapters;
 /// <para>
 /// Immutable and safe to read from any thread, provided nobody changes the arrays behind
 /// <see cref="DeviceExtensions"/> and <see cref="QueueFamilies"/> after construction. Equality is the record's, so
-/// those two compare by the memory they wrap, not by content. The default value is a device with no version, no
-/// features, no extensions and no queue families.
+/// those two compare by the memory they wrap, not by content. The default value is a device with a
+/// <see langword="null"/> <see cref="Name"/>, no version, no features, no extensions and no queue families.
 /// </para>
 /// </remarks>
 internal readonly record struct AdapterCandidate

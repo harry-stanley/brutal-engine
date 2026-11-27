@@ -9,6 +9,7 @@ BrutalEngine.Graphics.Vulkan.ValidationAllowance.Reason.init -> void
 BrutalEngine.Graphics.Vulkan.ValidationAllowance.ValidationAllowance() -> void
 BrutalEngine.Graphics.Vulkan.ValidationAllowance.ValidationAllowance(int MessageIdNumber, string! Reason) -> void
 BrutalEngine.Graphics.Vulkan.VulkanBackend
+BrutalEngine.Graphics.Vulkan.VulkanBackend.EnumerateAdapters(BrutalEngine.Graphics.Backend.BackendDeviceRequest! request) -> BrutalEngine.Core.Result<System.Collections.Generic.IReadOnlyList<BrutalEngine.Graphics.GraphicsAdapterInfo!>!>
 BrutalEngine.Graphics.Vulkan.VulkanBackend.LoaderPath.get -> string?
 BrutalEngine.Graphics.Vulkan.VulkanBackend.Name.get -> string!
 BrutalEngine.Graphics.Vulkan.VulkanBackendOptions

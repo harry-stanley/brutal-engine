@@ -8,7 +8,12 @@
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
+  <!--
+    BRUTAL's SDL binding is test-only: the Gpu tests create a hidden SDL window for a real VkSurfaceKHR
+    (docs/design/graphics-vulkan.md section 15). The backend itself never references SDL.
+  -->
   <ItemGroup>
     <ProjectReference Include="../../src/BrutalEngine.Graphics.Vulkan/BrutalEngine.Graphics.Vulkan.csproj" />
+    <PackageReference Include="Ahwoo.Brutal.Sdl" />
   </ItemGroup>
 </Project>
