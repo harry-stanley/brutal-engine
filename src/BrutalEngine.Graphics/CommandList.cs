@@ -66,14 +66,72 @@ public readonly struct CommandList
     /// in an earlier frame, except the exception; making the ring or a dedicated block allocates.
     /// </para>
     /// </remarks>
-    public Result AllocateTransient(long byteCount, TransientUsage usage, out TransientAllocation allocation)
-    {
-        if (Device is null)
-        {
-            throw new InvalidOperationException(
-                "CommandList.AllocateTransient: the command list is default and belongs to no frame. Use the one BeginFrame returned.");
-        }
+    public Result AllocateTransient(long byteCount, TransientUsage usage, out TransientAllocation allocation) =>
+        DeviceFor(nameof(AllocateTransient)).AllocateTransient(this, byteCount, usage, out allocation);
 
-        return Device.AllocateTransient(this, byteCount, usage, out allocation);
-    }
+    /// <summary>Records a copy of a byte range from one buffer to another, or within one.</summary>
+    /// <param name="copy">The buffers, the offsets and the size; checked by the copy rules of docs/design/graphics.md section 6.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The list isn't its device's open frame: <c>default</c>, or a copy from a submitted frame.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// A buffer is the null handle, or the copy breaks a copy rule (<see cref="ArgumentOutOfRangeException"/> for a range);
+    /// nothing is recorded.
+    /// </exception>
+    /// <exception cref="StaleHandleException">A buffer isn't a live buffer of this device; nothing is recorded.</exception>
+    /// <exception cref="OutOfMemoryException">The frame's command stream couldn't grow; nothing is recorded.</exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the device's owner thread.</exception>
+    /// <remarks>
+    /// The copy runs in the frame after its writes (<see cref="GraphicsDevice.WriteBuffer"/>), in call order with the other
+    /// recorded commands. A transient allocation's buffer can be the source. On a lost device the copy is checked, then
+    /// nothing is recorded. Owner thread. Allocates nothing, except the exception and the stream's growth.
+    /// </remarks>
+    public void CopyBufferToBuffer(in BufferCopy copy) => DeviceFor(nameof(CopyBufferToBuffer)).CopyBufferToBuffer(this, copy);
+
+    /// <summary>Records a copy from one region of one texture subresource to rows in a buffer.</summary>
+    /// <param name="copy">The texture location, the region, the buffer and its rows; checked as for <see cref="CopyBufferToBuffer"/>.</param>
+    /// <exception cref="InvalidOperationException">As for <see cref="CopyBufferToBuffer"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// The texture or buffer is the null handle, or the copy breaks a copy rule (<see cref="ArgumentOutOfRangeException"/>
+    /// for a range); nothing is recorded.
+    /// </exception>
+    /// <exception cref="StaleHandleException">The texture or buffer isn't live on this device; nothing is recorded.</exception>
+    /// <exception cref="OutOfMemoryException">The frame's command stream couldn't grow; nothing is recorded.</exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the device's owner thread.</exception>
+    /// <remarks>Ordering, lost-device behaviour and allocation as for <see cref="CopyBufferToBuffer"/>.</remarks>
+    public void CopyTextureToBuffer(in TextureBufferCopy copy) => DeviceFor(nameof(CopyTextureToBuffer)).CopyTextureToBuffer(this, copy);
+
+    /// <summary>Records a copy from rows in a buffer to one region of one texture subresource.</summary>
+    /// <param name="copy">The buffer and its rows, the texture location and the region; checked as for <see cref="CopyBufferToBuffer"/>.</param>
+    /// <exception cref="InvalidOperationException">As for <see cref="CopyBufferToBuffer"/>.</exception>
+    /// <exception cref="ArgumentException">As for <see cref="CopyTextureToBuffer"/>; depth is never copied from a buffer.</exception>
+    /// <exception cref="StaleHandleException">The texture or buffer isn't live on this device; nothing is recorded.</exception>
+    /// <exception cref="OutOfMemoryException">The frame's command stream couldn't grow; nothing is recorded.</exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the device's owner thread.</exception>
+    /// <remarks>
+    /// Ordering, lost-device behaviour and allocation as for <see cref="CopyBufferToBuffer"/>; a transient allocation's
+    /// buffer can be the source.
+    /// </remarks>
+    public void CopyBufferToTexture(in TextureBufferCopy copy) => DeviceFor(nameof(CopyBufferToTexture)).CopyBufferToTexture(this, copy);
+
+    /// <summary>Records a copy of a region from one texture subresource to another, of the same format and size.</summary>
+    /// <param name="copy">Both locations, the source region and where it lands; checked as for <see cref="CopyBufferToBuffer"/>.</param>
+    /// <exception cref="InvalidOperationException">As for <see cref="CopyBufferToBuffer"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// A texture is the null handle, or the copy breaks a copy rule (<see cref="ArgumentOutOfRangeException"/> for a
+    /// range); nothing is recorded.
+    /// </exception>
+    /// <exception cref="StaleHandleException">A texture isn't a live texture of this device; nothing is recorded.</exception>
+    /// <exception cref="OutOfMemoryException">The frame's command stream couldn't grow; nothing is recorded.</exception>
+    /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
+    /// <exception cref="WrongThreadException">Called from a thread other than the device's owner thread.</exception>
+    /// <remarks>No scaling. Ordering, lost-device behaviour and allocation as for <see cref="CopyBufferToBuffer"/>.</remarks>
+    public void CopyTextureToTexture(in TextureCopy copy) => DeviceFor(nameof(CopyTextureToTexture)).CopyTextureToTexture(this, copy);
+
+    // The list's device, for a member that needs its open frame; the device checks that the frame is open.
+    private GraphicsDevice DeviceFor(string member) => Device ?? throw new InvalidOperationException(
+        $"CommandList.{member}: the command list is default and belongs to no frame. Use the one BeginFrame returned.");
 }

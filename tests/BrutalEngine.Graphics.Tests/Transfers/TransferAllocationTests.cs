@@ -1,10 +1,14 @@
 using System;
+using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Tests.Device;
 using Xunit;
 
 namespace BrutalEngine.Graphics.Tests.Transfers;
 
-/// <summary>Steady-state frames with transient allocations allocate no managed memory (docs/design/graphics.md section 14).</summary>
+/// <summary>
+/// Steady-state frames with transient allocations and copies allocate no managed memory (docs/design/graphics.md
+/// section 14).
+/// </summary>
 public sealed class TransferAllocationTests : IDisposable
 {
     private const int Frames = 1000;
@@ -54,5 +58,42 @@ public sealed class TransferAllocationTests : IDisposable
         Assert.Equal((Frames + WarmUpFrames) * (0 + 64 + 256 + 512 + 576 + (5 * 64L)), checksum);
         Assert.True(device.WaitIdle().IsSuccess);
         device.ThrowIfLeaks();
+    }
+
+    [Fact]
+    public void SteadyCopyFrames_DoNotAllocate()
+    {
+        _fixture.Script.RecordCalls = false;
+        GraphicsDevice device = _fixture.Create();
+        var resources = TransferResources.Create(device);
+
+        // Every frame records each copy kind, plus one from a transient allocation. The warm-up frames grow both slots'
+        // streams and rings and make an alias table slot.
+        long checksum = 0;
+        long before = 0;
+        for (int i = 0; i < Frames + WarmUpFrames; i++)
+        {
+            if (i == WarmUpFrames)
+            {
+                before = GC.GetAllocatedBytesForCurrentThread();
+            }
+
+            _ = device.BeginFrame(out CommandList commands);
+            foreach (CommandKind kind in TransferResources.Kinds)
+            {
+                resources.Record(commands, kind);
+            }
+
+            bool allocated = commands.AllocateTransient(16, TransientUsage.Vertex, out TransientAllocation source).IsSuccess;
+            commands.CopyBufferToBuffer(new BufferCopy { Source = source.Buffer, SourceOffset = source.Offset, Destination = resources.Readback, Size = 16 });
+            _ = device.SubmitFrame(commands);
+            checksum += allocated ? 1 : -100_000;
+        }
+
+        long allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocatedBytes);
+        Assert.Equal(Frames + WarmUpFrames, checksum);
+        Assert.True(device.WaitIdle().IsSuccess);
     }
 }

@@ -470,6 +470,10 @@ BrutalEngine.Graphics.ColorValue.R.init -> void
 BrutalEngine.Graphics.CommandList
 BrutalEngine.Graphics.CommandList.AllocateTransient(long byteCount, BrutalEngine.Graphics.TransientUsage usage, out BrutalEngine.Graphics.TransientAllocation allocation) -> BrutalEngine.Core.Result
 BrutalEngine.Graphics.CommandList.CommandList() -> void
+BrutalEngine.Graphics.CommandList.CopyBufferToBuffer(in BrutalEngine.Graphics.BufferCopy copy) -> void
+BrutalEngine.Graphics.CommandList.CopyBufferToTexture(in BrutalEngine.Graphics.TextureBufferCopy copy) -> void
+BrutalEngine.Graphics.CommandList.CopyTextureToBuffer(in BrutalEngine.Graphics.TextureBufferCopy copy) -> void
+BrutalEngine.Graphics.CommandList.CopyTextureToTexture(in BrutalEngine.Graphics.TextureCopy copy) -> void
 BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Always = 7 -> BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Equal = 2 -> BrutalEngine.Graphics.CompareFunction
