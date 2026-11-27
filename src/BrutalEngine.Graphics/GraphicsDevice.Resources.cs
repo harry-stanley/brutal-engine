@@ -58,8 +58,10 @@ public sealed partial class GraphicsDevice
     /// The texture's handle; the device owns the texture and its default view until <see cref="Destroy(TextureHandle)"/> or
     /// <see cref="Dispose"/>. Fails with <see cref="ErrorKind.Unsupported"/> when <see cref="GetFormatSupport"/> lacks a use
     /// the usage needs, or <see cref="FormatSupport.Multisample"/> for a sample count above 1 (the message names the
-    /// format and what is missing). A backend failure is returned unchanged: <see cref="ErrorKind.OutOfMemory"/>, or
-    /// <see cref="ErrorKind.Unavailable"/> after device loss; a failed default view destroys the texture first.
+    /// format and what is missing), or when a color format's sample count above 1 isn't in
+    /// <see cref="GraphicsLimits.ColorSampleCounts"/> (the message names the count). A backend failure is returned
+    /// unchanged: <see cref="ErrorKind.OutOfMemory"/>, or <see cref="ErrorKind.Unavailable"/> after device loss; a failed
+    /// default view destroys the texture first.
     /// </returns>
     /// <exception cref="ArgumentException">The description breaks a structural rule (docs/design/graphics.md section 5).</exception>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -78,7 +80,10 @@ public sealed partial class GraphicsDevice
     /// The description is checked first, then the format's support: <see cref="TextureUsage.Sampled"/>,
     /// <see cref="TextureUsage.Storage"/>, <see cref="TextureUsage.ColorTarget"/>, <see cref="TextureUsage.DepthStencilTarget"/>,
     /// <see cref="TextureUsage.CopySource"/> and <see cref="TextureUsage.CopyDestination"/> each need the
-    /// <see cref="FormatSupport"/> flag of the same name. Only then does the backend see it.
+    /// <see cref="FormatSupport"/> flag of the same name, and a sample count above 1 needs
+    /// <see cref="FormatSupport.Multisample"/>. For a color format the count must also be in
+    /// <see cref="GraphicsLimits.ColorSampleCounts"/>; depth formats need only the flag, because their sample counts
+    /// aren't reported yet. Only then does the backend see it.
     /// </para>
     /// <para>
     /// The default view covers every mip level and layer: a <see cref="TextureViewDimension.Texture2D"/> view for one layer,
@@ -96,6 +101,15 @@ public sealed partial class GraphicsDevice
             return new EngineError(ErrorKind.Unsupported, string.Create(
                 CultureInfo.InvariantCulture,
                 $"CreateTexture '{description.DebugName}': format {description.Format} lacks {missing} support on this device (usage {description.Usage}, {description.SampleCount} samples)."));
+        }
+
+        SampleCounts colorCounts = Capabilities.Limits.ColorSampleCounts;
+        if (description.SampleCount > 1 && !TextureFormatInfo.IsDepth(description.Format)
+            && (colorCounts & (SampleCounts)description.SampleCount) == 0)
+        {
+            return new EngineError(ErrorKind.Unsupported, string.Create(
+                CultureInfo.InvariantCulture,
+                $"CreateTexture '{description.DebugName}': {description.SampleCount} samples aren't supported for color format {description.Format} on this device (supported counts: {colorCounts})."));
         }
 
         Result<ulong> created = _backend.CreateTexture(description);
