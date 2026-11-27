@@ -127,6 +127,24 @@ public sealed class TransientTests : IDisposable
         Assert.Equal([RingBytes, RingBytes + 1], blocks.Select(id => _backend.Device.Buffers[id].Description.Size));
     }
 
+    [Fact]
+    public void BetweenFrameBlocks_AreCopySourceOnly()
+    {
+        GraphicsDevice device = Create();
+        BufferHandle buffer = device.CreateBuffer(new BufferDescription { Size = 2 * RingBytes, Usage = BufferUsage.CopyDestination }).Value;
+
+        // Between frames a write takes a pending block, or a dedicated block when it is larger than one: neither ever gets
+        // an alias, so neither gets the transient usages.
+        Assert.True(device.WriteBuffer(buffer, 0, [1]).IsSuccess);
+        Assert.True(device.WriteBuffer(buffer, 0, new byte[RingBytes + 16]).IsSuccess);
+        RunFrame(device);
+
+        Assert.Equal(2, _backend.Device!.HostBuffers.Count);
+        Assert.All(_backend.Device.HostBuffers, id => Assert.Equal((BufferUsage.CopySource, BackendMemory.HostUpload), (_backend.Device.Buffers[id].Description.Usage, _backend.Device.Buffers[id].Memory)));
+        Assert.True(device.WaitIdle().IsSuccess);
+        device.Destroy(buffer);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]

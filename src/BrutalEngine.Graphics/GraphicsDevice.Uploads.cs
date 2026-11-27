@@ -15,8 +15,8 @@ public sealed partial class GraphicsDevice
     private const string WriteBufferApi = nameof(GraphicsDevice) + "." + nameof(WriteBuffer);
     private const string WriteTextureApi = nameof(GraphicsDevice) + "." + nameof(WriteTexture);
 
-    // Every staging block can be bound as any transient usage: the ring and overflow blocks serve transient allocations
-    // as well as writes, and pending blocks share their creation path.
+    // The usages of a block made inside a frame (the slot's ring, or an overflow block), which transient allocations may
+    // alias and bind; blocks made between frames (pending and their overflow blocks) only serve writes, as copy sources.
     private const BufferUsage StagingUsage = BufferUsage.CopySource | BufferUsage.Vertex | BufferUsage.Index | BufferUsage.Uniform
         | BufferUsage.Storage | BufferUsage.Indirect;
 
@@ -226,7 +226,8 @@ public sealed partial class GraphicsDevice
 
     private bool TryCreateBlock(long size, [NotNullWhen(true)] out UploadRing? block, out EngineError error)
     {
-        var description = new BufferDescription { Size = size, Usage = StagingUsage, Memory = MemoryIntent.Upload };
+        BufferUsage usage = _frameOpen ? StagingUsage : BufferUsage.CopySource;
+        var description = new BufferDescription { Size = size, Usage = usage, Memory = MemoryIntent.Upload };
         Result<BackendBuffer> created = _backend.CreateBuffer(description, BackendMemory.HostUpload);
         block = created.TryGetValue(out BackendBuffer buffer) ? new UploadRing(buffer, size) : null;
         error = block is null ? created.Error : default;
