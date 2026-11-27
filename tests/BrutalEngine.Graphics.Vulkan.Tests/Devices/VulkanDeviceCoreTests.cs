@@ -265,6 +265,33 @@ public sealed unsafe class VulkanDeviceCoreTests
 
     [Fact]
     [Trait("Category", "Gpu")]
+    public void Properties_LiveDevice_AllocateNothing()
+    {
+        using Logger logger = new(new LoggerOptions { Sinks = [] });
+        using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
+        using VulkanDeviceCore core = GpuDevices.Create(instance, GpuDevices.Suitable(instance)[0], new VulkanCallGate(), null).Value;
+        long checksum = Read(core);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            checksum += Read(core);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+        Assert.NotEqual(0, checksum);
+
+        // Every property, folded into one number so none is optimised away.
+        static long Read(VulkanDeviceCore core) =>
+            core.Device.Handle.VkHandle + core.Queue.VkHandle + core.QueueFamily + (long)core.Features.Enabled
+            + core.Extensions.Extensions.Length + (core.Extensions.SwapchainMaintenance1?.Length ?? 0)
+            + (core.Extensions.PortabilitySubset ? 1 : 0) + (core.Extensions.MemoryBudget ? 1 : 0) + (core.IsDisposed ? 1 : 0);
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
     public void Create_DisposedInstance_Throws()
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });

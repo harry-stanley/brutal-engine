@@ -129,6 +129,34 @@ public sealed unsafe class FeatureChainTests
     }
 
     [Fact]
+    public void NegotiateAndFill_EveryPath_AllocateNothing()
+    {
+        // Each flag present and absent, timestamps through the bits and through the period, the chosen family not
+        // first, and both chain shapes; each read once before measuring.
+        AdapterCandidate[] candidates =
+        [
+            Having(All),
+            Having(GraphicsFeatures.None),
+            Having(SA | Astc),
+            Having(TS | BC) with { TimestampPeriod = float.NaN },
+        ];
+        long checksum = NegotiateAndFill(candidates);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            checksum += NegotiateAndFill(candidates);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, allocated);
+
+        // Per pass: enabled sets 15 + 0 + 9 + 4 = 28, plus one linked maintenance1 structure per candidate (4).
+        Assert.Equal(101 * (28 + 4), checksum);
+    }
+
+    [Fact]
     public void Fill_NullStorage_Throws() =>
         Assert.Throws<ArgumentNullException>("storage", () => FeatureChain.Fill(null, default, swapchainMaintenance1: false));
 
@@ -167,6 +195,21 @@ public sealed unsafe class FeatureChainTests
             Assert.True(next->SwapchainMaintenance1);
             Assert.True(next->Next is null);
         }
+    }
+
+    private static long NegotiateAndFill(AdapterCandidate[] candidates)
+    {
+        long sum = 0;
+        FeatureChain.Storage storage;
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            FeatureChain.NegotiatedFeatures features = FeatureChain.Negotiate(candidates[i], 11, GraphicsFeatures.None, All);
+            sum += (long)features.Enabled;
+            sum += ((VkPhysicalDeviceVulkan13Features*)FeatureChain.Fill(&storage, features, swapchainMaintenance1: true)->Next)->Next is null ? 0 : 1;
+            sum += ((VkPhysicalDeviceVulkan13Features*)FeatureChain.Fill(&storage, features, swapchainMaintenance1: false)->Next)->Next is null ? 0 : 1;
+        }
+
+        return sum;
     }
 
     // A candidate whose features are exactly `has`: timestamps through family 11's bits, with a valid period.

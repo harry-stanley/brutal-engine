@@ -30,7 +30,7 @@ namespace BrutalEngine.Graphics.Vulkan.Devices;
 /// </para>
 /// <para>
 /// Not thread-safe: the device's owner thread creates, uses and disposes it. Creation allocates (BRUTAL's wrapper, the
-/// extension set and this object); the members allocate nothing.
+/// extension set and this object); the properties of a live device allocate nothing.
 /// </para>
 /// </remarks>
 internal sealed class VulkanDeviceCore : IDisposable
