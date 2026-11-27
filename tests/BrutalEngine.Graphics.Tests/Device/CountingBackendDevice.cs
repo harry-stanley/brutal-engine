@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 
@@ -6,11 +7,17 @@ namespace BrutalEngine.Graphics.Tests.Device;
 
 /// <summary>
 /// Forwards every call to the fake's device and counts <see cref="Dispose"/> calls, including the ones the fake ignores
-/// because it is already disposed, so a test sees a second dispose the fake alone would hide.
+/// because it is already disposed, so a test sees a second dispose the fake alone would hide. It also keeps the memory
+/// of the last <see cref="CreateBuffer"/>, which the fake doesn't record.
 /// </summary>
 internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevice
 {
     public int DisposeCalls { get; private set; }
+
+    public BackendMemory? LastBufferMemory { get; private set; }
+
+    /// <summary>Every <see cref="SetDebugName"/> call the fake accepted, in order, with a copy of its name bytes.</summary>
+    public List<(BackendObjectKind Kind, ulong Id, byte[] Utf8Name)> Names { get; } = [];
 
     public GraphicsAdapterInfo Adapter => inner.Adapter;
 
@@ -22,7 +29,11 @@ internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevi
 
     public FormatSupport GetFormatSupport(TextureFormat format) => inner.GetFormatSupport(format);
 
-    public Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory) => inner.CreateBuffer(description, memory);
+    public Result<BackendBuffer> CreateBuffer(in BufferDescription description, BackendMemory memory)
+    {
+        LastBufferMemory = memory;
+        return inner.CreateBuffer(description, memory);
+    }
 
     public Result<ulong> CreateTexture(in TextureDescription description) => inner.CreateTexture(description);
 
@@ -30,7 +41,11 @@ internal sealed class CountingBackendDevice(IBackendDevice inner) : IBackendDevi
 
     public Result<ulong> CreateSampler(in SamplerDescription description) => inner.CreateSampler(description);
 
-    public void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name) => inner.SetDebugName(kind, id, utf8Name);
+    public void SetDebugName(BackendObjectKind kind, ulong id, ReadOnlySpan<byte> utf8Name)
+    {
+        inner.SetDebugName(kind, id, utf8Name);
+        Names.Add((kind, id, utf8Name.ToArray()));
+    }
 
     public void Destroy(BackendObjectKind kind, ulong id) => inner.Destroy(kind, id);
 

@@ -556,6 +556,19 @@ BrutalEngine.Graphics.GraphicsCapabilities.Limits.init -> void
 BrutalEngine.Graphics.GraphicsDevice
 BrutalEngine.Graphics.GraphicsDevice.Adapter.get -> BrutalEngine.Graphics.GraphicsAdapterInfo!
 BrutalEngine.Graphics.GraphicsDevice.Capabilities.get -> BrutalEngine.Graphics.GraphicsCapabilities!
+BrutalEngine.Graphics.GraphicsDevice.CreateBuffer(in BrutalEngine.Graphics.BufferDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.BufferHandle>
+BrutalEngine.Graphics.GraphicsDevice.CreateSampler(in BrutalEngine.Graphics.SamplerDescription description) -> BrutalEngine.Core.Result<BrutalEngine.Graphics.SamplerHandle>
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.BindGroupHandle bindGroup) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.BindGroupLayoutHandle layout) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.BufferHandle buffer) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.ComputePipelineHandle pipeline) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.GraphicsPipelineHandle pipeline) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.PipelineLayoutHandle layout) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.SamplerHandle sampler) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.ShaderModuleHandle shaderModule) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.SwapchainHandle swapchain) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureHandle texture) -> void
+BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureViewHandle view) -> void
 BrutalEngine.Graphics.GraphicsDevice.Dispose() -> void
 BrutalEngine.Graphics.GraphicsDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
 BrutalEngine.Graphics.GraphicsDeviceOptions
