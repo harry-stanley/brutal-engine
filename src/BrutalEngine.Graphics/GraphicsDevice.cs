@@ -37,7 +37,7 @@ namespace BrutalEngine.Graphics;
 /// <see cref="CreateDebugLabel"/> for a name already interned, <see cref="GetDebugLabelName"/>,
 /// <see cref="Statistics"/>, <see cref="BeginFrame"/>, <see cref="SubmitFrame"/>, <see cref="FrameNumber"/>,
 /// <see cref="CompletedFrameNumber"/> and <see cref="IsLost"/> allocate nothing, except an exception they throw.
-/// <see cref="WaitIdle"/> may allocate. Unmanaged memory (frame slots) comes from
+/// <see cref="WaitIdle"/> may allocate. Unmanaged memory (frame slots, deletion queues) comes from
 /// <see cref="GraphicsDeviceOptions.Allocator"/> and is freed by <see cref="Dispose"/>.
 /// </para>
 /// </remarks>
@@ -337,8 +337,9 @@ public sealed partial class GraphicsDevice : IDisposable
     }
 
     /// <summary>
-    /// Waits for the GPU, logs every object still alive as a leak, destroys them newest first, then disposes the backend
-    /// device and frees the frame slots, once; later calls do nothing.
+    /// Waits for the GPU, destroys the objects deletion queues still hold, logs every object still alive as a leak,
+    /// destroys them newest first, then disposes the backend device and frees the frame slots, once; later calls do
+    /// nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
     /// <remarks>
@@ -362,6 +363,11 @@ public sealed partial class GraphicsDevice : IDisposable
         {
             // Destroying is still valid on a hung or lost device; the objects go anyway.
             _log.Error($"Dispose: waiting for the GPU failed ({idle.Kind}, native code {idle.NativeCode}: {idle.Message}); destroying every object anyway.");
+        }
+
+        foreach (FrameSlot slot in _slots)
+        {
+            slot.Deletions.Retire(_backend);
         }
 
         foreach (HandleTables.LiveObject leaked in _handles.ListLive())

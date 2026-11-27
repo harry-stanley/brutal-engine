@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
+using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Tests.Device;
 using BrutalEngine.TestUtilities;
 using Xunit;
@@ -193,6 +194,35 @@ public sealed class FrameLifecycleTests : IDisposable
     }
 
     [Fact]
+    public void WaitIdle_CompletesSubmittedFramesAndKeepsOpenFrame()
+    {
+        GraphicsDevice device = _fixture.Create();
+        FakeBackendDevice backend = _fixture.BackendDevice;
+        SamplerHandle first = device.CreateSampler(new SamplerDescription()).Value;
+        SamplerHandle second = device.CreateSampler(new SamplerDescription()).Value;
+        ulong firstId = backend.Objects.GetId(first);
+        ulong secondId = backend.Objects.GetId(second);
+        RunFrame(device);
+        device.Destroy(first);
+        _ = device.BeginFrame(out CommandList commands);
+        device.Destroy(second);
+        int start = backend.Calls.Count;
+
+        Assert.True(device.WaitIdle().IsSuccess);
+
+        // Frame 0 is complete, so its queue is retired; the open frame 1 may still use the second sampler.
+        Assert.Equal([Call(Op.WaitIdle), new FakeBackendCall(Op.Destroy, BackendObjectKind.Sampler, firstId, -1)], CallsSince(start));
+        Assert.Equal(0, device.CompletedFrameNumber);
+
+        _ = device.SubmitFrame(commands);
+        start = backend.Calls.Count;
+        Assert.True(device.WaitIdle().IsSuccess);
+
+        Assert.Equal([Call(Op.WaitIdle), new FakeBackendCall(Op.Destroy, BackendObjectKind.Sampler, secondId, -1)], CallsSince(start));
+        Assert.Equal(1, device.CompletedFrameNumber);
+    }
+
+    [Fact]
     public void WaitIdle_BeforeAnyFrame_Succeeds()
     {
         GraphicsDevice device = _fixture.Create();
@@ -233,7 +263,9 @@ public sealed class FrameLifecycleTests : IDisposable
     public void WaitIdle_BackendFailure_ReturnedAndLossOnlyForLoss(ErrorKind kind, bool lost)
     {
         GraphicsDevice device = _fixture.Create();
+        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
         RunFrame(device);
+        device.Destroy(sampler);
         var error = new EngineError(kind, "Injected WaitIdle failure.", 7);
         _fixture.Script.FailNext(Op.WaitIdle, error);
         int calls = _fixture.BackendDevice.Calls.Count;
@@ -243,20 +275,27 @@ public sealed class FrameLifecycleTests : IDisposable
         Assert.Equal(error, result.Error);
         Assert.Equal(lost, device.IsLost);
         Assert.Equal(lost ? ("WaitIdle", 7, kind == ErrorKind.Timeout) : (null, 0, false), (device.LostOperation, device.LostNativeCode, device.LostTimedOut));
+        // Nothing is known to be complete, so the queued sampler wasn't destroyed.
         Assert.Equal(-1, device.CompletedFrameNumber);
         Assert.Equal([Call(Op.WaitIdle)], CallsSince(calls));
     }
 
     [Fact]
-    public void Dispose_AfterFrames_WaitsFirst()
+    public void Dispose_AfterFrames_WaitsThenDestroysQueuedObjects()
     {
         GraphicsDevice device = _fixture.Create();
+        FakeBackendDevice backend = _fixture.BackendDevice;
+        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
+        ulong id = backend.Objects.GetId(sampler);
         RunFrame(device);
-        int start = _fixture.BackendDevice.Calls.Count;
+        device.Destroy(sampler);
+        int start = backend.Calls.Count;
 
         device.Dispose();
 
-        Assert.Equal([Call(Op.WaitIdle), Call(Op.Dispose)], CallsSince(start));
+        Assert.Equal(
+            [Call(Op.WaitIdle), new FakeBackendCall(Op.Destroy, BackendObjectKind.Sampler, id, -1), Call(Op.Dispose)],
+            CallsSince(start));
     }
 
     [Fact]
@@ -279,6 +318,7 @@ public sealed class FrameLifecycleTests : IDisposable
         SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
         ulong id = backend.Objects.GetId(sampler);
         RunFrame(device);
+        device.Destroy(sampler);
         _fixture.Script.FailNext(Op.WaitIdle, new EngineError(ErrorKind.Timeout, "Injected hang.", 2));
 
         device.Dispose();
@@ -289,12 +329,33 @@ public sealed class FrameLifecycleTests : IDisposable
             && entry.Message.StartsWith("Dispose: waiting for the GPU failed (Timeout, native code 2: Injected hang.)", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Dispose_LostDevice_DestroysQueuedObjectsWithoutWaiting()
+    {
+        GraphicsDevice device = _fixture.Create();
+        FakeBackendDevice backend = _fixture.BackendDevice;
+        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
+        _fixture.Script.FailNext(Op.Execute, new EngineError(ErrorKind.Unavailable, "Injected loss.", -4));
+        _ = device.BeginFrame(out CommandList commands);
+        _ = device.SubmitFrame(commands);
+        // On a lost device the object still waits on the queue (recovery, later, discards it instead).
+        device.Destroy(sampler);
+        Assert.DoesNotContain(backend.Calls, call => call.Operation == Op.Destroy);
+        int start = backend.Calls.Count;
+
+        device.Dispose();
+
+        Assert.Equal([Op.Destroy, Op.Dispose], CallsSince(start).Select(call => call.Operation));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
     public void Create_SlotMemoryFails_DisposesBackendDeviceAndFreesEverything(int successes)
     {
-        // Two slots of one block each (the command stream): each row fails a different one.
+        // Two slots of two blocks each (command stream, deletion queue): each row fails a different one.
         var failing = new FailingAllocator(_fixture.Allocator) { FailAfter = successes };
 
         Assert.ThrowsAny<OutOfMemoryException>(() => GraphicsDevice.Create(_fixture.Backend, _fixture.Options() with { Allocator = failing }));
