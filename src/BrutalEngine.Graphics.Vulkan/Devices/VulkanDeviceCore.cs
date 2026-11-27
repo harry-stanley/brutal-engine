@@ -105,6 +105,9 @@ internal sealed class VulkanDeviceCore : IDisposable
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(adapter);
+
+        // Its own check, so a disposed instance is refused even if the ownership check below changes.
+        ObjectDisposedException.ThrowIf(instance.IsDisposed, instance);
         if (!ReferenceEquals(adapter.Instance, instance.Brutal))
         {
             throw new ArgumentException("The adapter belongs to another instance.", nameof(adapter));

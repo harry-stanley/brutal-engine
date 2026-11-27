@@ -221,8 +221,8 @@ public sealed unsafe class VulkanDeviceCoreTests
         using VulkanInstance other = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
         GpuDevices.Adapter foreign = GpuDevices.Suitable(other)[0];
 
-        Assert.Throws<ArgumentNullException>("adapter", () => VulkanDeviceCore.Create(instance, null!, 0, SomeFeatures, Selection(null), new VulkanCallGate()));
-        Assert.Throws<ArgumentException>("adapter", () => VulkanDeviceCore.Create(instance, foreign.Device, foreign.Family, SomeFeatures, Selection(null), new VulkanCallGate()));
+        Assert.Throws<ArgumentNullException>("adapter", () => CreateAndDispose(instance, null!, 0));
+        Assert.Throws<ArgumentException>("adapter", () => CreateAndDispose(instance, foreign.Device, foreign.Family));
     }
 
     [Fact]
@@ -300,6 +300,19 @@ public sealed unsafe class VulkanDeviceCoreTests
         instance.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => VulkanDeviceCore.Create(instance, adapter.Device, adapter.Family, SomeFeatures, Selection(null), new VulkanCallGate()));
+    }
+
+    // A call that must throw: a device it returns anyway is destroyed at once, so a missing check fails the assertion
+    // instead of leaving a device alive at vkDestroyInstance.
+    private static object? CreateAndDispose(VulkanInstance instance, PhysicalDevice adapter, int family)
+    {
+        Result<VulkanDeviceCore> result = VulkanDeviceCore.Create(instance, adapter, family, SomeFeatures, Selection(null), new VulkanCallGate());
+        if (result.TryGetValue(out VulkanDeviceCore? core))
+        {
+            core.Dispose();
+        }
+
+        return null;
     }
 
     private static DeviceExtensionSet.Selection Selection(string? maintenance1) =>
