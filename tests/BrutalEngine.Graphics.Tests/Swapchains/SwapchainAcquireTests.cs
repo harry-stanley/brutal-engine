@@ -217,6 +217,44 @@ public sealed class SwapchainAcquireTests : IDisposable
     }
 
     [Fact]
+    public void Recreation_TablesCannotGrow_DestroysNewSwapchain()
+    {
+        Setup();
+        ulong old = LastId(_fixture.BackendDevice, FakeBackendOperation.CreateSwapchain);
+        // The recreated swapchain has more images than the texture table holds, and the table can't grow.
+        _fixture.Script.SwapchainInfo = request =>
+        {
+            _requests.Add(request);
+            return FakeBackendScript.DefaultSwapchainInfo(request) with { ImageCount = BackendObjectTable.InitialCapacity + 4 };
+        };
+        _fixture.BackendDevice.Objects.BeforeGrowth = kind =>
+        {
+            if (kind == BackendObjectKind.Texture)
+            {
+                throw new InsufficientMemoryException("Simulated: the texture table can't grow.");
+            }
+        };
+        _window.PixelSize = new WindowSize(320, 200);
+        _ = _device.BeginFrame(out CommandList commands);
+
+        _ = Assert.Throws<InsufficientMemoryException>(() => commands.AcquireSwapchainImage(_swapchain, out _));
+
+        // The new swapchain went at once and the old one whatever the result; the handle is left without images.
+        ulong created = LastId(_fixture.BackendDevice, FakeBackendOperation.CreateSwapchain);
+        Assert.Equal(
+            [(FakeBackendOperation.WaitIdle, 0UL), (FakeBackendOperation.CreateSwapchain, created), (FakeBackendOperation.DestroySwapchain, old), (FakeBackendOperation.DestroySwapchain, created)],
+            Lifetime(_fixture.BackendDevice).Skip(2));
+        Assert.Equal(1, _device.Statistics.LiveObjects);
+        _ = _device.SubmitFrame(commands);
+
+        // Once the table can grow, the next acquire creates the swapchain again, from nothing.
+        _fixture.BackendDevice.Objects.BeforeGrowth = null;
+        (AcquireStatus status, SwapchainImage image) = Frame();
+        Assert.Equal((AcquireStatus.Recreated, 320), (status, image.Width));
+        Assert.Equal([0UL, old, 0UL], _requests.Select(request => request.OldSwapchain));
+    }
+
+    [Fact]
     public void Misuse_Throws()
     {
         Setup();
