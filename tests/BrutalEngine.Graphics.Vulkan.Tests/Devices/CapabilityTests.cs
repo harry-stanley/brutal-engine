@@ -121,6 +121,26 @@ public sealed unsafe class CapabilityTests
 
     [Fact]
     [Trait("Category", "Gpu")]
+    public void RealDevice_Disposed_NamingThrows()
+    {
+        // A disposed device that could name objects never reaches its destroyed function table.
+        using Logger logger = new(new LoggerOptions { Sinks = [] });
+        using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
+        List<GpuDevices.Adapter> adapters = GpuDevices.Suitable(instance);
+        Assert.NotEmpty(adapters);
+        foreach (GpuDevices.Adapter adapter in adapters)
+        {
+            VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanCallGate(), null).Value;
+            ulong handle = (ulong)core.Device.Handle.VkHandle;
+            core.Dispose();
+
+            Assert.True(core.Naming.Enabled);
+            Assert.Throws<ObjectDisposedException>(() => DebugNames.Set(core, VkObjectType.Device, handle, "gone"u8));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
     public void RealDevice_ReadsAndNamesAllocateNothing()
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });

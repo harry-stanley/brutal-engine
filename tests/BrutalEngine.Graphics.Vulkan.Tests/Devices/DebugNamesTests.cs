@@ -147,6 +147,17 @@ public sealed unsafe class DebugNamesTests
     }
 
     [Fact]
+    public void Set_Misuse_Throws()
+    {
+        FakeNamer namer = new();
+
+        Assert.Throws<ArgumentNullException>("core", () => DebugNames.Set(null!, VkObjectType.Image, 7, "name"u8));
+        Assert.Throws<ArgumentNullException>("naming", () => DebugNames.Set(namer, null!, VkObjectType.Image, 7, "name"u8));
+        Assert.Throws<ArgumentNullException>("gate", () => new DebugNames.Naming(true, null!, default));
+        Assert.Equal(0, namer.Calls);
+    }
+
+    [Fact]
     public void Set_DeviceLost_MarksTheGateLost()
     {
         FakeNamer namer = new() { Result = VkResult.ErrorDeviceLost };
