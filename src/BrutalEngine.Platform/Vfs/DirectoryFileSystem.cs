@@ -70,6 +70,7 @@ public sealed class DirectoryFileSystem : IFileSystem
     private readonly string _root;
     private readonly bool _isReadOnly;
     private readonly Action<Stream>? _afterTemporaryWrite;
+    private readonly Action<FileInfo>? _beforeListedFileMeasured;
 
     /// <summary>Creates a file system over an existing directory.</summary>
     /// <remarks>Reads the options once. Allocates the normalised root path.</remarks>
@@ -84,17 +85,27 @@ public sealed class DirectoryFileSystem : IFileSystem
     /// </exception>
     /// <exception cref="DirectoryNotFoundException">No directory exists at the root (nothing, or a file).</exception>
     public DirectoryFileSystem(DirectoryFileSystemOptions options)
-        : this(options, null)
+        : this(options, null, null)
     {
     }
 
-    /// <summary>Creates a file system with a hook for tests, which can make a write fail half-way.</summary>
+    /// <summary>
+    /// Creates a file system with hooks for tests, which can make a write fail half-way or change an entry while it is
+    /// listed.
+    /// </summary>
     /// <param name="options">As for the public constructor.</param>
     /// <param name="afterTemporaryWrite">
     /// Called with the temporary file's stream after the bytes are written and before the flush, or
     /// <see langword="null"/>; an <see cref="IOException"/> it throws fails the write.
     /// </param>
-    internal DirectoryFileSystem(DirectoryFileSystemOptions options, Action<Stream>? afterTemporaryWrite)
+    /// <param name="beforeListedFileMeasured">
+    /// Called by <see cref="List"/> with each file entry the OS listed, before its length is taken, or
+    /// <see langword="null"/>.
+    /// </param>
+    internal DirectoryFileSystem(
+        DirectoryFileSystemOptions options,
+        Action<Stream>? afterTemporaryWrite,
+        Action<FileInfo>? beforeListedFileMeasured)
     {
         ArgumentNullException.ThrowIfNull(options);
         string root = options.RootDirectory ?? throw new ArgumentNullException(nameof(options), "RootDirectory is null.");
@@ -111,6 +122,7 @@ public sealed class DirectoryFileSystem : IFileSystem
 
         _isReadOnly = options.IsReadOnly;
         _afterTemporaryWrite = afterTemporaryWrite;
+        _beforeListedFileMeasured = beforeListedFileMeasured;
     }
 
     /// <summary>Whether the file system refuses every write, delete and create.</summary>
@@ -313,8 +325,10 @@ public sealed class DirectoryFileSystem : IFileSystem
     /// <remarks>
     /// Lists every entry the OS reports, including names a <see cref="VfsPath"/> can't address and temporary files. A
     /// symbolic link is listed as what it leads to, through any chain of links: a directory, or a file with the final
-    /// target's length; a link that leads to no file (dangling, or a loop) is a file of length 0. A file removed while
-    /// listing is left out.
+    /// target's length; a link that leads to no file (dangling, or a loop) is a file of length 0. Each entry is measured
+    /// after the OS lists it: a link removed in between is left out, because resolving it finds nothing, but a regular
+    /// file removed in between is still listed, with the length the listing read, and so is an entry that is no longer
+    /// a link when it is resolved.
     /// </remarks>
     public Result<IReadOnlyList<VfsEntry>> List(string relativePath)
     {
@@ -331,13 +345,15 @@ public sealed class DirectoryFileSystem : IFileSystem
                     continue;
                 }
 
+                _beforeListedFileMeasured?.Invoke(file);
                 try
                 {
-                    entries.Add(new VfsEntry(file.Name, VfsEntryKind.File, file.LinkTarget is null ? file.Length : LinkedLength(file)));
+                    entries.Add(new VfsEntry(file.Name, VfsEntryKind.File, ListedLength(file)));
                 }
                 catch (FileNotFoundException)
                 {
-                    // Removed after it was listed and before it was measured: it is gone, so it isn't listed.
+                    // Only resolving a link reaches the OS here (a regular file's length is the listing's): the link
+                    // was removed after it was listed and before it was measured, so it is gone and isn't listed.
                 }
             }
 
@@ -389,22 +405,35 @@ public sealed class DirectoryFileSystem : IFileSystem
             : VfsEntryKind.File;
     }
 
-    /// <summary>The length of the file a symbolic link leads to, through any chain of links.</summary>
+    /// <summary>
+    /// The length <see cref="List"/> gives a file entry: a symbolic link's final target's length, through any chain of
+    /// links, or the length the listing read.
+    /// </summary>
     /// <remarks>
-    /// A link's own length is its target text on POSIX and 0 on Windows, so the final target is measured instead.
+    /// Whether the entry is a link comes from the attributes the listing read, which a removal can't change; asking the
+    /// OS again (<see cref="FileSystemInfo.LinkTarget"/>) answers "not a link" once the link is gone, and the
+    /// listing's length is then the link's own. A link's own length is its target text on POSIX and 0 on Windows, so
+    /// the final target is measured instead. A reparse point that the OS doesn't resolve as a link (on Windows, a tag
+    /// other than a symbolic link's or a mount point's), or an entry no longer a link when it is resolved, keeps the
+    /// listing's length.
     /// </remarks>
-    /// <param name="link">A file entry that is a symbolic link.</param>
+    /// <param name="file">A file entry from the listing.</param>
     /// <returns>
-    /// The final target's length, or 0 if the link leads to no file: its target is missing or not a file, or the OS
-    /// can't follow the links to the end (a loop, or a link it may not read).
+    /// The length; 0 for a link that leads to no file: its target is missing or not a file, or the OS can't follow
+    /// the links to the end (a loop, or a link it may not read).
     /// </returns>
-    /// <exception cref="FileNotFoundException">The link itself is gone.</exception>
-    private static long LinkedLength(FileInfo link)
+    /// <exception cref="FileNotFoundException">The entry is a link that is gone.</exception>
+    private static long ListedLength(FileInfo file)
     {
+        if ((file.Attributes & FileAttributes.ReparsePoint) == 0)
+        {
+            return file.Length;
+        }
+
         FileSystemInfo? target;
         try
         {
-            target = link.ResolveLinkTarget(returnFinalTarget: true);
+            target = file.ResolveLinkTarget(returnFinalTarget: true);
         }
         catch (Exception exception) when (exception is IOException and not FileNotFoundException or UnauthorizedAccessException)
         {
@@ -412,7 +441,9 @@ public sealed class DirectoryFileSystem : IFileSystem
             return 0;
         }
 
-        return target is FileInfo { Exists: true } file ? file.Length : 0;
+        return target is null ? file.Length
+            : target is FileInfo { Exists: true } final ? final.Length
+            : 0;
     }
 
     /// <summary>Maps an OS exception to the <see cref="IFileSystem"/> kinds, keeping its message and code.</summary>

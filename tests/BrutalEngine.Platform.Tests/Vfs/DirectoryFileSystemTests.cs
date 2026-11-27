@@ -226,6 +226,90 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Assert.False(Directory.Exists(Path.Join(_root, "missing")));
     }
 
+    [Fact]
+    public void List_LinkRemovedBeforeItIsMeasured_IsLeftOut()
+    {
+        Directory.CreateDirectory(Path.Join(_root, "data"));
+        string target = Path.Join(_root, "data", "real.bin");
+        File.WriteAllBytes(target, [1, 2, 3, 4, 5, 6, 7, 8]);
+        CreateLink("kept-link", Path.Join("data", "real.bin"), isDirectory: false);
+        CreateLink("removed-link", Path.Join("data", "real.bin"), isDirectory: false);
+        List<string> measured = [];
+        DirectoryFileSystem fileSystem = ListingWith(file =>
+        {
+            measured.Add(file.Name);
+            if (file.Name == "removed-link")
+            {
+                File.Delete(file.FullName);
+            }
+        });
+
+        IReadOnlyList<VfsEntry> entries = fileSystem.List(string.Empty).Value;
+
+        // The OS listed the link and it was gone before it was measured, so it isn't listed; the rest still are, and
+        // the file it pointed to is untouched.
+        Assert.Equal(["kept-link", "removed-link"], measured.Order(StringComparer.Ordinal));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(_root, "removed-link"));
+        Assert.Equal([new VfsEntry("data", VfsEntryKind.Directory, 0), new VfsEntry("kept-link", VfsEntryKind.File, 8)], entries);
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], File.ReadAllBytes(target));
+    }
+
+    [Fact]
+    public void List_FileRemovedBeforeItIsMeasured_KeepsItsListedLength()
+    {
+        File.WriteAllBytes(Path.Join(_root, "kept.bin"), [1, 2]);
+        File.WriteAllBytes(Path.Join(_root, "removed.bin"), [1, 2, 3, 4, 5]);
+        List<string> measured = [];
+        DirectoryFileSystem fileSystem = ListingWith(file =>
+        {
+            measured.Add(file.Name);
+            if (file.Name == "removed.bin")
+            {
+                File.Delete(file.FullName);
+            }
+        });
+
+        IReadOnlyList<VfsEntry> entries = fileSystem.List(string.Empty).Value;
+
+        // A regular file keeps the length the listing read, so one removed after the OS listed it is still listed.
+        Assert.Equal(["kept.bin", "removed.bin"], measured.Order(StringComparer.Ordinal));
+        Assert.False(File.Exists(Path.Join(_root, "removed.bin")));
+        Assert.Equal([new VfsEntry("kept.bin", VfsEntryKind.File, 2), new VfsEntry("removed.bin", VfsEntryKind.File, 5)], entries);
+    }
+
+    [Fact]
+    public void List_LinkReplacedByAFileBeforeItIsMeasured_KeepsItsListedLength()
+    {
+        Directory.CreateDirectory(Path.Join(_root, "data"));
+        File.WriteAllBytes(Path.Join(_root, "data", "real.bin"), [1, 2, 3, 4, 5, 6, 7, 8]);
+        CreateLink("swapped", Path.Join("data", "real.bin"), isDirectory: false);
+
+        // The link's own length, read through System.IO before the swap: its target text on POSIX ("data/real.bin",
+        // 13 bytes), 0 on Windows. Neither is the target's 8 bytes or the new file's 3.
+        long ownLength = new FileInfo(Path.Join(_root, "swapped")).Length;
+        Assert.NotEqual(8, ownLength);
+        Assert.NotEqual(3, ownLength);
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Equal(13, ownLength);
+        }
+
+        DirectoryFileSystem fileSystem = ListingWith(file =>
+        {
+            if (file.Name == "swapped")
+            {
+                File.Delete(file.FullName);
+                File.WriteAllBytes(file.FullName, [7, 7, 7]);
+            }
+        });
+
+        IReadOnlyList<VfsEntry> entries = fileSystem.List(string.Empty).Value;
+
+        // When it is measured it is no longer a link, so it keeps the length the listing read: the link's own.
+        Assert.Null(new FileInfo(Path.Join(_root, "swapped")).LinkTarget);
+        Assert.Equal([new VfsEntry("data", VfsEntryKind.Directory, 0), new VfsEntry("swapped", VfsEntryKind.File, ownLength)], entries);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -240,13 +324,16 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         }
 
         string? written = null;
-        DirectoryFileSystem fileSystem = new(Options(), stream =>
-        {
-            // The new bytes have gone to a temporary file in the target's directory, not to the target.
-            written = ((FileStream)stream).Name;
-            Assert.Equal(6, stream.Length);
-            throw new IOException("Simulated: the disk is full.", diskFull);
-        });
+        DirectoryFileSystem fileSystem = new(
+            Options(),
+            stream =>
+            {
+                // The new bytes have gone to a temporary file in the target's directory, not to the target.
+                written = ((FileStream)stream).Name;
+                Assert.Equal(6, stream.Length);
+                throw new IOException("Simulated: the disk is full.", diskFull);
+            },
+            null);
 
         Result result = fileSystem.WriteAllBytes("save/slot.bin", [7, 7, 7, 7, 7, 7]);
 
@@ -373,7 +460,7 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         // the Linux limit. A temporary name built from the target's name would be longer than any OS allows.
         string name = new(character, count);
         string? temporary = null;
-        DirectoryFileSystem fileSystem = new(Options(), stream => temporary = ((FileStream)stream).Name);
+        DirectoryFileSystem fileSystem = new(Options(), stream => temporary = ((FileStream)stream).Name, null);
 
         Assert.True(fileSystem.WriteAllBytes(name, [4, 5]).IsSuccess);
 
@@ -632,6 +719,8 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
     private DirectoryFileSystemOptions Options(bool isReadOnly = false) => new() { RootDirectory = _root, IsReadOnly = isReadOnly };
 
     private DirectoryFileSystem Create(bool isReadOnly = false) => new(Options(isReadOnly));
+
+    private DirectoryFileSystem ListingWith(Action<FileInfo> beforeListedFileMeasured) => new(Options(), null, beforeListedFileMeasured);
 
     /// <summary>Seeds the root through System.IO: file.txt ("abc"), dir/inner.txt ([1]) and an empty directory.</summary>
     private void Seed()
