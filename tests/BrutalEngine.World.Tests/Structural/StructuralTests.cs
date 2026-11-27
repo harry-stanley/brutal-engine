@@ -277,6 +277,7 @@ public sealed class StructuralTests
             Assert.False(world.Has<Position>(sources[1]));
             Assert.Equal(1, world.Get<Health>(sources[1]).Value);
             Assert.Equal(0, world.Entities.PendingCount);
+            AssertDense(world);
 
             // Still usable: the same add now succeeds and keeps the other values.
             world.Add(sources[1], new Position(-1, -1));
