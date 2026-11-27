@@ -3,6 +3,7 @@ using System.Numerics;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.World.Storage;
+using BrutalEngine.World.Ticks;
 
 namespace BrutalEngine.World;
 
@@ -81,6 +82,10 @@ public sealed partial class EcsWorld : IDisposable
         // Managed only until an archetype gets its first chunk, so it needs no release if the entity table below
         // throws. It starts with the empty archetype at index 0.
         _archetypes = new ArchetypeSet(_allocator, _chunkPool, _components, options.MaxComponentTypes);
+
+        // Allocates nothing native until the first consumer registers, so it needs no release if the entity table
+        // below throws.
+        _tickConsumers = new TickConsumers(_allocator);
 
         // Last, so nothing allocated here needs releasing if an earlier step throws; the table frees its own partial
         // allocation if it throws.
@@ -248,6 +253,7 @@ public sealed partial class EcsWorld : IDisposable
         _disposed = true;
         _components.MarkDisposed();
         _entities.Dispose();
+        _tickConsumers.Dispose();
 
         // Before the pool: the archetypes return their chunks to it.
         try

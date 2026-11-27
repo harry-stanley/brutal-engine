@@ -1,14 +1,19 @@
 using System;
 using BrutalEngine.Core;
+using BrutalEngine.World.Ticks;
 
 namespace BrutalEngine.World;
 
-// The change tick: what writes and new rows are stamped with, and how it advances (docs/design/world.md, section 5,
-// "Change detection").
+// The change tick: what writes and new rows are stamped with, how it advances, and the clamp that keeps old ticks
+// comparable across wrap-around (docs/design/world.md, section 5, "Change detection").
 public sealed partial class EcsWorld
 {
     // The tick that new rows and writes are stamped with. Starts at 1; only Advance moves it on (and the test seam).
     private uint _changeTick = 1;
+
+    // The last-run ticks of the world's queries and systems, kept for the clamp. Created in
+    // the constructor with the world's allocator and freed in Dispose.
+    private readonly TickConsumers _tickConsumers;
 
     /// <summary>
     /// The world's change tick: new rows and writes are stamped with it, and change filters compare stamps against a
@@ -32,6 +37,9 @@ public sealed partial class EcsWorld
             return _changeTick;
         }
     }
+
+    /// <summary>The world's tick consumers: one slot per query or system, with its last-run tick.</summary>
+    internal TickConsumers TickConsumers => _tickConsumers;
 
     /// <summary>
     /// Advances <see cref="ChangeTick"/> by one, so writes after the call are newer than every last-run tick taken
