@@ -213,6 +213,9 @@ public sealed class QueryCacheTests
             Assert.Equal("signature", ex.ParamName);
             Assert.Equal(0, cache.Count);
             Assert.Equal(0, cache.ScannedArchetypes);
+
+            // The match test threw, so it wasn't made: the examined counter is unchanged too.
+            Assert.Equal(0, cache.ArchetypesExamined);
         }
 
         tracking.ThrowIfLeaks();

@@ -64,8 +64,9 @@ internal sealed unsafe class ArchetypeMatchCache : IDisposable
     public int ScannedArchetypes => _scanned;
 
     /// <summary>
-    /// Test seam: the number of match tests made over the cache's lifetime, one per archetype examined. Equal to
-    /// <see cref="ScannedArchetypes"/> exactly when no archetype was examined twice. The engine never reads it.
+    /// Test seam: the number of match tests made over the cache's lifetime, one per archetype examined; a test that
+    /// throws isn't counted. Equal to <see cref="ScannedArchetypes"/> exactly when no archetype was examined twice. The
+    /// engine never reads it.
     /// </summary>
     internal int ArchetypesExamined { get; private set; }
 
@@ -87,8 +88,9 @@ internal sealed unsafe class ArchetypeMatchCache : IDisposable
         while (_scanned < total)
         {
             Archetype archetype = _set[_scanned];
+            bool matches = _terms.Matches(archetype.Signature);
             ArchetypesExamined++;
-            if (_terms.Matches(archetype.Signature))
+            if (matches)
             {
                 Append(archetype);
             }
