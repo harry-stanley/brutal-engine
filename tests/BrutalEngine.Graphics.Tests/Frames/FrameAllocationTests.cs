@@ -73,7 +73,8 @@ public sealed class FrameAllocationTests : IDisposable
 
             uniforms[0] = (byte)i;
             FrameStatus begun = device.BeginFrame(out CommandList commands);
-            bool written = device.WriteBuffer(buffer, 0, uniforms).IsSuccess & device.WriteTexture(write, texels).IsSuccess;
+            bool written = device.WriteBuffer(buffer, 0, uniforms).IsSuccess;
+            written &= device.WriteTexture(write, texels).IsSuccess;
             FrameStatus submitted = device.SubmitFrame(commands);
             written &= device.WriteBuffer(buffer, 256, uniforms.AsSpan(0, 16)).IsSuccess;
             GraphicsStatistics statistics = device.Statistics;
