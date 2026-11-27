@@ -588,6 +588,8 @@ BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.IsReadOnly.get -> bool
 BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.IsReadOnly.init -> void
 BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.RootDirectory.get -> string!
 BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.RootDirectory.init -> void
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.VerifyCase.get -> bool
+BrutalEngine.Platform.Vfs.DirectoryFileSystemOptions.VerifyCase.init -> void
 BrutalEngine.Platform.Vfs.IFileSystem
 BrutalEngine.Platform.Vfs.IFileSystem.CreateDirectory(string! relativePath) -> BrutalEngine.Core.Result
 BrutalEngine.Platform.Vfs.IFileSystem.Delete(string! relativePath) -> BrutalEngine.Core.Result
