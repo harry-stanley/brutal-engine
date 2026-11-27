@@ -28,6 +28,7 @@
     <PackageVersion Include="Ahwoo.Brutal.Slang" Version="2026.10.3" />
     <PackageVersion Include="Ahwoo.Brutal.Vulkan" Version="2026.10.3" />
     <PackageVersion Include="Ahwoo.Brutal.Vulkan.Abstractions" Version="2026.10.3" />
+    <PackageVersion Include="Ahwoo.Brutal.Vulkan.Vma" Version="2026.10.3" />
     <!-- Transitive via Ahwoo.Brutal.Strings; ADR-0011. Remove when BRUTAL depends on a GA ObjectPool. -->
     <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="11.0.0" />
   </ItemGroup>

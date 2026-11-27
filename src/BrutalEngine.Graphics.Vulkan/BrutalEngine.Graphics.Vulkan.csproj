@@ -13,5 +13,6 @@
   <ItemGroup>
     <ProjectReference Include="../BrutalEngine.Graphics/BrutalEngine.Graphics.csproj" />
     <PackageReference Include="Ahwoo.Brutal.Vulkan" />
+    <PackageReference Include="Ahwoo.Brutal.Vulkan.Vma" />
   </ItemGroup>
 </Project>
