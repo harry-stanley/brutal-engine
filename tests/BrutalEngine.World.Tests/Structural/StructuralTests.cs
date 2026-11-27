@@ -35,6 +35,10 @@ public sealed class StructuralTests
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
         {
+            // Position sorts before Health and Payload, so every Position add shifts the shared columns: a value
+            // copied to the source's column index instead of the target's would land in the wrong column.
+            RegisterInOrder(world);
+
             // A full first chunk and five rows in a second, all with Health and Payload.
             Expected expected = new();
             Entity first = world.Spawn(new Health(0), new Payload(0));
@@ -83,6 +87,20 @@ public sealed class StructuralTests
             // A tag moves an entity on from the target, keeping its three columns.
             world.Add(entities[3], default(Marker));
             expected[entities[3]] = expected[entities[3]] with { Marker = true };
+            AssertDense(world);
+            expected.AssertWorld(world);
+
+            // Health into {Position, Payload}: the added id sorts between the shared ones, so Payload moves from
+            // column 1 to column 2 while Position stays in column 0. The second entity fills the moved row.
+            Entity withoutHealth = world.Spawn(new Position(9, -9), new Payload(9));
+            Entity filler = world.Spawn(new Position(10, -10), new Payload(10));
+            expected[withoutHealth] = new Values(new Position(9, -9), null, 9, false);
+            expected[filler] = new Values(new Position(10, -10), null, 10, false);
+            Archetype withoutHealthSource = ArchetypeOf(world, withoutHealth);
+            world.Add(withoutHealth, new Health(11));
+            expected[withoutHealth] = expected[withoutHealth] with { Health = 11 };
+            Assert.Equal((withoutHealthSource.Index, 0, 0), Where(world, filler));
+            Assert.Equal(target.Index, ArchetypeOf(world, withoutHealth).Index);
             AssertDense(world);
             expected.AssertWorld(world);
 
