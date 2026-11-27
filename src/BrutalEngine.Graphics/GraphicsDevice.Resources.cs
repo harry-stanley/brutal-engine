@@ -254,7 +254,10 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Destroys a buffer: its handle and every copy become stale at once.</summary>
     /// <param name="buffer">A live buffer of this device.</param>
-    /// <exception cref="ArgumentException"><paramref name="buffer"/> is the null handle.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="buffer"/> is the null handle, or a transient allocation's buffer
+    /// (<see cref="TransientAllocation.Buffer"/>), which the device owns; nothing changed.
+    /// </exception>
     /// <exception cref="StaleHandleException">
     /// <paramref name="buffer"/> isn't a live buffer of this device: it was destroyed already, or was never issued
     /// here. A handle from another device is detected only when its index or generation doesn't match a live buffer
@@ -270,7 +273,18 @@ public sealed partial class GraphicsDevice
     /// submitted one. Before the first frame begins, it is destroyed at once. Owner thread. Allocates no managed memory,
     /// except the exception.
     /// </remarks>
-    public void Destroy(BufferHandle buffer) => DestroyObject(BackendObjectKind.Buffer, buffer.Value, nameof(buffer));
+    public void Destroy(BufferHandle buffer)
+    {
+        ThrowIfUnusable(DestroyApi);
+        _handles.ThrowIfNotLive(BackendObjectKind.Buffer, buffer.Value, nameof(buffer));
+        if (_handles.IsAlias(buffer.Value))
+        {
+            throw new ArgumentException(
+                "Destroy: the buffer is a transient allocation's, which the device owns; it goes stale when its frame is submitted.", nameof(buffer));
+        }
+
+        DestroyObject(BackendObjectKind.Buffer, buffer.Value, nameof(buffer));
+    }
 
     /// <summary>Destroys a texture and every view of it: their handles and every copy become stale at once.</summary>
     /// <param name="texture">A live texture of this device.</param>

@@ -129,7 +129,8 @@ public sealed partial class GraphicsDevice
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// The plan holds the copies of every write the frame lands (the pending ones made before it began, then its own,
-    /// in call order), then its recorded commands. A failed submission marks the device lost; on a lost device the
+    /// in call order), then its recorded commands. Once the frame is closed, on a lost device too, the buffer handles of
+    /// its transient allocations are stale. A failed submission marks the device lost; on a lost device the
     /// backend isn't called and the frame completes empty, its writes dropped. Owner thread. Allocates nothing, except
     /// the exception and the log line of a newly detected loss.
     /// </remarks>

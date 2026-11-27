@@ -468,6 +468,7 @@ BrutalEngine.Graphics.ColorValue.G.init -> void
 BrutalEngine.Graphics.ColorValue.R.get -> float
 BrutalEngine.Graphics.ColorValue.R.init -> void
 BrutalEngine.Graphics.CommandList
+BrutalEngine.Graphics.CommandList.AllocateTransient(long byteCount, BrutalEngine.Graphics.TransientUsage usage, out BrutalEngine.Graphics.TransientAllocation allocation) -> BrutalEngine.Core.Result
 BrutalEngine.Graphics.CommandList.CommandList() -> void
 BrutalEngine.Graphics.CompareFunction
 BrutalEngine.Graphics.CompareFunction.Always = 7 -> BrutalEngine.Graphics.CompareFunction
@@ -933,6 +934,11 @@ BrutalEngine.Graphics.TextureWrite.Region.init -> void
 BrutalEngine.Graphics.TextureWrite.Target.get -> BrutalEngine.Graphics.TextureLocation
 BrutalEngine.Graphics.TextureWrite.Target.init -> void
 BrutalEngine.Graphics.TextureWrite.TextureWrite() -> void
+BrutalEngine.Graphics.TransientAllocation
+BrutalEngine.Graphics.TransientAllocation.Buffer.get -> BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.TransientAllocation.Data.get -> System.Span<byte>
+BrutalEngine.Graphics.TransientAllocation.Offset.get -> long
+BrutalEngine.Graphics.TransientAllocation.TransientAllocation() -> void
 BrutalEngine.Graphics.TransientUsage
 BrutalEngine.Graphics.TransientUsage.Index = 2 -> BrutalEngine.Graphics.TransientUsage
 BrutalEngine.Graphics.TransientUsage.Indirect = 16 -> BrutalEngine.Graphics.TransientUsage
