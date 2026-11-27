@@ -174,6 +174,41 @@ public sealed partial class GraphicsDeviceResourceTests
         Assert.True(device.CreateTexture(Texture() with { SampleCount = 1, Usage = TextureUsage.ColorTarget }).IsSuccess);
     }
 
+    // The fake reports ColorSampleCounts X1 | X4, so 2, 8 and 16 aren't listed; every format has Multisample.
+    public static TheoryData<TextureFormat, int, bool> ColorSampleCountRows() => new()
+    {
+        { TextureFormat.Rgba8Unorm, 2, false },
+        { TextureFormat.Rgba8Unorm, 8, false },
+        { TextureFormat.Rgba16Float, 16, false },
+        { TextureFormat.Rgba8Unorm, 4, true },
+        { TextureFormat.Rgba16Float, 4, true },
+        // Depth sample counts aren't reported yet, so a depth format needs only the Multisample flag.
+        { TextureFormat.Depth32Float, 2, true },
+        { TextureFormat.Depth16Unorm, 8, true },
+    };
+
+    [Theory]
+    [MemberData(nameof(ColorSampleCountRows))]
+    public void CreateTexture_SampleCount_MustBeAColorSampleCount(TextureFormat format, int sampleCount, bool supported)
+    {
+        _fixture.Script.FormatSupport = _ => FormatSupport.ColorTarget | FormatSupport.DepthStencilTarget | FormatSupport.Multisample;
+        GraphicsDevice device = _fixture.Create();
+        Assert.Equal(SampleCounts.X1 | SampleCounts.X4, device.Capabilities.Limits.ColorSampleCounts);
+        TextureUsage usage = format is TextureFormat.Depth16Unorm or TextureFormat.Depth32Float ? TextureUsage.DepthStencilTarget : TextureUsage.ColorTarget;
+
+        Result<TextureHandle> created = device.CreateTexture(Texture() with { Format = format, SampleCount = sampleCount, Usage = usage, DebugName = "Msaa" });
+
+        Assert.Equal(supported, created.IsSuccess);
+        if (!supported)
+        {
+            Assert.Equal(ErrorKind.Unsupported, created.Error.Kind);
+            Assert.Equal(
+                $"CreateTexture 'Msaa': {sampleCount} samples aren't supported for color format {format} on this device (supported counts: X1, X4).",
+                created.Error.Message);
+            Assert.DoesNotContain(_fixture.BackendDevice.Calls, call => call.Operation == FakeBackendOperation.CreateTexture);
+        }
+    }
+
     public static TheoryData<string> TextureFailureRules() =>
         ["ZeroWidth", "AboveLimit", "ViewOutsideTexture", "TextureBackendFails", "DefaultViewBackendFails", "ViewBackendFails"];
 
