@@ -40,8 +40,16 @@ public sealed class SwapchainSubmitTests : IDisposable
             Height = 8,
             Usage = TextureUsage.CopySource,
         }).Value;
+        TextureHandle other = device.CreateTexture(new TextureDescription
+        {
+            Format = TextureFormat.Bgra8UnormSrgb,
+            Width = 8,
+            Height = 8,
+            Usage = TextureUsage.CopyDestination,
+        }).Value;
 
         // Frame 0 writes b's image from a buffer, frame 1 writes a's from a texture: the other image is cleared each time.
+        // Each frame first copies into another texture, so the image's write is not the first record the scan reads.
         for (int frame = 0; frame < 2; frame++)
         {
             _ = device.BeginFrame(out CommandList commands);
@@ -49,6 +57,13 @@ public sealed class SwapchainSubmitTests : IDisposable
             Assert.Equal(AcquireStatus.Acquired, commands.AcquireSwapchainImage(b, out SwapchainImage imageB));
             if (frame == 0)
             {
+                commands.CopyBufferToTexture(new TextureBufferCopy
+                {
+                    Texture = new TextureLocation(other),
+                    Region = new TextureRegion(0, 0, 4, 4),
+                    Buffer = rows,
+                    BytesPerRow = 256,
+                });
                 commands.CopyBufferToTexture(new TextureBufferCopy
                 {
                     Texture = new TextureLocation(imageB.Texture),
@@ -59,6 +74,12 @@ public sealed class SwapchainSubmitTests : IDisposable
             }
             else
             {
+                commands.CopyTextureToTexture(new TextureCopy
+                {
+                    Source = new TextureLocation(source),
+                    SourceRegion = new TextureRegion(0, 0, 8, 8),
+                    Destination = new TextureLocation(other),
+                });
                 commands.CopyTextureToTexture(new TextureCopy
                 {
                     Source = new TextureLocation(source),
@@ -80,6 +101,7 @@ public sealed class SwapchainSubmitTests : IDisposable
                 backend.Calls.Skip(calls).Select(call => (call.Operation, call.Operation == FakeBackendOperation.Present ? call.Id : 0UL)));
         }
 
+        device.Destroy(other);
         device.Destroy(source);
         device.Destroy(rows);
     }
@@ -93,24 +115,29 @@ public sealed class SwapchainSubmitTests : IDisposable
         _fixture.Script.RecordPlans = true;
         SwapchainHandle a = device.CreateSwapchain(first, new SwapchainOptions()).Value;
         SwapchainHandle b = device.CreateSwapchain(Window(), new SwapchainOptions()).Value;
+        BufferHandle unrelated = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.CopyDestination }).Value;
         byte[] texels = new byte[4 * 4 * 4];
 
         // A WriteTexture lands through the frame's upload stream, not its commands: frame 0 writes a's image, frame 1 b's,
-        // and only the other image is cleared, after the write.
+        // and only the other image is cleared, after the write. A WriteBuffer comes first in the same stream, so the
+        // image's write is not the first record the scan reads.
         for (int frame = 0; frame < 2; frame++)
         {
             _ = device.BeginFrame(out CommandList commands);
             Assert.Equal(AcquireStatus.Acquired, commands.AcquireSwapchainImage(a, out SwapchainImage imageA));
             Assert.Equal(AcquireStatus.Acquired, commands.AcquireSwapchainImage(b, out SwapchainImage imageB));
             TextureHandle written = frame == 0 ? imageA.Texture : imageB.Texture;
+            Assert.True(device.WriteBuffer(unrelated, 0, new byte[16]).IsSuccess);
             Assert.True(device.WriteTexture(new TextureWrite { Target = new(written), Region = new(0, 0, 4, 4) }, texels).IsSuccess);
 
             Assert.Equal(FrameStatus.Ready, device.SubmitFrame(commands));
 
             RecordedPlan plan = backend.Plans[^1];
-            Assert.Equal([CommandKind.CopyBufferToTexture, CommandKind.ClearSwapchainImage], Kinds(plan));
+            Assert.Equal([CommandKind.CopyBufferToBuffer, CommandKind.CopyBufferToTexture, CommandKind.ClearSwapchainImage], Kinds(plan));
             Assert.Equal([frame == 0 ? 1 : 0], Clears(plan));
         }
+
+        device.Destroy(unrelated);
     }
 
     [Theory]
