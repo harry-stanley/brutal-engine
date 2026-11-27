@@ -500,7 +500,7 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
     }
 
     /// <summary>Creates one object of a kind and returns how to look it up and destroy it.</summary>
-    private static Made Make(GraphicsDevice device, string kind, string? debugName)
+    private Made Make(GraphicsDevice device, string kind, string? debugName)
     {
         switch (kind)
         {
