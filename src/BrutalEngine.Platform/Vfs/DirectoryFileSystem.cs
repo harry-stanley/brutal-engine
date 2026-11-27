@@ -18,7 +18,9 @@ namespace BrutalEngine.Platform.Vfs;
 /// lexically; its <c>/</c> separators become the OS's, and the OS resolves the result. Lookups follow the OS too: on a
 /// case-insensitive file system one spelling opens another. If the root directory is removed after construction,
 /// <see cref="GetEntryKind"/> answers <see cref="VfsEntryKind.None"/> for every path, the root included, every other
-/// operation fails with <see cref="ErrorKind.NotFound"/>, and none creates the root again.
+/// operation fails with <see cref="ErrorKind.NotFound"/>, and none creates the root again unless the root is removed
+/// during the call, in the window between checking that it exists and creating a directory, which the OS gives no way
+/// to close.
 /// </para>
 /// <para>
 /// <b>Symbolic links</b> are followed wherever they lead, except at the last name of a write or of a file's delete: the
@@ -287,7 +289,8 @@ public sealed class DirectoryFileSystem : IFileSystem
 
         try
         {
-            // Directory.CreateDirectory creates every missing ancestor, so it would bring a removed root back.
+            // Directory.CreateDirectory creates every missing ancestor, so it would bring a removed root back. A root
+            // removed after this check and before the call still comes back: the OS gives no way to close that window.
             if (!Directory.Exists(_root))
             {
                 return RootIsGone(relativePath, 0);
@@ -478,8 +481,9 @@ public sealed class DirectoryFileSystem : IFileSystem
             }
             catch (DirectoryNotFoundException missing)
             {
-                // Directory.CreateDirectory creates every missing ancestor, so it would bring a removed root back;
-                // and a file on the way is reported as one.
+                // Directory.CreateDirectory creates every missing ancestor, so it would bring a removed root back (it
+                // still does if the root is removed after this check, a window the OS gives no way to close); and a
+                // file on the way is reported as one.
                 if (!Directory.Exists(_root))
                 {
                     return RootIsGone(relativePath, missing.HResult);
