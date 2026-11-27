@@ -77,6 +77,15 @@ public sealed class ShaderManifestTests
         { M(S("/abs/a.slang")), "error: $.shaders[0].source: '/abs/a.slang' is absolute; sources are relative to the manifest's directory." },
         { M(S("sub\\\\a.slang")), "error: $.shaders[0].source: 'sub\\a.slang' contains '\\'; separate directories with '/'" },
         { M(S("a\\u0000.slang")), "error: $.shaders[0].source: the source contains a NUL character." },
+        // Portable on every OS: Path.IsPathRooted differs (C: is rooted only on Windows), so ':' is rejected everywhere,
+        // and Windows drops trailing dots and spaces from a segment. On Windows the drive rows are absolute instead.
+        { M(S("C:/a.slang")), "error: $.shaders[0].source: 'C:/a.slang' " },
+        { M(S("C:a.slang")), "error: $.shaders[0].source: 'C:a.slang' " },
+        { M(S("sub/a:b.slang")), "error: $.shaders[0].source: 'sub/a:b.slang' contains ':', which Windows reads as a drive or a stream." },
+        { M(S("a.slang.")), "error: $.shaders[0].source: 'a.slang.' has a segment ending in '.' or ' ', which Windows drops." },
+        { M(S("sub./a.slang")), "error: $.shaders[0].source: 'sub./a.slang' has a segment ending in '.' or ' '" },
+        { M(S("a.slang ")), "error: $.shaders[0].source: 'a.slang ' has a segment ending in '.' or ' '" },
+        { M(S("sub /a.slang")), "error: $.shaders[0].source: 'sub /a.slang' has a segment ending in '.' or ' '" },
         { M(S("sub/")), "error: $.shaders[0].source: 'sub/' has no file name." },
         { M(S(".slang")), "error: $.shaders[0].source: '.slang' has no file name." },
 

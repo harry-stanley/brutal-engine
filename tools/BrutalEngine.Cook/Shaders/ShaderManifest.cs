@@ -27,8 +27,8 @@ internal static class ShaderManifest
     /// <param name="error">On failure, the manifest path, the JSON path and the broken rule; otherwise null.</param>
     /// <returns>
     /// False for invalid JSON; a version other than the number <see cref="Version"/>; an unknown, repeated or missing
-    /// property; an empty shader or entry list; a source that is empty, absolute, uses '\' or NUL, names no file, isn't
-    /// inside the manifest's directory, or writes the same files as an earlier one (same directory and name, ignoring
+    /// property; an empty shader or entry list; a source that is empty, absolute, uses '\', NUL or ':', has a segment
+    /// ending in '.' or ' ' (other than "." and ".."), names no file, isn't inside the manifest's directory, or writes the same files as an earlier one (same directory and name, ignoring
     /// case and extension); an entry name that isn't an ASCII identifier or repeats another ignoring case; or a stage or
     /// matrix layout token other than the command line's.
     /// </returns>
@@ -161,6 +161,8 @@ internal static class ShaderManifest
             : source.Contains('\0', StringComparison.Ordinal) ? "the source contains a NUL character."
             : source.Contains('\\', StringComparison.Ordinal) ? $"'{source}' contains '\\'; separate directories with '/' on every OS."
             : Path.IsPathRooted(source) ? $"'{source}' is absolute; sources are relative to the manifest's directory."
+            : source.Contains(':', StringComparison.Ordinal) ? $"'{source}' contains ':', which Windows reads as a drive or a stream."
+            : HasTrimmedSegment(source) ? $"'{source}' has a segment ending in '.' or ' ', which Windows drops."
             : null;
         string fullPath = problem is null ? Path.GetFullPath(source, directory) : "";
         string relative = problem is null ? Path.GetRelativePath(directory, fullPath) : "";
@@ -170,6 +172,11 @@ internal static class ShaderManifest
             : null;
         return problem is null ? fullPath : throw new InvalidManifestException(at, problem);
     }
+
+    // Windows drops trailing dots and spaces from each path segment ("a.slang." opens "a.slang"), so such a source
+    // would name a different file there than on Linux. "." and ".." are navigation, not names.
+    private static bool HasTrimmedSegment(string source) =>
+        Array.Exists(source.Split('/'), segment => segment is not ("." or "..") && segment.Length > 0 && segment[^1] is '.' or ' ');
 
     private static List<ShaderEntry> ReadEntries(ref Utf8JsonReader reader, string at)
     {
