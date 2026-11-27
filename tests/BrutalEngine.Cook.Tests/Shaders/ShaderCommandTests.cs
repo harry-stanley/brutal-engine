@@ -36,6 +36,8 @@ public sealed class ShaderCommandTests : IDisposable
         byte[] fragment = File.ReadAllBytes(Path.Combine(output, "triangle.fragMain.spv"));
         Assert.Equal(SpirV.Magic, SpirV.FirstWord(vertex));
         Assert.Equal(SpirV.Magic, SpirV.FirstWord(fragment));
+        Assert.Equal(SpirV.Version1Dot6, SpirV.Version(vertex));
+        Assert.Equal(SpirV.Version1Dot6, SpirV.Version(fragment));
         Assert.Equal(0u, SpirV.EntryPointExecutionModel(vertex));
         Assert.Equal(4u, SpirV.EntryPointExecutionModel(fragment));
         Assert.Equal(
@@ -54,6 +56,7 @@ public sealed class ShaderCommandTests : IDisposable
         Assert.Equal(CookExitCode.Success, exit);
         byte[] module = File.ReadAllBytes(Path.Combine(output, "compute.csMain.spv"));
         Assert.Equal(SpirV.Magic, SpirV.FirstWord(module));
+        Assert.Equal(SpirV.Version1Dot6, SpirV.Version(module));
         Assert.Equal(5u, SpirV.EntryPointExecutionModel(module));
     }
 

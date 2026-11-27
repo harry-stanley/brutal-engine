@@ -42,10 +42,16 @@ internal static class SpirV
 {
     public const uint Magic = 0x07230203;
 
+    /// <summary>SPIR-V 1.6 as the header's version word encodes it: 0x00MMmm00 (SPIR-V spec 2.3).</summary>
+    public const uint Version1Dot6 = 0x00010600;
+
     private const ushort OpEntryPoint = 15;
 
     /// <summary>The first word of the module, read little-endian as Slang writes it on x64.</summary>
     public static uint FirstWord(byte[] module) => BinaryPrimitives.ReadUInt32LittleEndian(module);
+
+    /// <summary>The header's version word (word 1), which the target profile sets.</summary>
+    public static uint Version(byte[] module) => BinaryPrimitives.ReadUInt32LittleEndian(module.AsSpan(sizeof(uint)));
 
     /// <summary>The execution model of the module's only OpEntryPoint: 0 Vertex, 4 Fragment, 5 GLCompute (SPIR-V spec 3.3).</summary>
     public static uint EntryPointExecutionModel(byte[] module)
