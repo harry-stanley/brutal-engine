@@ -234,11 +234,12 @@ public sealed partial class EcsWorld : IDisposable
     internal ArchetypeSet Archetypes => _archetypes;
 
     /// <summary>
-    /// Frees everything the world allocated, the entity table, the archetypes' chunks and pooled chunks included.
-    /// Idempotent: later calls do nothing.
+    /// Frees everything the world allocated, the entity table, the archetypes' chunks, pooled chunks and the caches of
+    /// queries not yet disposed included. Idempotent: later calls do nothing.
     /// </summary>
     /// <remarks>
-    /// Afterwards every other member throws <see cref="ObjectDisposedException"/>. The allocator from
+    /// Afterwards every other member, and every member of its queries but <see cref="Query.Dispose"/> (which does
+    /// nothing), throws <see cref="ObjectDisposedException"/>. The allocator from
     /// <see cref="WorldOptions.Allocator"/> is not disposed. Allocates nothing.
     /// </remarks>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
@@ -252,6 +253,9 @@ public sealed partial class EcsWorld : IDisposable
 
         _disposed = true;
         _components.MarkDisposed();
+
+        // Before the tick-consumer list, which holds their last-run tick slots.
+        ReleaseQueries();
         _entities.Dispose();
         _tickConsumers.Dispose();
 
