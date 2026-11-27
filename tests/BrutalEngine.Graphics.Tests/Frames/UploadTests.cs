@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using BrutalEngine.Core;
 using BrutalEngine.Core.Logging;
 using BrutalEngine.Core.Memory;
@@ -250,6 +251,73 @@ public sealed class UploadTests : IDisposable
         RunFrame(device);
         Assert.Contains(_fixture.BackendDevice.Calls.Skip(start), call => call.Operation == Op.Destroy && call.Id == large);
         Assert.Equal(3, Warnings().Count);
+    }
+
+    [Fact]
+    public void Overflow_CopyCannotBeRecorded_NotCounted()
+    {
+        var failing = new FailingAllocator(_fixture.Allocator);
+        GraphicsDevice device = _fixture.Create(_gpu, _fixture.Options() with { UploadRingBytesPerFrame = RingBytes, Allocator = failing });
+        BufferHandle buffer = device.CreateBuffer(_target).Value;
+        int record = (int)CommandRecordHeader.AlignUp(CommandRecordHeader.TrailingOffset(Unsafe.SizeOf<CopyBufferToBufferCommand>()));
+        int records = CommandWriter.DefaultInitialCapacity / record;
+
+        // Fill the frame's upload stream with ring writes, the last one taking the rest of the ring, so the next write
+        // overflows and its copy needs the stream to grow.
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.True(device.WriteBuffer(buffer, 0, [1]).IsSuccess);
+        int allocations = failing.Allocations;
+        for (int i = 1; i < records - 1; i++)
+        {
+            Assert.True(device.WriteBuffer(buffer, 0, [1]).IsSuccess);
+        }
+
+        Assert.True(device.WriteBuffer(buffer, 0, new byte[RingBytes - ((records - 1) * UploadRing.Alignment)]).IsSuccess);
+        Assert.Equal(allocations, failing.Allocations);
+        int created = _gpu.Device!.HostBuffers.Count;
+        // The fake maps the dedicated block through the device's allocator: that succeeds, the stream's growth fails.
+        failing.FailAfter = 1;
+
+        Assert.ThrowsAny<OutOfMemoryException>(() => device.WriteBuffer(buffer, 0, [2]));
+
+        // The dedicated block was made (it goes once the frame completes), but no copy was recorded: nothing counted or logged.
+        Assert.Equal((created + 1, allocations + 1), (_gpu.Device.HostBuffers.Count, failing.Allocations));
+        Assert.Equal(0, device.Statistics.UploadOverflowBytes);
+        Assert.Empty(Warnings());
+
+        // The write succeeds when tried again, and only then counts and logs.
+        Assert.True(device.WriteBuffer(buffer, 0, [2]).IsSuccess);
+        _ = device.SubmitFrame(commands);
+        Assert.Equal(records + 1, _gpu.Device.Plans[^1].Length);
+        Assert.Equal([2], _gpu.Device.Plans[^1][^1].Staged);
+        Assert.Equal(1, device.Statistics.UploadOverflowBytes);
+        Assert.Single(Warnings());
+    }
+
+    [Fact]
+    public void WriteTexture_Overflow_CountsStagedBytes()
+    {
+        GraphicsDevice device = Create();
+        BufferHandle buffer = device.CreateBuffer(_target).Value;
+        TextureHandle texture = device.CreateTexture(new TextureDescription
+        {
+            Format = TextureFormat.Rgba8Unorm,
+            Width = 16,
+            Height = 16,
+            Usage = TextureUsage.CopyDestination | TextureUsage.Sampled,
+        }).Value;
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.True(device.WriteBuffer(buffer, 0, new byte[RingBytes]).IsSuccess);
+
+        // 3 rows of 5 Rgba8 texels (20 bytes) staged 256 bytes apart: 532 bytes, which overflow the full ring.
+        Assert.True(device.WriteTexture(new TextureWrite { Target = new(texture), Region = new(0, 0, 5, 3) }, new byte[3 * 20]).IsSuccess);
+        _ = device.SubmitFrame(commands);
+
+        // The overflow counts the staged bytes, the dedicated block's size; the frame's upload bytes count the texels.
+        const long staged = (256 * 2) + 20;
+        Assert.Equal(staged, _gpu.Device!.Sizes[_gpu.Device.HostBuffers[^1]]);
+        Assert.Equal(staged, device.Statistics.UploadOverflowBytes);
+        Assert.Equal(RingBytes + (3 * 20), device.Statistics.UploadBytesLastFrame);
     }
 
     public static TheoryData<int, int, int> RowPitches() => new()

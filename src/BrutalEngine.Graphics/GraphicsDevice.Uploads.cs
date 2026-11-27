@@ -63,7 +63,7 @@ public sealed partial class GraphicsDevice
         ThrowIfUnusable(WriteBufferApi);
         _handles.ThrowIfNotLive(BackendObjectKind.Buffer, buffer.Value, nameof(buffer));
         CopyValidator.ValidateWriteBuffer(_handles.GetBuffer(buffer.Value), offset, data.Length);
-        if (!TryStage(data.Length, WriteBufferApi, out UploadRing? block, out long staged, out EngineError error))
+        if (!TryStage(data.Length, WriteBufferApi, out UploadRing? block, out long staged, out bool overflow, out EngineError error))
         {
             return error;
         }
@@ -77,6 +77,11 @@ public sealed partial class GraphicsDevice
             DestinationOffset = offset,
             Size = data.Length,
         });
+        if (overflow)
+        {
+            CountOverflow(data.Length, WriteBufferApi);
+        }
+
         _uploadBytes += data.Length;
         return Result.Success;
     }
@@ -101,8 +106,10 @@ public sealed partial class GraphicsDevice
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// The rows are repacked to a multiple of <see cref="TextureBufferCopy.RowPitchAlignment"/> as they are staged; the
-    /// staging and ordering are those of <see cref="WriteBuffer"/>, which the overflow and statistics rules also follow
-    /// (the bytes counted are the region's texels). Owner thread. Allocation as for <see cref="WriteBuffer"/>.
+    /// staging, ordering and overflow rules are those of <see cref="WriteBuffer"/>.
+    /// <see cref="GraphicsStatistics.UploadBytesLastFrame"/> counts the region's texels, and
+    /// <see cref="GraphicsStatistics.UploadOverflowBytes"/> the staged bytes (the repacked rows, padding between them
+    /// included). Owner thread. Allocation as for <see cref="WriteBuffer"/>.
     /// </remarks>
     public Result WriteTexture(in TextureWrite write, ReadOnlySpan<byte> data)
     {
@@ -115,7 +122,7 @@ public sealed partial class GraphicsDevice
         int sourcePitch = write.BytesPerRow == 0 ? rowBytes : write.BytesPerRow;
         int pitch = (rowBytes + TextureBufferCopy.RowPitchAlignment - 1) & ~(TextureBufferCopy.RowPitchAlignment - 1);
         long size = ((long)pitch * (write.Region.Height - 1)) + rowBytes;
-        if (!TryStage(size, WriteTextureApi, out UploadRing? block, out long staged, out EngineError error))
+        if (!TryStage(size, WriteTextureApi, out UploadRing? block, out long staged, out bool overflow, out EngineError error))
         {
             return error;
         }
@@ -136,6 +143,11 @@ public sealed partial class GraphicsDevice
             Aspect = TextureAspect.Color,
             Region = write.Region,
         });
+        if (overflow)
+        {
+            CountOverflow(size, WriteTextureApi);
+        }
+
         _uploadBytes += (long)rowBytes * write.Region.Height;
         return Result.Success;
     }
@@ -144,10 +156,12 @@ public sealed partial class GraphicsDevice
     private CommandWriter CurrentUploads => _slots[CurrentSlot()].Uploads;
 
     // Finds room for a write: the open slot's ring, else the pending blocks, else a dedicated overflow block that the frame
-    // copying it destroys once done. Fails, staging nothing, on a lost device or when a block can't be created.
-    private bool TryStage(long size, string api, [NotNullWhen(true)] out UploadRing? block, out long offset, out EngineError error)
+    // copying it destroys once done (overflow; the caller counts it once the copy is recorded). Fails, staging nothing,
+    // on a lost device or when a block can't be created.
+    private bool TryStage(
+        long size, string api, [NotNullWhen(true)] out UploadRing? block, out long offset, out bool overflow, out EngineError error)
     {
-        (block, offset, error) = (null, -1, default);
+        (block, offset, overflow, error) = (null, -1, false, default);
         if (IsLostCore)
         {
             error = new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost.");
@@ -193,7 +207,7 @@ public sealed partial class GraphicsDevice
         }
 
         queue.Add(BackendObjectKind.Buffer, block.Id);
-        CountOverflow(size, api);
+        overflow = true;
         offset = block.TryReserve(size);
         return true;
     }
