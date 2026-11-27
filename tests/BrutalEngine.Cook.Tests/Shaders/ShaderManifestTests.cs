@@ -181,6 +181,35 @@ public sealed class ShaderManifestTests
         Assert.Equal([manifest], Directory.GetFiles(Path.GetDirectoryName(manifest)!));
     }
 
+    [Fact]
+    public void Read_ValidManifestOnRealTree_WritesNothing()
+    {
+        // Sources in the manifest's directory, in a subdirectory, and in one that doesn't exist yet: reading succeeds
+        // and leaves every file and directory of the tree as it was.
+        using var temp = new TempDirectory();
+        string directory = temp.Combine("m");
+        Directory.CreateDirectory(Path.Combine(directory, "sub"));
+        File.WriteAllText(Path.Combine(directory, "a.slang"), "// a\n");
+        File.WriteAllText(Path.Combine(directory, "sub", "b.slang"), "// b\n");
+        string manifest = Path.Combine(directory, "shaders.cook.json");
+        File.WriteAllText(manifest, M(S("a.slang") + "," + S("sub/b.slang") + "," + S("new/c.slang")).Replace('\'', '"'));
+        string[] before = Listing(temp.Path);
+
+        bool read = ShaderManifest.TryRead(manifest, File.ReadAllBytes(manifest), out IReadOnlyList<ShaderCookOptions>? shaders, out string? error);
+
+        Assert.True(read, error);
+        Assert.Equal(
+            [Path.Combine(directory, "a.slang"), Path.Combine(directory, "sub", "b.slang"), Path.Combine(directory, "new", "c.slang")],
+            shaders!.Select(shader => shader.Source));
+        Assert.Equal(before, Listing(temp.Path));
+    }
+
+    // Every file and directory under `root`, recursively, with each file's length and write time.
+    private static string[] Listing(string root) =>
+        [.. Directory.GetFileSystemEntries(root, "*", SearchOption.AllDirectories)
+            .Order(StringComparer.Ordinal)
+            .Select(entry => File.Exists(entry) ? $"{entry} {new FileInfo(entry).Length} {File.GetLastWriteTimeUtc(entry):O}" : $"{entry}/")];
+
     private static string M(string shaders) => "{'version':1,'shaders':[" + shaders + "]}";
 
     private static string S(string source, string extra = "") => "{'source':'" + source + "','entries':[" + Vs + "]" + extra + "}";

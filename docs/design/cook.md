@@ -92,7 +92,7 @@ Built-in shaders are committed as `.slang` sources next to their consumer, with 
 `tests/BrutalEngine.Cook.Tests` (in `BrutalEngine.Tools.slnx`):
 
 - `CookCommandLineTests`: every valid form and usage error, exact stage and layout tokens, identifier and case-insensitive duplicate rules.
-- `ShaderManifestTests`: valid manifests and a row for each rule above, each asserting the manifest path and the JSON path in the error; invalid UTF-8; sources that leave the manifest's directory, read from a real tree, writing nothing.
+- `ShaderManifestTests`: valid manifests and a row for each rule above, each asserting the manifest path and the JSON path in the error; invalid UTF-8; sources that leave the manifest's directory, read from a real tree, writing nothing; and a valid manifest on a real tree (sources in the directory, a subdirectory and a missing one), whose whole recursive listing is unchanged after reading.
 - `DispatcherTests`: no verb, unknown verbs, `--help`, and that a verb gets only the arguments after it.
 - `ShaderCommandTests` (real Slang): two entries give two modules starting with the SPIR-V magic number with the right execution models; a compute entry; two runs are byte-identical; overwriting; the matrix layout reaches Slang; a syntax error exits 2 with Slang's diagnostic and writes nothing; missing source, unwritable output and a Slang load failure.
 - `SlangSessionTests`: a counting seam around `Slang.Release` proves the session is released once on every outcome.
