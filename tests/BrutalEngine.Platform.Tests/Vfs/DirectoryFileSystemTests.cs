@@ -444,9 +444,12 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
     {
         // Real OS failures, as each OS reports them; a null code is any non-zero one, because the OSes differ. Access
         // is denied with Windows' read-only attribute (which stops replacing and deleting a file only) or POSIX
-        // permissions (the CI runners and the dev host don't run tests as root, which ignores them). A removed root
-        // fails with the failed call's code where an OS call failed, and with 0 where the check is made first, so
-        // that nothing creates the root again.
+        // permissions, which root ignores, so those rows can't be set up there. A removed root fails with the failed
+        // call's code where an OS call failed, and with 0 where the check is made first, so that nothing creates the
+        // root again.
+        Assert.SkipWhen(
+            scenario == "access denied" && !OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess,
+            "Running as root, which ignores POSIX permissions, so access can't be denied.");
         Seed();
         string before = Snapshot();
         DirectoryFileSystem fileSystem = Create();
