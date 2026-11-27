@@ -50,6 +50,7 @@ BrutalEngine.World.EcsWorld.Has<T>(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.IsAlive(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.IsPending(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.Name.get -> string!
+BrutalEngine.World.EcsWorld.Query() -> BrutalEngine.World.QueryBuilder!
 BrutalEngine.World.EcsWorld.Ref(BrutalEngine.World.Entity entity) -> BrutalEngine.World.EntityRef
 BrutalEngine.World.EcsWorld.Remove<T>(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.Set<T>(BrutalEngine.World.Entity entity, in T value) -> void
@@ -84,6 +85,22 @@ BrutalEngine.World.EntityRef.World.get -> BrutalEngine.World.EcsWorld!
 BrutalEngine.World.EntityRef.Write<T>() -> T
 BrutalEngine.World.IComponent
 BrutalEngine.World.IComponent.Info.get -> BrutalEngine.World.ComponentInfo
+BrutalEngine.World.Query
+BrutalEngine.World.Query.CountEntities() -> int
+BrutalEngine.World.Query.Dispose() -> void
+BrutalEngine.World.Query.HasRun.get -> bool
+BrutalEngine.World.Query.LastRunTick.get -> uint
+BrutalEngine.World.Query.World.get -> BrutalEngine.World.EcsWorld!
+BrutalEngine.World.QueryBuilder
+BrutalEngine.World.QueryBuilder.Added<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.Build() -> BrutalEngine.World.Query!
+BrutalEngine.World.QueryBuilder.Changed<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.OptionalRead<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.OptionalWrite<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.Read<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.With<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.Without<T>() -> BrutalEngine.World.QueryBuilder!
+BrutalEngine.World.QueryBuilder.Write<T>() -> BrutalEngine.World.QueryBuilder!
 BrutalEngine.World.StableComponentId
 BrutalEngine.World.StableComponentId.Deconstruct(out ulong Value) -> void
 BrutalEngine.World.StableComponentId.Equals(BrutalEngine.World.StableComponentId other) -> bool
