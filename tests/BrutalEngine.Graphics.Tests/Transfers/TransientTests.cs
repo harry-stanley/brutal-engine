@@ -37,24 +37,35 @@ public sealed class TransientTests : IDisposable
 
     public void Dispose() => _fixture.Dispose();
 
-    public static TheoryData<TransientUsage, long, int> Usages()
+    public static TheoryData<long, long, TransientUsage, long, int> Usages()
     {
-        var rows = new TheoryData<TransientUsage, long, int>();
-        (TransientUsage, long)[] usages =
+        var rows = new TheoryData<long, long, TransientUsage, long, int>();
+        (long, long, TransientUsage, long)[] usages =
         [
-            (TransientUsage.Vertex, 16),
-            (TransientUsage.Index, 16),
-            (TransientUsage.Indirect, 16),
-            (TransientUsage.Uniform, UniformAlignment),
-            (TransientUsage.Storage, StorageAlignment),
-            (TransientUsage.Vertex | TransientUsage.Uniform, UniformAlignment),
-            (TransientUsage.Uniform | TransientUsage.Storage, StorageAlignment),
+            // Uniform limit, storage limit, usage, expected alignment. Storage above uniform:
+            (UniformAlignment, StorageAlignment, TransientUsage.Vertex, 16),
+            (UniformAlignment, StorageAlignment, TransientUsage.Index, 16),
+            (UniformAlignment, StorageAlignment, TransientUsage.Indirect, 16),
+            (UniformAlignment, StorageAlignment, TransientUsage.Uniform, UniformAlignment),
+            (UniformAlignment, StorageAlignment, TransientUsage.Storage, StorageAlignment),
+            (UniformAlignment, StorageAlignment, TransientUsage.Vertex | TransientUsage.Uniform, UniformAlignment),
+            (UniformAlignment, StorageAlignment, TransientUsage.Uniform | TransientUsage.Storage, StorageAlignment),
+
+            // Storage below uniform (the RTX 2070 SUPER's limits): the combination takes the larger, uniform one.
+            (64, 16, TransientUsage.Uniform, 64),
+            (64, 16, TransientUsage.Storage, 16),
+            (64, 16, TransientUsage.Uniform | TransientUsage.Storage, 64),
+
+            // Limits below 16: every offset keeps the ring's 16 bytes.
+            (4, 4, TransientUsage.Uniform, 16),
+            (4, 4, TransientUsage.Storage, 16),
+            (4, 4, TransientUsage.Uniform | TransientUsage.Storage, 16),
         ];
-        foreach ((TransientUsage usage, long alignment) in usages)
+        foreach ((long uniform, long storage, TransientUsage usage, long alignment) in usages)
         {
             for (int frames = 1; frames <= 3; frames++)
             {
-                rows.Add(usage, alignment, frames);
+                rows.Add(uniform, storage, usage, alignment, frames);
             }
         }
 
@@ -63,9 +74,15 @@ public sealed class TransientTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Usages))]
-    public void Alignment_PerUsage(TransientUsage usage, long alignment, int framesInFlight)
+    public void Alignment_PerUsage(long uniformLimit, long storageLimit, TransientUsage usage, long alignment, int framesInFlight)
     {
+        GraphicsCapabilities defaults = FakeBackendScript.DefaultCapabilities;
+        _fixture.Script.Capabilities = defaults with
+        {
+            Limits = defaults.Limits with { MinUniformBufferOffsetAlignment = uniformLimit, MinStorageBufferOffsetAlignment = storageLimit },
+        };
         GraphicsDevice device = Create(framesInFlight);
+        Assert.Equal((uniformLimit, storageLimit), (device.Capabilities.Limits.MinUniformBufferOffsetAlignment, device.Capabilities.Limits.MinStorageBufferOffsetAlignment));
 
         // One frame more than there are slots: the last reuses slot 0's ring, which must start empty again.
         for (int frame = 0; frame <= framesInFlight; frame++)
@@ -108,6 +125,39 @@ public sealed class TransientTests : IDisposable
         Assert.Equal(_backend.Device!.HostBuffers, blocks);
         Assert.All(blocks, id => Assert.Equal((BlockUsage, BackendMemory.HostUpload), (_backend.Device.Buffers[id].Description.Usage, _backend.Device.Buffers[id].Memory)));
         Assert.Equal([RingBytes, RingBytes + 1], blocks.Select(id => _backend.Device.Buffers[id].Description.Size));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void AliasAfterLostSubmit_IsStale(int framesInFlight)
+    {
+        GraphicsDevice device = Create(framesInFlight);
+        BufferHandle buffer = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Vertex }).Value;
+        for (int frame = 0; frame < framesInFlight; frame++)
+        {
+            RunFrame(device);
+        }
+
+        // The submission fails, which loses the device, in a frame with a ring and an overflow allocation.
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.True(commands.AllocateTransient(16, TransientUsage.Uniform, out TransientAllocation ring).IsSuccess);
+        Assert.True(commands.AllocateTransient(RingBytes + 1, TransientUsage.Vertex, out TransientAllocation overflow).IsSuccess);
+        BufferHandle[] aliases = [ring.Buffer, overflow.Buffer];
+        _fixture.Script.FailNext(Op.Execute, new EngineError(ErrorKind.Unavailable, "Injected loss.", -4));
+
+        Assert.Equal(FrameStatus.DeviceLost, device.SubmitFrame(commands));
+
+        // The closed frame's aliases are stale all the same, and the live objects are still just the buffer.
+        foreach (BufferHandle alias in aliases)
+        {
+            _ = Assert.Throws<StaleHandleException>(() => device.WriteBuffer(alias, 0, [1]));
+            _ = Assert.Throws<StaleHandleException>(() => device.Destroy(alias));
+        }
+
+        Assert.Equal(1, device.Statistics.LiveObjects);
+        device.Destroy(buffer);
     }
 
     [Theory]
