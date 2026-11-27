@@ -85,6 +85,68 @@ public sealed class StructuralAllocationTests
         tracking.ThrowIfLeaks();
     }
 
+    [Fact]
+    public void SetChurn_DoesNotAllocate()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            const int Count = 150;
+            var entities = new Entity[Count];
+            for (int i = 0; i < entities.Length; i++)
+            {
+                entities[i] = world.Spawn(new Health(i), new Payload(i));
+            }
+
+            // Warm up: create the archetypes, cache the edges, grow the tables, fill the pool and JIT every path.
+            SetChurn(world, entities);
+            SetChurn(world, entities);
+
+            long nativeAllocations = tracking.TotalAllocationCount;
+            int archetypes = world.ArchetypeCount;
+            long checksum = 0;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int round = 0; round < Rounds; round++)
+            {
+                checksum += SetChurn(world, entities);
+            }
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(0, allocated);
+            Assert.Equal(nativeAllocations, tracking.TotalAllocationCount);
+            Assert.Equal(archetypes, world.ArchetypeCount);
+            Assert.NotEqual(0, checksum);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>
+    /// Sets on every entity: replacing present data and a present tag in place, and adding absent data and an absent
+    /// tag by a move; then removes what was added, so the cycle ends where it started.
+    /// </summary>
+    private static long SetChurn(EcsWorld world, Entity[] entities)
+    {
+        long checksum = 0;
+        foreach (Entity entity in entities)
+        {
+            world.Set(entity, new Health(3));
+            world.Set(entity, new Position(1, 1));
+            world.Set(entity, default(Marker));
+            world.Set(entity, default(Marker));
+            world.Set(entity, new Position(2, 2));
+            checksum += world.Get<Health>(entity).Value + (long)world.Get<Position>(entity).X;
+        }
+
+        for (int i = entities.Length - 1; i >= 0; i--)
+        {
+            checksum += world.Remove<Marker>(entities[i]) ? 1 : 0;
+            checksum += world.Remove<Position>(entities[i]) ? 1 : 0;
+        }
+
+        return checksum;
+    }
+
     /// <summary>
     /// Moves every entity through a cycle of adds and removes (data and tag, first, middle and last columns) that ends
     /// where it started, plus removes of absent and unregistered components, which return false.

@@ -4,7 +4,8 @@ using BrutalEngine.World.Storage;
 
 namespace BrutalEngine.World;
 
-// Structural changes to live entities: adding and removing components, which moves the entity to another archetype
+// Structural changes to live entities: adding, setting and removing components, which moves the entity to another
+// archetype unless a set replaces a present value
 // (docs/design/world.md, sections 2 and 4, "Moves").
 public sealed partial class EcsWorld
 {
@@ -76,16 +77,75 @@ public sealed partial class EcsWorld
                 $"{entity} already has component {T.Info.FullName}; use EcsWorld.Set to replace its value.");
         }
 
-        // Each of these leaves the entity where it is when it throws; what they register or create is permanent.
-        ComponentId id = _components.Register<T>();
-        Archetype target = source.WithAdded(id);
-        (int chunk, int row) = MoveRow(entity, record, source, target);
-        int column = ColumnOf(target, id);
-        if (column >= 0)
+        AddByMove(entity, record, source, value);
+    }
+
+    /// <summary>
+    /// Sets <paramref name="entity"/>'s <typeparamref name="T"/> component to <paramref name="value"/>: replaces the
+    /// value in place if the entity has <typeparamref name="T"/>, or adds the component as <see cref="Add{T}"/> does if
+    /// it doesn't.
+    /// </summary>
+    /// <typeparam name="T">
+    /// The component type, data or tag. Registered with <see cref="Components"/> if it isn't yet.
+    /// </typeparam>
+    /// <param name="entity">An alive entity of this world.</param>
+    /// <param name="value">The component's value, copied into the entity's row. Ignored for a tag, which has no data.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="entity"/> is <see cref="Entity.Null"/>; or <typeparamref name="T"/> is new to the world and
+    /// breaks a registration rule (see <see cref="ComponentRegistry.Register{T}"/>).
+    /// </exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="entity"/> is stale: despawned, its slot retired, or its index outside this world's table.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="entity"/> is pending; or <typeparamref name="T"/> is new and can't be registered (a stable-id
+    /// conflict, or the registry is full); or the entity lacks <typeparamref name="T"/> and the target archetype is new
+    /// and its row is too wide for a chunk, which the message says, naming the components.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The entity lacks <typeparamref name="T"/> and the allocator can't provide what the move needs, as for
+    /// <see cref="Add{T}"/>: the entity stays where it was, with its values and stamps, and every other entity and
+    /// chunk is unchanged.
+    /// </exception>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// <para>
+    /// The entity check runs before anything changes. <b>A present component</b> is replaced where it is: the entity
+    /// doesn't move, references into chunks stay valid, and only <typeparamref name="T"/>'s <c>Changed</c> tick in the
+    /// entity's chunk is stamped with the world's current change tick, as <see cref="Write{T}"/> does. A present tag
+    /// has no column, so setting it changes nothing and stamps nothing.
+    /// </para>
+    /// <para>
+    /// <b>An absent component</b> is added by the move and with the stamps <see cref="Add{T}"/> documents: the target
+    /// chunk's <c>Changed</c> ticks and <typeparamref name="T"/>'s <c>Added</c> tick, and the <c>Changed</c> ticks of
+    /// the source chunk that received the moved row. References into chunks are invalidated.
+    /// </para>
+    /// <para>
+    /// Allocates no managed memory once <typeparamref name="T"/> is registered and, for an absent component, the
+    /// target archetype exists. Allocator calls are as for <see cref="Add{T}"/>; replacing a value makes none.
+    /// </para>
+    /// </remarks>
+    public void Set<T>(Entity entity, in T value)
+        where T : unmanaged, IComponent
+    {
+        ThrowIfUnusable("EcsWorld.Set");
+        EntityRecord record = _entities.Validate(entity);
+        Archetype source = _archetypes[record.Archetype];
+        if (_components.TryGetId<T>(out ComponentId present) && source.Signature.Contains(present.Index))
         {
-            ValueAt<T>(target, chunk, row, column) = value;
-            target.Chunks.GetAdded(chunk)[column] = _changeTick;
+            // Replaced in place, stamped like a write; a tag has no column, so nothing changes.
+            int column = ColumnOf(source, present);
+            if (column >= 0)
+            {
+                ValueAt<T>(source, record.Chunk, record.Row, column) = value;
+                source.Chunks.GetChanged(record.Chunk)[column] = _changeTick;
+            }
+
+            return;
         }
+
+        AddByMove(entity, record, source, value);
     }
 
     /// <summary>
@@ -145,6 +205,31 @@ public sealed partial class EcsWorld
         Archetype target = source.WithRemoved(id);
         _ = MoveRow(entity, record, source, target);
         return true;
+    }
+
+    /// <summary>
+    /// Adds a component the entity lacks: registers <typeparamref name="T"/> if needed, moves the entity to the
+    /// archetype with it, writes <paramref name="value"/> and stamps <typeparamref name="T"/>'s <c>Added</c> tick in the
+    /// target chunk (a tag has no column and no tick).
+    /// </summary>
+    /// <exception cref="ArgumentException"><typeparamref name="T"/> is new and breaks a registration rule.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="T"/> can't be registered, or the target archetype is new and its row is too wide.
+    /// </exception>
+    /// <exception cref="OutOfMemoryException">The move's allocation failed; the entity stays where it was.</exception>
+    private void AddByMove<T>(Entity entity, EntityRecord record, Archetype source, in T value)
+        where T : unmanaged, IComponent
+    {
+        // Each of these leaves the entity where it is when it throws; what they register or create is permanent.
+        ComponentId id = _components.Register<T>();
+        Archetype target = source.WithAdded(id);
+        (int chunk, int row) = MoveRow(entity, record, source, target);
+        int column = ColumnOf(target, id);
+        if (column >= 0)
+        {
+            ValueAt<T>(target, chunk, row, column) = value;
+            target.Chunks.GetAdded(chunk)[column] = _changeTick;
+        }
     }
 
     /// <summary>
