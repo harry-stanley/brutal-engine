@@ -15,6 +15,10 @@ namespace BrutalEngine.Core;
 /// passes.
 /// </para>
 /// <para>
+/// Managed thread ids are reused after a thread exits, so an affinity captured on a thread that has since ended can
+/// match a later thread. Capture it on a thread that outlives the object it guards (an owner thread).
+/// </para>
+/// <para>
 /// <c>default(ThreadAffinity)</c> captures no thread and is invalid: <see cref="IsCurrentThread"/> and
 /// <see cref="ThrowIfNotCurrentThread"/> throw <see cref="InvalidOperationException"/> on it, and
 /// <see cref="ThreadId"/> is <c>0</c>, which is never a managed thread id.

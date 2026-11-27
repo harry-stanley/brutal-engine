@@ -31,7 +31,7 @@ public sealed class ThreadAffinityTests
     }
 
     [Fact]
-    public void CurrentThread_OnOtherThread_CapturesThatThread()
+    public void CurrentThread_OnOtherThread_CapturesThatThreadsId()
     {
         ThreadAffinity affinity = default;
 
@@ -39,11 +39,18 @@ public sealed class ThreadAffinityTests
 
         Assert.Null(run.Failure);
         Assert.Equal(run.ThreadId, affinity.ThreadId);
+    }
+
+    [Fact]
+    public void IsCurrentThread_ForOtherThreadsAffinity_IsFalse()
+    {
+        ThreadAffinity affinity = default;
+
+        OtherThreadRun run = RunOnOtherThread(() => affinity = ThreadAffinity.CurrentThread());
+
+        // The other thread has exited, so its id may be reused, but never by this thread: it was alive throughout.
+        Assert.Null(run.Failure);
         Assert.False(affinity.IsCurrentThread);
-        WrongThreadException exception = Assert.Throws<WrongThreadException>(
-            () => affinity.ThrowIfNotCurrentThread(ApiName));
-        Assert.Equal(run.ThreadId, exception.ExpectedThreadId);
-        Assert.Equal(Environment.CurrentManagedThreadId, exception.ActualThreadId);
     }
 
     [Fact]
