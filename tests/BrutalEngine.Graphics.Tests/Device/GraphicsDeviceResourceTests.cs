@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Validation;
@@ -27,38 +27,44 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
         { "Buffer", "" },
         { "Sampler", "Pixel art" },
         { "Sampler", null },
+        { "Texture", "Atlas" },
+        { "Texture", null },
+        { "TextureArray", "Layers" },
+        { "TextureView", "Mip 1" },
+        { "TextureView", null },
     };
 
     [Theory]
     [MemberData(nameof(EachKind))]
     public void CreateDestroy_EachKind(string kind, string? debugName)
     {
-        GraphicsDevice device = _fixture.Create();
+        var counting = new CountingBackend(_fixture.Backend);
+        using GraphicsDevice device = GraphicsDevice.Create(counting, _fixture.Options()).Value;
         FakeBackendDevice backend = _fixture.BackendDevice;
 
         Made made = Make(device, kind, debugName);
 
-        FakeBackendCall create = Assert.Single(backend.Calls, call => call.Operation == made.CreateOperation);
-        Assert.Equal(made.Kind, create.Kind);
+        // The calls since the object's own creation began: a texture also creates its default view.
+        FakeBackendCall[] creates = [.. backend.Calls.Skip(made.CallsBefore).Where(call => call.Operation is FakeBackendOperation.CreateBuffer
+            or FakeBackendOperation.CreateSampler or FakeBackendOperation.CreateTexture or FakeBackendOperation.CreateTextureView)];
+        Assert.Equal(made.ObjectCount, creates.Length);
+        Assert.Equal((made.CreateOperation, (BackendObjectKind?)made.Kind), (creates[0].Operation, creates[0].Kind));
         Assert.False(made.Handle.IsNull);
-        Assert.Equal(create.Id, made.TableId(backend.Objects));
-        Assert.Equal(1, backend.LiveObjectCount);
-        IEnumerable<FakeBackendCall> names = backend.Calls.Where(call => call.Operation == FakeBackendOperation.SetDebugName);
-        if (string.IsNullOrEmpty(debugName))
-        {
-            Assert.Empty(names);
-        }
-        else
-        {
-            FakeBackendCall name = Assert.Single(names);
-            Assert.Equal((made.Kind, create.Id), (name.Kind, name.Id));
-        }
+        Assert.Equal(creates[0].Id, made.TableId(backend.Objects));
+        Assert.Equal(made.LiveBefore + made.ObjectCount, backend.LiveObjectCount);
+        // Each object it made (a texture's default view too) is named under its own kind and id, with the name's UTF-8.
+        (BackendObjectKind?, ulong, string)[] expectedNames = string.IsNullOrEmpty(debugName)
+            ? []
+            : [.. creates.Select(call => (call.Kind, call.Id, Convert.ToHexString(Encoding.UTF8.GetBytes(debugName))))];
+        Assert.Equal(expectedNames, counting.LastDevice!.Names.Select(name => ((BackendObjectKind?)name.Kind, name.Id, Convert.ToHexString(name.Utf8Name))));
+        int beforeDestroy = backend.Calls.Count;
 
         made.Destroy();
 
-        FakeBackendCall destroy = Assert.Single(backend.Calls, call => call.Operation == FakeBackendOperation.Destroy);
-        Assert.Equal((made.Kind, create.Id), (destroy.Kind, destroy.Id));
-        Assert.Equal(0, backend.LiveObjectCount);
+        FakeBackendCall[] destroys = [.. backend.Calls.Skip(beforeDestroy).Where(call => call.Operation == FakeBackendOperation.Destroy)];
+        // Views before their texture: the object itself goes last.
+        Assert.Equal(creates.Select(call => (call.Kind, call.Id)).Reverse(), destroys.Select(call => (call.Kind, call.Id)));
+        Assert.Equal(made.LiveBefore, backend.LiveObjectCount);
         Assert.Throws<StaleHandleException>(() => made.TableId(backend.Objects));
     }
 
@@ -94,6 +100,10 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
         { "Buffer", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
         { "Sampler", "Pixel art", [0x50, 0x69, 0x78, 0x65, 0x6C, 0x20, 0x61, 0x72, 0x74] },
         { "Sampler", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
+        { "Texture", "Atlas", [0x41, 0x74, 0x6C, 0x61, 0x73] },
+        { "Texture", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
+        { "TextureView", "Mip 1", [0x4D, 0x69, 0x70, 0x20, 0x31] },
+        { "TextureView", "\u00DCn\u00EFcode \U0001F3AE", [0xC3, 0x9C, 0x6E, 0xC3, 0xAF, 0x63, 0x6F, 0x64, 0x65, 0x20, 0xF0, 0x9F, 0x8E, 0xAE] },
     };
 
     [Theory]
@@ -105,9 +115,14 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
 
         Made made = Make(device, kind, debugName);
 
-        (BackendObjectKind Kind, ulong Id, byte[] Utf8Name) name = Assert.Single(backend.LastDevice!.Names);
-        Assert.Equal((made.Kind, made.TableId(_fixture.BackendDevice.Objects)), (name.Kind, name.Id));
-        Assert.Equal(expected, name.Utf8Name);
+        // One name per object the call made, in creation order: a texture's default view is named after the texture.
+        FakeBackendCall[] creates = [.. _fixture.BackendDevice.Calls.Skip(made.CallsBefore).Where(call => call.Operation is FakeBackendOperation.CreateBuffer
+            or FakeBackendOperation.CreateSampler or FakeBackendOperation.CreateTexture or FakeBackendOperation.CreateTextureView)];
+        Assert.Equal(made.ObjectCount, creates.Length);
+        Assert.Equal(made.TableId(_fixture.BackendDevice.Objects), creates[0].Id);
+        Assert.Equal(creates.Select(call => call.Kind), backend.LastDevice!.Names.Select(name => (BackendObjectKind?)name.Kind));
+        Assert.Equal(creates.Select(call => call.Id), backend.LastDevice.Names.Select(name => name.Id));
+        Assert.All(backend.LastDevice.Names, name => Assert.Equal(expected, name.Utf8Name));
         made.Destroy();
     }
 
@@ -485,7 +500,7 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
     }
 
     /// <summary>Creates one object of a kind and returns how to look it up and destroy it.</summary>
-    private static Made Make(GraphicsDevice device, string kind, string? debugName)
+    private Made Make(GraphicsDevice device, string kind, string? debugName)
     {
         switch (kind)
         {
@@ -496,9 +511,21 @@ public sealed partial class GraphicsDeviceResourceTests : IDisposable
                 SamplerHandle sampler = device.CreateSampler(new SamplerDescription { DebugName = debugName }).Value;
                 return new Made(BackendObjectKind.Sampler, FakeBackendOperation.CreateSampler, sampler.Value, () => device.Destroy(sampler), objects => objects.GetId(sampler));
             default:
-                throw new ArgumentOutOfRangeException(nameof(kind), kind, null);
+                return MakeTextureKind(device, kind, debugName);
         }
     }
 
-    private sealed record Made(BackendObjectKind Kind, FakeBackendOperation CreateOperation, Handle Handle, Action Destroy, Func<BackendObjectTable, ulong> TableId);
+    /// <summary>One object a test made, and how to look it up and destroy it.</summary>
+    /// <remarks>
+    /// <see cref="CallsBefore"/> and <see cref="LiveBefore"/> are the backend's call count and live objects when its own
+    /// creation began (a view's texture comes before); <see cref="ObjectCount"/> backend objects are created with it.
+    /// </remarks>
+    private sealed record Made(BackendObjectKind Kind, FakeBackendOperation CreateOperation, Handle Handle, Action Destroy, Func<BackendObjectTable, ulong> TableId)
+    {
+        public int CallsBefore { get; init; }
+
+        public int LiveBefore { get; init; }
+
+        public int ObjectCount { get; init; } = 1;
+    }
 }

@@ -7,8 +7,8 @@ namespace BrutalEngine.Graphics.Internal;
 
 /// <summary>
 /// A graphics device's handle tables: one Core <see cref="HandleAllocator"/> per <see cref="BackendObjectKind"/>, the
-/// handle-to-id entries of the device's <see cref="BackendObjectTable"/>, and each live object's debug name and creation
-/// order (docs/design/graphics.md section 1).
+/// handle-to-id entries of the device's <see cref="BackendObjectTable"/>, each live object's debug name and creation
+/// order, each texture's description and default view, and each view's texture (docs/design/graphics.md section 1).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,6 +30,7 @@ internal sealed class HandleTables
     private readonly BackendObjectTable _objects;
     private readonly HandleAllocator[] _allocators = new HandleAllocator[KindCount];
     private readonly Entry[][] _entries = new Entry[KindCount][];
+    private TextureDescription[] _textures = [];
     private long _nextSequence;
 
     /// <summary>Creates empty tables that record ids in <paramref name="objects"/>, the table the backend reads.</summary>
@@ -63,10 +64,11 @@ internal sealed class HandleTables
     /// <param name="kind">The object's kind.</param>
     /// <param name="id">The backend's id for it; non-zero.</param>
     /// <param name="debugName">The description's debug name, kept for diagnostics.</param>
+    /// <param name="link">For a texture view, the texture it views; otherwise the null handle.</param>
     /// <returns>The new live handle.</returns>
     /// <exception cref="OutOfMemoryException">A table couldn't grow; nothing was recorded.</exception>
     /// <exception cref="InvalidOperationException">The kind's handle allocator is exhausted; nothing was recorded.</exception>
-    public Handle Add(BackendObjectKind kind, ulong id, string? debugName)
+    public Handle Add(BackendObjectKind kind, ulong id, string? debugName, Handle link = default)
     {
         HandleAllocator allocator = _allocators[(int)kind];
         Handle handle = allocator.Allocate();
@@ -78,8 +80,13 @@ internal sealed class HandleTables
                 Array.Resize(ref entries, Math.Max(entries.Length * 2, (int)handle.Index + 1));
             }
 
+            if (kind == BackendObjectKind.Texture && handle.Index >= (uint)_textures.Length)
+            {
+                Array.Resize(ref _textures, entries.Length);
+            }
+
             _objects.Set(kind, handle, id);
-            entries[handle.Index] = new Entry(id, debugName, _nextSequence++);
+            entries[handle.Index] = new Entry(handle, id, debugName, _nextSequence++, link);
             return handle;
         }
         catch
@@ -108,6 +115,55 @@ internal sealed class HandleTables
     /// <returns>The description's debug name, or <see langword="null"/>.</returns>
     public string? GetDebugName(BackendObjectKind kind, Handle handle) => _entries[(int)kind][handle.Index].DebugName;
 
+    /// <summary>Records a live texture's description and default view.</summary>
+    /// <param name="texture">A live texture.</param>
+    /// <param name="description">The description it was created from.</param>
+    /// <param name="defaultView">Its default view, live.</param>
+    public void SetTexture(Handle texture, in TextureDescription description, Handle defaultView)
+    {
+        _textures[texture.Index] = description;
+        ref Entry entry = ref _entries[(int)BackendObjectKind.Texture][texture.Index];
+        entry = entry with { Link = defaultView };
+    }
+
+    /// <summary>Returns the description a live texture was created from.</summary>
+    /// <param name="texture">A live texture.</param>
+    /// <returns>The description, by reference into the table; valid until the texture is removed.</returns>
+    public ref readonly TextureDescription GetTexture(Handle texture) => ref _textures[texture.Index];
+
+    /// <summary>Returns a live object's link: a texture's default view, or a view's texture.</summary>
+    /// <param name="kind">The object's kind.</param>
+    /// <param name="handle">A live handle of that kind.</param>
+    /// <returns>The linked handle; null for other kinds.</returns>
+    public Handle GetLink(BackendObjectKind kind, Handle handle) => _entries[(int)kind][handle.Index].Link;
+
+    /// <summary>Removes the next live view of a texture, scanning the view table from a cursor.</summary>
+    /// <param name="texture">The texture whose views are removed.</param>
+    /// <param name="cursor">Where the scan resumes; start at 0 and pass the same variable back each time.</param>
+    /// <param name="viewId">The removed view's backend id, for the caller to destroy.</param>
+    /// <returns><see langword="true"/> when a view was removed; <see langword="false"/> once none is left.</returns>
+    /// <remarks>Allocates nothing.</remarks>
+    public bool TryRemoveViewOf(Handle texture, ref int cursor, out ulong viewId)
+    {
+        const BackendObjectKind View = BackendObjectKind.TextureView;
+        Entry[] views = _entries[(int)View];
+        for (; cursor < views.Length; cursor++)
+        {
+            if (views[cursor].Id != 0 && views[cursor].Link == texture)
+            {
+                viewId = views[cursor].Id;
+                Handle view = views[cursor].Handle;
+                _objects.Remove(View, view);
+                _allocators[(int)View].Free(view);
+                views[cursor] = default;
+                return true;
+            }
+        }
+
+        viewId = 0;
+        return false;
+    }
+
     /// <summary>Makes a live handle stale and removes its entries.</summary>
     /// <param name="kind">The object's kind.</param>
     /// <param name="handle">The handle to remove.</param>
@@ -121,6 +177,11 @@ internal sealed class HandleTables
         _objects.Remove(kind, handle);
         _allocators[(int)kind].Free(handle);
         _entries[(int)kind][handle.Index] = default;
+        if (kind == BackendObjectKind.Texture)
+        {
+            _textures[handle.Index] = default;
+        }
+
         return id;
     }
 
@@ -144,6 +205,7 @@ internal sealed class HandleTables
             Array.Clear(entries);
         }
 
+        Array.Clear(_textures);
         _objects.Clear();
         live.Sort(static (a, b) => b.Sequence.CompareTo(a.Sequence));
         return live;
@@ -191,6 +253,6 @@ internal sealed class HandleTables
     /// <param name="Sequence">The object's creation order on this device, from 0.</param>
     internal readonly record struct LiveObject(BackendObjectKind Kind, ulong Id, string? DebugName, long Sequence);
 
-    // Id 0 marks a free slot: backends never issue it.
-    private readonly record struct Entry(ulong Id, string? DebugName, long Sequence);
+    // Id 0 marks a free slot: backends never issue it. Link is a texture's default view, or a view's texture.
+    private readonly record struct Entry(Handle Handle, ulong Id, string? DebugName, long Sequence, Handle Link);
 }
