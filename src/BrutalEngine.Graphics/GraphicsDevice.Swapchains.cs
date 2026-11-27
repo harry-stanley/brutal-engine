@@ -11,6 +11,8 @@ namespace BrutalEngine.Graphics;
 /// <content>Swapchain creation and destruction (docs/design/graphics.md section 3).</content>
 public sealed partial class GraphicsDevice
 {
+    private const string CreateSwapchainApi = nameof(GraphicsDevice) + "." + nameof(CreateSwapchain);
+
     private readonly HandleAllocator _swapchainHandles = new();
     private readonly List<RetiringSwapchain> _retiring = [];
     private readonly IWindow? _compatibleWindow;
@@ -33,8 +35,8 @@ public sealed partial class GraphicsDevice
     /// A backend failure is returned unchanged: the surface's (for example <see cref="ErrorKind.Unsupported"/> for a window
     /// the device can't present to, or <see cref="ErrorKind.Native"/> from the platform), or the swapchain's
     /// (<see cref="ErrorKind.Cancelled"/> for a surface extent of zero, <see cref="ErrorKind.NotFound"/> for a lost surface,
-    /// <see cref="ErrorKind.OutOfMemory"/>, or <see cref="ErrorKind.Unavailable"/> after device loss), or the failure of
-    /// the wait described below.
+    /// <see cref="ErrorKind.OutOfMemory"/>, or <see cref="ErrorKind.Unavailable"/> after device loss, as for
+    /// <see cref="CreateBuffer"/>), or the failure of the wait described below.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="window"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -102,17 +104,24 @@ public sealed partial class GraphicsDevice
             return error;
         }
 
+        if (TryRefuse(FaultSeam.Operation.CreateSurface, CreateSwapchainApi, out error))
+        {
+            return error;
+        }
+
         Result<ulong> createdSurface = _backend.CreateSurface(source);
         if (!createdSurface.TryGetValue(out ulong surface))
         {
-            return createdSurface.Error;
+            return CreationFailed(CreateSwapchainApi, createdSurface.Error);
         }
 
-        Result<BackendSwapchain> created = _backend.CreateSwapchain(new BackendSwapchainRequest(surface, source, options, OldSwapchain: 0));
+        Result<BackendSwapchain> created = Faults.TryTake(FaultSeam.Operation.CreateSwapchain, out EngineError fault)
+            ? fault
+            : _backend.CreateSwapchain(new BackendSwapchainRequest(surface, source, options, OldSwapchain: 0));
         if (!created.TryGetValue(out BackendSwapchain swapchain))
         {
             _backend.DestroySurface(surface);
-            return created.Error;
+            return CreationFailed(CreateSwapchainApi, created.Error);
         }
 
         try
@@ -153,7 +162,10 @@ public sealed partial class GraphicsDevice
         LiveSwapchain(swapchain, nameof(swapchain)).Images[imageIndex];
 
     /// <summary>The device side of <see cref="CommandList.AcquireSwapchainImage"/>; the list's documentation is the contract.</summary>
-    internal AcquireStatus AcquireSwapchainImage(CommandList commands, SwapchainHandle swapchain, out SwapchainImage image)
+    internal AcquireStatus AcquireSwapchainImage(CommandList commands, SwapchainHandle swapchain, out SwapchainImage image) =>
+        RaiseDetectedLoss(Acquire(commands, swapchain, out image));
+
+    private AcquireStatus Acquire(CommandList commands, SwapchainHandle swapchain, out SwapchainImage image)
     {
         const string Api = nameof(CommandList) + "." + nameof(CommandList.AcquireSwapchainImage);
         ThrowIfUnusable(Api);
@@ -184,7 +196,7 @@ public sealed partial class GraphicsDevice
             return status;
         }
 
-        BackendAcquire acquired = _backend.AcquireImage(state.Id, CurrentSlot());
+        BackendAcquire acquired = AcquireImage(state);
         if (acquired.Status == SwapchainStatus.OutOfDate)
         {
             // Out of date (an acquire timeout too): recreate and retry once; still out of date skips the frame.
@@ -194,7 +206,7 @@ public sealed partial class GraphicsDevice
                 return status;
             }
 
-            acquired = _backend.AcquireImage(state.Id, CurrentSlot());
+            acquired = AcquireImage(state);
             if (acquired.Status == SwapchainStatus.OutOfDate)
             {
                 return AcquireStatus.Skipped;
@@ -387,7 +399,9 @@ public sealed partial class GraphicsDevice
         }
 
         (state.Id, state.Images) = (0, []);
-        Result<BackendSwapchain> created = _backend.CreateSwapchain(new BackendSwapchainRequest(state.Surface, state.Source, state.Options, old));
+        Result<BackendSwapchain> created = Faults.TryTake(FaultSeam.Operation.CreateSwapchain, out EngineError fault)
+            ? fault
+            : _backend.CreateSwapchain(new BackendSwapchainRequest(state.Surface, state.Source, state.Options, old));
         if (old != 0)
         {
             _backend.DestroySwapchain(old);
@@ -494,7 +508,9 @@ public sealed partial class GraphicsDevice
         for (int i = 0; submitted && !IsLostCore && i < _acquiredUses.Count; i++)
         {
             SwapchainState state = _acquiredImages[i].State;
-            BackendPresent presented = _backend.Present(_acquiredUses[i].Swapchain, _acquiredUses[i].ImageIndex);
+            BackendPresent presented = Faults.TryTake(FaultSeam.Operation.Present, out EngineError fault)
+                ? new BackendPresent(SwapchainStatus.DeviceLost, fault.NativeCode)
+                : _backend.Present(_acquiredUses[i].Swapchain, _acquiredUses[i].ImageIndex);
             state.NeedsRecreation |= presented.Status is SwapchainStatus.Suboptimal or SwapchainStatus.OutOfDate;
             if (presented.Status == SwapchainStatus.SurfaceLost)
             {
@@ -510,6 +526,11 @@ public sealed partial class GraphicsDevice
         _acquiredImages.Clear();
         return submitted && !IsLostCore ? FrameStatus.Ready : FrameStatus.DeviceLost;
     }
+
+    // The acquire of a swapchain's next image for the open frame, through the fault seam.
+    private BackendAcquire AcquireImage(SwapchainState state) => Faults.TryTake(FaultSeam.Operation.AcquireImage, out EngineError fault)
+        ? new BackendAcquire(SwapchainStatus.DeviceLost, -1, fault.NativeCode)
+        : _backend.AcquireImage(state.Id, CurrentSlot());
 
     // Ends an image's two handles; the backend objects are the swapchain's, destroyed with it. An image has no other
     // view: CreateTextureView rejects swapchain images.

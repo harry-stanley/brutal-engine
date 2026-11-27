@@ -12,13 +12,19 @@ namespace BrutalEngine.Graphics;
 public sealed partial class GraphicsDevice
 {
     private const string DestroyApi = nameof(GraphicsDevice) + "." + nameof(Destroy);
+    private const string CreateBufferApi = nameof(GraphicsDevice) + "." + nameof(CreateBuffer);
+    private const string CreateTextureApi = nameof(GraphicsDevice) + "." + nameof(CreateTexture);
+    private const string CreateTextureViewApi = nameof(GraphicsDevice) + "." + nameof(CreateTextureView);
+    private const string CreateSamplerApi = nameof(GraphicsDevice) + "." + nameof(CreateSampler);
 
     /// <summary>Creates a buffer.</summary>
     /// <param name="description">The buffer's size, usage, memory intent and debug name.</param>
     /// <returns>
     /// The buffer's handle; the device owns the buffer until <see cref="Destroy(BufferHandle)"/> or <see cref="Dispose"/>.
     /// A backend failure is returned unchanged: <see cref="ErrorKind.OutOfMemory"/>, or <see cref="ErrorKind.Unavailable"/>
-    /// after device loss.
+    /// after device loss. Every creation reports loss so: on a lost device without calling the backend, and a backend
+    /// <see cref="ErrorKind.Timeout"/> (a hung GPU) as <see cref="ErrorKind.Unavailable"/> too; either backend loss marks
+    /// the device lost and raises <see cref="DeviceLost"/>.
     /// </returns>
     /// <exception cref="ArgumentException">The description breaks a structural rule (docs/design/graphics.md section 5).</exception>
     /// <exception cref="ArgumentOutOfRangeException">A value in the description is outside its range or enum.</exception>
@@ -46,10 +52,15 @@ public sealed partial class GraphicsDevice
             _ => BackendMemory.DeviceLocal,
         };
 
+        if (TryRefuse(FaultSeam.Operation.CreateBuffer, CreateBufferApi, out EngineError refused))
+        {
+            return refused;
+        }
+
         Result<BackendBuffer> created = _backend.CreateBuffer(description, memory);
         if (!created.TryGetValue(out BackendBuffer buffer))
         {
-            return created.Error;
+            return CreationFailed(CreateBufferApi, created.Error);
         }
 
         Handle handle = Register(BackendObjectKind.Buffer, buffer.Id, description.DebugName, link: default);
@@ -100,6 +111,11 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(CreateTexture));
         ResourceValidator.Validate(description, Capabilities.Limits, Capabilities.Features);
+        if (TryRefuse(FaultSeam.Operation.CreateTexture, CreateTextureApi, out EngineError refused))
+        {
+            return refused;
+        }
+
         FormatSupport missing = RequiredSupport(description) & ~_backend.GetFormatSupport(description.Format);
         if (missing != FormatSupport.None)
         {
@@ -120,7 +136,7 @@ public sealed partial class GraphicsDevice
         Result<ulong> created = _backend.CreateTexture(description);
         if (!created.TryGetValue(out ulong textureId))
         {
-            return created.Error;
+            return CreationFailed(CreateTextureApi, created.Error);
         }
 
         Handle texture = Register(BackendObjectKind.Texture, textureId, description.DebugName, link: default);
@@ -132,7 +148,7 @@ public sealed partial class GraphicsDevice
             ArrayLayerCount = description.ArrayLayers,
             DebugName = description.DebugName,
         };
-        Result<ulong> view = _backend.CreateTextureView(viewDescription);
+        Result<ulong> view = Faults.TryTake(FaultSeam.Operation.CreateTextureView, out EngineError fault) ? fault : _backend.CreateTextureView(viewDescription);
         Handle defaultView = default;
         try
         {
@@ -151,7 +167,7 @@ public sealed partial class GraphicsDevice
 
         if (defaultView.IsNull)
         {
-            return view.Error;
+            return CreationFailed(CreateTextureApi, view.Error);
         }
 
         _handles.SetTexture(texture, description, defaultView);
@@ -215,10 +231,15 @@ public sealed partial class GraphicsDevice
         _handles.ThrowIfNotLive(BackendObjectKind.Texture, texture, nameof(description));
         ThrowIfSwapchainImage(BackendObjectKind.Texture, texture, nameof(CreateTextureView));
         ResourceValidator.Validate(description, _handles.GetTexture(texture));
+        if (TryRefuse(FaultSeam.Operation.CreateTextureView, CreateTextureViewApi, out EngineError refused))
+        {
+            return refused;
+        }
+
         Result<ulong> created = _backend.CreateTextureView(description);
         return created.TryGetValue(out ulong id)
             ? new TextureViewHandle(Register(BackendObjectKind.TextureView, id, description.DebugName, texture))
-            : created.Error;
+            : CreationFailed(CreateTextureViewApi, created.Error);
     }
 
     /// <summary>Creates a sampler.</summary>
@@ -248,10 +269,15 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(CreateSampler));
         ResourceValidator.Validate(description, Capabilities.Limits, Capabilities.Features);
+        if (TryRefuse(FaultSeam.Operation.CreateSampler, CreateSamplerApi, out EngineError refused))
+        {
+            return refused;
+        }
+
         Result<ulong> created = _backend.CreateSampler(description);
         return created.TryGetValue(out ulong id)
             ? new SamplerHandle(Register(BackendObjectKind.Sampler, id, description.DebugName, link: default))
-            : created.Error;
+            : CreationFailed(CreateSamplerApi, created.Error);
     }
 
     /// <summary>Destroys a buffer: its handle and every copy become stale at once.</summary>

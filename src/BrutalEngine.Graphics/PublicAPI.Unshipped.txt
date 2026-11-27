@@ -492,6 +492,10 @@ BrutalEngine.Graphics.DebugLabel
 BrutalEngine.Graphics.DebugLabel.DebugLabel() -> void
 BrutalEngine.Graphics.DebugLabel.Equals(BrutalEngine.Graphics.DebugLabel other) -> bool
 BrutalEngine.Graphics.DebugLabel.IsNull.get -> bool
+BrutalEngine.Graphics.DeviceLostEventArgs
+BrutalEngine.Graphics.DeviceLostEventArgs.NativeCode.get -> int
+BrutalEngine.Graphics.DeviceLostEventArgs.Operation.get -> string!
+BrutalEngine.Graphics.DeviceLostEventArgs.TimedOut.get -> bool
 BrutalEngine.Graphics.DrawArguments
 BrutalEngine.Graphics.DrawArguments.Deconstruct(out int VertexCount, out int InstanceCount, out int FirstVertex, out int FirstInstance) -> void
 BrutalEngine.Graphics.DrawArguments.DrawArguments() -> void
@@ -589,6 +593,7 @@ BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.ShaderModuleH
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.SwapchainHandle swapchain) -> void
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureHandle texture) -> void
 BrutalEngine.Graphics.GraphicsDevice.Destroy(BrutalEngine.Graphics.TextureViewHandle view) -> void
+BrutalEngine.Graphics.GraphicsDevice.DeviceLost -> System.EventHandler<BrutalEngine.Graphics.DeviceLostEventArgs!>?
 BrutalEngine.Graphics.GraphicsDevice.Dispose() -> void
 BrutalEngine.Graphics.GraphicsDevice.FrameNumber.get -> long
 BrutalEngine.Graphics.GraphicsDevice.GetDebugLabelName(BrutalEngine.Graphics.DebugLabel label) -> string!

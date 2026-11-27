@@ -48,7 +48,10 @@ public sealed partial class GraphicsDevice
         }
     }
 
-    /// <summary>Whether the device has been lost: a frame call or <see cref="WaitIdle"/> reported loss or timed out.</summary>
+    /// <summary>
+    /// Whether the device has been lost: a frame call, <see cref="WaitIdle"/>, or a creation's or write's backend call
+    /// reported loss or timed out (<see cref="DeviceLost"/> said so).
+    /// </summary>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Read from a thread other than the owner thread.</exception>
     /// <remarks>Once lost, the device stays lost. Owner thread. Allocates nothing, except the exception.</remarks>
@@ -84,9 +87,10 @@ public sealed partial class GraphicsDevice
     /// submitted from that slot (for at most the GPU timeout), advances <see cref="CompletedFrameNumber"/> to it,
     /// destroys the backend objects that slot's frame queued, takes back the pending upload blocks that frame copied
     /// from, frees the slot's upload ring slice, and opens the slot. The pending blocks of writes made since then go to
-    /// the new frame. A failed wait or open marks the device lost (a timeout as a hung GPU) and logs it at <see
-    /// cref="Core.Logging.LogLevel.Error"/>; on a lost device the backend isn't called. Owner thread. Allocates
-    /// nothing, except the exception and the log line of a newly detected loss.
+    /// the new frame. A failed wait or open marks the device lost (a timeout as a hung GPU), logs it at <see
+    /// cref="Core.Logging.LogLevel.Error"/> and raises <see cref="DeviceLost"/> last; if a handler throws, the frame isn't
+    /// opened and the exception propagates. On a lost device the backend isn't called. Owner thread. Allocates nothing,
+    /// except the exception and a newly detected loss's log line and event.
     /// </remarks>
     public FrameStatus BeginFrame(out CommandList commands)
     {
@@ -100,16 +104,17 @@ public sealed partial class GraphicsDevice
         FrameSlot slot = _slots[slotIndex];
         _frameOpen = true;
         commands = new CommandList(this, _frameNumber);
-        if (IsLostCore || !CheckFrameCall(_backend.WaitForFrame(slotIndex), nameof(BeginFrame)))
+        if (IsLostCore || !CheckFrameCall(Faults.TryTake(FaultSeam.Operation.WaitForFrame, out EngineError fault) ? fault : _backend.WaitForFrame(slotIndex), nameof(BeginFrame)))
         {
-            return FrameStatus.DeviceLost;
+            return RaiseFromBeginFrame(FrameStatus.DeviceLost);
         }
 
         _completedFrameNumber = Math.Max(_completedFrameNumber, slot.LastSubmittedFrame);
         slot.Deletions.Retire(_backend);
         BeginUploads(slot);
         slot.Commands.Reset();
-        return CheckFrameCall(_backend.BeginFrame(slotIndex), nameof(BeginFrame)) ? FrameStatus.Ready : FrameStatus.DeviceLost;
+        bool opened = CheckFrameCall(Faults.TryTake(FaultSeam.Operation.BeginFrame, out fault) ? fault : _backend.BeginFrame(slotIndex), nameof(BeginFrame));
+        return RaiseFromBeginFrame(opened ? FrameStatus.Ready : FrameStatus.DeviceLost);
     }
 
     /// <summary>Plans the open frame, submits it, and closes it.</summary>
@@ -134,9 +139,10 @@ public sealed partial class GraphicsDevice
     /// a suboptimal or out-of-date present marks its swapchain for recreation, a lost surface sticks to its swapchain,
     /// and a device loss returns <see cref="FrameStatus.DeviceLost"/>. Once the frame is closed, on a lost device too,
     /// the buffer handles of its transient allocations are stale. A failed submission marks the device lost and presents
-    /// nothing; on a lost device the backend isn't called and the frame completes empty, its writes dropped. Owner
-    /// thread. Allocates nothing, except the exception, the growth of the stream or the acquired lists, and the log line
-    /// of a newly detected loss.
+    /// nothing; on a lost device the backend isn't called and the frame completes empty, its writes dropped. A newly
+    /// detected loss raises <see cref="DeviceLost"/> once the frame is closed; a handler's exception propagates. Owner
+    /// thread. Allocates nothing, except the exception, the growth of the stream or the acquired lists, and a newly
+    /// detected loss's log line and event.
     /// </remarks>
     public FrameStatus SubmitFrame(CommandList commands)
     {
@@ -148,16 +154,17 @@ public sealed partial class GraphicsDevice
         long frame = _frameNumber++;
         _frameOpen = false;
         slot.LastSubmittedFrame = frame;
-        bool submitted = !IsLostCore && CheckFrameCall(_backend.Execute(plan), nameof(SubmitFrame));
+        bool submitted = !IsLostCore && CheckFrameCall(Faults.TryTake(FaultSeam.Operation.Execute, out EngineError fault) ? fault : _backend.Execute(plan), nameof(SubmitFrame));
         EndUploads(slot);
-        return PresentAcquired(submitted);
+        return RaiseDetectedLoss(PresentAcquired(submitted));
     }
 
     /// <summary>Waits until the GPU has finished every submitted frame.</summary>
     /// <returns>
     /// Success, after which <see cref="CompletedFrameNumber"/> is the last submitted frame. Fails with
     /// <see cref="ErrorKind.Unavailable"/> on a lost device, without waiting; a backend failure is returned unchanged, and
-    /// an <see cref="ErrorKind.Unavailable"/> or <see cref="ErrorKind.Timeout"/> one also marks the device lost.
+    /// an <see cref="ErrorKind.Unavailable"/> or <see cref="ErrorKind.Timeout"/> one also marks the device lost and raises
+    /// <see cref="DeviceLost"/>.
     /// </returns>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -174,7 +181,7 @@ public sealed partial class GraphicsDevice
             return new EngineError(ErrorKind.Unavailable, "WaitIdle: the device is lost.");
         }
 
-        Result result = _backend.WaitIdle();
+        Result result = Faults.TryTake(FaultSeam.Operation.WaitIdle, out EngineError fault) ? fault : _backend.WaitIdle();
         if (result.TryGetError(out EngineError error))
         {
             if (error.Kind is ErrorKind.Unavailable or ErrorKind.Timeout)
@@ -182,7 +189,7 @@ public sealed partial class GraphicsDevice
                 MarkLost(nameof(WaitIdle), error);
             }
 
-            return result;
+            return RaiseDetectedLoss(result);
         }
 
         _completedFrameNumber = _frameNumber - 1;
@@ -271,12 +278,13 @@ public sealed partial class GraphicsDevice
         return true;
     }
 
+    // Records the loss and logs it; the detecting call raises DeviceLost as its last step (RaiseDetectedLoss).
     private void MarkLost(string operation, in EngineError error)
     {
-        // TODO(#116): raise DeviceLost once here.
         LostOperation = operation;
         LostNativeCode = error.NativeCode;
         LostTimedOut = error.Kind == ErrorKind.Timeout;
         _log.Error($"Device lost in {operation}: {error.Kind} (native code {error.NativeCode}): {error.Message}");
+        _detectedLoss = new DeviceLostEventArgs(operation, error.NativeCode, LostTimedOut);
     }
 }
