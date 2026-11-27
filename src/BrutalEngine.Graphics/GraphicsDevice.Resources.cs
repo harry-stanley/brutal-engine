@@ -67,6 +67,10 @@ public sealed partial class GraphicsDevice
     /// limits.
     /// </exception>
     /// <exception cref="OutOfMemoryException">The device's handle table couldn't grow; the new backend objects are destroyed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Every texture or texture view handle slot is live or retired (that kind's handle allocator is exhausted); the new
+    /// backend objects are destroyed.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -141,7 +145,11 @@ public sealed partial class GraphicsDevice
     /// The view of every mip level and layer, live as long as the texture; the same handle on every call.
     /// </returns>
     /// <exception cref="ArgumentException"><paramref name="texture"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="texture"/> was destroyed already, or isn't this device's.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="texture"/> isn't a live texture of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
+    /// here; one that matches can't be told apart from it.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>Owner thread. Allocates nothing, except the exception.</remarks>
@@ -163,9 +171,17 @@ public sealed partial class GraphicsDevice
     /// The description's texture is the null handle, or a <see cref="TextureViewDimension.Texture2D"/> view has more than one
     /// layer.
     /// </exception>
-    /// <exception cref="StaleHandleException">The description's texture was destroyed already, or isn't this device's.</exception>
+    /// <exception cref="StaleHandleException">
+    /// The description's texture isn't a live texture of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
+    /// here; one that matches can't be told apart from it.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">The view's range lies outside its texture, or a value is outside its enum.</exception>
     /// <exception cref="OutOfMemoryException">The device's handle table couldn't grow; the new backend view is destroyed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Every texture view handle slot is live or retired (the kind's handle allocator is exhausted); the new backend view
+    /// is destroyed.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -236,7 +252,11 @@ public sealed partial class GraphicsDevice
     /// <summary>Destroys a texture and every view of it: their handles and every copy become stale at once.</summary>
     /// <param name="texture">A live texture of this device.</param>
     /// <exception cref="ArgumentException"><paramref name="texture"/> is the null handle.</exception>
-    /// <exception cref="StaleHandleException"><paramref name="texture"/> was destroyed already, or isn't this device's.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="texture"/> isn't a live texture of this device: it was destroyed already, or was never issued
+    /// here. A handle from another device is detected only when its index or generation doesn't match a live texture
+    /// here; one that matches can't be told apart from it, so that texture and its views are destroyed.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -251,9 +271,11 @@ public sealed partial class GraphicsDevice
         int cursor = 0;
         while (_handles.TryRemoveViewOf(texture.Value, ref cursor, out ulong viewId))
         {
+            // TODO(#113): queue the view on the frame's deletion queue, as DestroyObject will, once frames exist.
             _backend.Destroy(BackendObjectKind.TextureView, viewId);
         }
 
+        // TODO(#113): queue the texture on the frame's deletion queue, after its views, once frames exist.
         _backend.Destroy(BackendObjectKind.Texture, _handles.Remove(BackendObjectKind.Texture, texture.Value, nameof(texture)));
     }
 
@@ -261,7 +283,10 @@ public sealed partial class GraphicsDevice
     /// <param name="view">A live texture view of this device, not a default view.</param>
     /// <exception cref="ArgumentException"><paramref name="view"/> is the null handle.</exception>
     /// <exception cref="StaleHandleException">
-    /// <paramref name="view"/> was destroyed already (also by destroying its texture), or isn't this device's.
+    /// <paramref name="view"/> isn't a live texture view of this device: it was destroyed already (also by destroying its
+    /// texture), or was never issued here. A handle from another device is detected only when its index or generation
+    /// doesn't match a live texture view here; one that matches can't be told apart from it (and if that view is a
+    /// default view, the call throws <see cref="InvalidOperationException"/> instead).
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="view"/> is a texture's default view (<see cref="GetDefaultView"/>), which lives as long as its
@@ -283,6 +308,7 @@ public sealed partial class GraphicsDevice
             throw new InvalidOperationException($"Destroy: {view} is its texture's default view, which is destroyed with the texture.");
         }
 
+        // TODO(#113): queue the view on the frame's deletion queue, as DestroyObject will, once frames exist.
         _backend.Destroy(BackendObjectKind.TextureView, _handles.Remove(BackendObjectKind.TextureView, handle, nameof(view)));
     }
 
