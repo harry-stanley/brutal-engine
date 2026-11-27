@@ -569,6 +569,18 @@ public sealed class StructuralTests
         tracking.ThrowIfLeaks();
     }
 
+    /// <summary>
+    /// The failing remove is the first move to its target, so the call creates the target archetype, and then either
+    /// the source's edge table can't grow or, with room in it, the edge is cached and the target's first chunk can't
+    /// be allocated. The created archetype stays, the entity keeps the component, its row, values and stamps, nothing
+    /// else changes, and the remove then succeeds into that archetype.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Remove_FirstMoveAllocationFails_KeepsTheCreatedArchetype(bool edgeTableHasRoom) =>
+        AssertFirstMoveFailure(edgeTableHasRoom, isSet: false);
+
     [Fact]
     public void Set_ReplaceAndAdd()
     {
@@ -798,6 +810,88 @@ public sealed class StructuralTests
 
         tracking.ThrowIfLeaks();
     }
+
+    /// <summary>
+    /// The failing Set adds a type new to the world as the first move to its target: the call registers the type and
+    /// creates the target archetype, and then either the source's edge table can't grow or, with room in it, the edge
+    /// is cached and the target's first chunk can't be allocated. The type stays registered and the archetype stays,
+    /// the entity stays where it was with its values and stamps, nothing else changes, and the Set then succeeds.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Set_FirstMoveAllocationFails_KeepsTheTypeAndArchetype(bool edgeTableHasRoom) =>
+        AssertFirstMoveFailure(edgeTableHasRoom, isSet: true);
+
+    /// <summary>
+    /// Fails the first move to a new target archetype: a remove of Position, or a Set of Position, which is then new
+    /// to the world. Without room in the source's edge table the failing allocation is the table's growth (nothing is
+    /// cached); with room, it is the target's first chunk, after the edge is cached.
+    /// </summary>
+    private static void AssertFirstMoveFailure(bool edgeTableHasRoom, bool isSet)
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        FailingAllocator allocator = new(tracking);
+        using (EcsWorld world = EntityTestSupport.NewWorld(allocator, initialEntityCapacity: 4096))
+        {
+            var sources = new Entity[3];
+            for (int i = 0; i < sources.Length; i++)
+            {
+                sources[i] = isSet ? world.Spawn(new Health(i), new Payload(i)) : world.Spawn(new Position(i, i), new Health(i), new Payload(i));
+            }
+
+            Archetype source = ArchetypeOf(world, sources[1]);
+            if (edgeTableHasRoom)
+            {
+                // An edge to another archetype grows the source's edge table, so the failing call's edge needs no allocation.
+                _ = source.WithAdded(world.Components.Register<Marker>());
+            }
+
+            // An empty pool, so the target's first chunk needs the allocator.
+            world.TrimMemory();
+            world.SetChangeTickForTesting(9);
+            string before = Dump(world);
+            int archetypes = world.ArchetypeCount;
+            int types = world.Components.Count;
+            int edges = source.Edges.Count;
+            long liveBlocks = tracking.LiveAllocationCount;
+            Action move = isSet ? () => world.Set(sources[1], new Position(-1, -1)) : () => _ = world.Remove<Position>(sources[1]);
+            allocator.FailNext = true;
+
+            // A row that isn't the source's last, so a swap-remove before the failure would show.
+            _ = Assert.Throws<InsufficientMemoryException>(move);
+
+            // The created archetype stays, with no chunk; the dump's first line counts archetypes, and the rest is unchanged.
+            Assert.False(allocator.FailNext);
+            Assert.Equal(archetypes + 1, world.ArchetypeCount);
+            Archetype target = world.Archetypes[archetypes];
+            Assert.Equal(0, target.Chunks.ChunkCount);
+            Assert.Equal(StorageLines(before), StorageLines(Dump(world)));
+            Assert.Equal(edgeTableHasRoom ? edges + 1 : edges, source.Edges.Count);
+            Assert.Equal(isSet ? types + 1 : types, world.Components.Count);
+            Assert.True(world.Components.TryGetId<Position>(out _));
+            Assert.Equal(liveBlocks, tracking.LiveAllocationCount);
+            Assert.Equal(source.Index, Location(world, sources[1]).Archetype);
+            Assert.Equal(!isSet, world.Has<Position>(sources[1]));
+            Assert.Equal(1, world.Get<Health>(sources[1]).Value);
+            AssertDense(world);
+
+            // Still usable: the move now succeeds into the archetype the failed call created, through a cached edge.
+            move();
+            Assert.Equal(archetypes + 1, world.ArchetypeCount);
+            Assert.Same(target, ArchetypeOf(world, sources[1]));
+            Assert.Equal(edges + 1, source.Edges.Count);
+            Assert.Equal(isSet, world.Has<Position>(sources[1]));
+            Assert.Equal(1, world.Get<Health>(sources[1]).Value);
+            Assert.True(EntityComponents.Same(new Payload(1), world.Get<Payload>(sources[1])));
+            AssertDense(world);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    /// <summary>A dump without its first line, which counts the archetypes and entities: the chunks' contents only.</summary>
+    private static string StorageLines(string dump) => dump[(dump.IndexOf('\n', StringComparison.Ordinal) + 1)..];
 
     /// <summary>
     /// Sets a component the entity has: the entity keeps its location, the value is replaced, and every entity's

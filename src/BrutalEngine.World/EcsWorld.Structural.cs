@@ -124,9 +124,10 @@ public sealed partial class EcsWorld
     /// and its row is too wide for a chunk, which the message says, naming the components.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
-    /// The entity lacks <typeparamref name="T"/> and the allocator can't provide what the move needs, as for
-    /// <see cref="Add{T}"/>: the entity stays where it was, with its values and stamps, and every other entity and
-    /// chunk is unchanged.
+    /// The entity lacks <typeparamref name="T"/> and the allocator can't provide what the move needs: a new chunk for
+    /// the target archetype (its block or the grown chunk arrays), or a grown edge table. The entity stays where it
+    /// was, with its values and stamps, and every other entity and chunk is unchanged; <typeparamref name="T"/> stays
+    /// registered and an archetype created on the way stays, as both are permanent.
     /// </exception>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
