@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Backend;
 
@@ -50,13 +51,17 @@ internal sealed unsafe class UploadRing
 
     /// <summary>Reserves <paramref name="size"/> bytes at the next offset that is a multiple of <paramref name="alignment"/>.</summary>
     /// <param name="size">The bytes needed; positive.</param>
-    /// <param name="alignment">The offset's alignment: positive, a device offset limit or 16; any value, not only powers of two.</param>
+    /// <param name="alignment">
+    /// The offset's alignment: a power of two, as Vulkan guarantees for its offset alignment limits, and at least 16.
+    /// </param>
     /// <returns>The offset of the reserved bytes, or -1 when they don't fit, padding included (nothing is reserved).</returns>
     internal long TryReserve(long size, long alignment)
     {
+        Debug.Assert(alignment >= Alignment && (alignment & (alignment - 1)) == 0, "The alignment must be a power of two of at least 16.");
+
         // _used <= Capacity and the alignment is small, so the rounding can't overflow; an offset past the end leaves
         // Capacity - offset negative, which no positive size fits.
-        long offset = (_used + alignment - 1) / alignment * alignment;
+        long offset = (_used + alignment - 1) & ~(alignment - 1);
         if (size > Capacity - offset)
         {
             return -1;

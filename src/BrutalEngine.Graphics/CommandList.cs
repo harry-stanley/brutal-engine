@@ -39,7 +39,9 @@ public readonly struct CommandList
     /// nothing is reserved or counted.
     /// </returns>
     /// <exception cref="InvalidOperationException">
-    /// The list isn't its device's open frame: <c>default</c>, or a copy from a submitted frame.
+    /// The list isn't its device's open frame: <c>default</c>, or a copy from a submitted frame. Or every buffer handle
+    /// slot is live or retired (the device's buffer handle allocator is exhausted), so no alias handle can be issued;
+    /// the memory stays unused.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <paramref name="byteCount"/> is below 1 or above <see cref="int.MaxValue"/>, or <paramref name="usage"/> has a flag

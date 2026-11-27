@@ -52,8 +52,8 @@ public sealed partial class GraphicsDevice
         return Result.Success;
     }
 
-    // Uniform and storage offsets follow the device's limits (powers of two on Vulkan, so the largest is a multiple of the
-    // others); every other usage gets the ring's 16 bytes, and none gets less.
+    // Uniform and storage offsets follow the device's limits, every other usage gets the ring's 16 bytes, and none gets
+    // less. The limits are powers of two (Vulkan guarantees it), so the largest of them is a multiple of every other.
     private long TransientAlignment(TransientUsage usage)
     {
         GraphicsLimits limits = Capabilities.Limits;
