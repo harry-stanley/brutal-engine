@@ -48,6 +48,10 @@ public sealed partial class ClampTests
             // Checked as soon as the advance returns: nothing else ran at the new tick.
             Assert.Equal(Boundary, world.ChangeTick);
 
+            // The column-less chunks (the empty archetype's and the tag's) went through the clamp with nothing to raise.
+            AssertNoColumns(world, fixture.Empty);
+            AssertNoColumns(world, fixture.Tagged);
+
             // Single: stamped at 5, both ticks old.
             Assert.Equal(StampFloor, TickTestSupport.ChangedOf<Position>(world, fixture.Single));
             Assert.Equal(StampFloor, TickTestSupport.AddedOf<Position>(world, fixture.Single));
@@ -294,22 +298,42 @@ public sealed partial class ClampTests
         tracking.ThrowIfLeaks();
     }
 
+    private static void AssertNoColumns(EcsWorld world, Entity entity)
+    {
+        Assert.True(world.IsAlive(entity));
+        EntityRecord record = StructuralSupport.Location(world, entity);
+        ChunkTable chunks = world.Archetypes[record.Archetype].Chunks;
+        Assert.Equal(0, chunks.ColumnCount);
+        Assert.Equal(1, chunks.ChunkCount);
+        Assert.Equal(0, chunks.GetChanged(record.Chunk).Length);
+        Assert.Equal(0, chunks.GetAdded(record.Chunk).Length);
+    }
+
     /// <summary>
-    /// Entities in three archetypes with ticks on both sides of the 2³¹ boundary's stamp floor. The Payload archetype has
-    /// two chunks, and its second chunk holds the newest stamp, so a clamp that skips archetypes or chunks shows.
+    /// Entities in three archetypes with ticks on both sides of the 2³¹ boundary's stamp floor, plus two in column-less
+    /// archetypes (empty and tag-only) whose chunks have no tick arrays. The Payload archetype has two chunks, and its
+    /// second chunk holds the newest stamp, so a clamp that skips archetypes or chunks shows.
     /// </summary>
     private sealed class Fixture
     {
         /// <summary>A stamp newer than the floor of the boundary at 2³¹.</summary>
         public const uint NewerTick = Interval + 9;
 
-        private Fixture(Entity single, Entity pair, Entity firstChunk, Entity secondChunk)
+        private Fixture(Entity empty, Entity tagged, Entity single, Entity pair, Entity firstChunk, Entity secondChunk)
         {
+            Empty = empty;
+            Tagged = tagged;
             Single = single;
             Pair = pair;
             FirstChunk = firstChunk;
             SecondChunk = secondChunk;
         }
+
+        /// <summary>In the empty archetype: a chunk with no columns, so no tick arrays.</summary>
+        public Entity Empty { get; }
+
+        /// <summary>A tag only: also a chunk with no columns.</summary>
+        public Entity Tagged { get; }
 
         public Entity Single { get; }
 
@@ -322,6 +346,8 @@ public sealed partial class ClampTests
         public static Fixture Create(EcsWorld world)
         {
             world.SetChangeTickForTesting(5);
+            Entity empty = world.Spawn();
+            Entity tagged = world.Spawn(default(Marker));
             Entity single = world.Spawn(new Position(1, 1));
             Entity pair = world.Spawn(new Health(1), new Position(2, 2));
 
@@ -344,7 +370,7 @@ public sealed partial class ClampTests
             world.Write<Payload>(firstChunk);
             world.SetChangeTickForTesting(Boundary - 1);
             world.Write<Position>(last);
-            return new Fixture(single, pair, firstChunk, last);
+            return new Fixture(empty, tagged, single, pair, firstChunk, last);
         }
     }
 }
