@@ -397,6 +397,64 @@ public sealed class QueryCacheTests
         tracking.ThrowIfLeaks();
     }
 
+    /// <summary>
+    /// Growth has copied the entries into the new array and swapped it in when the free of the old array throws: the
+    /// cache must keep its matches on the grown array, not keep the old array and leak the new one.
+    /// </summary>
+    [Fact]
+    public void Refresh_FreeOfOldArrayThrows_CacheUsesGrownArray()
+    {
+        TrackingAllocator tracking = QueryTestSupport.NewTracking();
+        FreeFailingAllocator allocator = new(tracking);
+        using (EcsWorld world = QueryTestSupport.NewWorld(allocator, _ => false))
+        {
+            var terms = QueryTerms.Create(QueryTestSupport.ParseTerms("R0 W1"), QueryTestSupport.MaskBits);
+            using ArchetypeMatchCache cache = new(world.Archetypes, terms);
+            int[] expected = new int[ArchetypeMatchCache.InitialCapacity + 1];
+            for (int i = 0; i < ArchetypeMatchCache.InitialCapacity; i++)
+            {
+                expected[i] = QueryTestSupport.Archetype(world, 0, 1, 2 + i).Index;
+            }
+
+            cache.Refresh();
+            Assert.Equal(ArchetypeMatchCache.InitialCapacity, cache.Count);
+            int live = tracking.LiveAllocationCount;
+
+            // The ninth match needs room: the growth allocates and swaps, then the free of the old array throws.
+            expected[^1] = QueryTestSupport.Archetype(world, 0, 1, 50).Index;
+            int scanned = cache.ScannedArchetypes;
+            allocator.FailNextFree = true;
+            _ = Assert.Throws<InvalidOperationException>(cache.Refresh);
+            Assert.False(allocator.FailNextFree);
+
+            // The cache is on the grown array, with every earlier match intact; the failed archetype isn't scanned.
+            Assert.Equal(live + 1, tracking.LiveAllocationCount);
+            Assert.Equal(expected[..^1], QueryTestSupport.MatchedIndices(cache));
+            Assert.Equal(scanned, cache.ScannedArchetypes);
+            QueryTestSupport.AssertColumns(cache, terms);
+
+            // The next refresh appends the failed archetype into the room already there: no growth, no duplicate.
+            int allocateCalls = allocator.AllocateCalls;
+            cache.Refresh();
+            Assert.Equal(allocateCalls, allocator.AllocateCalls);
+            Assert.Equal(expected, QueryTestSupport.MatchedIndices(cache));
+            Assert.Equal(world.ArchetypeCount, cache.ScannedArchetypes);
+            QueryTestSupport.AssertColumns(cache, terms);
+        }
+
+        // Disposal freed the grown array; only the old eight-entry array, whose free failed, leaks.
+        NativeAllocationInfo[] leaked = tracking.GetLiveAllocations();
+        Assert.Single(leaked);
+        Assert.Equal((nuint)(ArchetypeMatchCache.InitialCapacity * 5 * sizeof(int)), leaked[0].ByteCount);
+        unsafe
+        {
+            // Sound: the block came from this tracking allocator, for the cache's old entries, and was never freed.
+            tracking.Free((void*)leaked[0].Address);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     [Fact]
     public void Refresh_DoesNotAllocate()
     {
