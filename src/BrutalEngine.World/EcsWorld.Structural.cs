@@ -5,10 +5,31 @@ using BrutalEngine.World.Storage;
 namespace BrutalEngine.World;
 
 // Structural changes to live entities: adding, setting and removing components, which moves the entity to another
-// archetype unless a set replaces a present value
+// archetype unless a set replaces a present value; and EntityRef, which forwards them
 // (docs/design/world.md, sections 2 and 4, "Moves").
 public sealed partial class EcsWorld
 {
+    /// <summary>Returns an <see cref="EntityRef"/> for <paramref name="entity"/>, after checking it as the other direct calls do.</summary>
+    /// <param name="entity">An alive entity of this world.</param>
+    /// <returns>A reference holding this world and <paramref name="entity"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="entity"/> is <see cref="Entity.Null"/>.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="entity"/> is stale: despawned, its slot retired, or its index outside this world's table.
+    /// </exception>
+    /// <exception cref="InvalidOperationException"><paramref name="entity"/> is pending: reserved and not placed yet.</exception>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// The check is made once, here; each member of the reference checks the entity again, so a reference to an entity
+    /// that is despawned later fails as the world's own members would. Allocates nothing and stamps nothing.
+    /// </remarks>
+    public EntityRef Ref(Entity entity)
+    {
+        ThrowIfUnusable("EcsWorld.Ref");
+        _ = _entities.Validate(entity);
+        return new EntityRef(this, entity);
+    }
+
     /// <summary>
     /// Adds a <typeparamref name="T"/> component to <paramref name="entity"/>, which moves the entity to the archetype
     /// of its component set plus <typeparamref name="T"/>. Its other components keep their values.

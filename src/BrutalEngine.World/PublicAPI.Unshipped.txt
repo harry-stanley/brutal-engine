@@ -48,6 +48,7 @@ BrutalEngine.World.EcsWorld.Has<T>(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.IsAlive(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.IsPending(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.Name.get -> string!
+BrutalEngine.World.EcsWorld.Ref(BrutalEngine.World.Entity entity) -> BrutalEngine.World.EntityRef
 BrutalEngine.World.EcsWorld.Remove<T>(BrutalEngine.World.Entity entity) -> bool
 BrutalEngine.World.EcsWorld.Set<T>(BrutalEngine.World.Entity entity, in T value) -> void
 BrutalEngine.World.EcsWorld.Spawn() -> BrutalEngine.World.Entity
@@ -66,6 +67,19 @@ BrutalEngine.World.Entity.Generation.get -> uint
 BrutalEngine.World.Entity.Index.get -> uint
 BrutalEngine.World.Entity.IsNull.get -> bool
 BrutalEngine.World.Entity.RawValue.get -> ulong
+BrutalEngine.World.EntityRef
+BrutalEngine.World.EntityRef.Add<T>(in T value) -> void
+BrutalEngine.World.EntityRef.Despawn() -> void
+BrutalEngine.World.EntityRef.Entity.get -> BrutalEngine.World.Entity
+BrutalEngine.World.EntityRef.EntityRef() -> void
+BrutalEngine.World.EntityRef.Get<T>() -> T
+BrutalEngine.World.EntityRef.Has<T>() -> bool
+BrutalEngine.World.EntityRef.IsAlive() -> bool
+BrutalEngine.World.EntityRef.Remove<T>() -> bool
+BrutalEngine.World.EntityRef.Set<T>(in T value) -> void
+BrutalEngine.World.EntityRef.TryGet<T>(out T value) -> bool
+BrutalEngine.World.EntityRef.World.get -> BrutalEngine.World.EcsWorld!
+BrutalEngine.World.EntityRef.Write<T>() -> T
 BrutalEngine.World.IComponent
 BrutalEngine.World.IComponent.Info.get -> BrutalEngine.World.ComponentInfo
 BrutalEngine.World.StableComponentId
