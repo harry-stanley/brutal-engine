@@ -217,6 +217,29 @@ public sealed class SwapchainAcquireTests : IDisposable
     }
 
     [Fact]
+    public void Recreation_WaitIdleFailsWithoutLoss_SkippedOldSwapchainKept()
+    {
+        Setup();
+        ulong old = LastId(_fixture.BackendDevice, FakeBackendOperation.CreateSwapchain);
+        SwapchainImage oldImage = _device.GetSwapchainImage(_swapchain, 0);
+        _window.PixelSize = new WindowSize(320, 200);
+        _fixture.Script.FailNext(FakeBackendOperation.WaitIdle, new EngineError(ErrorKind.Native, "wait refused", -6));
+
+        Assert.Equal((AcquireStatus.Skipped, default(SwapchainImage)), Frame());
+
+        // Nothing was created or destroyed: the old swapchain and its images stay, and the failure is logged.
+        Assert.Equal((1, 0), (Creates(), Acquires()));
+        Assert.DoesNotContain(Lifetime(_fixture.BackendDevice), call => call.Operation == FakeBackendOperation.DestroySwapchain);
+        Assert.Equal(_device.GetDefaultView(oldImage.Texture), oldImage.View);
+        Assert.False(_device.IsLost);
+        Assert.Contains(_fixture.Entries(), entry => entry.Level == LogLevel.Error && entry.Message.Contains("wait refused", StringComparison.Ordinal));
+
+        // The next acquire tries again, from the old swapchain.
+        Assert.Equal(AcquireStatus.Recreated, Frame().Status);
+        Assert.Equal([0UL, old], _requests.Select(request => request.OldSwapchain));
+    }
+
+    [Fact]
     public void Recreation_TablesCannotGrow_DestroysNewSwapchain()
     {
         Setup();

@@ -366,7 +366,8 @@ public sealed partial class GraphicsDevice
     }
 
     // Recreation, as M0 does it: wait for the GPU, create from the old swapchain, destroy the old one whatever the result.
-    // A failure leaves the state without a swapchain, so the next acquire creates one with no old swapchain.
+    // A failed wait changes nothing, so the next acquire tries again from the old swapchain; a failed creation leaves the
+    // state without a swapchain, so the next acquire creates one with no old swapchain.
     private AcquireStatus Recreate(SwapchainState state)
     {
         if (WaitIdle().TryGetError(out EngineError error))
