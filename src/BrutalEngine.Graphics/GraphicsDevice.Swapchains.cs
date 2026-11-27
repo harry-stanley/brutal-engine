@@ -222,7 +222,9 @@ public sealed partial class GraphicsDevice
     /// here. A handle from another device is detected only when its index or generation doesn't match a live swapchain
     /// here; one that matches can't be told apart from it.
     /// </exception>
-    /// <exception cref="OutOfMemoryException">A deletion queue couldn't grow; nothing changed and the swapchain stays live.</exception>
+    /// <exception cref="OutOfMemoryException">
+    /// A deletion queue or the list of destroyed swapchains couldn't grow; nothing changed and the swapchain stays live.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
@@ -235,6 +237,8 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfUnusable(DestroyApi);
         SwapchainState state = LiveSwapchain(swapchain, nameof(swapchain));
+        // Room for the retiring record first: an out-of-memory failure must leave everything as it was.
+        _ = _retiring.EnsureCapacity(_retiring.Count + 1);
         DeletionQueue? queue = ReserveDeletion();
         _swapchainHandles.Free(swapchain.Value);
         _swapchains[swapchain.Value.Index] = null;
