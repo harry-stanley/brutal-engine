@@ -65,8 +65,13 @@ public sealed class QueryMatchTests
             Assert.Equal(_fixtureArchetypes.Length + 1, world.ArchetypeCount);
             QueryTerm[] parsed = QueryTestSupport.ParseTerms(spec);
             var terms = QueryTerms.Create(parsed, QueryTestSupport.MaskBits);
+            using (ArchetypeMatchCache cache = new(world.Archetypes, terms))
+            {
+                cache.Refresh();
+                Assert.Equal(expected, QueryTestSupport.MatchedIndices(cache));
+            }
 
-            // The terms give the expected answer for every archetype, and so does the set-based model.
+            // The terms alone give the same answer for every archetype, and so does the set-based model.
             for (int index = 0; index < world.ArchetypeCount; index++)
             {
                 ArchetypeSignature signature = world.Archetypes[index].Signature;

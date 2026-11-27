@@ -5,6 +5,7 @@ using BrutalEngine.Core.Memory;
 using BrutalEngine.World.Internal;
 using BrutalEngine.World.Queries;
 using BrutalEngine.World.Storage;
+using Xunit;
 
 namespace BrutalEngine.World.Tests.Queries;
 
@@ -124,4 +125,43 @@ internal static class QueryTestSupport
     /// <summary>Whether a term reads or writes its component's column: the model of a data term.</summary>
     public static bool IsDataTerm(TermFlags flags) =>
         (flags & (TermFlags.Read | TermFlags.Write | TermFlags.OptionalRead | TermFlags.OptionalWrite | TermFlags.Changed | TermFlags.Added)) != 0;
+
+    /// <summary>The indices of the archetypes a cache holds, in entry order.</summary>
+    public static int[] MatchedIndices(ArchetypeMatchCache cache)
+    {
+        int[] indices = new int[cache.Count];
+        for (int i = 0; i < indices.Length; i++)
+        {
+            indices[i] = cache.GetArchetype(i).Index;
+        }
+
+        return indices;
+    }
+
+    /// <summary>
+    /// Checks every entry's column and offset per data term against the archetype's layout, found by searching the
+    /// layout's columns for the component (not through the signature's type indices, as the cache does).
+    /// </summary>
+    public static void AssertColumns(ArchetypeMatchCache cache, QueryTerms terms)
+    {
+        for (int entry = 0; entry < cache.Count; entry++)
+        {
+            Archetype archetype = cache.GetArchetype(entry);
+            ReadOnlySpan<ComponentType> columns = archetype.Layout.Columns;
+            for (int term = 0; term < terms.DataTermCount; term++)
+            {
+                int expected = -1;
+                for (int column = 0; column < columns.Length; column++)
+                {
+                    if (columns[column].Id.Index == terms.GetDataTerm(term).Component)
+                    {
+                        expected = column;
+                    }
+                }
+
+                Assert.Equal(expected, cache.GetColumn(entry, term));
+                Assert.Equal(expected < 0 ? -1 : archetype.Layout.ColumnOffsets[expected], cache.GetOffset(entry, term));
+            }
+        }
+    }
 }
