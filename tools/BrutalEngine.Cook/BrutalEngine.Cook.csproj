@@ -8,4 +8,8 @@
     <AssemblyName>brutal-cook</AssemblyName>
     <RootNamespace>BrutalEngine.Cook</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.Brutal.Slang" />
+  </ItemGroup>
 </Project>

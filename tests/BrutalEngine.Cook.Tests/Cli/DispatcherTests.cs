@@ -51,6 +51,29 @@ public sealed class DispatcherTests : IDisposable
 
         Assert.Equal(CookExitCode.Success, exit);
         Assert.Contains("Usage: brutal-cook <verb>", _stdout.ToString(), StringComparison.Ordinal);
+        Assert.Contains("shader", _stdout.ToString(), StringComparison.Ordinal);
         Assert.Empty(_stderr.ToString());
+    }
+
+    [Fact]
+    public void Run_ShaderHelp_ReturnsSuccess()
+    {
+        CookExitCode exit = Dispatcher.Run(["shader", "--help"], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.Success, exit);
+        Assert.Contains("Usage: brutal-cook shader <source.slang>", _stdout.ToString(), StringComparison.Ordinal);
+        Assert.Empty(_stderr.ToString());
+    }
+
+    [Fact]
+    public void Run_ShaderVerb_PassesOnlyTheArgumentsAfterTheVerb()
+    {
+        // Were the verb passed on too, "shader" would parse as the source and the error would be the missing --entry.
+        CookExitCode exit = Dispatcher.Run(["shader"], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.Usage, exit);
+        Assert.Contains("brutal-cook shader: no source file given.", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Usage: brutal-cook shader <source.slang>", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Empty(_stdout.ToString());
     }
 }

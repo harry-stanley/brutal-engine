@@ -6,7 +6,7 @@ namespace BrutalEngine.Cook;
 /// </summary>
 internal enum CookExitCode
 {
-    /// <summary>Every requested output was written.</summary>
+    /// <summary>Every requested output was written, or help was printed.</summary>
     Success = 0,
 
     /// <summary>Slang reported errors. Its diagnostics went to standard error unchanged, and no output was written.</summary>
@@ -18,7 +18,10 @@ internal enum CookExitCode
     /// <summary>The output directory couldn't be created, or an output file couldn't be written.</summary>
     OutputFailed = 4,
 
-    /// <summary>The Slang runtime failed to load, or a Slang session or compile request couldn't be created.</summary>
+    /// <summary>
+    /// The Slang runtime failed to load, a Slang global session or compile request couldn't be created, Slang has no
+    /// <c>spirv_1_6</c> profile, or it produced no code for an entry point.
+    /// </summary>
     ToolFailure = 5,
 
     /// <summary>A bad command line: no verb, an unknown verb, or invalid arguments. Usage went to standard error.</summary>
