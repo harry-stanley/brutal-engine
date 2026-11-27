@@ -4,7 +4,7 @@ using BrutalEngine.World.Storage;
 
 namespace BrutalEngine.World;
 
-// Structural changes to live entities: adding components, which moves the entity to another archetype
+// Structural changes to live entities: adding and removing components, which moves the entity to another archetype
 // (docs/design/world.md, sections 2 and 4, "Moves").
 public sealed partial class EcsWorld
 {
@@ -86,6 +86,65 @@ public sealed partial class EcsWorld
             ValueAt<T>(target, chunk, row, column) = value;
             target.Chunks.GetAdded(chunk)[column] = _changeTick;
         }
+    }
+
+    /// <summary>
+    /// Removes <paramref name="entity"/>'s <typeparamref name="T"/> component, if it has one, which moves the entity to
+    /// the archetype of its component set minus <typeparamref name="T"/>. Its other components keep their values.
+    /// </summary>
+    /// <typeparam name="T">The component type, data or tag. Not registered by this call.</typeparam>
+    /// <param name="entity">An alive entity of this world.</param>
+    /// <returns>
+    /// <see langword="true"/> if the entity had <typeparamref name="T"/> and it was removed; <see langword="false"/> if
+    /// it didn't have it (including when the type isn't registered with this world), in which case nothing changes and
+    /// nothing is stamped.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="entity"/> is <see cref="Entity.Null"/>.</exception>
+    /// <exception cref="StaleHandleException">
+    /// <paramref name="entity"/> is stale: despawned, its slot retired, or its index outside this world's table.
+    /// </exception>
+    /// <exception cref="InvalidOperationException"><paramref name="entity"/> is pending: reserved and not placed yet.</exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The allocator can't provide what the move needs: a new chunk for the target archetype (its block or the grown
+    /// chunk arrays), or a grown edge table. The entity keeps <typeparamref name="T"/>, its row, values and stamps,
+    /// and every other entity and chunk is unchanged; an archetype created on the way stays, as archetypes are
+    /// permanent.
+    /// </exception>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
+    /// <remarks>
+    /// <para>
+    /// The entity check runs before anything changes. The move is the one <see cref="Add{T}"/> makes: a row is
+    /// appended to the target archetype, the shared columns are copied into it (<typeparamref name="T"/>'s value is
+    /// dropped), and the old row is removed by moving the source archetype's last row into it. References into chunks
+    /// are invalidated.
+    /// </para>
+    /// <para>
+    /// <b>Stamps</b>, with the world's current change tick: in the target chunk, the <c>Changed</c> tick of every
+    /// column, and no <c>Added</c> tick, as nothing was added; in the source chunk that received the source
+    /// archetype's last row, the <c>Changed</c> tick of every column. A target chunk opened by the move starts with
+    /// every tick at the current tick.
+    /// </para>
+    /// <para>
+    /// Allocates no managed memory once the target archetype exists. Allocator calls are as for
+    /// <see cref="Add{T}"/>.
+    /// </para>
+    /// </remarks>
+    public bool Remove<T>(Entity entity)
+        where T : unmanaged, IComponent
+    {
+        ThrowIfUnusable("EcsWorld.Remove");
+        EntityRecord record = _entities.Validate(entity);
+        Archetype source = _archetypes[record.Archetype];
+        if (!_components.TryGetId<T>(out ComponentId id) || !source.Signature.Contains(id.Index))
+        {
+            return false;
+        }
+
+        // Leaves the entity where it is when it throws; an archetype it creates is permanent.
+        Archetype target = source.WithRemoved(id);
+        _ = MoveRow(entity, record, source, target);
+        return true;
     }
 
     /// <summary>
