@@ -1,5 +1,6 @@
 using System;
 using BrutalEngine.Core.Memory;
+using BrutalEngine.World.Ticks;
 
 namespace BrutalEngine.World.Storage;
 
@@ -19,7 +20,8 @@ namespace BrutalEngine.World.Storage;
 /// <b>Ticks.</b> Each chunk has one <c>Changed</c> and one <c>Added</c> tick per column, in two arrays of chunk x
 /// column ticks, chunk-major, so a chunk's ticks are contiguous (<see cref="GetChanged"/>, <see cref="GetAdded"/>).
 /// A new chunk's ticks all start at the tick it was added at. A filtered query reads these compact arrays instead of
-/// touching each block.
+/// touching each block, and <see cref="ClampTicks"/> raises old ones when the world's change tick reaches a clamp
+/// boundary.
 /// </para>
 /// <para>
 /// <b>Memory.</b> The entry array and the two tick arrays come from the world's allocator, which the table doesn't
@@ -190,6 +192,24 @@ internal sealed unsafe class ChunkTable : IDisposable
     public Span<uint> GetAdded(int chunk) => TicksAt(_added, chunk);
 
     /// <summary>
+    /// Raises every <c>Changed</c> and <c>Added</c> tick of every chunk that is older than <paramref name="floor"/>
+    /// (wrap-safe) to it; newer ticks and the floor itself are unchanged. One pass over the compact tick arrays: no
+    /// block is touched and nothing is allocated.
+    /// </summary>
+    /// <param name="floor">The stamp floor, <see cref="TickMath.StampFloor"/> of the world's change tick.</param>
+    /// <exception cref="ObjectDisposedException">The table is disposed.</exception>
+    public void ClampTicks(uint floor)
+    {
+        ThrowIfDisposed();
+
+        // Sound: both tick arrays hold _capacity * ColumnCount ticks and _count <= _capacity; with no chunks or no
+        // columns the length is 0 and nothing is read through a null array.
+        int ticks = checked(_count * ColumnCount);
+        ClampSpan(new Span<uint>(_changed, ticks), floor);
+        ClampSpan(new Span<uint>(_added, ticks), floor);
+    }
+
+    /// <summary>
     /// Returns every chunk's block to the pool, whatever its row count, and frees the arrays. Idempotent; afterwards
     /// other members throw <see cref="ObjectDisposedException"/>.
     /// </summary>
@@ -282,6 +302,17 @@ internal sealed unsafe class ChunkTable : IDisposable
         _added = added;
         _capacity = capacity;
         FreeArrays(oldEntries, oldChanged, oldAdded);
+    }
+
+    private static void ClampSpan(Span<uint> ticks, uint floor)
+    {
+        for (int i = 0; i < ticks.Length; i++)
+        {
+            if (TickMath.IsOlderThanFloor(ticks[i], floor))
+            {
+                ticks[i] = floor;
+            }
+        }
     }
 
     private void FreeArrays(ChunkEntry* entries, uint* changed, uint* added)

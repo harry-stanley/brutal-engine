@@ -11,7 +11,7 @@ public sealed partial class EcsWorld
     // The tick that new rows and writes are stamped with. Starts at 1; only Advance moves it on (and the test seam).
     private uint _changeTick = 1;
 
-    // The last-run ticks of the world's queries and systems, kept for the clamp. Created in
+    // The last-run ticks of the world's queries and systems, which the clamp raises with the chunk ticks. Created in
     // the constructor with the world's allocator and freed in Dispose.
     private readonly TickConsumers _tickConsumers;
 
@@ -24,8 +24,9 @@ public sealed partial class EcsWorld
     /// <remarks>
     /// <para>
     /// The tick wraps from <see cref="uint.MaxValue"/> to 0, so ticks are compared by their signed difference, never
-    /// as plain numbers: a stamp is newer than a last-run tick when it is ahead by 1 to 2³¹ - 1 ticks
-    /// (docs/design/world.md, section 5, "Wrap-safe comparison").
+    /// as plain numbers: a stamp is newer than a last-run tick when it is ahead by 1 to 2³¹ - 1 ticks. Whenever the
+    /// tick reaches a multiple of 2³⁰, the advance clamps every older tick the world stores, so that comparison stays
+    /// valid however long the world runs (docs/design/world.md, section 5, "Wrap-safe comparison").
     /// </para>
     /// <para>Allocates nothing. Not thread-safe: like every member, it is for the owner thread only.</para>
     /// </remarks>
@@ -38,7 +39,7 @@ public sealed partial class EcsWorld
         }
     }
 
-    /// <summary>The world's tick consumers: one slot per query or system, with its last-run tick.</summary>
+    /// <summary>The world's tick consumers: one slot per query or system, with its last-run tick, clamped with the chunk ticks.</summary>
     internal TickConsumers TickConsumers => _tickConsumers;
 
     /// <summary>
@@ -48,8 +49,17 @@ public sealed partial class EcsWorld
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread. Nothing changes.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
     /// <remarks>
-    /// From <see cref="uint.MaxValue"/> the tick wraps to 0. Allocates no managed memory and makes no allocator
-    /// call.
+    /// <para>
+    /// From <see cref="uint.MaxValue"/> the tick wraps to 0. When the new tick is a multiple of 2³⁰ (0 included), the
+    /// call first clamps, in one pass and before it returns: every chunk's <c>Changed</c> and <c>Added</c> tick
+    /// older than <c>ChangeTick - 2³⁰ + 1</c> becomes that value, and every last-run tick registered with the world
+    /// (queries and systems keep theirs there) older than it becomes one less, <c>ChangeTick - 2³⁰</c>. Consumers stay strictly below the clamped stamps, so a change
+    /// pending against an idle consumer is still newer after the clamp. Newer ticks are unchanged.
+    /// </para>
+    /// <para>
+    /// Allocates no managed memory and makes no allocator call, the clamp included. The clamp takes time proportional
+    /// to the chunk ticks and consumers the world holds, once every 2³⁰ advances.
+    /// </para>
     /// </remarks>
     public void AdvanceChangeTick()
     {
@@ -58,7 +68,8 @@ public sealed partial class EcsWorld
     }
 
     /// <summary>
-    /// Test seam: sets the change tick, so stamps can be told apart. The engine never calls it.
+    /// Test seam: sets the change tick without clamping, so stamps can be told apart and a boundary reached without
+    /// 2³⁰ advances. The engine never calls it.
     /// </summary>
     /// <param name="tick">The new tick.</param>
     internal void SetChangeTickForTesting(uint tick)
@@ -68,8 +79,28 @@ public sealed partial class EcsWorld
     }
 
     /// <summary>
-    /// The one advance step every advance path goes through: increments the change tick, wrapping. The caller has
-    /// checked the thread and disposal.
+    /// The one advance step every advance path goes through: increments the change tick (wrapping) and, at a multiple
+    /// of 2³⁰, clamps old chunk and consumer ticks before returning, so no comparison at the new tick sees an
+    /// unclamped tick. The caller has checked the thread and disposal.
     /// </summary>
-    internal void Advance() => _changeTick = unchecked(_changeTick + 1);
+    internal void Advance()
+    {
+        uint tick = unchecked(_changeTick + 1);
+        _changeTick = tick;
+        if (TickMath.IsClampTick(tick))
+        {
+            ClampOldTicks(tick);
+        }
+    }
+
+    private void ClampOldTicks(uint tick)
+    {
+        uint stampFloor = TickMath.StampFloor(tick);
+        for (int i = 0; i < _archetypes.Count; i++)
+        {
+            _archetypes[i].Chunks.ClampTicks(stampFloor);
+        }
+
+        _tickConsumers.Clamp(TickMath.ConsumerFloor(tick));
+    }
 }
