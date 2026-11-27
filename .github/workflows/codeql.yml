@@ -27,13 +27,32 @@ jobs:
       fail-fast: false
       matrix:
         language: [csharp, actions]
+    # The C# results go through codeql-filter-sarif.sh before they are uploaded, which drops the listed rules'
+    # results under tests/ only. The actions results are uploaded by the analyze step, as before. See
+    # docs/06-ci-cd-and-release.md ("Code scanning").
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Self-test the SARIF filter
+        if: matrix.language == 'csharp'
+        run: bash .github/scripts/codeql-filter-sarif-test.sh
       - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           languages: ${{ matrix.language }}
           build-mode: none
           queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
       - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           category: /language:${{ matrix.language }}
+          output: sarif-results
+          upload: ${{ matrix.language == 'csharp' && 'never' || 'always' }}
+      - name: Filter test-only results
+        if: matrix.language == 'csharp'
+        run: |
+          mkdir -p sarif-filtered
+          bash .github/scripts/codeql-filter-sarif.sh sarif-results/csharp.sarif sarif-filtered/csharp.sarif
+      - uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        if: matrix.language == 'csharp'
+        with:
+          sarif_file: sarif-filtered/csharp.sarif
+          category: /language:csharp

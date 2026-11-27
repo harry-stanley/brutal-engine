@@ -1,0 +1,18 @@
+# CodeQL configuration for both analysed languages (.github/workflows/codeql.yml). The workflow's `queries:
+# security-and-quality` input still picks the suite; this file only removes queries from it, everywhere. Results that
+# misfire only on test code are filtered after the analysis instead (.github/scripts/codeql-filter-sarif.sh), because
+# query-filters can't be scoped to a path. Described in docs/06-ci-cd-and-release.md ("Code scanning").
+name: BrutalEngine CodeQL
+
+query-filters:
+  # The three LINQ suggestions push against the coding standards: docs/07 forbids LINQ on engine hot paths, so in src/
+  # they recommend the wrong thing, and in tests they are a matter of taste.
+  # "Use Where to filter the sequence" instead of an if inside a foreach.
+  - exclude:
+      id: cs/linq/missed-where
+  # "Use Select to map the sequence" instead of a mapped variable inside a foreach.
+  - exclude:
+      id: cs/linq/missed-select
+  # "Use Cast" instead of a cast inside a foreach.
+  - exclude:
+      id: cs/linq/missed-cast
