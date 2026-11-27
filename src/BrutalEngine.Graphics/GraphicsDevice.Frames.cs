@@ -269,7 +269,7 @@ public sealed partial class GraphicsDevice
 
     private void MarkLost(string operation, in EngineError error)
     {
-        // TODO(#115): raise DeviceLost once here.
+        // TODO(#116): raise DeviceLost once here.
         LostOperation = operation;
         LostNativeCode = error.NativeCode;
         LostTimedOut = error.Kind == ErrorKind.Timeout;
