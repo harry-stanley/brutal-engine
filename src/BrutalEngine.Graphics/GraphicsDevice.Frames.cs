@@ -129,10 +129,14 @@ public sealed partial class GraphicsDevice
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// The plan holds the copies of every write the frame lands (the pending ones made before it began, then its own,
-    /// in call order), then its recorded commands. Once the frame is closed, on a lost device too, the buffer handles of
-    /// its transient allocations are stale. A failed submission marks the device lost; on a lost device the
-    /// backend isn't called and the frame completes empty, its writes dropped. Owner thread. Allocates nothing, except
-    /// the exception and the log line of a newly detected loss.
+    /// in call order), then its recorded commands, then a clear for each acquired swapchain image no recorded copy wrote,
+    /// and lists the acquired images. After a successful submission each acquired image is presented, in acquire order;
+    /// a suboptimal or out-of-date present marks its swapchain for recreation, a lost surface sticks to its swapchain,
+    /// and a device loss returns <see cref="FrameStatus.DeviceLost"/>. Once the frame is closed, on a lost device too,
+    /// the buffer handles of its transient allocations are stale. A failed submission marks the device lost and presents
+    /// nothing; on a lost device the backend isn't called and the frame completes empty, its writes dropped. Owner
+    /// thread. Allocates nothing, except the exception, the growth of the stream or the acquired lists, and the log line
+    /// of a newly detected loss.
     /// </remarks>
     public FrameStatus SubmitFrame(CommandList commands)
     {

@@ -434,17 +434,50 @@ public sealed partial class GraphicsDevice
         return AcquireStatus.DeviceLost;
     }
 
-    // At submit: the plan with the acquired list. Allocates nothing.
+    // At submit, before planning: a clear record for each acquired image no recorded copy wrote, then the plan with the
+    // acquired list. Allocates nothing once the stream has grown.
     private FramePlan PlanFrame(int slotIndex, FrameSlot slot)
     {
+        for (int i = 0; i < _acquiredImages.Count; i++)
+        {
+            ulong texture = _acquiredImages[i].Texture;
+            bool written = false;
+            var reader = new CommandReader(slot.Commands.Written);
+            while (!written && reader.MoveNext())
+            {
+                written = reader.Kind switch
+                {
+                    CommandKind.CopyBufferToTexture => reader.Payload<CopyBufferTextureCommand>().Texture == texture,
+                    CommandKind.CopyTextureToTexture => reader.Payload<CopyTextureToTextureCommand>().Destination == texture,
+                    _ => false,
+                };
+            }
+
+            if (!written)
+            {
+                slot.Commands.Append(CommandKind.ClearSwapchainImage, new ClearSwapchainImageCommand { AcquiredIndex = i });
+            }
+        }
+
         FramePlan plan = _planner.Plan(slotIndex, _frameNumber, slot.Uploads, slot.Commands);
         return new FramePlan(plan.FrameSlot, plan.FrameNumber, plan.Commands, CollectionsMarshal.AsSpan(_acquiredUses));
     }
 
-    // After Execute: empties the acquired lists.
+    // After Execute: presents every acquired image in acquire order (unless the frame wasn't submitted or the device is
+    // lost), marks swapchains for recreation or as surface-lost, and empties the acquired lists.
     private FrameStatus PresentAcquired(bool submitted)
     {
-        // TODO(#115): present every acquired image.
+        for (int i = 0; submitted && !IsLostCore && i < _acquiredUses.Count; i++)
+        {
+            SwapchainState state = _acquiredImages[i].State;
+            BackendPresent presented = _backend.Present(_acquiredUses[i].Swapchain, _acquiredUses[i].ImageIndex);
+            state.NeedsRecreation |= presented.Status is SwapchainStatus.Suboptimal or SwapchainStatus.OutOfDate;
+            if (presented.Status is SwapchainStatus.SurfaceLost or SwapchainStatus.DeviceLost)
+            {
+                _ = Lost(state, presented.Status, new EngineError(ErrorKind.Unavailable, "Present reported device loss.", presented.NativeCode), nameof(SubmitFrame));
+            }
+        }
+
         _acquiredUses.Clear();
         _acquiredImages.Clear();
         return submitted && !IsLostCore ? FrameStatus.Ready : FrameStatus.DeviceLost;
