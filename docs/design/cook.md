@@ -59,11 +59,40 @@ dotnet run --project tools/BrutalEngine.Cook -c Release -- shader <dir>/sprite.s
     --entry vertexMain:vertex --entry fragmentMain:fragment --output-dir <dir>
 ```
 
+## Manifests
+
+Built-in shaders are committed as `.slang` sources next to their consumer, with their SPIR-V, which the consumer embeds. Each consumer lists its shaders in a `Shaders/shaders.cook.json` of its own, so no file is shared between consumers. `ShaderManifest.TryRead` reads one into the same per-source options the `shader` verb's command line produces; it reads only the bytes it is given, so it never loads Slang or writes a file.
+
+```json
+{
+  "version": 1,
+  "shaders": [
+    {
+      "source": "sprite.slang",
+      "entries": [
+        { "name": "vertexMain", "stage": "vertex" },
+        { "name": "fragmentMain", "stage": "fragment" }
+      ],
+      "matrixLayout": "column-major"
+    }
+  ]
+}
+```
+
+- Read with `Utf8JsonReader` (no reflection) as standard JSON: no comments, trailing commas or second value. A string that isn't valid UTF-8 is invalid JSON.
+- `version` (required) is the number `1`. `shaders` (required) lists at least one shader; each has `source` and `entries` (required, at least one) and `matrixLayout` (optional, `column-major` by default).
+- `source` is relative to the manifest's directory, uses `/` on every OS, and must name a file inside that directory: not empty, not absolute, no `\` or NUL, no `..` that leaves the directory, not a bare directory or `.slang`. Symbolic links aren't resolved, so the check is on the path as written.
+- Entry names and stage and layout tokens follow the command line's rules: ASCII identifiers, unique ignoring case within a shader; exactly `vertex`, `fragment`, `compute`, `column-major`, `row-major`.
+- Two sources in one directory whose names match ignoring case and extension (`a.slang` and `A.hlsl`) would write the same files, so the second is an error.
+- Every property must be known and given once (names are case-sensitive). Each broken rule is one error naming the manifest and the JSON path, e.g. `Shaders/shaders.cook.json: $.shaders[1].entries[0].stage: unknown stage 'pixel'; expected vertex, fragment or compute.`
+- Outputs go next to each source: the source's directory is its output directory, so each entry becomes `<source directory>/<source file name without extension>.<entry>.spv`.
+
 ## Testing
 
 `tests/BrutalEngine.Cook.Tests` (in `BrutalEngine.Tools.slnx`):
 
 - `CookCommandLineTests`: every valid form and usage error, exact stage and layout tokens, identifier and case-insensitive duplicate rules.
+- `ShaderManifestTests`: valid manifests and a row for each rule above, each asserting the manifest path and the JSON path in the error; invalid UTF-8; sources that leave the manifest's directory, read from a real tree, writing nothing.
 - `DispatcherTests`: no verb, unknown verbs, `--help`, and that a verb gets only the arguments after it.
 - `ShaderCommandTests` (real Slang): two entries give two modules starting with the SPIR-V magic number with the right execution models; a compute entry; two runs are byte-identical; overwriting; the matrix layout reaches Slang; a syntax error exits 2 with Slang's diagnostic and writes nothing; missing source, unwritable output and a Slang load failure.
 - `SlangSessionTests`: a counting seam around `Slang.Release` proves the session is released once on every outcome.
