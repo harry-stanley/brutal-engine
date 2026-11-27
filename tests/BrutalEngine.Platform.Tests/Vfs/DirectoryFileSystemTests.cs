@@ -703,7 +703,8 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
     {
         // Default options, so VerifyCase is on. Without it, each row reaches the entry on Windows (one spelling opens
         // another) and, on Linux, fails with the OS's own code or makes a second spelling next to the first. The
-        // dot-names are hidden entries (by name on Unix, by attribute on Windows), which a listing skips by default.
+        // dot-names are hidden entries by name on Unix, and hidden or system by attribute on Windows, which a listing
+        // skips by default.
         SeedCased();
         string before = Snapshot();
         DirectoryFileSystem fileSystem = Create();
@@ -1025,7 +1026,7 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
 
     /// <summary>
     /// Seeds the root through System.IO with mixed-case names: Assets/Hero.png ([1, 2, 3]), Assets/Maps/, and the hidden
-    /// entries Assets/.Meta ([4]) and .Hidden/x.bin ([5]).
+    /// or system entries Assets/.Meta ([4]) and .Hidden/x.bin ([5]).
     /// </summary>
     private void SeedCased()
     {
@@ -1035,17 +1036,19 @@ public sealed partial class DirectoryFileSystemTests : IDisposable
         Directory.CreateDirectory(Path.Join(_root, ".Hidden"));
         File.WriteAllBytes(Path.Join(_root, ".Hidden", "x.bin"), [5]);
 
-        // A leading dot is what makes an entry hidden on Unix; Windows needs the attribute.
+        // A leading dot is what makes an entry hidden on Unix. Windows needs the attributes: System on .Meta and
+        // Hidden on .Hidden, so a listing that skips either one misses a seeded name there.
+        string meta = Path.Join(_root, "Assets", ".Meta");
+        string hidden = Path.Join(_root, ".Hidden");
+        FileAttributes metaAttribute = OperatingSystem.IsWindows() ? FileAttributes.System : FileAttributes.Hidden;
         if (OperatingSystem.IsWindows())
         {
-            foreach (string hidden in new[] { Path.Join(_root, "Assets", ".Meta"), Path.Join(_root, ".Hidden") })
-            {
-                File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
-            }
+            File.SetAttributes(meta, File.GetAttributes(meta) | FileAttributes.System);
+            File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
         }
 
-        Assert.True((File.GetAttributes(Path.Join(_root, "Assets", ".Meta")) & FileAttributes.Hidden) != 0);
-        Assert.True((File.GetAttributes(Path.Join(_root, ".Hidden")) & FileAttributes.Hidden) != 0);
+        Assert.Equal(metaAttribute, File.GetAttributes(meta) & (FileAttributes.Hidden | FileAttributes.System));
+        Assert.Equal(FileAttributes.Hidden, File.GetAttributes(hidden) & (FileAttributes.Hidden | FileAttributes.System));
     }
 
     /// <summary>Creates a symbolic link under the root, or skips the test where the OS doesn't let this process.</summary>
