@@ -388,7 +388,7 @@ internal enum VulkanCall                               // one member per result-
 internal static class VkCheck                          // pure; unit-tested as a table
 {
     public static ErrorKind KindOf(VkResult result);    // below
-    public static SwapchainStatus SwapchainStatusOf(VkResult result); // section 4's table
+    public static SwapchainStatus SwapchainStatusOf(VkResult result, bool acquire); // section 4's table
     public static EngineError Error(VkResult result, VulkanCall call); // message: a constant per call; no allocation
     public static EngineError FromException(VkResultError error, string call); // BRUTAL-wrapper creation sites only
 }

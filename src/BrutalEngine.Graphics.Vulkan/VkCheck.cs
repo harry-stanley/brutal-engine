@@ -1,6 +1,7 @@
 using System;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
+using BrutalEngine.Graphics.Backend;
 
 namespace BrutalEngine.Graphics.Vulkan;
 
@@ -11,8 +12,8 @@ namespace BrutalEngine.Graphics.Vulkan;
 /// <remarks>
 /// Stateless and thread-safe. <see cref="KindOf"/> and <see cref="Error"/> allocate nothing: every message is a
 /// constant string per <see cref="VulkanCall"/>, and the code goes into <see cref="EngineError.NativeCode"/>.
-/// The per-device call gate is its only caller on the frame path; swapchain calls get their own mapping (section 4)
-/// in a later issue.
+/// The per-device call gate is its only caller on the frame path. Swapchain acquire and present results get their own
+/// mapping, <see cref="SwapchainStatusOf"/> (section 4), which also allocates nothing.
 /// </remarks>
 internal static class VkCheck
 {
@@ -37,6 +38,31 @@ internal static class VkCheck
             or VkResult.ErrorLayerNotPresent or VkResult.ErrorIncompatibleDriver => ErrorKind.Unsupported,
         VkResult.ErrorInvalidShaderNV => ErrorKind.InvalidData,
         _ => ErrorKind.Native,
+    };
+
+    /// <summary>
+    /// Maps the result of <c>vkAcquireNextImageKHR</c> or <c>vkQueuePresentKHR</c> to the contract's status
+    /// (docs/design/graphics-vulkan.md section 4).
+    /// </summary>
+    /// <param name="result">The call's result; any value, named in BRUTAL's enum or not.</param>
+    /// <param name="acquire"><see langword="true"/> for an acquire, <see langword="false"/> for a present.</param>
+    /// <returns>
+    /// <see cref="SwapchainStatus.Success"/> for <c>SUCCESS</c>; <see cref="SwapchainStatus.Suboptimal"/> for
+    /// <c>SUBOPTIMAL_KHR</c>; <see cref="SwapchainStatus.OutOfDate"/> for <c>ERROR_OUT_OF_DATE_KHR</c>, and for
+    /// <c>TIMEOUT</c> and <c>NOT_READY</c> when <paramref name="acquire"/> is <see langword="true"/>;
+    /// <see cref="SwapchainStatus.SurfaceLost"/> for <c>ERROR_SURFACE_LOST_KHR</c>; and
+    /// <see cref="SwapchainStatus.DeviceLost"/> for <c>ERROR_DEVICE_LOST</c> and every other value, including
+    /// <c>TIMEOUT</c> and <c>NOT_READY</c> from a present, which can't return them. The caller reports the code itself
+    /// as the native code. Allocates nothing.
+    /// </returns>
+    public static SwapchainStatus SwapchainStatusOf(VkResult result, bool acquire) => result switch
+    {
+        VkResult.Success => SwapchainStatus.Success,
+        VkResult.SuboptimalKHR => SwapchainStatus.Suboptimal,
+        VkResult.ErrorOutOfDateKHR => SwapchainStatus.OutOfDate,
+        VkResult.ErrorSurfaceLostKHR => SwapchainStatus.SurfaceLost,
+        VkResult.Timeout or VkResult.NotReady when acquire => SwapchainStatus.OutOfDate,
+        _ => SwapchainStatus.DeviceLost,
     };
 
     /// <summary>Builds the error for a call that returned <paramref name="result"/>.</summary>
