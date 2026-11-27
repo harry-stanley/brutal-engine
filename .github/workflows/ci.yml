@@ -53,6 +53,8 @@ jobs:
         run: bash .github/scripts/gpu-tests-test.sh
       - name: Self-test the package check
         run: bash .github/scripts/check-packages-test.sh
+      - name: Self-test the shader manifest finder
+        run: bash .github/scripts/find-shader-manifests-test.sh
       - name: Select tier
         id: select
         env:
