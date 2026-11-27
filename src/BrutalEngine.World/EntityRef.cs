@@ -16,8 +16,14 @@ namespace BrutalEngine.World;
 /// </para>
 /// <para>
 /// It holds a reference to the world, so it isn't unmanaged and can't be stored in a component; components store
-/// <see cref="BrutalEngine.World.Entity"/> instead. A <c>default</c> instance has no world: every member, <see cref="World"/>
-/// included, throws <see cref="InvalidOperationException"/>.
+/// <see cref="BrutalEngine.World.Entity"/> instead. A <c>default</c> instance has no world: its <see cref="Entity"/> is
+/// <see cref="BrutalEngine.World.Entity.Null"/>, and every other member, <see cref="World"/> included, throws
+/// <see cref="InvalidOperationException"/>.
+/// </para>
+/// <para>
+/// The forwarders' inherited exceptions for a null or pending entity can't occur for a reference made by
+/// <see cref="EcsWorld.Ref(Entity)"/>, which rejects both; a reference whose entity is despawned later gets
+/// <see cref="BrutalEngine.Core.StaleHandleException"/>.
 /// </para>
 /// <para>
 /// The struct itself is immutable. Its members have the world's threading rules (owner thread only), and none of them
@@ -43,41 +49,53 @@ public readonly struct EntityRef
     public EcsWorld World => _world ?? throw new InvalidOperationException(
         "This is a default EntityRef, which has no world; create one with EcsWorld.Ref.");
 
-    /// <summary>Gets the entity the reference stands for.</summary>
-    /// <value>The entity, which may have been despawned since the reference was made.</value>
+    /// <summary>Gets the entity the reference stands for. Never throws.</summary>
+    /// <value>
+    /// The entity, which may have been despawned since the reference was made; <see cref="BrutalEngine.World.Entity.Null"/>
+    /// for a <c>default</c> reference.
+    /// </value>
     public Entity Entity { get; }
 
     /// <inheritdoc cref="EcsWorld.Has{T}(Entity)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public bool Has<T>()
         where T : unmanaged, IComponent => World.Has<T>(Entity);
 
     /// <inheritdoc cref="EcsWorld.Get{T}(Entity)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public ref readonly T Get<T>()
         where T : unmanaged, IComponent => ref World.Get<T>(Entity);
 
     /// <inheritdoc cref="EcsWorld.Write{T}(Entity)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public ref T Write<T>()
         where T : unmanaged, IComponent => ref World.Write<T>(Entity);
 
     /// <inheritdoc cref="EcsWorld.TryGet{T}(Entity, out T)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public bool TryGet<T>(out T value)
         where T : unmanaged, IComponent => World.TryGet(Entity, out value);
 
     /// <inheritdoc cref="EcsWorld.Add{T}(Entity, in T)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public void Add<T>(in T value)
         where T : unmanaged, IComponent => World.Add(Entity, value);
 
     /// <inheritdoc cref="EcsWorld.Set{T}(Entity, in T)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public void Set<T>(in T value)
         where T : unmanaged, IComponent => World.Set(Entity, value);
 
     /// <inheritdoc cref="EcsWorld.Remove{T}(Entity)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public bool Remove<T>()
         where T : unmanaged, IComponent => World.Remove<T>(Entity);
 
     /// <inheritdoc cref="EcsWorld.Despawn(Entity)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public void Despawn() => World.Despawn(Entity);
 
     /// <inheritdoc cref="EcsWorld.IsAlive(Entity)"/>
+    /// <exception cref="InvalidOperationException">The reference is <c>default</c>, so it has no world.</exception>
     public bool IsAlive() => World.IsAlive(Entity);
 }
