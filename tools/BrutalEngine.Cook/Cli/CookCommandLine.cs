@@ -67,12 +67,7 @@ internal static partial class CookCommandLine
             }
         }
 
-        MatrixLayout? matrixLayout = layout switch
-        {
-            null or "column-major" => MatrixLayout.ColumnMajor,
-            "row-major" => MatrixLayout.RowMajor,
-            _ => null,
-        };
+        MatrixLayout? matrixLayout = layout is null ? MatrixLayout.ColumnMajor : ParseMatrixLayout(layout);
         error = source is null ? "no source file given."
             : entries.Count == 0 ? "at least one --entry is required."
             : outputDirectory is null ? "--output-dir is required."
@@ -86,6 +81,32 @@ internal static partial class CookCommandLine
         options = new ShaderCookOptions(source!, entries, outputDirectory!, matrixLayout!.Value);
         return true;
     }
+
+    /// <summary>Parses a stage token: exactly <c>vertex</c>, <c>fragment</c> or <c>compute</c> (ordinal).</summary>
+    /// <param name="token">The token.</param>
+    /// <returns>The stage, or null for any other token.</returns>
+    public static ShaderStage? ParseStage(string token) => token switch
+    {
+        "vertex" => ShaderStage.Vertex,
+        "fragment" => ShaderStage.Fragment,
+        "compute" => ShaderStage.Compute,
+        _ => null,
+    };
+
+    /// <summary>Parses a matrix layout token: exactly <c>column-major</c> or <c>row-major</c> (ordinal).</summary>
+    /// <param name="token">The token.</param>
+    /// <returns>The layout, or null for any other token.</returns>
+    public static MatrixLayout? ParseMatrixLayout(string token) => token switch
+    {
+        "column-major" => MatrixLayout.ColumnMajor,
+        "row-major" => MatrixLayout.RowMajor,
+        _ => null,
+    };
+
+    /// <summary>Whether <paramref name="name"/> can name an entry point: an ASCII identifier, <c>[A-Za-z_][A-Za-z0-9_]*</c>.</summary>
+    /// <param name="name">The name.</param>
+    /// <returns>True for an ASCII identifier; it names an output file, so it can't hold path characters.</returns>
+    public static bool IsEntryName(string name) => Identifier().IsMatch(name);
 
     private static string? Set(ref string? slot, string value, string what)
     {
@@ -102,14 +123,8 @@ internal static partial class CookCommandLine
     {
         int colon = value.IndexOf(':', StringComparison.Ordinal);
         string name = colon < 0 ? value : value[..colon];
-        ShaderStage? stage = colon < 0 ? null : value[(colon + 1)..] switch
-        {
-            "vertex" => ShaderStage.Vertex,
-            "fragment" => ShaderStage.Fragment,
-            "compute" => ShaderStage.Compute,
-            _ => null,
-        };
-        if (!Identifier().IsMatch(name))
+        ShaderStage? stage = colon < 0 ? null : ParseStage(value[(colon + 1)..]);
+        if (!IsEntryName(name))
         {
             return $"--entry '{value}': the entry name must be an ASCII identifier (letters, digits and '_', not starting with a digit).";
         }
