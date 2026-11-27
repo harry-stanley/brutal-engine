@@ -165,8 +165,8 @@ public interface IPlatform : IDisposable
     /// a limit.
     /// </param>
     /// <returns>
-    /// <see langword="true"/> if an event arrived: it is translated and kept aside (with a copy of its text), and the next
-    /// <see cref="PumpEvents"/> hands it out first. <see langword="false"/> if the timeout passed.
+    /// <see langword="true"/> if an event arrived: it is kept aside raw (with a copy of its text), and the next
+    /// <see cref="PumpEvents"/> translates it and hands it out first. <see langword="false"/> if the timeout passed.
     /// </returns>
     /// <remarks>
     /// Hosts use it while every window is minimised. The current <see cref="Events"/> batch isn't touched. Main thread

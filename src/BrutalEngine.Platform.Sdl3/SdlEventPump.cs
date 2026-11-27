@@ -168,7 +168,9 @@ internal sealed class SdlEventPump
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <c>SDL_PeepEvents</c> failed, which it does only when SDL's event queue isn't running (SDL video was stopped):
-    /// the message names the call and carries SDL's error text. The buffer keeps the events added before the failure.
+    /// the message names the call and carries SDL's error text. SDL sets that text only when taking an event
+    /// (<c>SDL_GETEVENT</c>); when the failure is the deferral check's peek (<c>SDL_PEEKEVENT</c>), the text may be
+    /// stale, left by an earlier SDL error. The buffer keeps the events added before the failure.
     /// </exception>
     public unsafe PlatformEventBatch Pump()
     {
