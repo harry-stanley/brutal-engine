@@ -11,6 +11,7 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 /// <param name="Height">The images' height in pixels; always positive.</param>
 /// <param name="ImageCount">The minimum number of images to ask for.</param>
 /// <param name="CompositeAlpha">A single composite alpha bit the surface supports.</param>
+/// <param name="PreTransform">The surface's current transform (<see cref="SurfaceFacts.CurrentTransform"/>), the swapchain's <c>preTransform</c>.</param>
 /// <param name="Usage">Colour attachment, plus transfer destination when the surface offers it.</param>
 /// <param name="Format">The surface format to create the images with.</param>
 /// <param name="ColorSpace">The format's colour space; always <c>SRGB_NONLINEAR</c>.</param>
@@ -27,6 +28,7 @@ internal readonly record struct SwapchainPlan(
     int Height,
     int ImageCount,
     VkCompositeAlphaFlagsKHR CompositeAlpha,
+    VkSurfaceTransformFlagsKHR PreTransform,
     VkImageUsageFlags Usage,
     VkFormat Format,
     VkColorSpaceKHR ColorSpace,
