@@ -8,11 +8,14 @@ namespace BrutalEngine.World.Tests.Structural;
 
 /// <summary>
 /// The same seeded sequence of direct calls gives a byte-identical world: every entity id, row, change tick and
-/// component byte (docs/design/world.md, section 4, "Determinism", and section 12).
+/// component byte (docs/design/world.md, section 4, "Determinism", and section 12). The world is hashed at every
+/// change-tick boundary as well as at the end, so stamps that a later move overwrites are compared too.
 /// </summary>
 public sealed class DeterminismTests
 {
     private const int Steps = 3000;
+
+    private const ulong FnvOffsetBasis = 14695981039346656037UL;
 
     [Fact]
     public void SeededScenario_SameHashTwice()
@@ -29,14 +32,14 @@ public sealed class DeterminismTests
     }
 
     /// <summary>
-    /// Runs the seeded scenario on a fresh world and hashes it. The steps are spawns, despawns, adds, sets, removes and
-    /// writes, with the change tick advanced every 100 steps, all chosen by a generator of the test's own, so the
-    /// sequence doesn't depend on the runtime's random number generator.
+    /// Runs the seeded scenario on a fresh world and hashes it before each change-tick advance and at the end. The
+    /// steps are spawns, despawns, adds, sets, removes and writes, with the change tick advanced every 100 steps, all
+    /// chosen by a generator of the test's own, so the sequence doesn't depend on the runtime's random number generator.
     /// </summary>
     private static (ulong Hash, int Chunks) RunScenario(ulong seed)
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
-        ulong hash;
+        ulong hash = FnvOffsetBasis;
         int chunks = 0;
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
         {
@@ -47,6 +50,8 @@ public sealed class DeterminismTests
             {
                 if (step % 100 == 0)
                 {
+                    // The tick's stamps, before the next tick's moves can overwrite them.
+                    hash = Hash(world, hash);
                     world.SetChangeTickForTesting((uint)(step / 100) + 1);
                 }
 
@@ -104,7 +109,7 @@ public sealed class DeterminismTests
                 }
             }
 
-            hash = Hash(world);
+            hash = Hash(world, hash);
             for (int a = 0; a < world.ArchetypeCount; a++)
             {
                 chunks += world.Archetypes[a].Chunks.ChunkCount;
@@ -116,13 +121,12 @@ public sealed class DeterminismTests
     }
 
     /// <summary>
-    /// FNV-1a (64-bit) over the world's counts and, for every archetype in index order, its signature and every
-    /// chunk's row count, Changed and Added ticks, entity ids and the bytes of each live row's columns. Chunk
-    /// addresses aren't hashed: they differ between runs.
+    /// Continues FNV-1a (64-bit) from <paramref name="hash"/> over the world's counts and, for every archetype in index
+    /// order, its signature and every chunk's row count, Changed and Added ticks, entity ids and the bytes of each live
+    /// row's columns. Chunk addresses aren't hashed: they differ between runs.
     /// </summary>
-    private static unsafe ulong Hash(EcsWorld world)
+    private static unsafe ulong Hash(EcsWorld world, ulong hash)
     {
-        ulong hash = 14695981039346656037UL;
         Add(ref hash, world.EntityCount);
         Add(ref hash, world.ArchetypeCount);
         for (int a = 0; a < world.ArchetypeCount; a++)
