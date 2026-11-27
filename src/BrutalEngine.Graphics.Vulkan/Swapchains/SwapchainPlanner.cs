@@ -74,6 +74,9 @@ internal static class SwapchainPlanner
     /// <exception cref="ArgumentOutOfRangeException">
     /// The options' present mode or format kind isn't a member of its enum (the front end validates both).
     /// </exception>
+    /// <remarks>
+    /// The options are checked before the surface's facts, so misuse throws even when the extent is zero.
+    /// </remarks>
     public static Result<SwapchainPlan> Plan(in SurfaceFacts facts, VkExtent2D sourcePixelSize, SwapchainOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

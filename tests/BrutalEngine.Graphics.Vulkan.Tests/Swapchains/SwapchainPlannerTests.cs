@@ -355,33 +355,44 @@ public sealed class SwapchainPlannerTests
             (plan.PresentMode, plan.VkPresentMode, plan.PresentModeFellBack));
     }
 
-    [Fact]
-    public void Plan_NullOptions_Throws()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Plan_NullOptions_Throws(bool zeroExtent)
     {
-        Assert.Throws<ArgumentNullException>(() => SwapchainPlanner.Plan(Good, _source, null!));
+        Assert.Throws<ArgumentNullException>(() => SwapchainPlanner.Plan(SurfaceFor(zeroExtent), _source, null!));
     }
 
+    // Misuse throws whatever the surface reports: the zero-extent rows fail if the checks move below the extent's return.
     [Theory]
-    [InlineData(-1)]
-    [InlineData(4)]
-    [InlineData(int.MinValue)]
-    public void Plan_UndefinedPresentMode_Throws(int value)
+    [InlineData(-1, false)]
+    [InlineData(4, false)]
+    [InlineData(int.MinValue, false)]
+    [InlineData(-1, true)]
+    [InlineData(4, true)]
+    public void Plan_UndefinedPresentMode_Throws(int value, bool zeroExtent)
     {
         SwapchainOptions options = new() { PresentMode = (PresentMode)value };
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => SwapchainPlanner.Plan(Good, _source, options));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SwapchainPlanner.Plan(SurfaceFor(zeroExtent), _source, options));
     }
 
     [Theory]
-    [InlineData(-1)]
-    [InlineData(2)]
-    [InlineData(int.MinValue)]
-    public void Plan_UndefinedFormatKind_Throws(int value)
+    [InlineData(-1, false)]
+    [InlineData(2, false)]
+    [InlineData(int.MinValue, false)]
+    [InlineData(-1, true)]
+    [InlineData(2, true)]
+    public void Plan_UndefinedFormatKind_Throws(int value, bool zeroExtent)
     {
         SwapchainOptions options = new() { Format = (SwapchainFormat)value };
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => SwapchainPlanner.Plan(Good, _source, options));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SwapchainPlanner.Plan(SurfaceFor(zeroExtent), _source, options));
     }
+
+    /// <summary>The good surface, or the same surface minimised to a zero current extent.</summary>
+    private static SurfaceFacts SurfaceFor(bool zeroExtent) =>
+        zeroExtent ? Good with { CurrentExtent = new VkExtent2D(0, 0) } : Good;
 
     private static VkPresentModeKHR[] AllVkModes =>
         [VkPresentModeKHR.ImmediateKHR, VkPresentModeKHR.MailboxKHR, VkPresentModeKHR.FifoKHR, VkPresentModeKHR.FifoRelaxedKHR];
