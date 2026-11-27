@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using BrutalEngine.Core.Memory;
 using BrutalEngine.World.Queries;
 using BrutalEngine.World.Storage;
@@ -351,6 +352,52 @@ public sealed class QueryCacheTests
     }
 
     [Fact]
+    public void Dispose_FreeThrows_CacheDisposedAndNothingFreedTwice()
+    {
+        TrackingAllocator tracking = QueryTestSupport.NewTracking();
+        FreeFailingAllocator allocator = new(tracking);
+        int liveBefore;
+        using (EcsWorld world = QueryTestSupport.NewWorld(allocator, _ => false))
+        {
+            _ = QueryTestSupport.Archetype(world, 0);
+            _ = QueryTestSupport.Archetype(world, 0, 1);
+            liveBefore = tracking.LiveAllocationCount;
+            ArchetypeMatchCache cache = new(world.Archetypes, QueryTerms.Create(QueryTestSupport.ParseTerms("R0"), QueryTestSupport.MaskBits));
+            cache.Refresh();
+            Assert.Equal(2, cache.Count);
+            Assert.Equal(liveBefore + 1, tracking.LiveAllocationCount);
+
+            // The free of the entries throws without freeing: the exception propagates, and the cache is disposed.
+            allocator.FailNextFree = true;
+            int freeCalls = allocator.FreeCalls;
+            _ = Assert.Throws<InvalidOperationException>(cache.Dispose);
+            Assert.False(allocator.FailNextFree);
+            Assert.Equal(freeCalls + 1, allocator.FreeCalls);
+            Assert.Equal(0, cache.Count);
+            _ = Assert.Throws<ObjectDisposedException>(cache.Refresh);
+            _ = Assert.Throws<ObjectDisposedException>(() => cache.GetArchetype(0));
+            _ = Assert.Throws<ObjectDisposedException>(() => cache.GetColumn(0, 0));
+            _ = Assert.Throws<ObjectDisposedException>(() => cache.GetOffset(0, 0));
+
+            // A second Dispose frees nothing again: the array whose free failed is never freed twice.
+            cache.Dispose();
+            Assert.Equal(freeCalls + 1, allocator.FreeCalls);
+        }
+
+        // Only the entry array whose free failed leaks: eight entries of one archetype index and one column pair.
+        NativeAllocationInfo[] leaked = tracking.GetLiveAllocations();
+        Assert.Single(leaked);
+        Assert.Equal((nuint)(ArchetypeMatchCache.InitialCapacity * 3 * sizeof(int)), leaked[0].ByteCount);
+        unsafe
+        {
+            // Sound: the block came from this tracking allocator, for the cache's entries, and was never freed.
+            tracking.Free((void*)leaked[0].Address);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void Refresh_DoesNotAllocate()
     {
         const int Rounds = 12;
@@ -441,5 +488,37 @@ public sealed class QueryCacheTests
         }
 
         return sum;
+    }
+
+    /// <summary>
+    /// Passes calls through and counts them, and throws <see cref="InvalidOperationException"/> without freeing for
+    /// one free when asked.
+    /// </summary>
+    private sealed unsafe class FreeFailingAllocator(INativeAllocator inner) : INativeAllocator
+    {
+        /// <summary>Set to fail the next free; cleared when it fails.</summary>
+        public bool FailNextFree { get; set; }
+
+        public int AllocateCalls { get; private set; }
+
+        public int FreeCalls { get; private set; }
+
+        public void* Allocate(nuint byteCount, nuint alignment, [CallerFilePath] string callerFile = "", [CallerLineNumber] int callerLine = 0)
+        {
+            AllocateCalls++;
+            return inner.Allocate(byteCount, alignment, callerFile, callerLine);
+        }
+
+        public void Free(void* memory)
+        {
+            FreeCalls++;
+            if (FailNextFree)
+            {
+                FailNextFree = false;
+                throw new InvalidOperationException("Injected free failure.");
+            }
+
+            inner.Free(memory);
+        }
     }
 }
