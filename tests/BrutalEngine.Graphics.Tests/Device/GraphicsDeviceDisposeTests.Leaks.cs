@@ -16,22 +16,32 @@ public sealed partial class GraphicsDeviceDisposeTests
     {
         GraphicsDevice device = _fixture.Create();
         FakeBackendDevice backend = _fixture.BackendDevice;
+        // Out of kind order, with a reused slot: the newest buffer takes slot 0, so neither kind order nor slot order is
+        // creation order.
+        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
+        BufferHandle destroyed = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Index, DebugName = "Gone" }).Value;
         BufferHandle buffer = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Vertex, DebugName = "Vertices" }).Value;
         TextureHandle texture = device.CreateTexture(Prepared.Texture with { DebugName = "Atlas" }).Value;
-        BufferHandle destroyed = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Index, DebugName = "Gone" }).Value;
-        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
         device.Destroy(destroyed);
-        ulong[] ids = [backend.Objects.GetId(buffer), backend.Objects.GetId(texture), backend.Objects.GetId(device.GetDefaultView(texture)), backend.Objects.GetId(sampler)];
+        BufferHandle indices = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Index, DebugName = "Indices" }).Value;
+        Assert.Equal(0u, indices.Value.Index);
+        ulong[] ids =
+        [
+            backend.Objects.GetId(sampler), backend.Objects.GetId(buffer), backend.Objects.GetId(texture),
+            backend.Objects.GetId(device.GetDefaultView(texture)), backend.Objects.GetId(indices),
+        ];
         int before = backend.Calls.Count;
 
         device.Dispose();
 
+        // Logged oldest first, destroyed newest first.
         Assert.Equal(
             [
+                (LogLevel.Error, "Graphics", "Leak: Sampler '' was still alive when the device was disposed."),
                 (LogLevel.Error, "Graphics", "Leak: Buffer 'Vertices' was still alive when the device was disposed."),
                 (LogLevel.Error, "Graphics", "Leak: Texture 'Atlas' was still alive when the device was disposed."),
                 (LogLevel.Error, "Graphics", "Leak: TextureView 'Atlas' was still alive when the device was disposed."),
-                (LogLevel.Error, "Graphics", "Leak: Sampler '' was still alive when the device was disposed."),
+                (LogLevel.Error, "Graphics", "Leak: Buffer 'Indices' was still alive when the device was disposed."),
             ],
             _fixture.Entries());
         Assert.Equal(
@@ -71,25 +81,31 @@ public sealed partial class GraphicsDeviceDisposeTests
     public void ThrowIfLeaks_ListsEveryLiveObject()
     {
         GraphicsDevice device = _fixture.Create();
+        // Out of kind order, with a reused slot: the newest buffer takes slot 0, so neither kind order nor slot order is
+        // creation order.
+        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
+        BufferHandle destroyed = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Index, DebugName = "Gone" }).Value;
         BufferHandle buffer = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Vertex, DebugName = "Vertices" }).Value;
         TextureHandle texture = device.CreateTexture(Prepared.Texture with { DebugName = "Atlas" }).Value;
         TextureViewHandle view = device.CreateTextureView(new TextureViewDescription { Texture = texture, DebugName = "Mip 0" }).Value;
-        BufferHandle destroyed = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Index, DebugName = "Gone" }).Value;
-        SamplerHandle sampler = device.CreateSampler(new SamplerDescription()).Value;
         device.Destroy(destroyed);
+        BufferHandle indices = device.CreateBuffer(new BufferDescription { Size = 64, Usage = BufferUsage.Index, DebugName = "Indices" }).Value;
+        Assert.Equal(0u, indices.Value.Index);
         int calls = _fixture.BackendDevice.Calls.Count;
 
         GpuResourceLeakException thrown = Assert.Throws<GpuResourceLeakException>(device.ThrowIfLeaks);
 
-        string[] expected = ["Buffer 'Vertices'", "Texture 'Atlas'", "TextureView 'Atlas'", "TextureView 'Mip 0'", "Sampler ''"];
+        // Oldest first.
+        string[] expected = ["Sampler ''", "Buffer 'Vertices'", "Texture 'Atlas'", "TextureView 'Atlas'", "TextureView 'Mip 0'", "Buffer 'Indices'"];
         Assert.Equal(expected, thrown.LeakedObjects);
-        Assert.Equal($"5 GPU object(s) still alive: {string.Join(", ", expected)}.", thrown.Message);
+        Assert.Equal($"6 GPU object(s) still alive: {string.Join(", ", expected)}.", thrown.Message);
         // Nothing was destroyed: the objects are still live and usable.
         Assert.Equal(calls, _fixture.BackendDevice.Calls.Count);
-        Assert.Equal(5, device.Statistics.LiveObjects);
+        Assert.Equal(6, device.Statistics.LiveObjects);
         device.Destroy(view);
         device.Destroy(texture);
         device.Destroy(buffer);
+        device.Destroy(indices);
         device.Destroy(sampler);
         device.ThrowIfLeaks();
     }
