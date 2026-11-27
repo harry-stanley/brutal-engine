@@ -370,6 +370,8 @@ public enum BorderColor { TransparentBlack, OpaqueBlack, OpaqueWhite }
 
 The texture formats are the set every M1 consumer needs (sprites, render targets, the overlay, conformance), plus the two depth formats. `Depth16Unorm` is guaranteed as a depth attachment by the Vulkan specification; `Depth32Float` is near-universal but checked like any other format. Depth-stencil formats (stencil masking for UI, M3), 3D and cube textures are added when a consumer needs them. Nearest filtering is the default because pixel-art is the common 2D case.
 
+A texture's default view (`GetDefaultView`) covers every mip level and layer and lives exactly as long as its texture: `Destroy(TextureViewHandle)` on it throws `InvalidOperationException` and destroys nothing, and destroying the texture destroys it along with every view `CreateTextureView` made.
+
 **Which failures are exceptions and which are results:**
 
 | Failure | Mechanism |
