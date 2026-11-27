@@ -32,9 +32,11 @@ namespace BrutalEngine.Platform.Vfs;
 /// segment (the first in ordinal order, when a case-sensitive file system lists several). A segment spelled exactly as
 /// listed passes, even when other spellings are listed too. The check stops, and leaves the rest of the path to the
 /// operation, at a segment the listing doesn't have in any spelling (so writes and creates spell new names as asked), at
-/// a file, and at a directory the OS reports missing (so a removed root keeps the rules above). It decides from what
-/// each listing read, and runs after the argument checks, the read-only refusals and the root rules; the empty path has
-/// no segments to check. The names compared are the path's own: a symbolic link's name is checked, and so are the names
+/// a file, and at a directory the OS reports missing (so a removed root keeps the rules above). On Windows a segment no
+/// listing has can still reach an existing entry, unchecked: an 8.3 short name (such as <c>BACKGR~1.PNG</c>), or a
+/// letter that NTFS folds and the ordinal comparison doesn't. Listings include hidden and system entries. The check
+/// decides from what each listing read, and runs after the argument checks, the read-only refusals and the root rules;
+/// the empty path has no segments to check. The names compared are the path's own: a symbolic link's name is checked, and so are the names
 /// beyond a link to a directory, in that directory's listing, but the target a link holds is resolved by the OS as it
 /// is. A parent directory the OS refuses to list fails the operation with <see cref="ErrorKind.Unavailable"/> and the
 /// OS code, even when the OS would open the name inside it. With the check off, lookups follow the OS: on a
