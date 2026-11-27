@@ -80,7 +80,7 @@ public sealed unsafe class SurfaceQueriesTests
     [Fact]
     public void Formats_PersistentIncomplete_FailsAfterLimit()
     {
-        FakeSurface surface = new() { Capabilities = Capabilities, Formats = _formats, Modes = _modes, FormatIncompleteFills = int.MaxValue };
+        FakeSurface surface = new() { Capabilities = Capabilities, Formats = _formats, Modes = _modes, FormatGrowths = int.MaxValue };
 
         Result<SurfaceFacts> result = SurfaceQueries.Read(surface, new VulkanCallGate());
 
@@ -91,7 +91,7 @@ public sealed unsafe class SurfaceQueriesTests
     [Fact]
     public void PresentModes_PersistentIncomplete_FailsAfterLimit()
     {
-        FakeSurface surface = new() { Capabilities = Capabilities, Formats = _formats, Modes = _modes, ModeIncompleteFills = int.MaxValue };
+        FakeSurface surface = new() { Capabilities = Capabilities, Formats = _formats, Modes = _modes, ModeGrowths = int.MaxValue };
 
         Result<SurfaceFacts> result = SurfaceQueries.Read(surface, new VulkanCallGate());
 
@@ -104,20 +104,26 @@ public sealed unsafe class SurfaceQueriesTests
     [InlineData(false)]
     public void Incomplete_UntilTheLastAttempt_Succeeds(bool formats)
     {
-        // The list grows on every attempt but the last: the bound is inclusive, eight attempts in all.
+        // The list grows by one entry between the count and the fill on every attempt but the last, so each fill
+        // reports VK_INCOMPLETE until the eighth: the bound is inclusive, and each retry must use the count it queried
+        // again, ending with the whole, larger list (3 + 7 entries).
         FakeSurface surface = new()
         {
             Capabilities = Capabilities,
             Formats = _formats,
             Modes = _modes,
-            FormatIncompleteFills = formats ? Attempts - 1 : 0,
-            ModeIncompleteFills = formats ? 0 : Attempts - 1,
+            FormatGrowths = formats ? Attempts - 1 : 0,
+            ModeGrowths = formats ? 0 : Attempts - 1,
         };
 
         SurfaceFacts facts = ReadOk(surface);
 
-        Assert.Equal(_formats, facts.Formats);
-        Assert.Equal(_modes, facts.PresentModes);
+        Assert.Equal(formats ? _formats.Length + Attempts - 1 : _formats.Length, facts.Formats!.Length);
+        Assert.Equal(formats ? _modes.Length : _modes.Length + Attempts - 1, facts.PresentModes!.Length);
+        Assert.Equal(surface.CurrentFormats, facts.Formats);
+        Assert.Equal(surface.CurrentModes, facts.PresentModes);
+        Assert.Equal(_formats, facts.Formats[.._formats.Length]);
+        Assert.Equal(_modes, facts.PresentModes[.._modes.Length]);
         Assert.Equal(formats ? (1, Attempts, Attempts, 1, 1) : (1, 1, 1, Attempts, Attempts), surface.CallCounts);
     }
 
