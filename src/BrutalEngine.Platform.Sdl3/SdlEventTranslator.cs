@@ -85,7 +85,7 @@ internal static class SdlEventTranslator
     /// or ignores it.
     /// </summary>
     /// <typeparam name="TScales">The scale source's type: a struct, so its calls aren't boxed.</typeparam>
-    /// <param name="sdlEvent">The SDL event, as <c>SDL_PollEvent</c> returned it.</param>
+    /// <param name="sdlEvent">The SDL event, as the pump dequeued it.</param>
     /// <param name="buffer">
     /// The pump's buffer. The caller checks <see cref="PlatformEventBuffer.HasRoom"/> before dequeuing the event.
     /// </param>
