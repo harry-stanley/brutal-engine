@@ -188,6 +188,30 @@ public sealed class UploadTests : IDisposable
     }
 
     [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void WaitIdleInFrame_ReturnsOtherSlotsPendingBlocks(int framesInFlight)
+    {
+        GraphicsDevice device = Create(framesInFlight);
+        BufferHandle buffer = device.CreateBuffer(_target).Value;
+        Assert.True(device.WriteBuffer(buffer, 0, [1]).IsSuccess);
+        ulong first = _gpu.Device!.HostBuffers[^1];
+        RunFrame(device);
+
+        // Frame 1 is open in another slot than frame 0, which copied the block: waiting for idle gives that block back.
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.True(device.WaitIdle().IsSuccess);
+        _ = device.SubmitFrame(commands);
+        int created = _gpu.Device.HostBuffers.Count;
+
+        Assert.True(device.WriteBuffer(buffer, 0, [2]).IsSuccess);
+
+        Assert.Equal(created, _gpu.Device.HostBuffers.Count);
+        RunFrame(device);
+        Assert.Equal((first, (byte)2), (_gpu.Device.Plans[^1].Single().Buffer.Source, _gpu.Device.Plans[^1].Single().Staged[0]));
+    }
+
+    [Theory]
     [InlineData(RingBytes, false)]
     [InlineData(RingBytes + 1, true)]
     public void WriteBetweenFrames_LargerThanRingOnly_Overflows(long size, bool overflows)
