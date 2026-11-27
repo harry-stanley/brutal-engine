@@ -70,6 +70,8 @@ internal sealed class SdlPaths
             return _userDataDirectory;
         }
 
+        // Sound: SDL's returned pointer is never read or kept here; it goes straight to TakePrefPath, which copies the
+        // string and frees the buffer exactly once (a NULL is only checked, never dereferenced).
         Result<string> resolved = TakePrefPath(Sdl.PInvoke.GetPrefPath(_organization, _application));
         if (resolved.TryGetValue(out string? directory))
         {
