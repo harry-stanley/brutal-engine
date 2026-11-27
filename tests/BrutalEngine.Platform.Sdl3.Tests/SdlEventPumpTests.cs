@@ -395,12 +395,16 @@ public sealed unsafe class SdlEventPumpTests
     }
 
     // Rows: a text cut inside 3-byte code points; exactly the capacity (kept whole); one byte over (cut and counted,
-    // so the held copy kept more than the capacity); 4-byte code points ending on the capacity.
+    // so the held copy kept more than the capacity); 4-byte code points ending on the capacity; 5-byte units, so byte
+    // capacity + 4 is a continuation byte and the held copy steps back to a whole code point; exactly capacity + 4
+    // bytes (the held copy's limit, kept whole there and cut by the buffer).
     [Theory]
     [InlineData("\u20AC", 1000, 2046, 1)]
     [InlineData("a", 2048, 2048, 0)]
     [InlineData("a", 2049, 2048, 1)]
     [InlineData("\U0001F600", 600, 2048, 1)]
+    [InlineData("\u20ACaa", 700, 2048, 1)]
+    [InlineData("a", 2052, 2048, 1)]
     public void WaitForEvents_LongText_CutAndCountedInMainBuffer(string unit, int repeat, int expectedLength, int expectedCut)
     {
         using var variable = NativeEnvironmentVariable.Set("SDL_VIDEO_DRIVER", null);
