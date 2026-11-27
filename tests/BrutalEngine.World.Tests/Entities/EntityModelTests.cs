@@ -13,8 +13,11 @@ public sealed class EntityModelTests
 {
     private const int Steps = 4000;
 
-    // Steps of the growth phase: enough, at its spawn share, to fill several chunks of the Payload archetypes (a few
-    // dozen rows each at the smallest chunk size). The shrink phase after it despawns rows back across the boundaries.
+    // The least number of steps of the growth phase. At the lowest growth share these leave about 0.36 x 2,500 = 900
+    // entities alive on average, under 60 per component set, while a Payload archetype holds 59 to 62 rows per smallest
+    // chunk. So a sample keeps growing past these steps until an archetype has rows in a second chunk: at a fixed
+    // length, seed as_INgasYj72 ended its growth one row short of that. The shrink phase then despawns rows back
+    // across the boundary.
     private const int GrowthSteps = 2500;
 
     // The component bits of a spawn's mask.
@@ -29,7 +32,8 @@ public sealed class EntityModelTests
     /// or not) and stale access, against a dictionary model with its own first-in, first-out slot queue and dense rows
     /// per component set. After every step the world's count, each archetype's rows and chunk count, each alive
     /// entity's record, stored row id, Has answers and component values agree with the model. Each sample grows past
-    /// one chunk at a high spawn share, then shrinks at a low one, so rows move within and between chunks.
+    /// one chunk at a high spawn share (for at least the growth steps, and until an archetype has rows in a second
+    /// chunk), then shrinks at a low one, so rows move within and between chunks.
     /// </summary>
     [Fact]
     public void RandomOperations_MatchModel()
@@ -50,6 +54,45 @@ public sealed class EntityModelTests
             }, iter: 5, threads: 1);
     }
 
+    /// <summary>
+    /// Regression for seed <c>as_INgasYj72</c>: a sample whose growth steps run out before any archetype has rows in a
+    /// second chunk keeps spawning at its growth share until one does, then shrinks. Here the first 2,500 steps spawn
+    /// one Payload entity and read it; every later step spawns another Payload entity at the growth share and
+    /// reads at the shrink share, so the sample passes only if growth continues until exactly one row is past the
+    /// first chunk.
+    /// </summary>
+    [Fact]
+    public void RandomOperations_GrowthStepsEndBelowOneChunk_GrowsUntilASecondChunk()
+    {
+        // A pick of 46 is action 6 (a read when not spawning) and component set 4 (Payload alone); operation 99 never
+        // spawns, and operation 50 spawns at the growth share (60) but not at the shrink share (15).
+        const int growthShare = 60;
+        const int shrinkShare = 15;
+        const int pick = (PayloadBit * 10) + 6;
+        int[] operations = new int[Steps];
+        int[] picks = new int[Steps];
+        for (int step = 0; step < Steps; step++)
+        {
+            operations[step] = step < GrowthSteps ? 99 : 50;
+            picks[step] = pick;
+        }
+
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Assert.True(MatchesModel(world, growthShare, shrinkShare, operations, picks));
+
+            // Growth stopped at the first row of the second chunk: one row past the Payload archetype's capacity.
+            Assert.True(world.Entities.TryGetLocation(new Entity(0, 1), out EntityRecord first));
+            Archetype payload = world.Archetypes[first.Archetype];
+            Assert.Equal(2, payload.Chunks.ChunkCount);
+            Assert.Equal(payload.Layout.Capacity + 1, payload.RowCount);
+            Assert.Equal(payload.Layout.Capacity + 1, world.EntityCount);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
     private static bool MatchesModel(EcsWorld world, int growthShare, int shrinkShare, int[] operations, int[] picks)
     {
         Model model = new();
@@ -57,7 +100,7 @@ public sealed class EntityModelTests
         for (int step = 0; step < operations.Length; step++)
         {
             int pick = picks[step] & int.MaxValue;
-            int spawnShare = step < GrowthSteps ? growthShare : shrinkShare;
+            int spawnShare = step < GrowthSteps || chunksSeen < 2 ? growthShare : shrinkShare;
             int action = pick % 10;
             bool ok;
             if (operations[step] < spawnShare || model.Alive.Count == 0)
