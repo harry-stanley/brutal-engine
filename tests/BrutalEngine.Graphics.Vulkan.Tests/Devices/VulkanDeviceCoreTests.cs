@@ -346,5 +346,31 @@ public sealed unsafe class VulkanDeviceCoreTests
             Assert.NotNull(Adapter);
             return new VulkanDeviceCore.AdapterFactory(Adapter).CreateDevice(info);
         }
+
+        // The adapter's queries: the real adapter's answers when there is one, else the zeroed structures.
+
+        public void GetProperties2(VkPhysicalDeviceProperties2* properties)
+        {
+            if (Adapter is not null)
+            {
+                new VulkanDeviceCore.AdapterFactory(Adapter).GetProperties2(properties);
+            }
+        }
+
+        public void GetFeatures2(VkPhysicalDeviceFeatures2* features)
+        {
+            if (Adapter is not null)
+            {
+                new VulkanDeviceCore.AdapterFactory(Adapter).GetFeatures2(features);
+            }
+        }
+
+        public void GetFormatProperties2(VkFormat format, VkFormatProperties2* properties)
+        {
+            if (Adapter is not null)
+            {
+                new VulkanDeviceCore.AdapterFactory(Adapter).GetFormatProperties2(format, properties);
+            }
+        }
     }
 }
