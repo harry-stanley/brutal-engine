@@ -81,11 +81,17 @@ public sealed unsafe class CapabilityTests
         using (logger)
         {
             using VulkanInstance instance = GpuDevices.CreateInstance(category, []);
-            using VulkanDeviceCore core = GpuDevices.Create(instance, GpuDevices.Suitable(instance)[0], new VulkanCallGate(), null).Value;
+            List<GpuDevices.Adapter> adapters = GpuDevices.Suitable(instance);
+            Assert.NotEmpty(adapters);
+            foreach (GpuDevices.Adapter adapter in adapters)
+            {
+                using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanCallGate(), null).Value;
+                long before = instance.ValidationErrors;
 
-            DebugNames.Set(core, VkObjectType.Image, (ulong)core.Device.Handle.VkHandle, "not an image"u8);
+                DebugNames.Set(core, VkObjectType.Image, (ulong)core.Device.Handle.VkHandle, "not an image"u8);
 
-            Assert.True(instance.ValidationErrors > 0);
+                Assert.True(instance.ValidationErrors > before, adapter.Candidate.Name);
+            }
         }
     }
 
@@ -95,18 +101,22 @@ public sealed unsafe class CapabilityTests
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });
         using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
-        GpuDevices.Adapter adapter = GpuDevices.Suitable(instance)[0];
-        VulkanFaultInjector faults = new();
-        faults.FailNth(VulkanCall.SetDebugUtilsObjectName, 1, VkResult.ErrorDeviceLost);
-        VulkanCallGate gate = new() { Faults = faults };
+        List<GpuDevices.Adapter> adapters = GpuDevices.Suitable(instance);
+        Assert.NotEmpty(adapters);
+        foreach (GpuDevices.Adapter adapter in adapters)
+        {
+            VulkanFaultInjector faults = new();
+            faults.FailNth(VulkanCall.SetDebugUtilsObjectName, 1, VkResult.ErrorDeviceLost);
+            VulkanCallGate gate = new() { Faults = faults };
 
-        // The factory overload, told the instance lacks VK_EXT_debug_utils.
-        using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanDeviceCore.AdapterFactory(adapter.Device), gate, null).Value;
-        DebugNames.Set(core, VkObjectType.Device, (ulong)core.Device.Handle.VkHandle, "name"u8);
+            // The factory overload, told the instance lacks VK_EXT_debug_utils.
+            using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanDeviceCore.AdapterFactory(adapter.Device), gate, null).Value;
+            DebugNames.Set(core, VkObjectType.Device, (ulong)core.Device.Handle.VkHandle, "name"u8);
 
-        Assert.False(core.Naming.Enabled);
-        Assert.False(gate.IsLost);
-        Assert.True(faults.TryTake(VulkanCall.SetDebugUtilsObjectName, out _));
+            Assert.False(core.Naming.Enabled);
+            Assert.False(gate.IsLost);
+            Assert.True(faults.TryTake(VulkanCall.SetDebugUtilsObjectName, out _));
+        }
     }
 
     [Fact]
@@ -115,21 +125,27 @@ public sealed unsafe class CapabilityTests
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });
         using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
-        using VulkanDeviceCore core = GpuDevices.Create(instance, GpuDevices.Suitable(instance)[0], new VulkanCallGate(), null).Value;
-        ulong device = (ulong)core.Device.Handle.VkHandle;
-        long checksum = Read(core, device);
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++)
+        List<GpuDevices.Adapter> adapters = GpuDevices.Suitable(instance);
+        Assert.NotEmpty(adapters);
+        foreach (GpuDevices.Adapter adapter in adapters)
         {
-            checksum += Read(core, device);
+            using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanCallGate(), null).Value;
+            ulong device = (ulong)core.Device.Handle.VkHandle;
+            long checksum = Read(core, device);
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+            {
+                checksum += Read(core, device);
+            }
+
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.Equal(0, allocated);
+            Assert.NotEqual(0, checksum);
+            Assert.True(core.Naming.Enabled);
+            Assert.False(core.Naming.FailureLogged);
         }
-
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(0, allocated);
-        Assert.NotEqual(0, checksum);
-        Assert.False(core.Naming.FailureLogged);
 
         // Every format's support, the capabilities, the restrictions and one name, folded into one number.
         static long Read(VulkanDeviceCore core, ulong device)
@@ -153,13 +169,18 @@ public sealed unsafe class CapabilityTests
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });
         using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
-        using VulkanDeviceCore core = GpuDevices.Create(instance, GpuDevices.Suitable(instance)[0], new VulkanCallGate(), null).Value;
+        List<GpuDevices.Adapter> adapters = GpuDevices.Suitable(instance);
+        Assert.NotEmpty(adapters);
+        foreach (GpuDevices.Adapter adapter in adapters)
+        {
+            using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanCallGate(), null).Value;
 
-        Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport(TextureFormat.Undefined));
-        Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport((TextureFormat)(-1)));
-        Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport((TextureFormat)17));
-        Assert.NotEqual(FormatSupport.None, core.GetFormatSupport(TextureFormat.R8Unorm));
-        Assert.NotEqual(FormatSupport.None, core.GetFormatSupport(TextureFormat.Depth32Float));
+            Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport(TextureFormat.Undefined));
+            Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport((TextureFormat)(-1)));
+            Assert.Throws<ArgumentOutOfRangeException>("format", () => core.GetFormatSupport((TextureFormat)17));
+            Assert.NotEqual(FormatSupport.None, core.GetFormatSupport(TextureFormat.R8Unorm));
+            Assert.NotEqual(FormatSupport.None, core.GetFormatSupport(TextureFormat.Depth32Float));
+        }
     }
 
     // Creates a device through the public overload, with every optional feature the adapter has and the table's extensions.
@@ -192,7 +213,10 @@ public sealed unsafe class CapabilityTests
         Assert.True(BitOperations.IsPow2(limits.MinUniformBufferOffsetAlignment) && limits.MinUniformBufferOffsetAlignment <= 256);
         Assert.True(BitOperations.IsPow2(limits.MinStorageBufferOffsetAlignment) && limits.MinStorageBufferOffsetAlignment <= 256);
         Assert.Equal(SampleCounts.X1 | SampleCounts.X4, limits.ColorSampleCounts & (SampleCounts.X1 | SampleCounts.X4));
-        Assert.Equal(core.Extensions.PortabilitySubset ? core.Portability : PortabilityRestrictions.None, core.Portability);
+        if (!core.Extensions.PortabilitySubset)
+        {
+            Assert.Equal(PortabilityRestrictions.None, core.Portability);
+        }
         TestContext.Current.TestOutputHelper?.WriteLine(limits.ToString());
     }
 
