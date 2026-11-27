@@ -8,8 +8,8 @@ namespace BrutalEngine.Graphics.Internal;
 /// <summary>
 /// A graphics device's handle tables: one Core <see cref="HandleAllocator"/> per <see cref="BackendObjectKind"/>, the
 /// handle-to-id entries of the device's <see cref="BackendObjectTable"/>, each live object's debug name and creation
-/// order, each texture's description and default view, each view's texture, and which buffer handles are transient
-/// aliases (docs/design/graphics.md sections 1 and 6).
+/// order, each texture's description and default view, each view's texture, each buffer's description, mapped pointer
+/// and last-written frame, and which buffer handles are transient aliases (docs/design/graphics.md sections 1 and 6).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -39,6 +39,7 @@ internal sealed class HandleTables
     private readonly Entry[][] _entries = new Entry[KindCount][];
     private TextureDescription[] _textures = [];
     private BufferDescription[] _buffers = [];
+    private BufferMemory[] _memory = [];
     private long _nextSequence;
     private int _aliasCount;
 
@@ -97,6 +98,11 @@ internal sealed class HandleTables
             if (kind == BackendObjectKind.Buffer && handle.Index >= (uint)_buffers.Length)
             {
                 Array.Resize(ref _buffers, entries.Length);
+            }
+
+            if (kind == BackendObjectKind.Buffer && handle.Index >= (uint)_memory.Length)
+            {
+                Array.Resize(ref _memory, entries.Length);
             }
 
             _objects.Set(kind, handle, id);
@@ -169,10 +175,30 @@ internal sealed class HandleTables
         entry = entry with { Link = defaultView };
     }
 
-    /// <summary>Records a live buffer's description.</summary>
+    /// <summary>Records a live buffer's description and mapped pointer; the buffer starts unwritten.</summary>
     /// <param name="buffer">A live buffer.</param>
     /// <param name="description">The description it was created from.</param>
-    public void SetBuffer(Handle buffer, in BufferDescription description) => _buffers[buffer.Index] = description;
+    /// <param name="mapped">The backend's mapped pointer for it; 0 when it isn't host memory.</param>
+    public void SetBuffer(Handle buffer, in BufferDescription description, nint mapped)
+    {
+        _buffers[buffer.Index] = description;
+        _memory[buffer.Index] = new BufferMemory(mapped, LastWritten: -1);
+    }
+
+    /// <summary>Records that a frame writes a live buffer: a copy into it, or a write it lands.</summary>
+    /// <param name="buffer">A live buffer from <see cref="Add"/>, not an alias.</param>
+    /// <param name="frameNumber">The frame's number; never lower than an earlier call's.</param>
+    /// <remarks>Allocates nothing.</remarks>
+    public void MarkWritten(Handle buffer, long frameNumber)
+    {
+        ref BufferMemory memory = ref _memory[buffer.Index];
+        memory = memory with { LastWritten = frameNumber };
+    }
+
+    /// <summary>Returns the mapped pointer and the last frame that writes a live buffer.</summary>
+    /// <param name="buffer">A live buffer from <see cref="Add"/>, not an alias.</param>
+    /// <returns>The pointer <see cref="SetBuffer"/> recorded, and the frame of the last <see cref="MarkWritten"/>; -1 before one.</returns>
+    public BufferMemory GetMemory(Handle buffer) => _memory[buffer.Index];
 
     /// <summary>Returns the description a live buffer was created from.</summary>
     /// <param name="buffer">A live buffer.</param>
@@ -318,6 +344,11 @@ internal sealed class HandleTables
             throw new ArgumentException($"The {(kind is { } k ? k.ToString() : "Swapchain")} handle is null.", parameterName);
         }
     }
+
+    /// <summary>A buffer's host memory and write tracking, set at creation; an alias's entry is never read.</summary>
+    /// <param name="Mapped">The backend's mapped pointer; 0 when the buffer isn't host memory.</param>
+    /// <param name="LastWritten">The number of the last frame that writes the buffer; -1 when none has.</param>
+    internal readonly record struct BufferMemory(nint Mapped, long LastWritten);
 
     /// <summary>A live object as <see cref="TakeAll"/> returns it.</summary>
     /// <param name="Kind">The object's kind.</param>

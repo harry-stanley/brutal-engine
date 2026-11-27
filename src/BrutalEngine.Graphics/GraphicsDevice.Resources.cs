@@ -53,7 +53,7 @@ public sealed partial class GraphicsDevice
         }
 
         Handle handle = Register(BackendObjectKind.Buffer, buffer.Id, description.DebugName, link: default);
-        _handles.SetBuffer(handle, description);
+        _handles.SetBuffer(handle, description, buffer.MappedPointer);
         return new BufferHandle(handle);
     }
 
