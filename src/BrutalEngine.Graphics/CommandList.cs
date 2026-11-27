@@ -165,8 +165,8 @@ public readonly struct CommandList
     /// at the recreation's bounded wait.
     /// </para>
     /// <para>
-    /// The device presents an acquired image when the frame is submitted, and clears it to black first if no recorded copy
-    /// wrote it. Owner thread. Allocates nothing on the steady path (no recreation, no loss), except the exception; a
+    /// The device presents an acquired image when the frame is submitted, and clears it to black first if nothing in the
+    /// frame wrote it: no recorded copy, and no <see cref="GraphicsDevice.WriteTexture"/> the frame lands. Owner thread. Allocates nothing on the steady path (no recreation, no loss), except the exception; a
     /// recreation allocates.
     /// </para>
     /// </remarks>

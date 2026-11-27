@@ -129,8 +129,8 @@ public sealed partial class GraphicsDevice
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>
     /// The plan holds the copies of every write the frame lands (the pending ones made before it began, then its own,
-    /// in call order), then its recorded commands, then a clear for each acquired swapchain image no recorded copy wrote,
-    /// and lists the acquired images. After a successful submission each acquired image is presented, in acquire order;
+    /// in call order), then its recorded commands, then a clear for each acquired swapchain image that none of those writes
+    /// or recorded copies wrote, and lists the acquired images. After a successful submission each acquired image is presented, in acquire order;
     /// a suboptimal or out-of-date present marks its swapchain for recreation, a lost surface sticks to its swapchain,
     /// and a device loss returns <see cref="FrameStatus.DeviceLost"/>. Once the frame is closed, on a lost device too,
     /// the buffer handles of its transient allocations are stale. A failed submission marks the device lost and presents

@@ -84,6 +84,35 @@ public sealed class SwapchainSubmitTests : IDisposable
         device.Destroy(rows);
     }
 
+    [Fact]
+    public void WrittenByWriteTexture_NotCleared()
+    {
+        FakeWindow first = Window();
+        GraphicsDevice device = NewDevice(_fixture, first);
+        FakeBackendDevice backend = _fixture.BackendDevice;
+        _fixture.Script.RecordPlans = true;
+        SwapchainHandle a = device.CreateSwapchain(first, new SwapchainOptions()).Value;
+        SwapchainHandle b = device.CreateSwapchain(Window(), new SwapchainOptions()).Value;
+        byte[] texels = new byte[4 * 4 * 4];
+
+        // A WriteTexture lands through the frame's upload stream, not its commands: frame 0 writes a's image, frame 1 b's,
+        // and only the other image is cleared, after the write.
+        for (int frame = 0; frame < 2; frame++)
+        {
+            _ = device.BeginFrame(out CommandList commands);
+            Assert.Equal(AcquireStatus.Acquired, commands.AcquireSwapchainImage(a, out SwapchainImage imageA));
+            Assert.Equal(AcquireStatus.Acquired, commands.AcquireSwapchainImage(b, out SwapchainImage imageB));
+            TextureHandle written = frame == 0 ? imageA.Texture : imageB.Texture;
+            Assert.True(device.WriteTexture(new TextureWrite { Target = new(written), Region = new(0, 0, 4, 4) }, texels).IsSuccess);
+
+            Assert.Equal(FrameStatus.Ready, device.SubmitFrame(commands));
+
+            RecordedPlan plan = backend.Plans[^1];
+            Assert.Equal([CommandKind.CopyBufferToTexture, CommandKind.ClearSwapchainImage], Kinds(plan));
+            Assert.Equal([frame == 0 ? 1 : 0], Clears(plan));
+        }
+    }
+
     [Theory]
     [InlineData(SwapchainStatus.Success, FrameStatus.Ready, AcquireStatus.Acquired)]
     [InlineData(SwapchainStatus.Suboptimal, FrameStatus.Ready, AcquireStatus.Recreated)]

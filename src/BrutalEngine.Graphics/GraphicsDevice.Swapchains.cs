@@ -441,26 +441,14 @@ public sealed partial class GraphicsDevice
         return AcquireStatus.DeviceLost;
     }
 
-    // At submit, before planning: a clear record for each acquired image no recorded copy wrote, then the plan with the
-    // acquired list. Allocates nothing once the stream has grown.
+    // At submit, before planning: a clear record for each acquired image nothing in the frame wrote (a WriteTexture in the
+    // upload stream, or a recorded copy), then the plan with the acquired list. Allocates nothing once the stream has grown.
     private FramePlan PlanFrame(int slotIndex, FrameSlot slot)
     {
         for (int i = 0; i < _acquiredImages.Count; i++)
         {
             ulong texture = _acquiredImages[i].Texture;
-            bool written = false;
-            var reader = new CommandReader(slot.Commands.Written);
-            while (!written && reader.MoveNext())
-            {
-                written = reader.Kind switch
-                {
-                    CommandKind.CopyBufferToTexture => reader.Payload<CopyBufferTextureCommand>().Texture == texture,
-                    CommandKind.CopyTextureToTexture => reader.Payload<CopyTextureToTextureCommand>().Destination == texture,
-                    _ => false,
-                };
-            }
-
-            if (!written)
+            if (!Writes(slot.Uploads.Written, texture) && !Writes(slot.Commands.Written, texture))
             {
                 slot.Commands.Append(CommandKind.ClearSwapchainImage, new ClearSwapchainImageCommand { AcquiredIndex = i });
             }
@@ -468,6 +456,28 @@ public sealed partial class GraphicsDevice
 
         FramePlan plan = _planner.Plan(slotIndex, _frameNumber, slot.Uploads, slot.Commands);
         return new FramePlan(plan.FrameSlot, plan.FrameNumber, plan.Commands, CollectionsMarshal.AsSpan(_acquiredUses));
+    }
+
+    // Whether a stream holds a record that writes a texture: today a copy whose destination it is. The upload stream holds
+    // only copies from staging (WriteBuffer, WriteTexture), so the same scan reads both streams.
+    private static bool Writes(ReadOnlySpan<byte> stream, ulong texture)
+    {
+        var reader = new CommandReader(stream);
+        while (reader.MoveNext())
+        {
+            bool written = reader.Kind switch
+            {
+                CommandKind.CopyBufferToTexture => reader.Payload<CopyBufferTextureCommand>().Texture == texture,
+                CommandKind.CopyTextureToTexture => reader.Payload<CopyTextureToTextureCommand>().Destination == texture,
+                _ => false,
+            };
+            if (written)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // After Execute: presents every acquired image in acquire order (unless the frame wasn't submitted or the device is
