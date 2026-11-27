@@ -17,6 +17,10 @@ internal readonly struct SurfaceFacts
     /// Gets the surface's <c>currentExtent</c>, or <see cref="SwapchainPlanner.UndefinedExtent"/> when the swapchain
     /// decides the size (headless and Wayland surfaces).
     /// </summary>
+    /// <remarks>
+    /// Only both fields at <c>0xFFFFFFFF</c> are undefined. A mixed value, with one field at <c>0xFFFFFFFF</c> (which
+    /// the Vulkan spec doesn't allow), is taken as defined, and its negative field fails the plan as a zero extent.
+    /// </remarks>
     public VkExtent2D CurrentExtent { get; init; }
 
     /// <summary>Gets the surface's <c>minImageExtent</c>.</summary>
@@ -116,7 +120,8 @@ internal static class SwapchainPlanner
     private static bool TryChooseExtent(in SurfaceFacts facts, VkExtent2D source, out int width, out int height)
     {
         VkExtent2D current = facts.CurrentExtent;
-        if (current.Width != -1 || current.Height != -1)
+        VkExtent2D undefined = UndefinedExtent;
+        if (current.Width != undefined.Width || current.Height != undefined.Height)
         {
             (width, height) = (current.Width, current.Height);
         }

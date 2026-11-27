@@ -81,6 +81,8 @@ public sealed class SwapchainPlannerTests
     [InlineData("undefined, zero source height", -1, -1, 1000, 0, 1, 1, 4096, 4096, 0, 0)]
     [InlineData("undefined, negative source", -1, -1, -5, 500, 1, 1, 4096, 4096, 0, 0)]
     [InlineData("undefined, clamped to a zero maximum", -1, -1, 1000, 500, 0, 0, 0, 0, 0, 0)]
+    [InlineData("mixed, undefined width only, taken as defined", -1, 600, 1000, 500, 1, 1, 4096, 4096, 0, 0)]
+    [InlineData("mixed, undefined height only, taken as defined", 800, -1, 1000, 500, 1, 1, 4096, 4096, 0, 0)]
     public void Extent_Cases(
         string name, int currentWidth, int currentHeight, int sourceWidth, int sourceHeight,
         int minWidth, int minHeight, int maxWidth, int maxHeight, int expectedWidth, int expectedHeight)
