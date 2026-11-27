@@ -97,6 +97,9 @@ public sealed class GraphicsDeviceLabelTests : IDisposable
 
         _fixture.BackendDevice.Objects.BeforeGrowth = null;
         DebugLabel label = device.CreateDebugLabel("Lost");
+        // The failed call freed its slot: the retry reuses slot 0, one generation on, and no slot leaked.
+        Assert.Equal(new Handle(0, 2), label.Value);
+        Assert.Equal(1u, device.CreateDebugLabel("Next").Value.Index);
         Assert.Equal("Lost", device.GetDebugLabelName(label));
         Assert.Equal("Lost"u8.ToArray(), _fixture.BackendDevice.Objects.GetLabel(label).ToArray());
         Assert.Equal(label, device.CreateDebugLabel("Lost"));
