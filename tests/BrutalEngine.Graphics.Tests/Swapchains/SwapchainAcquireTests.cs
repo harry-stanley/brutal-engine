@@ -221,6 +221,12 @@ public sealed class SwapchainAcquireTests : IDisposable
     {
         Setup();
         _ = _device.BeginFrame(out CommandList commands);
+        int calls = _fixture.BackendDevice.Calls.Count;
+
+        // Off the owner thread: refused before the window is read or the backend is called.
+        _ = Assert.IsType<WrongThreadException>(GraphicsDeviceThreadTests.OnOtherThread(() => commands.AcquireSwapchainImage(_swapchain, out _)));
+        Assert.Equal(calls, _fixture.BackendDevice.Calls.Count);
+
         Assert.Equal(AcquireStatus.Acquired, commands.AcquireSwapchainImage(_swapchain, out _));
         int acquires = Acquires();
 
@@ -231,6 +237,13 @@ public sealed class SwapchainAcquireTests : IDisposable
         Assert.Equal(acquires, Acquires());
         _ = _device.SubmitFrame(commands);
         _ = Assert.Throws<InvalidOperationException>(() => commands.AcquireSwapchainImage(_swapchain, out _));
+
+        // After Dispose, the open frame's list too.
+        _ = _device.BeginFrame(out commands);
+        _device.Dispose();
+        calls = _fixture.BackendDevice.Calls.Count;
+        _ = Assert.Throws<ObjectDisposedException>(() => commands.AcquireSwapchainImage(_swapchain, out _));
+        Assert.Equal(calls, _fixture.BackendDevice.Calls.Count);
     }
 
     private void Setup(int framesInFlight = 2)
