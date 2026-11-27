@@ -30,6 +30,7 @@ public sealed class SwapchainPlannerTests
         MaxExtent = new VkExtent2D(4096, 4096),
         MinImageCount = 2,
         MaxImageCount = 8,
+        CurrentTransform = VkSurfaceTransformFlagsKHR.IdentityBitKHR,
         SupportedCompositeAlpha = VkCompositeAlphaFlagsKHR.OpaqueBitKHR | VkCompositeAlphaFlagsKHR.PreMultipliedBitKHR,
         SupportedUsage = VkImageUsageFlags.ColorAttachmentBit | VkImageUsageFlags.TransferDstBit,
         Formats = [Format(Bgra8Srgb)],
@@ -48,6 +49,7 @@ public sealed class SwapchainPlannerTests
             600,
             3,
             VkCompositeAlphaFlagsKHR.OpaqueBitKHR,
+            VkSurfaceTransformFlagsKHR.IdentityBitKHR,
             VkImageUsageFlags.ColorAttachmentBit | VkImageUsageFlags.TransferDstBit,
             Bgra8Srgb,
             VkColorSpaceKHR.SRGBNonlinearKHR,
@@ -301,6 +303,22 @@ public sealed class SwapchainPlannerTests
         SwapchainPlan plan = PlanOk(facts, _source, new SwapchainOptions { PresentMode = requested });
 
         Assert.Equal((requested, expected, false), (plan.PresentMode, plan.VkPresentMode, plan.PresentModeFellBack));
+    }
+
+    // Each transform a surface can report, as its VK_SURFACE_TRANSFORM_* value from BRUTAL's bindings, passes through
+    // unchanged; none is the identity the good surface uses, so a planner that hardcodes it fails every row.
+    [Theory]
+    [InlineData(0x002u)] // ROTATE_90
+    [InlineData(0x004u)] // ROTATE_180
+    [InlineData(0x080u)] // HORIZONTAL_MIRROR_ROTATE_270
+    [InlineData(0x100u)] // INHERIT
+    public void Plan_CopiesCurrentTransform(uint transform)
+    {
+        SurfaceFacts facts = Good with { CurrentTransform = (VkSurfaceTransformFlagsKHR)transform };
+
+        SwapchainPlan plan = PlanOk(facts, _source, Srgb);
+
+        Assert.Equal((VkSurfaceTransformFlagsKHR)transform, plan.PreTransform);
     }
 
     // The requested mode at index 0 of the surface's list, ahead of every other mode, and as the only mode listed.

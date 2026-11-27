@@ -35,6 +35,12 @@ internal readonly struct SurfaceFacts
     /// <summary>Gets the surface's <c>maxImageCount</c>; 0 means no maximum.</summary>
     public int MaxImageCount { get; init; }
 
+    /// <summary>
+    /// Gets the surface's <c>currentTransform</c>, which the plan passes through as the swapchain's <c>preTransform</c>
+    /// (as M0 does, <c>samples/HelloWindow/Swapchain.cs:70</c>).
+    /// </summary>
+    public VkSurfaceTransformFlagsKHR CurrentTransform { get; init; }
+
     /// <summary>Gets the surface's <c>supportedCompositeAlpha</c>.</summary>
     public VkCompositeAlphaFlagsKHR SupportedCompositeAlpha { get; init; }
 
@@ -50,7 +56,8 @@ internal readonly struct SurfaceFacts
 
 /// <summary>
 /// The pure swapchain decisions of docs/design/graphics-vulkan.md section 4: extent, image count, composite alpha,
-/// usage, format and present mode, from a surface's facts and the requested options.
+/// usage, format and present mode, from a surface's facts and the requested options; the surface's current transform
+/// passes through unchanged.
 /// </summary>
 /// <remarks>Stateless and thread-safe. Creation-time only.</remarks>
 internal static class SwapchainPlanner
@@ -110,6 +117,7 @@ internal static class SwapchainPlanner
             height,
             ChooseImageCount(facts.MinImageCount, facts.MaxImageCount),
             LowestBit(facts.SupportedCompositeAlpha),
+            facts.CurrentTransform,
             VkImageUsageFlags.ColorAttachmentBit | (facts.SupportedUsage & VkImageUsageFlags.TransferDstBit),
             format,
             VkColorSpaceKHR.SRGBNonlinearKHR,
