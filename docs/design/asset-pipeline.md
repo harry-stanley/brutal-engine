@@ -321,3 +321,88 @@ Entries are paths relative to the definition's folder; `*` matches within one pa
 **Input maps (`input-map`).** The JSON form is the input note's (section 9 there): the importer validates the source with `InputMap.FromJson` and writes `InputMap.ToJson`'s canonical bytes as the `INPM` payload, with no dependencies. `FromJson`'s failure is reported as `BEC2701` with its message. Settings: none.
 
 **Not in M2.** Animations (sprite-sheet clips from Aseprite tags, property curves, skeletal data) come with M3's Animation note; localisation tables with M3's localisation work; scenes and prefabs after the 0.2.0 release, with World's generated serialisers (World is frozen until then). Each adds an importer through the same registry.
+
+## 4. The assets command
+
+```text
+Usage: brutal-cook assets [options] <assets-dir>
+       brutal-cook meta [--importer <id>] <source-file>...
+
+assets   Import every source under <assets-dir> and write one pack.
+  -o, --output <file>          The pack to write (required). Replaced atomically; untouched when the cook fails.
+      --cache <dir>            The incremental cache. Default: <output>.cache, next to the pack.
+      --no-cache               Import every source; read and write no cache.
+  -j, --jobs <n>               Parallel imports, 1-64. Default: the processor count, at most 16.
+      --locked                 Never create or change a .meta file; one that would change is an error (for CI).
+      --reference-pack <file>  A pack whose ids this pack's assets may depend on. Repeatable.
+      --compression <mode>     auto (default), none, deflate or brotli. A .meta's "compression" overrides it.
+      --manifest <file>        Also write the pack's manifest (JSON, below).
+      --diagnostics <format>   text (default, on stderr) or json (one object per line, on stdout).
+      --warnings-as-errors     Fail on warnings too.
+      --verbose                Also print infos, timings and exception stacks (text only).
+  -h, --help                   Print this text and exit 0.
+
+meta     Create the sidecar of each <source-file>, for importers that don't create one automatically (shaders).
+      --importer <id>          The importer. Default: the one claiming the file's extension.
+
+Exit codes: 0 success; 64 usage error; 65 asset errors; 66 <assets-dir> or a source file is missing;
+70 internal error; 73 the pack or the cache can't be created; 74 I/O error, or the cache is in use; 130 cancelled.
+```
+
+- **The tool's shape.** M1 creates `brutal-cook` with subcommands, its shader command first, and with distinct exit codes per failure class, 64 for usage errors. The `assets` and `meta` commands add to it, using the same `sysexits.h` numbering. M1's own details (its `tools/Directory.Build.props`, option parsing, the shader command's options) are M1's issue's; nothing here changes them. A `meta` run that finds an existing sidecar leaves it as it is and reports `BEC1012` (info).
+- **Steps.** (1) Mount `<assets-dir>` as `res://` through a read-only `DirectoryFileSystem` and walk it in ordinal order. (2) Read every sidecar; report orphans, duplicates and missing sidecars (section 1). (3) Import every source, from the cache when it hits, on `--jobs` workers. (4) Without `--locked`, write the changed sidecars (each atomically, through a temporary file and a rename). (5) Check dependencies. (6) Write the pack, then the manifest. Any error stops before step 6: no pack is written and the old one is kept, but cache entries of sources that imported cleanly are saved, so the next run is still incremental.
+- **The incremental cache.** One cache entry per source, in `<cache>/v1/sources/<hex SHA-256 of the source's relative path>`, holds the key and the outputs; payloads live once each in `<cache>/v1/payloads/<hex SHA-256>` (content-addressed, so identical outputs are stored once), with their compressed forms beside them under the codec and its settings. The **key** is: the cache format version; the cooker's version; the importer's id, `Version` and `Fingerprint`; the canonical sidecar bytes; and every recorded read (path, length, SHA-256). A run hashes each recorded file again and hits only if every one matches: content hashes, never timestamps, which differ between checkouts and which the VFS doesn't report. Compressed forms are keyed by codec, level and the .NET runtime version as well (section 5). Entries are written to a temporary file and renamed, so a crash leaves no half entry; an unreadable entry is a miss (`BEC3010`, info). A lock file held for the whole run makes a second cooker on the same cache exit 74. A successful run deletes entries of sources it didn't visit and payloads nothing references. `--no-cache` imports everything and touches no cache.
+- **Dependency tracking.** File dependencies are the reads each import records: Tiled tilesets, LDtk level files, Slang imports, atlas members and the sidecars `ResolveAsset` read. They invalidate the cache entry and drive hot reload. Asset dependencies are the `Dependencies` of each output; after all imports, each must name an output of this cook or an entry of a `--reference-pack` (`BEC3001` otherwise), and the graph of this cook's outputs must be acyclic (`BEC3002`, naming the cycle in id order), as the asset database note expects of cooked packs ([section 3](assets.md#3-the-database)). An id that is both cooked and in a reference pack is `BEC3003`, because mounting both would fail.
+- **Parallel import, deterministic output.** Sources are sorted ordinally and imported by a pool of `--jobs` workers; each result is stored by its source's index, never in completion order. Diagnostics are printed in source order as soon as every earlier source is done. The pack's entries are sorted by `AssetId`, as the format requires, so neither scheduling nor the OS's file order can change a byte. Payloads go to the cache's payload store as they finish (to a temporary store with `--no-cache`), so memory holds at most `--jobs` imports.
+- **Pack writing** follows the asset database note's [section 6](assets.md#6-the-pack-format), version 1, exactly: the header, the 64-byte entries sorted by id, the dependency table (each output's ids ascending, without duplicates), the path table, zero padding, the data in entry order. The main output of a source gets the source's path relative to `res://` as its path; other outputs get none (`PathLength` 0), because paths must be unique. **Compression** per entry: `none` stores; `deflate` is raw Deflate through `DeflateStream` with `ZLibCompressionOptions { CompressionLevel = 9, CompressionStrategy = Default }`; `brotli` is `BrotliEncoder` with quality 9 and window 22. `auto` chooses Deflate when the payload is at least 1 KiB and Deflate saves at least an eighth of it, and stores otherwise. Streamed audio (`ASTM`) and already-compressed payloads are always stored, as the reader requires. Levels are numbers, not `CompressionLevel` names, so a runtime that remaps the names can't change the output. The file is written to `<output>.tmp` and renamed over the output.
+- **The manifest** (`--manifest`) lists the pack and every entry, canonical as the sidecars are: `{"version":1,"pack":{"length":…,"sha256":…},"entries":[{"id":…,"kind":…,"path":…,"compression":…,"length":…,"storedLength":…,"payloadSha256":…,"storedSha256":…},…]}`, entries in pack order, no absolute paths and no times. The determinism job (section 5) compares manifests.
+
+**Diagnostics.** With `--diagnostics json`, stdout carries only one JSON object per line, with these properties in this order, each omitted when it doesn't apply:
+
+```json
+{"severity":"error","code":"BEC2202","file":"sprites/hero.aseprite","offset":4096,"asset":"0f8fad5b-d9cb-469f-a165-70867728950e","message":"cel 3 of frame 2: zlib data decodes to 4100 bytes, expected 4096"}
+{"severity":"error","code":"BEC1002","file":"sprites/hero.png.meta","line":4,"column":13,"message":"\"settingsVersion\" must be a positive integer"}
+{"severity":"info","code":"BEC0001","message":"cooked 120 assets from 87 sources (3 imported, 84 from the cache): 2 errors, 0 warnings"}
+```
+
+`severity` is `error`, `warning` or `info`; `code` is `BEC` and four digits; `file` is relative to `<assets-dir>` with `/` separators; `line` and `column` are 1-based (text formats); `offset` is a byte offset (binary formats); `asset` is the id when one is known. The last line is always the `BEC0001` summary. Text diagnostics on stderr use MSBuild's canonical form, so IDEs and CI annotate them: `assets/sprites/hero.png.meta(4,13): error BEC1002: "settingsVersion" must be a positive integer`. Codes are stable and never reused:
+
+| Range | Area | Codes this note defines |
+|-------|------|-------------------------|
+| `BEC0xxx` | The command | `0001` summary; `0002` an importer threw |
+| `BEC1xxx` | Sidecars | `1001` missing (`--locked`); `1002` malformed; `1003` duplicate id; `1004` unknown importer; `1005` orphan; `1006` newer version or settings version; `1007` output kind mismatch; `1010` would change (`--locked`); `1011` output has no id; `1012` already exists (`meta`) |
+| `BEC2xxx` | Importers: `20` images, `21` atlases and the packer, `22` Aseprite, `23` audio, `24` fonts, `25` shaders, `26` tilemaps, `27` input maps | `2101` sprite larger than a page; `2102` atlas member also cooked alone; `2301` long sound that can't stream; `2401` missing characters; `2501` compile error; `2502` import outside the assets root; `2503` unsupported binding; `2601` unsupported orientation or flag; `2701` invalid input map. Each importer issue lists the rest of its range in its importer's documentation |
+| `BEC3xxx` | Dependencies, packs, the cache | `3001` unresolved dependency; `3002` cycle; `3003` id also in a reference pack; `3010` unreadable cache entry |
+
+Errors set exit code 65 (70 for `BEC0002`). With `--diagnostics json`, stdout carries nothing but those lines (and `--help` prints only its text), so a CI step or an editor can parse it line by line.
+
+## 5. Determinism
+
+**What is guaranteed.** For one cooker build and one .NET runtime version, the same sources and sidecars give a byte-identical pack and manifest whatever `--jobs` is, whether the cache is cold, warm or off, in whatever order the OS lists files, from whatever directory and absolute location, at whatever time, under whatever user and culture. This follows from section 2's importer rules and section 4's ordering and pinned encoder settings, and is tested on every run of the determinism job on one OS.
+
+**Across Windows and Linux** the same holds for payloads (uncompressed bytes) of managed importers and of native decoders whose arithmetic is integer (stb for PNG and TGA, SDL_mixer's WAV and FLAC paths), and therefore for packs cooked with `--compression none`. It is expected but not yet shown for three native paths, and the job decides: Slang (ADR-0012 already requires the first Linux re-cook PR to show Windows and Linux SPIR-V byte-identical), FreeType's rasterisation, and the floating-point Vorbis and MP3 decoders when they cook clips (ADR-0017's prototype compares decoded checksums across OSes, #279). Compressed bytes depend on the BCL's Deflate and Brotli encoders, which are native code inside the runtime; the asset database note lists their cross-OS equality as unverified, and the reader doesn't depend on it. The cooker pins their numeric settings (section 4) and the job checks them rather than assuming them.
+
+**How CI shows it.** A `cook-determinism` workflow job (its issue in section 9) runs on Linux and Windows in the same workflow run, so both use the SDK and runtime `global.json` selects (each prints `dotnet --version`, and the comparison fails if they differ). It cooks a committed fixture project, `tests/fixtures/assets`, that contains every importer's fixtures, with `--locked`. On Linux it cooks twice, cold with `--jobs 1` and warm with `--jobs 8` from another directory, and compares bytes. Each OS uploads its manifest and pack; a final job compares them entry by entry and fails on any difference. Shader fixtures join the job with the shader payload (P21), and its Windows leg then restores the Slang native package: the Windows cook ADR-0012 asks for when it requires cross-OS SPIR-V to be shown equal. The job runs whenever a PR changes `tools/`, the fixture project or the assets reader (a path set added to `.github/scripts/ci-tier.sh` with its self-test cases), and nightly. Like the other required checks, a failure blocks the PR.
+
+**If the OSes disagree,** the job prints each differing entry with its kind, its source and both hashes, and says whether the payload or only the stored (compressed) bytes differ. A payload difference is a bug in an importer or a native decoder that isn't portable: it is fixed at its source, never tolerated by excluding the entry. If a native decoder can't be made portable (a float decoder, say), its importer issue stops with `needs-decision`, offering to cook those payloads on one OS only or to ship them encoded and decode at load time. A difference only in stored bytes means the BCL's encoders aren't portable; the job stays red and the maintainer chooses between cooking release packs on one OS, storing them uncompressed, and an in-house encoder. The check itself is never loosened.
+
+## 6. Security
+
+Sources are untrusted input: a mod, a downloaded asset pack or a pull request can carry a crafted file. Every parser enforces fixed limits before it allocates, computes sizes in 64-bit or checked arithmetic, decompresses into a buffer of exactly the declared size and fails on more or fewer bytes (as the pack reader does), recurses only with a depth counter, and reports a limit as `InvalidData` naming the field and the limit. Limits are constants of each parser, not options, each tested on both sides (section 8). The generic per-import limits are `ImportLimits` (section 2).
+
+| Parser | Limits |
+|--------|--------|
+| `.meta` | 1 MiB; depth 32; 1,024 assets; strings 1,024 bytes |
+| PNG, TGA (header check, then stb) | the source 256 MiB; width and height 1-16,384 (the texture payload's range); width x height at most 67,108,864 texels (256 MiB of RGBA); PNG signature and `IHDR` first; TGA fields as section 3 |
+| Atlas definitions | 64 KiB; 4,096 sprites; 64 pages; every page within `maxPageSize` |
+| Aseprite | 256 MiB; header size equals the file length; canvas 1-8,192 per side; 4,096 frames; 256 layers, group nesting 16; 65,536 chunks per frame; cel sizes within 16,384 and inside 2x the canvas; zlib output exactly width x height x bytes per pixel; 256 palette entries; 1,024 tags and slices; strings 1,024 bytes; composed frames together at most 256 MiB |
+| Audio (Ogg reader, then SDL_mixer) | 512 MiB; 1-2 channels; 8,000-192,000 Hz; 30 minutes; a clip at most 256 MiB decoded; Ogg pages within the format's 65,307 bytes with valid capture patterns and checksums; Vorbis header packets 1 MiB |
+| Fonts (then FreeType) | 64 MiB; 16 sizes of 4-512 px; 65,536 glyphs per size; 16 pages of at most 4,096 px |
+| Shaders (then Slang) | 4 MiB per file; 256 imported files, 64 MiB in total; 16 entry points; 256 bindings; SPIR-V 16 MiB; strings 1,024 bytes |
+| Tiled JSON and XML | 64 MiB per file; depth 64; map 1-16,384 tiles per side and 16,777,216 cells per layer; 1,024 layers, group nesting 16; 256 tilesets; 1,048,576 objects, 4,096 points per polygon; 256 properties per object; strings 64 KiB; tile data decoded to exactly width x height x 4 bytes. XML: `DtdProcessing.Prohibit`, `XmlResolver = null`, `MaxCharactersInDocument` 64 Mi, no entity expansion |
+| LDtk | 64 MiB per file; 256 external level files; 4,096 levels; 256 layer instances per level; 16,777,216 cells per layer; 1,048,576 entities; depth 64 |
+| Input maps | the input note's 1 MiB and its rules |
+
+All JSON is read with `Utf8JsonReader` or `JsonDocument` with `MaxDepth` set, comments and trailing commas rejected. Native decoders (stb, SDL_mixer, FreeType, Slang) only receive input that passed the managed checks above; their own robustness is upstream's, and a crash in one found by fuzzing goes to the BRUTAL issue draft, not to a workaround here.
+
+**Fuzz targets** (SharpFuzz, nightly, 30 minutes per target, docs/05's fuzz tier, `docs/05-testing-strategy.md:19`): `AssetMeta.Read`; the image header check plus decode; the atlas definition reader; the Aseprite parser and compositor; Tiled JSON; Tiled XML; LDtk; the Ogg and Vorbis header reader; the audio importer end to end. Each target runs the whole importer over an in-memory file system, so native code is exercised too (SharpFuzz instruments managed code only, so coverage guidance stops at the native boundary). The corpus is seeded from the fixtures of section 8; every crash becomes a regression row in the importer's tests.
