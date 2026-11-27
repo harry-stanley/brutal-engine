@@ -58,6 +58,8 @@ internal sealed class SlangShaderCompiler(ISlangRuntime runtime)
     private static unsafe CookExitCode Compile(IGlobalSession session, ShaderCookOptions options, TextWriter stderr, ref byte[][] code)
     {
         ProfileID profile;
+
+        // Sound: ProfileName is a static, NUL-terminated literal, pinned for the call; FindProfile doesn't keep the pointer.
         fixed (byte* name = ProfileName)
         {
             profile = session.FindProfile(name);
