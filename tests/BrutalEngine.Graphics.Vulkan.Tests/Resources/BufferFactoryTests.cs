@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.RegularExpressions;
 using Brutal;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Vma;
@@ -48,7 +51,7 @@ public sealed unsafe class BufferFactoryTests
 
         (long errors, long warnings, int adapters) = OnEveryAdapter(sink, gpu =>
         {
-            BufferFactory factory = new(gpu.Core, gpu.Vma, gpu.Gate);
+            BufferFactory factory = new(gpu.Core, gpu.Vma, gpu.Gate, default);
             foreach (BufferUsage usage in usages)
             {
                 Result<BackendBuffer> result = factory.Create(new BufferDescription { Size = Size, Usage = usage, DebugName = "mapped rule" }, memory);
@@ -103,7 +106,7 @@ public sealed unsafe class BufferFactoryTests
         {
             Assert.True(gpu.Core.Naming.Enabled, $"{gpu.Name}: a validated instance names objects");
             RecordingBuffers native = new() { Inner = new BufferFactory.NativeBuffers(gpu.Core.Device, gpu.Vma) };
-            BufferFactory factory = new(native, gpu.Core.Naming, gpu.Gate, new ObjectTable<BufferFactory.Entry>());
+            BufferFactory factory = new(native, gpu.Core.Naming, gpu.Gate, new ObjectTable<BufferFactory.Entry>(), default);
 
             ulong named = factory.Create(new BufferDescription { Size = Size, Usage = BufferUsage.Vertex, DebugName = "sprite vertices" }, BackendMemory.DeviceLocal).Value.Id;
             (VkBuffer buffer, VmaAllocation allocation) = native.LastCreated;
@@ -134,7 +137,7 @@ public sealed unsafe class BufferFactoryTests
         ValidationLog sink = new();
         (long errors, _, int adapters) = OnEveryAdapter(sink, gpu =>
         {
-            BufferFactory factory = new(gpu.Core, gpu.Vma, gpu.Gate);
+            BufferFactory factory = new(gpu.Core, gpu.Vma, gpu.Gate, default);
             ulong id = factory.Create(new BufferDescription { Size = Size, Usage = BufferUsage.CopyDestination, DebugName = "named for validation" }, BackendMemory.DeviceLocal).Value.Id;
             Assert.True(factory.Table.TryGet(id, out BufferFactory.Entry entry));
             using ObjectNameMessenger names = new(gpu.Instance);
@@ -152,6 +155,62 @@ public sealed unsafe class BufferFactoryTests
 
     [Fact]
     [Trait("Category", "Gpu")]
+    public void Create_InjectedOutOfMemory_LogsBudgets()
+    {
+        ValidationLog sink = new();
+        ValidationLog budgets = new();
+        (Logger budgetLogger, _) = ValidationLog.Create(budgets);
+        using (budgetLogger)
+        {
+            LogCategory log = budgetLogger.CreateCategory("Graphics.Vulkan");
+            (long errors, _, _) = OnEveryAdapter(sink, gpu =>
+            {
+                // The heaps from the adapter's own query, not from VMA's copy, which the code under test reads.
+                PhysicalDevice adapter = gpu.Core.Device.PhysicalDevice;
+                VkPhysicalDeviceMemoryProperties memory = default;
+                adapter.PInvoke.vkGetPhysicalDeviceMemoryProperties.Invoke(adapter.Handle, &memory);
+                Assert.InRange(memory.MemoryHeapCount, 1, 16);
+                VulkanFaultInjector faults = new();
+                VulkanCallGate gate = new() { Faults = faults };
+                BufferFactory factory = new(gpu.Core, gpu.Vma, gate, log);
+                BufferDescription description = new() { Size = Size, Usage = BufferUsage.Uniform, DebugName = "exhausted" };
+                faults.FailNth(VulkanCall.CreateBuffer, 1, VkResult.ErrorOutOfDeviceMemory);
+                int before = budgets.Entries.Count;
+
+                Result<BackendBuffer> exhausted = factory.Create(description, BackendMemory.DeviceLocal);
+
+                Assert.Equal(new EngineError(ErrorKind.OutOfMemory, "vmaCreateBuffer failed", (int)VkResult.ErrorOutOfDeviceMemory), exhausted.Error);
+                var lines = budgets.Entries.Skip(before).ToList();
+                Assert.Equal(memory.MemoryHeapCount, lines.Count);
+                for (int heap = 0; heap < lines.Count; heap++)
+                {
+                    Assert.Equal(LogLevel.Warning, lines[heap].Level);
+                    Match line = Regex.Match(lines[heap].Message, @"^Out of GPU memory: heap (\d+) \((device-local|host), (\d+) bytes\) has (\d+) bytes in use of a (\d+)-byte budget$");
+                    Assert.True(line.Success, lines[heap].Message);
+                    VkMemoryHeap expected = memory.MemoryHeaps[heap];
+                    Assert.Equal(heap, int.Parse(line.Groups[1].Value, CultureInfo.InvariantCulture));
+                    Assert.Equal((expected.Flags & VkMemoryHeapFlags.DeviceLocalBit) != 0 ? "device-local" : "host", line.Groups[2].Value);
+                    Assert.Equal(expected.Size.Value, ulong.Parse(line.Groups[3].Value, CultureInfo.InvariantCulture));
+                    Assert.True(ulong.Parse(line.Groups[5].Value, CultureInfo.InvariantCulture) > 0, $"{gpu.Name}: heap {heap} has a budget");
+                    TestContext.Current.TestOutputHelper?.WriteLine($"{gpu.Name}: {lines[heap].Message}");
+                }
+
+                // A lost device is Unavailable and logs no budgets.
+                faults.FailNth(VulkanCall.CreateBuffer, 1, VkResult.ErrorDeviceLost);
+                Result<BackendBuffer> lost = factory.Create(description, BackendMemory.HostUpload);
+
+                Assert.Equal(new EngineError(ErrorKind.Unavailable, "vmaCreateBuffer failed", (int)VkResult.ErrorDeviceLost), lost.Error);
+                Assert.True(gate.IsLost);
+                Assert.Equal(before + lines.Count, budgets.Entries.Count);
+                Assert.Equal(0, factory.Table.Count);
+            });
+
+            Assert.Equal(0L, errors);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
     public void CreateDestroy_1000_DoesNotAllocate()
     {
         // Every memory kind's path, named, in turn; warmed once each so the table has grown and every path is jitted.
@@ -161,7 +220,7 @@ public sealed unsafe class BufferFactoryTests
 
         (long errors, _, _) = OnEveryAdapter(sink, gpu =>
         {
-            BufferFactory factory = new(gpu.Core, gpu.Vma, gpu.Gate);
+            BufferFactory factory = new(gpu.Core, gpu.Vma, gpu.Gate, default);
             long checksum = Cycle(factory, description, kinds, kinds.Length);
 
             long before = GC.GetAllocatedBytesForCurrentThread();
@@ -184,15 +243,15 @@ public sealed unsafe class BufferFactoryTests
         ValidationLog sink = new();
         _ = OnEveryAdapter(sink, gpu =>
         {
-            Assert.Throws<ArgumentNullException>("gate", () => new BufferFactory(gpu.Core, gpu.Vma, null!));
-            Assert.Throws<ArgumentException>("vma", () => new BufferFactory(gpu.Core, default, gpu.Gate));
+            Assert.Throws<ArgumentNullException>("gate", () => new BufferFactory(gpu.Core, gpu.Vma, null!, default));
+            Assert.Throws<ArgumentException>("vma", () => new BufferFactory(gpu.Core, default, gpu.Gate, default));
         });
 
         using Logger logger = new(new LoggerOptions { Sinks = [] });
         using VulkanInstance instance = GpuDevices.CreateInstance(logger.CreateCategory("Graphics.Validation"), []);
         VulkanDeviceCore core = GpuAllocators.CreateDevice(instance, GpuDevices.Suitable(instance)[0], withoutBudget: false);
         core.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => new BufferFactory(core, new VmaHandle(new VmaAllocatorHandle(0x5150)), new VulkanCallGate()));
+        Assert.Throws<ObjectDisposedException>(() => new BufferFactory(core, new VmaHandle(new VmaAllocatorHandle(0x5150)), new VulkanCallGate(), default));
     }
 
     // Creates and destroys count buffers, cycling through the kinds; counts the successes.
