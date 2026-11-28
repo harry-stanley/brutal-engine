@@ -44,6 +44,7 @@ internal static class MilestoneReferenceRule
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(readProject);
 
+        // Ordinal, as Linux resolves project paths: a reference whose name differs only in case misses below.
         Dictionary<string, int> milestones = new(StringComparer.Ordinal);
         List<(string Name, XDocument Document)> readable = [];
         foreach (ProjectFile library in libraries)
@@ -90,6 +91,14 @@ internal static class MilestoneReferenceRule
 
                 if (!milestones.TryGetValue(referenced, out int referencedMilestone))
                 {
+                    // Not a library with a readable milestone, so there is nothing to compare. The cases that land here,
+                    // and where each one is reported instead:
+                    // - a name that differs from a library's only in letter case: the Linux build, a required check,
+                    //   fails with MSB9008 (the referenced project doesn't exist);
+                    // - a library without a readable milestone: the ship-gate rule;
+                    // - a project that isn't an engine library: the layering rule, which rejects a runtime library's
+                    //   reference to a tool or to an unknown BrutalEngine module;
+                    // - a Roslyn component: nowhere, as it is build-time only and never a package dependency.
                     continue;
                 }
 
