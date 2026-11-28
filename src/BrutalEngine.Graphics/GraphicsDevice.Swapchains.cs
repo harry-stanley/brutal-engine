@@ -596,7 +596,8 @@ public sealed partial class GraphicsDevice
 
     /// <summary>
     /// A live swapchain: its window, surface and creation order, and what recreation changes: the backend id (0 after a failed
-    /// recreation), what it is, its images, the window size it was made for, and the marks acquires and presents leave.
+    /// recreation or a device recovery), what it is, its images, the window size it was made for, and the marks acquires
+    /// and presents leave. A device recovery gives it a new surface.
     /// </summary>
     private sealed class SwapchainState(IWindow window, WindowSurfaceSource source, ulong surface, SwapchainOptions options, long sequence)
     {
@@ -604,7 +605,7 @@ public sealed partial class GraphicsDevice
 
         public WindowSurfaceSource Source { get; } = source;
 
-        public ulong Surface { get; } = surface;
+        public ulong Surface { get; set; } = surface;
 
         public SwapchainOptions Options { get; } = options;
 

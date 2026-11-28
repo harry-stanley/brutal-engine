@@ -20,7 +20,7 @@ public sealed partial class GraphicsDevice
     private const BufferUsage StagingUsage = BufferUsage.CopySource | BufferUsage.Vertex | BufferUsage.Index | BufferUsage.Uniform
         | BufferUsage.Storage | BufferUsage.Indirect;
 
-    private readonly PendingUploadPool _pendingUploads = new();
+    private PendingUploadPool _pendingUploads = new();
     private readonly long _ringBytes;
     private readonly INativeAllocator _allocator;
     private DeletionQueue? _deferred;

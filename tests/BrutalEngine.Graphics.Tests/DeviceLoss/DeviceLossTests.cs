@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using BrutalEngine.Core;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Internal;
 using BrutalEngine.Graphics.Tests.Backend;
 using BrutalEngine.Graphics.Tests.Device;
@@ -283,6 +284,42 @@ public sealed class DeviceLossTests : IDisposable
     }
 
     public static TheoryData<string> CreationScenarios() => [.. LossKit.Creations];
+
+    [Theory]
+    [InlineData("WaitForFrame", true)]
+    [InlineData("WaitForFrame", false)]
+    [InlineData("WaitIdle", true)]
+    public void TimedOut_DisposeAndRecoverAbandon(string scenario, bool recoverFirst)
+    {
+        var rig = new LossRig(_fixture);
+        var log = new List<string>();
+        _ = rig.Device.RegisterOwner(new RecordingOwner("owner", log));
+        rig.Frame();
+        _ = rig.Run(scenario, new EngineError(ErrorKind.Timeout, "hung", 2));
+        Assert.True(rig.Device.LostTimedOut);
+        int calls = rig.Backend.Calls.Count;
+
+        if (recoverFirst)
+        {
+            // Every call returns Timeout at once: no wait, no destruction, no owner told.
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                Result result = rig.Device.Recover();
+                Assert.Equal((ErrorKind.Timeout, 2), (result.Error.Kind, result.Error.NativeCode));
+            }
+
+            Assert.Empty(log);
+            Assert.Throws<InvalidOperationException>(() => rig.Device.GetFormatSupport(TextureFormat.Rgba8Unorm));
+        }
+
+        rig.Device.Dispose();
+
+        Assert.Equal(calls, rig.Backend.Calls.Count);
+        Assert.False(rig.Backend.IsDisposed);
+        Assert.Single(_fixture.Entries(), entry => entry.Level == LogLevel.Error && entry.Message == "Device abandoned after a GPU timeout: native objects leaked.");
+        // The process would exit now; the test frees the abandoned fake's memory itself.
+        rig.Backend.Dispose();
+    }
 
     [Theory]
     [InlineData(false)]

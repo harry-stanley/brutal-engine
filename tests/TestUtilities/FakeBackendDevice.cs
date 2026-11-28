@@ -151,6 +151,9 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     /// <summary>Whether <see cref="Dispose"/> has run.</summary>
     public bool IsDisposed => _disposed;
 
+    /// <summary>How many times <see cref="Dispose"/> was called, the calls that did nothing included.</summary>
+    public int DisposeCalls { get; private set; }
+
     /// <inheritdoc/>
     public GraphicsAdapterInfo Adapter { get; }
 
@@ -736,9 +739,13 @@ public sealed unsafe class FakeBackendDevice : IBackendDevice
     }
 
     /// <summary>Destroys every object, surface and swapchain still alive, the selection surface included, and frees mapped memory.</summary>
-    /// <remarks>Idempotent: only the first call does anything or is recorded. <see cref="Calls"/> stays readable.</remarks>
+    /// <remarks>
+    /// Idempotent: only the first call does anything or is recorded; <see cref="DisposeCalls"/> counts every call.
+    /// <see cref="Calls"/> stays readable.
+    /// </remarks>
     public void Dispose()
     {
+        DisposeCalls++;
         if (_disposed)
         {
             return;
