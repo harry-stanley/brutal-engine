@@ -28,25 +28,30 @@ internal static class BackendLeakReport
     /// <param name="textures">The device's textures.</param>
     /// <param name="buffers">The device's buffers.</param>
     /// <param name="log">Where each leak is logged (the device's <c>Graphics.Vulkan</c> category).</param>
-    /// <returns>How many objects were destroyed; both tables are empty afterwards.</returns>
+    /// <returns>How many objects were destroyed (each factory's <c>Destroy</c> returned <see langword="true"/>); both tables are empty afterwards.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="textures"/> or <paramref name="buffers"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Each kind's loop takes the newest entry and destroys it, at most as many times as the table held entries when the
+    /// loop started. So if a factory's <c>Destroy</c> ever failed to remove a live entry, disposal would still end
+    /// (that entry is logged again on each remaining step and left in its table) instead of looping forever.
+    /// </remarks>
     public static int DestroyAll(TextureFactory textures, BufferFactory buffers, LogCategory log)
     {
         ArgumentNullException.ThrowIfNull(textures);
         ArgumentNullException.ThrowIfNull(buffers);
         int destroyed = 0;
-        while (TryGetNewest(textures.Table, out ulong id, out TextureFactory.Entry texture))
+        int left = textures.Table.Count;
+        for (int step = 0; step < left && TryGetNewest(textures.Table, out ulong id, out TextureFactory.Entry texture); step++)
         {
             log.Error($"Backend leak: texture {Quoted(texture.Description.DebugName)} was still alive at disposal and is destroyed now");
-            _ = textures.Destroy(id);
-            destroyed++;
+            destroyed += textures.Destroy(id) ? 1 : 0;
         }
 
-        while (TryGetNewest(buffers.Table, out ulong id, out BufferFactory.Entry buffer))
+        left = buffers.Table.Count;
+        for (int step = 0; step < left && TryGetNewest(buffers.Table, out ulong id, out BufferFactory.Entry buffer); step++)
         {
             log.Error($"Backend leak: buffer {Quoted(buffer.Name)} was still alive at disposal and is destroyed now");
-            _ = buffers.Destroy(id);
-            destroyed++;
+            destroyed += buffers.Destroy(id) ? 1 : 0;
         }
 
         return destroyed;
