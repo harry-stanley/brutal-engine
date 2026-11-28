@@ -42,15 +42,22 @@ public sealed class DeviceLossAllocationTests : IDisposable
         Assert.Equal(Frames + WarmUpFrames, checksum);
 
         // Then the device is lost (outside the window: the detection logs and raises the event). Its frames, with
-        // acquires, write refusals of the seam's gates and the lost checks, allocate nothing either.
+        // acquires, the refusals of a buffer write, a texture write and a transient allocation, and the lost checks,
+        // allocate nothing either.
         device.Faults.InjectLoss(FaultSeam.Operation.Execute, 1, new EngineError(ErrorKind.Unavailable, "lost", -4));
         Assert.Equal(FrameStatus.DeviceLost, rig.Frame().Submitted);
+        var texels = new TextureWrite { Target = new(rig.Texture), Region = new(0, 0, 1, 1) };
         checksum = 0;
         before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < Frames; i++)
         {
-            (FrameStatus begun, AcquireStatus acquired, FrameStatus submitted) = rig.Frame();
-            checksum += begun == FrameStatus.DeviceLost && acquired == AcquireStatus.DeviceLost && submitted == FrameStatus.DeviceLost ? 1 : -100_000;
+            FrameStatus begun = device.BeginFrame(out CommandList commands);
+            AcquireStatus acquired = commands.AcquireSwapchainImage(rig.Swapchain, out _);
+            bool refused = device.WriteBuffer(rig.Buffer, 0, [1, 2, 3]).Error.Kind == ErrorKind.Unavailable;
+            refused &= device.WriteTexture(texels, [1, 2, 3, 4]).Error.Kind == ErrorKind.Unavailable;
+            refused &= commands.AllocateTransient(16, TransientUsage.Vertex, out _).Error.Kind == ErrorKind.Unavailable;
+            FrameStatus submitted = device.SubmitFrame(commands);
+            checksum += refused && begun == FrameStatus.DeviceLost && acquired == AcquireStatus.DeviceLost && submitted == FrameStatus.DeviceLost ? 1 : -100_000;
         }
 
         allocated = GC.GetAllocatedBytesForCurrentThread() - before;

@@ -180,7 +180,7 @@ public sealed partial class GraphicsDevice
         (block, offset, overflow, error) = (null, -1, false, default);
         if (IsLostCore)
         {
-            error = new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost.", LostNativeCode);
+            error = LostError(api);
             return false;
         }
 

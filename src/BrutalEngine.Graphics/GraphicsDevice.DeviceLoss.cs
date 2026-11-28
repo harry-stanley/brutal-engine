@@ -92,6 +92,20 @@ public sealed partial class GraphicsDevice
         ? loss
         : new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost ({loss.Message}).", loss.NativeCode);
 
-    // A call's refusal on a lost device: Unavailable, with the loss's native code.
-    private EngineError LostError(string api) => new(ErrorKind.Unavailable, api + LostSuffix, LostNativeCode);
+    // A call's refusal on a lost device: Unavailable, with the loss's native code. Allocates nothing.
+    private EngineError LostError(string api) => new(ErrorKind.Unavailable, LostMessage(api), LostNativeCode);
+
+    // The refusal messages are constants, so a lost device's writes and transient allocations allocate nothing.
+    private static string LostMessage(string api) => api switch
+    {
+        CreateBufferApi => CreateBufferApi + LostSuffix,
+        CreateTextureApi => CreateTextureApi + LostSuffix,
+        CreateTextureViewApi => CreateTextureViewApi + LostSuffix,
+        CreateSamplerApi => CreateSamplerApi + LostSuffix,
+        CreateSwapchainApi => CreateSwapchainApi + LostSuffix,
+        WriteBufferApi => WriteBufferApi + LostSuffix,
+        WriteTextureApi => WriteTextureApi + LostSuffix,
+        AllocateTransientApi => AllocateTransientApi + LostSuffix,
+        _ => api + LostSuffix, // a call not listed above makes its message
+    };
 }
