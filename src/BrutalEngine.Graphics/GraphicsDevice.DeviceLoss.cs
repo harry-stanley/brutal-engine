@@ -16,11 +16,20 @@ public sealed partial class GraphicsDevice
     /// detected the loss.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// That call is <see cref="BeginFrame"/>, <see cref="SubmitFrame"/>, <see cref="CommandList.AcquireSwapchainImage"/>,
     /// <see cref="WaitIdle"/>, or a creation or write whose backend call reported loss, as
-    /// <see cref="DeviceLostEventArgs.Operation"/> names it. It has done its work when the handlers run, and
-    /// <see cref="IsLost"/> is <see langword="true"/>. A handler's exception propagates out of that call, and the event
-    /// isn't raised again for the loss. Adding or removing a handler is owner thread only and isn't checked.
+    /// <see cref="DeviceLostEventArgs.Operation"/> names it. When the handlers run, <see cref="IsLost"/> is
+    /// <see langword="true"/> and the call has done its work, except in one case: two calls wait for the GPU through
+    /// <see cref="WaitIdle"/> first, <see cref="CommandList.AcquireSwapchainImage"/> before it recreates a swapchain and
+    /// <see cref="CreateSwapchain"/> while the window's destroyed swapchain still waits for a frame. A loss that nested
+    /// wait detects is reported as <c>"WaitIdle"</c>, and the handlers run at the end of that wait, before the outer call
+    /// has finished; it then returns <see cref="AcquireStatus.DeviceLost"/> or <see cref="ErrorKind.Unavailable"/>.
+    /// </para>
+    /// <para>
+    /// A handler's exception propagates out of the detecting call (and out of the outer call), and the event isn't raised
+    /// again for the loss. Adding or removing a handler is owner thread only and isn't checked.
+    /// </para>
     /// </remarks>
     public event EventHandler<DeviceLostEventArgs>? DeviceLost;
 
