@@ -702,6 +702,15 @@ BrutalEngine.Graphics.MemoryIntent
 BrutalEngine.Graphics.MemoryIntent.GpuOnly = 0 -> BrutalEngine.Graphics.MemoryIntent
 BrutalEngine.Graphics.MemoryIntent.Readback = 2 -> BrutalEngine.Graphics.MemoryIntent
 BrutalEngine.Graphics.MemoryIntent.Upload = 1 -> BrutalEngine.Graphics.MemoryIntent
+BrutalEngine.Graphics.PipelineLayoutDescription
+BrutalEngine.Graphics.PipelineLayoutDescription.BindGroupLayouts.get -> System.ReadOnlyMemory<BrutalEngine.Graphics.BindGroupLayoutHandle>
+BrutalEngine.Graphics.PipelineLayoutDescription.BindGroupLayouts.init -> void
+BrutalEngine.Graphics.PipelineLayoutDescription.DebugName.get -> string?
+BrutalEngine.Graphics.PipelineLayoutDescription.DebugName.init -> void
+BrutalEngine.Graphics.PipelineLayoutDescription.Equals(BrutalEngine.Graphics.PipelineLayoutDescription other) -> bool
+BrutalEngine.Graphics.PipelineLayoutDescription.PipelineLayoutDescription() -> void
+BrutalEngine.Graphics.PipelineLayoutDescription.PushConstants.get -> BrutalEngine.Graphics.PushConstantRange
+BrutalEngine.Graphics.PipelineLayoutDescription.PushConstants.init -> void
 BrutalEngine.Graphics.PipelineLayoutHandle
 BrutalEngine.Graphics.PipelineLayoutHandle.Equals(BrutalEngine.Graphics.PipelineLayoutHandle other) -> bool
 BrutalEngine.Graphics.PipelineLayoutHandle.IsNull.get -> bool
@@ -711,6 +720,15 @@ BrutalEngine.Graphics.PresentMode.Fifo = 0 -> BrutalEngine.Graphics.PresentMode
 BrutalEngine.Graphics.PresentMode.FifoRelaxed = 1 -> BrutalEngine.Graphics.PresentMode
 BrutalEngine.Graphics.PresentMode.Immediate = 3 -> BrutalEngine.Graphics.PresentMode
 BrutalEngine.Graphics.PresentMode.Mailbox = 2 -> BrutalEngine.Graphics.PresentMode
+BrutalEngine.Graphics.PushConstantRange
+BrutalEngine.Graphics.PushConstantRange.Deconstruct(out BrutalEngine.Graphics.ShaderStages Stages, out int Size) -> void
+BrutalEngine.Graphics.PushConstantRange.Equals(BrutalEngine.Graphics.PushConstantRange other) -> bool
+BrutalEngine.Graphics.PushConstantRange.PushConstantRange() -> void
+BrutalEngine.Graphics.PushConstantRange.PushConstantRange(BrutalEngine.Graphics.ShaderStages Stages, int Size) -> void
+BrutalEngine.Graphics.PushConstantRange.Size.get -> int
+BrutalEngine.Graphics.PushConstantRange.Size.init -> void
+BrutalEngine.Graphics.PushConstantRange.Stages.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.PushConstantRange.Stages.init -> void
 BrutalEngine.Graphics.SampleCounts
 BrutalEngine.Graphics.SampleCounts.None = 0 -> BrutalEngine.Graphics.SampleCounts
 BrutalEngine.Graphics.SampleCounts.X1 = 1 -> BrutalEngine.Graphics.SampleCounts
@@ -756,6 +774,24 @@ BrutalEngine.Graphics.ScissorRect.X.get -> int
 BrutalEngine.Graphics.ScissorRect.X.init -> void
 BrutalEngine.Graphics.ScissorRect.Y.get -> int
 BrutalEngine.Graphics.ScissorRect.Y.init -> void
+BrutalEngine.Graphics.ShaderCode
+BrutalEngine.Graphics.ShaderCode.Bytes.get -> System.ReadOnlyMemory<byte>
+BrutalEngine.Graphics.ShaderCode.Bytes.init -> void
+BrutalEngine.Graphics.ShaderCode.Deconstruct(out BrutalEngine.Graphics.ShaderCodeFormat Format, out System.ReadOnlyMemory<byte> Bytes) -> void
+BrutalEngine.Graphics.ShaderCode.Equals(BrutalEngine.Graphics.ShaderCode other) -> bool
+BrutalEngine.Graphics.ShaderCode.Format.get -> BrutalEngine.Graphics.ShaderCodeFormat
+BrutalEngine.Graphics.ShaderCode.Format.init -> void
+BrutalEngine.Graphics.ShaderCode.ShaderCode() -> void
+BrutalEngine.Graphics.ShaderCode.ShaderCode(BrutalEngine.Graphics.ShaderCodeFormat Format, System.ReadOnlyMemory<byte> Bytes) -> void
+BrutalEngine.Graphics.ShaderCodeFormat
+BrutalEngine.Graphics.ShaderCodeFormat.SpirV = 0 -> BrutalEngine.Graphics.ShaderCodeFormat
+BrutalEngine.Graphics.ShaderModuleDescription
+BrutalEngine.Graphics.ShaderModuleDescription.Code.get -> System.ReadOnlyMemory<BrutalEngine.Graphics.ShaderCode>
+BrutalEngine.Graphics.ShaderModuleDescription.Code.init -> void
+BrutalEngine.Graphics.ShaderModuleDescription.DebugName.get -> string?
+BrutalEngine.Graphics.ShaderModuleDescription.DebugName.init -> void
+BrutalEngine.Graphics.ShaderModuleDescription.Equals(BrutalEngine.Graphics.ShaderModuleDescription other) -> bool
+BrutalEngine.Graphics.ShaderModuleDescription.ShaderModuleDescription() -> void
 BrutalEngine.Graphics.ShaderModuleHandle
 BrutalEngine.Graphics.ShaderModuleHandle.Equals(BrutalEngine.Graphics.ShaderModuleHandle other) -> bool
 BrutalEngine.Graphics.ShaderModuleHandle.IsNull.get -> bool
@@ -1041,9 +1077,12 @@ override BrutalEngine.Graphics.GraphicsPipelineHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsPipelineHandle.ToString() -> string!
 override BrutalEngine.Graphics.GraphicsStatistics.GetHashCode() -> int
 override BrutalEngine.Graphics.GraphicsStatistics.ToString() -> string!
+override BrutalEngine.Graphics.PipelineLayoutDescription.GetHashCode() -> int
 override BrutalEngine.Graphics.PipelineLayoutHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.PipelineLayoutHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.PipelineLayoutHandle.ToString() -> string!
+override BrutalEngine.Graphics.PushConstantRange.GetHashCode() -> int
+override BrutalEngine.Graphics.PushConstantRange.ToString() -> string!
 override BrutalEngine.Graphics.SamplerDescription.GetHashCode() -> int
 override BrutalEngine.Graphics.SamplerDescription.ToString() -> string!
 override BrutalEngine.Graphics.SamplerHandle.Equals(object? obj) -> bool
@@ -1051,6 +1090,8 @@ override BrutalEngine.Graphics.SamplerHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.SamplerHandle.ToString() -> string!
 override BrutalEngine.Graphics.ScissorRect.GetHashCode() -> int
 override BrutalEngine.Graphics.ScissorRect.ToString() -> string!
+override BrutalEngine.Graphics.ShaderCode.GetHashCode() -> int
+override BrutalEngine.Graphics.ShaderModuleDescription.GetHashCode() -> int
 override BrutalEngine.Graphics.ShaderModuleHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.ShaderModuleHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.ShaderModuleHandle.ToString() -> string!
@@ -1141,14 +1182,22 @@ static BrutalEngine.Graphics.GraphicsPipelineHandle.operator !=(BrutalEngine.Gra
 static BrutalEngine.Graphics.GraphicsPipelineHandle.operator ==(BrutalEngine.Graphics.GraphicsPipelineHandle left, BrutalEngine.Graphics.GraphicsPipelineHandle right) -> bool
 static BrutalEngine.Graphics.GraphicsStatistics.operator !=(BrutalEngine.Graphics.GraphicsStatistics left, BrutalEngine.Graphics.GraphicsStatistics right) -> bool
 static BrutalEngine.Graphics.GraphicsStatistics.operator ==(BrutalEngine.Graphics.GraphicsStatistics left, BrutalEngine.Graphics.GraphicsStatistics right) -> bool
+static BrutalEngine.Graphics.PipelineLayoutDescription.operator !=(BrutalEngine.Graphics.PipelineLayoutDescription left, BrutalEngine.Graphics.PipelineLayoutDescription right) -> bool
+static BrutalEngine.Graphics.PipelineLayoutDescription.operator ==(BrutalEngine.Graphics.PipelineLayoutDescription left, BrutalEngine.Graphics.PipelineLayoutDescription right) -> bool
 static BrutalEngine.Graphics.PipelineLayoutHandle.operator !=(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
 static BrutalEngine.Graphics.PipelineLayoutHandle.operator ==(BrutalEngine.Graphics.PipelineLayoutHandle left, BrutalEngine.Graphics.PipelineLayoutHandle right) -> bool
+static BrutalEngine.Graphics.PushConstantRange.operator !=(BrutalEngine.Graphics.PushConstantRange left, BrutalEngine.Graphics.PushConstantRange right) -> bool
+static BrutalEngine.Graphics.PushConstantRange.operator ==(BrutalEngine.Graphics.PushConstantRange left, BrutalEngine.Graphics.PushConstantRange right) -> bool
 static BrutalEngine.Graphics.SamplerDescription.operator !=(BrutalEngine.Graphics.SamplerDescription left, BrutalEngine.Graphics.SamplerDescription right) -> bool
 static BrutalEngine.Graphics.SamplerDescription.operator ==(BrutalEngine.Graphics.SamplerDescription left, BrutalEngine.Graphics.SamplerDescription right) -> bool
 static BrutalEngine.Graphics.SamplerHandle.operator !=(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
 static BrutalEngine.Graphics.SamplerHandle.operator ==(BrutalEngine.Graphics.SamplerHandle left, BrutalEngine.Graphics.SamplerHandle right) -> bool
 static BrutalEngine.Graphics.ScissorRect.operator !=(BrutalEngine.Graphics.ScissorRect left, BrutalEngine.Graphics.ScissorRect right) -> bool
 static BrutalEngine.Graphics.ScissorRect.operator ==(BrutalEngine.Graphics.ScissorRect left, BrutalEngine.Graphics.ScissorRect right) -> bool
+static BrutalEngine.Graphics.ShaderCode.operator !=(BrutalEngine.Graphics.ShaderCode left, BrutalEngine.Graphics.ShaderCode right) -> bool
+static BrutalEngine.Graphics.ShaderCode.operator ==(BrutalEngine.Graphics.ShaderCode left, BrutalEngine.Graphics.ShaderCode right) -> bool
+static BrutalEngine.Graphics.ShaderModuleDescription.operator !=(BrutalEngine.Graphics.ShaderModuleDescription left, BrutalEngine.Graphics.ShaderModuleDescription right) -> bool
+static BrutalEngine.Graphics.ShaderModuleDescription.operator ==(BrutalEngine.Graphics.ShaderModuleDescription left, BrutalEngine.Graphics.ShaderModuleDescription right) -> bool
 static BrutalEngine.Graphics.ShaderModuleHandle.operator !=(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
 static BrutalEngine.Graphics.ShaderModuleHandle.operator ==(BrutalEngine.Graphics.ShaderModuleHandle left, BrutalEngine.Graphics.ShaderModuleHandle right) -> bool
 static BrutalEngine.Graphics.SwapchainHandle.operator !=(BrutalEngine.Graphics.SwapchainHandle left, BrutalEngine.Graphics.SwapchainHandle right) -> bool
@@ -1193,8 +1242,15 @@ static BrutalEngine.Graphics.Viewport.operator ==(BrutalEngine.Graphics.Viewport
 ~override BrutalEngine.Graphics.DrawIndexedArguments.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsLimits.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.GraphicsStatistics.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.PipelineLayoutDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.PipelineLayoutDescription.ToString() -> string
+~override BrutalEngine.Graphics.PushConstantRange.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SamplerDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.ScissorRect.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.ShaderCode.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.ShaderCode.ToString() -> string
+~override BrutalEngine.Graphics.ShaderModuleDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.ShaderModuleDescription.ToString() -> string
 ~override BrutalEngine.Graphics.SwapchainImage.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.SwapchainInfo.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.TextureBufferCopy.Equals(object obj) -> bool
