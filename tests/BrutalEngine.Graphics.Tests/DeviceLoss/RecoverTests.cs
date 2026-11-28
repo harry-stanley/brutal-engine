@@ -309,6 +309,23 @@ public sealed class RecoverTests : IDisposable
     }
 
     [Fact]
+    public void OwnersUnregisteredDuringRecovery_NotCalledAgain()
+    {
+        GraphicsDevice device = _fixture.Create();
+        GpuOwnerRegistration a = device.RegisterOwner(new RecordingOwner("a", _log));
+        GpuOwnerRegistration? b = null;
+        b = device.RegisterOwner(new RecordingOwner("b", _log) { WhenLost = _ => b!.Dispose() });
+        _ = device.RegisterOwner(new RecordingOwner("c", _log) { WhenLost = _ => a.Dispose() });
+        Lose(device);
+
+        Assert.True(device.Recover().IsSuccess);
+
+        // c unregistered a before a was told of the loss; b unregistered itself, so it isn't told of the recreation.
+        Assert.Equal(["lost c", "lost b", "recreated c"], _log);
+        Assert.Equal(1, device.RegisteredOwnerCount);
+    }
+
+    [Fact]
     public void FailedRecovery_DisposeMakesNoBackendCall()
     {
         var rig = new LossRig(_fixture);

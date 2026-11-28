@@ -102,7 +102,9 @@ public sealed partial class GraphicsDevice
     /// swapchains and surfaces) is dropped without a backend call, and it is disposed; every handle is released, so every
     /// buffer, texture, view, sampler and swapchain image handle is stale; the new device is created; each swapchain gets
     /// a new surface, so its next acquire recreates it in place and reports <see cref="AcquireStatus.Recreated"/>; the
-    /// device stops being lost; then every owner's <see cref="IGpuResourceOwner.OnDeviceRecreated"/>, oldest first.
+    /// device stops being lost; then every owner's <see cref="IGpuResourceOwner.OnDeviceRecreated"/>, oldest first. The
+    /// owners are those registered when the call starts; one whose registration is disposed during it, in its own
+    /// callback or another owner's, isn't called after that.
     /// </para>
     /// <para>
     /// What survives: this object, its options, logger, statistics and frame numbers, the owners, the
@@ -134,10 +136,15 @@ public sealed partial class GraphicsDevice
         _recovering = true;
         try
         {
+            // The owners registered when the recovery starts; one unregistered since (by itself or by another owner's
+            // callback) isn't called again.
             GpuOwnerRegistration[] owners = [.. _owners];
             for (int i = owners.Length - 1; i >= 0; i--)
             {
-                owners[i].Owner.OnDeviceLost(this);
+                if (_owners.Contains(owners[i]))
+                {
+                    owners[i].Owner.OnDeviceLost(this);
+                }
             }
 
             ReleaseBackendDevice();
@@ -149,6 +156,11 @@ public sealed partial class GraphicsDevice
             (LostOperation, LostNativeCode, LostTimedOut) = (null, 0, false);
             foreach (GpuOwnerRegistration registration in owners)
             {
+                if (!_owners.Contains(registration))
+                {
+                    continue;
+                }
+
                 Result recreated = registration.Owner.OnDeviceRecreated(this);
                 if (recreated.IsFailure)
                 {
