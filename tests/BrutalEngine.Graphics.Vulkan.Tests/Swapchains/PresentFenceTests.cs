@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Vulkan.Swapchains;
+using BrutalEngine.Graphics.Vulkan.Tests.Validation;
 using Xunit;
 using FrameLoop = BrutalEngine.Graphics.Vulkan.Tests.Swapchains.VulkanSwapchainTests.FrameLoop;
 using Gpu = BrutalEngine.Graphics.Vulkan.Tests.Swapchains.VulkanSwapchainTests.Gpu;
@@ -12,7 +14,7 @@ using Gpu = BrutalEngine.Graphics.Vulkan.Tests.Swapchains.VulkanSwapchainTests.G
 namespace BrutalEngine.Graphics.Vulkan.Tests.Swapchains;
 
 // docs/design/graphics-vulkan.md section 4, "Present fences": with swapchain maintenance1 every present carries its
-// image's fence, waiting for the image's previous present first, bounded; without it nothing changes.
+// image's fence and destroying the swapchain waits for them, bounded; without it the caller's idle wait is the fallback.
 // The extension is switched off by creating the device without it. Every row runs on every adapter that can present to
 // the class's raw surface, with validation on (lavapipe headless; the RTX too when SDL_VIDEO_DRIVER=wayland is set for a
 // local run). No row relies on a particular validation message: each asserts its own counts and errors.
@@ -21,6 +23,7 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Swapchains;
 public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture fixture)
 {
     private const int Frames = 2;
+    private const string TimedOutLoss = "device is lost after a GPU timeout";
     private static readonly nint _timeout = unchecked((nint)VulkanSwapchainTests.WaitNanoseconds);
 
     [Fact]
@@ -35,9 +38,10 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
                 return;
             }
 
+            using SwapchainLog log = new();
             VulkanCallGate gate = new();
             VulkanSwapchain.DestroyCounts destroys = new();
-            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys);
+            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys, log: log.Category);
             int images = swapchain.ImageCount;
             Assert.True(swapchain.UsesPresentFences);
             nint[] fences = [.. Enumerable.Range(0, images).Select(i => swapchain.GetPresentFence(i).VkHandle)];
@@ -49,12 +53,14 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
             using (FrameLoop loop = new(gpu, Frames))
             {
                 loop.Run(swapchain, (2 * images) + Frames);
-                gpu.WaitIdle();
+
+                // No idle wait first: the present fences are what make destroying the swapchain safe.
                 swapchain.Dispose();
             }
 
             Assert.Equal((1, images, images + Frames, images), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
             Assert.False(gate.IsLost);
+            Assert.Empty(log.Sink.Entries);
         });
     }
 
@@ -69,6 +75,76 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
     }
 
     [Theory]
+    [InlineData(VkResult.Timeout)]
+    [InlineData(VkResult.ErrorOutOfHostMemory)] // a failed wait proves nothing about the presents either
+    public void Destroy_PresentFenceTimeout_MarksTimedOutLossAndKeepsObjects(VkResult code)
+    {
+        OnMaintenance1Adapters(gpu =>
+        {
+            using SwapchainLog log = new();
+            VulkanFaultInjector faults = new();
+            VulkanCallGate gate = new() { Faults = faults };
+            VulkanSwapchain.DestroyCounts destroys = new();
+            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys, log: log.Category);
+            RunFrames(gpu, swapchain);
+            gpu.WaitIdle();
+            faults.FailNth(VulkanCall.WaitForPresentFence, 1, code);
+
+            swapchain.Dispose();
+
+            Assert.False(faults.TryTake(VulkanCall.WaitForPresentFence, out _), "the fault didn't fire");
+            Assert.True(gate.IsLost);
+            Assert.True(gate.LostTimedOut);
+            Assert.True(swapchain.IsDisposed);
+            Assert.False(swapchain.Handle.IsNull());
+            Assert.Equal((0, 0, 0, 0), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
+            (LogLevel Level, string Message) entry = Assert.Single(log.Sink.Entries);
+            Assert.Equal(LogLevel.Error, entry.Level);
+            Assert.Contains("after a GPU timeout", entry.Message, StringComparison.Ordinal);
+
+            // Later calls report the timeout loss without calling the driver; a second Dispose does nothing.
+            faults.FailNth(VulkanCall.CreateSwapchain, 1, VkResult.ErrorUnknown);
+            Result<VulkanSwapchain> created = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, null, Frames, gate, _timeout, destroys, log.Category);
+            Assert.Equal(new EngineError(ErrorKind.Timeout, TimedOutLoss, (int)VkResult.Timeout), created.Error);
+            Assert.True(faults.TryTake(VulkanCall.CreateSwapchain, out _), "create reached the driver");
+            swapchain.Dispose();
+            Assert.Single(log.Sink.Entries);
+            Assert.Equal((0, 0, 0, 0), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
+
+            DestroyKept(gpu, swapchain);
+        });
+    }
+
+    [Fact]
+    public void Destroy_PresentFenceDeviceLost_MarksLoss()
+    {
+        OnMaintenance1Adapters(gpu =>
+        {
+            using SwapchainLog log = new();
+            VulkanFaultInjector faults = new();
+            VulkanCallGate gate = new() { Faults = faults };
+            VulkanSwapchain.DestroyCounts destroys = new();
+            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys, log: log.Category);
+            int images = swapchain.ImageCount;
+            RunFrames(gpu, swapchain);
+            gpu.WaitIdle();
+            faults.FailNth(VulkanCall.WaitForPresentFence, 1, VkResult.ErrorDeviceLost);
+
+            swapchain.Dispose();
+
+            // A reported loss: destroying stays valid, so everything is destroyed (the layer reports any leak).
+            Assert.False(faults.TryTake(VulkanCall.WaitForPresentFence, out _), "the fault didn't fire");
+            Assert.True(gate.IsLost);
+            Assert.False(gate.LostTimedOut);
+            Assert.True(swapchain.Handle.IsNull());
+            Assert.Equal((1, images, images + Frames, images), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
+            Assert.Empty(log.Sink.Entries);
+            Result<VulkanSwapchain> created = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, null, Frames, gate, _timeout, log: log.Category);
+            Assert.Equal(new EngineError(ErrorKind.Unavailable, "device is lost", (int)VkResult.ErrorDeviceLost), created.Error);
+        });
+    }
+
+    [Theory]
     [InlineData((int)VulkanCall.WaitForPresentFence, VkResult.Timeout, true, true)]
     [InlineData((int)VulkanCall.WaitForPresentFence, VkResult.ErrorOutOfDeviceMemory, true, true)]
     [InlineData((int)VulkanCall.WaitForPresentFence, VkResult.ErrorDeviceLost, true, false)]
@@ -77,10 +153,11 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
     {
         OnMaintenance1Adapters(gpu =>
         {
+            using SwapchainLog log = new();
             VulkanFaultInjector faults = new();
             VulkanCallGate gate = new() { Faults = faults };
             VulkanSwapchain.DestroyCounts destroys = new();
-            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys);
+            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys, log: log.Category);
             int images = swapchain.ImageCount;
             using FrameLoop loop = new(gpu, Frames);
             int image = loop.AcquireAndSubmit(swapchain, 0);
@@ -94,7 +171,44 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
             Assert.Equal((lost, timedOut), (gate.IsLost, gate.LostTimedOut));
             gpu.WaitIdle();
             swapchain.Dispose();
+            if (timedOut)
+            {
+                Assert.Equal((0, 0, 0, 0), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
+                Assert.Equal(LogLevel.Error, Assert.Single(log.Sink.Entries).Level);
+                DestroyKept(gpu, swapchain);
+            }
+            else
+            {
+                Assert.Equal((1, images, images + Frames, images), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
+                Assert.Empty(log.Sink.Entries);
+            }
+        });
+    }
+
+    [Fact]
+    public void Present_InjectedPresentFailure_LeavesFenceUnwaited()
+    {
+        OnMaintenance1Adapters(gpu =>
+        {
+            using SwapchainLog log = new();
+            VulkanFaultInjector faults = new();
+            VulkanCallGate gate = new() { Faults = faults };
+            VulkanSwapchain.DestroyCounts destroys = new();
+            VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys, log: log.Category);
+            int images = swapchain.ImageCount;
+            using FrameLoop loop = new(gpu, Frames);
+            int image = loop.AcquireAndSubmit(swapchain, 0);
+            faults.FailNth(VulkanCall.QueuePresent, 1, VkResult.ErrorOutOfDateKHR);
+            Assert.Equal(new BackendPresent(SwapchainStatus.OutOfDate, (int)VkResult.ErrorOutOfDateKHR), swapchain.Present(gpu.Core.Queue, image));
+            gpu.WaitIdle();
+
+            // The injected present replaced the call, so the reset fence was never handed to the driver and will never
+            // signal: destroying waits only for fences a present was enqueued with, so this is no timeout.
+            swapchain.Dispose();
+
+            Assert.False(gate.IsLost);
             Assert.Equal((1, images, images + Frames, images), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
+            Assert.Empty(log.Sink.Entries);
         });
     }
 
@@ -133,9 +247,10 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
         {
             bool fenced = gpu.Core.Extensions.SwapchainMaintenance1 is not null;
             Assert.True(!withoutMaintenance1 || !fenced);
+            using SwapchainLog log = new();
             VulkanFaultInjector faults = new();
             VulkanCallGate gate = new() { Faults = faults };
-            VulkanSwapchain swapchain = gpu.Create(Frames, gate);
+            VulkanSwapchain swapchain = gpu.Create(Frames, gate, log: log.Category);
             Assert.Equal(fenced, swapchain.UsesPresentFences);
             using FrameLoop loop = new(gpu, Frames);
             loop.Run(swapchain, swapchain.ImageCount + Frames);
@@ -178,6 +293,10 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
             Assert.True(checksum > 0);
             gpu.WaitIdle();
             swapchain.Dispose();
+            if (fenced)
+            {
+                DestroyKept(gpu, swapchain);
+            }
         });
     }
 
@@ -185,11 +304,12 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
     // fence for any image, and destroys cleanly once the caller has waited for idle.
     private static void AssertIdleFallback(Gpu gpu)
     {
+        using SwapchainLog log = new();
         VulkanFaultInjector faults = new();
         faults.FailNth(VulkanCall.WaitForPresentFence, 1, VkResult.ErrorUnknown);
         VulkanCallGate gate = new() { Faults = faults };
         VulkanSwapchain.DestroyCounts destroys = new();
-        VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys);
+        VulkanSwapchain swapchain = gpu.Create(Frames, gate, destroys: destroys, log: log.Category);
         int images = swapchain.ImageCount;
         Assert.False(swapchain.UsesPresentFences);
         Assert.All(Enumerable.Range(0, images), i => Assert.True(swapchain.GetPresentFence(i).IsNull()));
@@ -204,6 +324,35 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
         Assert.True(faults.TryTake(VulkanCall.WaitForPresentFence, out _), "a present fence was waited for");
         Assert.Equal((1, images, images + Frames, 0), (destroys.Swapchains, destroys.Views, destroys.Semaphores, destroys.Fences));
         Assert.False(gate.IsLost);
+        Assert.Empty(log.Sink.Entries);
+    }
+
+    private static void RunFrames(Gpu gpu, VulkanSwapchain swapchain)
+    {
+        using FrameLoop loop = new(gpu, Frames);
+        loop.Run(swapchain, swapchain.ImageCount + Frames);
+    }
+
+    // The test's own cleanup of what a swapchain kept after a timeout loss, straight through the driver once the queue is
+    // idle, so the device's destruction reports no leak. Had the swapchain destroyed any of them after all, the layer would
+    // report the second destroy of a handle that no longer exists, so this also proves they were kept.
+    private static void DestroyKept(Gpu gpu, VulkanSwapchain swapchain)
+    {
+        gpu.WaitIdle();
+        Device device = gpu.Core.Device;
+        for (int i = 0; i < swapchain.ImageCount; i++)
+        {
+            device.PInvoke.vkDestroyFence.Invoke(device.Handle, swapchain.GetPresentFence(i), null);
+            device.PInvoke.vkDestroySemaphore.Invoke(device.Handle, swapchain.GetRenderFinished(i), null);
+            device.PInvoke.vkDestroyImageView.Invoke(device.Handle, swapchain.GetView(i), null);
+        }
+
+        for (int slot = 0; slot < swapchain.FramesInFlight; slot++)
+        {
+            device.PInvoke.vkDestroySemaphore.Invoke(device.Handle, swapchain.GetAcquireSemaphore(slot), null);
+        }
+
+        device.PInvoke.vkDestroySwapchainKHR.Invoke(device.Handle, swapchain.Handle, null);
     }
 
     // Rows that need the fence path run on the adapters whose device enables the extension, and fail if there is none.
@@ -223,4 +372,22 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
 
     private void OnEveryPresentingAdapter(bool withoutMaintenance1, Action<Gpu> body) =>
         VulkanSwapchainTests.OnEveryPresentingAdapter(fixture, withoutMaintenance1, null, body);
+
+    // The swapchain's own log, apart from the validation messages, so a row counts exactly what the swapchain logged.
+    private sealed class SwapchainLog : IDisposable
+    {
+        private readonly Logger _logger;
+
+        public SwapchainLog()
+        {
+            Sink = new ValidationLog();
+            (_logger, Category) = ValidationLog.Create(Sink);
+        }
+
+        public ValidationLog Sink { get; }
+
+        public LogCategory Category { get; }
+
+        public void Dispose() => _logger.Dispose();
+    }
 }

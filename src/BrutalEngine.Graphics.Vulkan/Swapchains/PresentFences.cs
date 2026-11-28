@@ -6,7 +6,8 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 /// <summary>
 /// A swapchain's present fences with swapchain maintenance1 (docs/design/graphics-vulkan.md section 4, "Present
 /// fences"): one fence per image, created signalled, that each present of the image carries
-/// (<c>VkSwapchainPresentFenceInfoKHR</c>), so each present first waits, bounded, for that image's previous present.
+/// (<c>VkSwapchainPresentFenceInfoKHR</c>), so the swapchain can wait, bounded, for its presents before destroying what
+/// they use.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,7 +17,7 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 /// <c>SUBOPTIMAL_KHR</c>, <c>ERROR_OUT_OF_DATE_KHR</c>, <c>ERROR_SURFACE_LOST_KHR</c> or
 /// <c>ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT</c>; any other result, or an injected one that replaced the call, leaves
 /// the reset fence unsignalled for good. Only armed fences are waited for, so such a fence never turns a healthy GPU's
-/// next present into a timeout.
+/// destroy into a timeout.
 /// </para>
 /// <para>
 /// Every wait is bounded by the timeout it is given, <c>GpuTimeout</c>. A wait that fails without a reported loss (a
@@ -34,6 +35,7 @@ internal sealed unsafe class PresentFences
 {
     private readonly VkFence[] _fences;
     private readonly bool[] _armed;
+    private readonly VkFence[] _waitList;
 
     /// <summary>Creates the set for a number of images, with no fence created yet (<see cref="CreateAll"/>).</summary>
     /// <param name="count">The swapchain's image count; not negative.</param>
@@ -41,6 +43,7 @@ internal sealed unsafe class PresentFences
     {
         _fences = new VkFence[count];
         _armed = new bool[count];
+        _waitList = new VkFence[count];
     }
 
     /// <summary>Gets an image's fence; the null handle before it is created.</summary>
@@ -116,10 +119,38 @@ internal sealed unsafe class PresentFences
         _armed[image] = !injected && result is VkResult.Success or VkResult.SuboptimalKHR or VkResult.ErrorOutOfDateKHR
             or VkResult.ErrorSurfaceLostKHR or VkResult.ErrorFullScreenExclusiveModeLostEXT;
 
+    /// <summary>Waits for every armed fence in one bounded call; no call when none is armed.</summary>
+    /// <param name="device">The swapchain's device.</param>
+    /// <param name="gate">The device's gate.</param>
+    /// <param name="timeout">The wait for all of them in nanoseconds, as BRUTAL's <c>nint</c> for <c>uint64_t</c>.</param>
+    /// <returns>Success once every present the fences were enqueued with has finished; or the wait's error.</returns>
+    public Result WaitAll(Device device, VulkanCallGate gate, nint timeout)
+    {
+        int count = 0;
+        for (int i = 0; i < _fences.Length; i++)
+        {
+            if (_armed[i])
+            {
+                _waitList[count++] = _fences[i];
+            }
+        }
+
+        if (count == 0)
+        {
+            return Result.Success;
+        }
+
+        // Sound: the list is pinned for the call, which reads its first count handles.
+        fixed (VkFence* fences = _waitList)
+        {
+            return Wait(device, gate, fences, count, timeout);
+        }
+    }
+
     /// <summary>Destroys every created fence once, newest first.</summary>
     /// <param name="device">The swapchain's device.</param>
     /// <param name="destroys">A test's counters of destroyed objects, or <see langword="null"/>.</param>
-    /// <remarks>Only once no present can still signal them: the device is idle or lost.</remarks>
+    /// <remarks>Only once no present can still signal them: <see cref="WaitAll"/> succeeded, or the device was idle or lost.</remarks>
     public void Destroy(Device device, VulkanSwapchain.DestroyCounts? destroys)
     {
         for (int i = _fences.Length - 1; i >= 0; i--)
@@ -133,7 +164,7 @@ internal sealed unsafe class PresentFences
         }
     }
 
-    // One bounded wait for the given fences. A failure other than a reported loss marks a timeout loss.
+    // One bounded wait for all the given fences. A failure other than a reported loss marks a timeout loss.
     private static Result Wait(Device device, VulkanCallGate gate, VkFence* fences, int count, nint timeout)
     {
         VkResult result = gate.TryTakeFault(VulkanCall.WaitForPresentFence, out VkResult injected) ? injected

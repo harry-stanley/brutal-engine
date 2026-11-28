@@ -507,9 +507,9 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
         public SwapchainPlan Plan { get; }
 
-        public VulkanSwapchain Create(int framesInFlight, VulkanCallGate? gate = null, VulkanSwapchain? old = null, VulkanSwapchain.DestroyCounts? destroys = null)
+        public VulkanSwapchain Create(int framesInFlight, VulkanCallGate? gate = null, VulkanSwapchain? old = null, VulkanSwapchain.DestroyCounts? destroys = null, LogCategory log = default)
         {
-            Result<VulkanSwapchain> created = VulkanSwapchain.Create(Core, Raw.Surface, Plan, old, framesInFlight, gate ?? new VulkanCallGate(), _timeout, destroys);
+            Result<VulkanSwapchain> created = VulkanSwapchain.Create(Core, Raw.Surface, Plan, old, framesInFlight, gate ?? new VulkanCallGate(), _timeout, destroys, log);
             Assert.True(created.IsSuccess, created.ToString());
             _swapchains.Add(created.Value);
             return created.Value;
