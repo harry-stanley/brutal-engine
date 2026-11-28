@@ -82,6 +82,61 @@ internal static partial class CookCommandLine
         return true;
     }
 
+    /// <summary>Parses the arguments of the <c>shader</c> verb's manifest form (everything after <c>shader</c>).</summary>
+    /// <param name="args"><c>--manifest &lt;file&gt;</c> (repeatable) and <c>--check</c>, in any order.</param>
+    /// <param name="options">The parsed command line on success; otherwise null.</param>
+    /// <param name="error">On failure, one sentence naming the problem; otherwise null.</param>
+    /// <returns>
+    /// False for no <c>--manifest</c>, a <c>--manifest</c> with no or an empty value, a repeated <c>--check</c>, or any
+    /// other argument (a manifest names its own sources, entries, layouts and outputs).
+    /// </returns>
+    public static bool TryParseShaderManifests(
+        ReadOnlySpan<string> args,
+        [NotNullWhen(true)] out ShaderManifestOptions? options,
+        [NotNullWhen(false)] out string? error)
+    {
+        options = null;
+        var manifests = new List<string>();
+        bool check = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            string arg = args[i];
+            if (arg == "--check")
+            {
+                error = check ? "--check is given twice." : null;
+                check = true;
+            }
+            else if (arg != "--manifest")
+            {
+                error = $"'{arg}' can't be used with --manifest or --check: a manifest names its own sources, entries and layouts.";
+            }
+            else if (++i == args.Length)
+            {
+                error = "--manifest needs a value.";
+            }
+            else
+            {
+                error = args[i].Length == 0 ? "--manifest is empty." : null;
+                manifests.Add(args[i]);
+            }
+
+            if (error is not null)
+            {
+                return false;
+            }
+        }
+
+        if (manifests.Count == 0)
+        {
+            error = "--check needs at least one --manifest.";
+            return false;
+        }
+
+        options = new ShaderManifestOptions(manifests, check);
+        error = null;
+        return true;
+    }
+
     /// <summary>Parses a stage token: exactly <c>vertex</c>, <c>fragment</c> or <c>compute</c> (ordinal).</summary>
     /// <param name="token">The token.</param>
     /// <returns>The stage, or null for any other token.</returns>

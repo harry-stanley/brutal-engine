@@ -51,7 +51,7 @@ public sealed class ShaderCommandTests : IDisposable
     {
         string output = _temp.Combine("out");
 
-        CookExitCode exit = ShaderCommand.Run([Fixture.Path("compute.slang"), "--entry", "csMain:compute", "--output-dir", output], _stdout, _stderr);
+        CookExitCode exit = ShaderCommand.Run([Fixture.Shader("compute.slang"), "--entry", "csMain:compute", "--output-dir", output], _stdout, _stderr);
 
         Assert.Equal(CookExitCode.Success, exit);
         byte[] module = File.ReadAllBytes(Path.Combine(output, "compute.csMain.spv"));
@@ -202,7 +202,7 @@ public sealed class ShaderCommandTests : IDisposable
         var runtime = new CountingSlangRuntime { CreateThrows = new DllNotFoundException("libslang.so: cannot open shared object file") };
 
         CookExitCode exit = ShaderCommand.Run(
-            [Fixture.Path("triangle.slang"), "--entry", "vertMain:vertex", "--output-dir", output], _stdout, _stderr, runtime);
+            [Fixture.Shader("triangle.slang"), "--entry", "vertMain:vertex", "--output-dir", output], _stdout, _stderr, runtime);
 
         Assert.Equal(CookExitCode.ToolFailure, exit);
         Assert.Equal(5, (int)exit);
@@ -229,7 +229,7 @@ public sealed class ShaderCommandTests : IDisposable
     {
         var runtime = new CountingSlangRuntime();
 
-        CookExitCode exit = ShaderCommand.Run([Fixture.Path("triangle.slang"), "--entry", "vertMain:Vertex", "--output-dir", "out"], _stdout, _stderr, runtime);
+        CookExitCode exit = ShaderCommand.Run([Fixture.Shader("triangle.slang"), "--entry", "vertMain:Vertex", "--output-dir", "out"], _stdout, _stderr, runtime);
 
         Assert.Equal(CookExitCode.Usage, exit);
         Assert.StartsWith("brutal-cook shader: --entry 'vertMain:Vertex': expected", _stderr.ToString(), StringComparison.Ordinal);
@@ -238,9 +238,315 @@ public sealed class ShaderCommandTests : IDisposable
         Assert.Equal(0, runtime.Created);
     }
 
+    [Fact]
+    public void Manifest_CooksEveryShaderNextToItsSource()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: false);
+        string directory = Path.GetDirectoryName(manifest)!;
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.Success, exit);
+        Assert.Equal(Fixture.SpirvFiles, Directory.GetFiles(directory, "*.spv").Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        foreach ((string name, uint model) in (ValueTuple<string, uint>[])[("triangle.vertMain.spv", 0), ("triangle.fragMain.spv", 4), ("compute.csMain.spv", 5)])
+        {
+            byte[] cooked = File.ReadAllBytes(Path.Combine(directory, name));
+            Assert.Equal(SpirV.Version1Dot6, SpirV.Version(cooked));
+            Assert.Equal(model, SpirV.EntryPointExecutionModel(cooked));
+            Assert.Equal(File.ReadAllBytes(Fixture.Shader(name)), cooked);
+        }
+
+        Assert.Equal(Lines(Path.Combine(directory, "triangle.vertMain.spv"), Path.Combine(directory, "triangle.fragMain.spv"), Path.Combine(directory, "compute.csMain.spv")), _stdout.ToString());
+        Assert.Empty(_stderr.ToString());
+    }
+
+    [Fact]
+    public void Manifest_TwoManifests_CooksBoth()
+    {
+        string first = Fixture.CopyShaders(_temp.Combine("first"), withSpirv: false);
+        string second = Fixture.CopyShaders(_temp.Combine("second"), withSpirv: false);
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", first, "--manifest", second], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.Success, exit);
+        Assert.Equal(3, Directory.GetFiles(Path.GetDirectoryName(first)!, "*.spv").Length);
+        Assert.Equal(3, Directory.GetFiles(Path.GetDirectoryName(second)!, "*.spv").Length);
+    }
+
+    [Fact]
+    public void Manifest_MatrixLayout_ReachesSlang()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("row"), withSpirv: false);
+        string json = File.ReadAllText(manifest);
+        Assert.Contains("\"column-major\"", json, StringComparison.Ordinal);
+        File.WriteAllText(manifest, json.Replace("\"column-major\"", "\"row-major\"", StringComparison.Ordinal));
+        string cli = _temp.Combine("cli");
+
+        Assert.Equal(CookExitCode.Success, ShaderCommand.Run(["--manifest", manifest], _stdout, _stderr));
+        Assert.Equal(CookExitCode.Success, CookTriangle(cli, "--matrix-layout", "row-major"));
+
+        byte[] rowMajor = File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(manifest)!, "triangle.vertMain.spv"));
+        Assert.Equal(File.ReadAllBytes(Path.Combine(cli, "triangle.vertMain.spv")), rowMajor);
+        Assert.NotEqual(File.ReadAllBytes(Fixture.Shader("triangle.vertMain.spv")), rowMajor);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Manifest_SyntaxError_ReturnsCompileFailedAndWritesNothing(bool check)
+    {
+        string directory = _temp.Combine("bad");
+        Directory.CreateDirectory(directory);
+        File.Copy(Fixture.Path("syntax-error.slang"), Path.Combine(directory, "syntax-error.slang"));
+        string manifest = Path.Combine(directory, "shaders.cook.json");
+        File.WriteAllText(manifest, """{"version":1,"shaders":[{"source":"syntax-error.slang","entries":[{"name":"vertMain","stage":"vertex"}]}]}""");
+
+        CookExitCode exit = ShaderCommand.Run(check ? ["--check", "--manifest", manifest] : ["--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.CompileFailed, exit);
+        Assert.Contains("error[E", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(2, Directory.GetFiles(directory).Length);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("a directory")]
+    public void Manifest_MissingManifest_ReturnsInputNotFound(string kind)
+    {
+        string manifest = _temp.Combine("shaders.cook.json");
+        if (kind == "a directory")
+        {
+            Directory.CreateDirectory(manifest);
+        }
+
+        var runtime = new CountingSlangRuntime();
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", manifest], _stdout, _stderr, runtime);
+
+        Assert.Equal(CookExitCode.InputNotFound, exit);
+        Assert.StartsWith($"brutal-cook shader: can't read manifest '{manifest}': ", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, runtime.Created);
+    }
+
+    [Theory]
+    [InlineData("../outside.slang")]
+    [InlineData("sub/../../outside.slang")]
+    [InlineData("absolute")]
+    public void Manifest_SourceOutsideManifestDirectory_ReturnsUsageBeforeSlang(string source)
+    {
+        string outside = _temp.Combine("outside.slang");
+        File.Copy(Fixture.Shader("triangle.slang"), outside);
+        string manifest = _temp.Combine(Path.Combine("m", "shaders.cook.json"));
+        Directory.CreateDirectory(Path.GetDirectoryName(manifest)!);
+        if (source == "absolute")
+        {
+            source = outside.Replace('\\', '/');
+        }
+
+        File.WriteAllText(
+            manifest,
+            $$"""{"version":1,"shaders":[{"source":"{{source}}","entries":[{"name":"vertMain","stage":"vertex"}]}]}""");
+        var runtime = new CountingSlangRuntime();
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", manifest], _stdout, _stderr, runtime);
+
+        Assert.Equal(CookExitCode.Usage, exit);
+        Assert.StartsWith($"brutal-cook shader: {manifest}: $.shaders[0].source: '{source}' ", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, runtime.Created);
+        Assert.Equal([outside], Directory.GetFiles(_temp.Path));
+        Assert.Equal([manifest], Directory.GetFiles(Path.GetDirectoryName(manifest)!));
+        Assert.Empty(_stdout.ToString());
+    }
+
+    [Fact]
+    public void Manifest_MissingSource_ReturnsInputNotFoundBeforeCompiling()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: false);
+        string compute = Path.Combine(Path.GetDirectoryName(manifest)!, "compute.slang");
+        File.Delete(compute);
+        var runtime = new CountingSlangRuntime();
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", manifest], _stdout, _stderr, runtime);
+
+        Assert.Equal(CookExitCode.InputNotFound, exit);
+        Assert.Equal($"brutal-cook shader: source file '{compute}' not found.{Environment.NewLine}", _stderr.ToString());
+        Assert.Equal(0, runtime.Created);
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(manifest)!, "*.spv"));
+    }
+
+    [Fact]
+    public void Manifest_LaterManifestInvalid_ReturnsUsageAndWritesNothing()
+    {
+        string first = Fixture.CopyShaders(_temp.Combine("first"), withSpirv: false);
+        string second = _temp.Combine("second.cook.json");
+        File.WriteAllText(second, """{"version":2}""");
+        var runtime = new CountingSlangRuntime();
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", first, "--manifest", second], _stdout, _stderr, runtime);
+
+        Assert.Equal(CookExitCode.Usage, exit);
+        Assert.Equal(64, (int)exit);
+        Assert.Equal($"brutal-cook shader: {second}: $.version: expected 1, the only manifest version.{Environment.NewLine}", _stderr.ToString());
+        Assert.Equal(0, runtime.Created);
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(first)!, "*.spv"));
+    }
+
+    [Fact]
+    public void Manifest_UnwritableOutput_ReturnsOutputFailed()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: false);
+        Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(manifest)!, "triangle.vertMain.spv"));
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.OutputFailed, exit);
+        Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(manifest)!, "compute.csMain.spv")));
+    }
+
+    [Fact]
+    public void Manifest_UsageError_PrintsErrorAndUsageToStandardError()
+    {
+        var runtime = new CountingSlangRuntime();
+
+        CookExitCode exit = ShaderCommand.Run(["--check"], _stdout, _stderr, runtime);
+
+        Assert.Equal(CookExitCode.Usage, exit);
+        Assert.StartsWith("brutal-cook shader: --check needs at least one --manifest.", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("brutal-cook shader --manifest <shaders.cook.json>", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Empty(_stdout.ToString());
+        Assert.Equal(0, runtime.Created);
+    }
+
+    [Fact]
+    public void Check_MatchingFiles_Succeeds()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: true);
+        string directory = Path.GetDirectoryName(manifest)!;
+
+        CookExitCode exit = ShaderCommand.Run(["--check", "--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.Success, exit);
+        Assert.Equal(
+            Lines(
+                $"matches: {Path.Combine(directory, "triangle.vertMain.spv")}",
+                $"matches: {Path.Combine(directory, "triangle.fragMain.spv")}",
+                $"matches: {Path.Combine(directory, "compute.csMain.spv")}"),
+            _stdout.ToString());
+        Assert.Empty(_stderr.ToString());
+    }
+
+    [Fact]
+    public void Check_ChangedByte_ReturnsCheckFailedAndNamesFile()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: true);
+        string changed = Path.Combine(Path.GetDirectoryName(manifest)!, "triangle.fragMain.spv");
+        byte[] bytes = File.ReadAllBytes(changed);
+        bytes[100] ^= 0x01;
+        File.WriteAllBytes(changed, bytes);
+
+        CookExitCode exit = ShaderCommand.Run(["--manifest", manifest, "--check"], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.CheckFailed, exit);
+        Assert.Equal(6, (int)exit);
+        Assert.Equal(
+            $"differs: {changed} (expected {bytes.Length} bytes, cooked {bytes.Length} bytes, first difference at byte 100){Environment.NewLine}",
+            _stderr.ToString());
+        Assert.DoesNotContain(changed, _stdout.ToString(), StringComparison.Ordinal);
+        Assert.Contains("matches: ", _stdout.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("truncated")]
+    [InlineData("one byte longer")]
+    public void Check_DifferentLength_ReturnsCheckFailedWithBothSizes(string change)
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: true);
+        string path = Path.Combine(Path.GetDirectoryName(manifest)!, "compute.csMain.spv");
+        byte[] cooked = File.ReadAllBytes(path);
+        byte[] committed = change == "truncated" ? cooked[..^4] : [.. cooked, 0];
+        File.WriteAllBytes(path, committed);
+
+        CookExitCode exit = ShaderCommand.Run(["--check", "--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.CheckFailed, exit);
+        Assert.Equal(
+            $"differs: {path} (expected {committed.Length} bytes, cooked {cooked.Length} bytes, first difference at byte {Math.Min(committed.Length, cooked.Length)}){Environment.NewLine}",
+            _stderr.ToString());
+    }
+
+    [Fact]
+    public void Check_MissingFile_ReturnsCheckFailed()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: true);
+        string missing = Path.Combine(Path.GetDirectoryName(manifest)!, "compute.csMain.spv");
+        File.Delete(missing);
+
+        CookExitCode exit = ShaderCommand.Run(["--check", "--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.CheckFailed, exit);
+        Assert.Equal(
+            $"differs: {missing} (missing; cooked {File.ReadAllBytes(Fixture.Shader("compute.csMain.spv")).Length} bytes){Environment.NewLine}",
+            _stderr.ToString());
+        Assert.False(File.Exists(missing));
+    }
+
+    [Fact]
+    public void Check_UnreadableFile_ReturnsCheckFailed()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: true);
+        string locked = Path.Combine(Path.GetDirectoryName(manifest)!, "triangle.vertMain.spv");
+        CookExitCode exit;
+
+        using (new FileStream(locked, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            exit = ShaderCommand.Run(["--check", "--manifest", manifest], _stdout, _stderr);
+        }
+
+        Assert.Equal(CookExitCode.CheckFailed, exit);
+        Assert.StartsWith($"differs: {locked} (can't be read: ", _stderr.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Check_NeverWrites()
+    {
+        string manifest = Fixture.CopyShaders(_temp.Combine("shaders"), withSpirv: true);
+        string directory = Path.GetDirectoryName(manifest)!;
+        string changed = Path.Combine(directory, "triangle.vertMain.spv");
+        string missing = Path.Combine(directory, "compute.csMain.spv");
+        byte[] bytes = File.ReadAllBytes(changed);
+        bytes[^1] ^= 0x80;
+        File.WriteAllBytes(changed, bytes);
+        File.Delete(missing);
+        var past = new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+        foreach (string file in Directory.GetFiles(directory))
+        {
+            File.SetLastWriteTimeUtc(file, past);
+        }
+
+        Directory.SetLastWriteTimeUtc(directory, past);
+        string before = Snapshot(directory);
+
+        CookExitCode exit = ShaderCommand.Run(["--check", "--manifest", manifest], _stdout, _stderr);
+
+        Assert.Equal(CookExitCode.CheckFailed, exit);
+        Assert.Contains($"differs: {changed} (expected ", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains($"differs: {missing} (missing; ", _stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(before, Snapshot(directory));
+        Assert.Equal(past, Directory.GetLastWriteTimeUtc(directory));
+    }
+
+    // Every entry's name, write time and contents.
+    private static string Snapshot(string directory) =>
+        string.Join(
+            Environment.NewLine,
+            Directory.GetFileSystemEntries(directory).Order(StringComparer.Ordinal).Select(entry =>
+                $"{entry} {File.GetLastWriteTimeUtc(entry):O} {(File.Exists(entry) ? Convert.ToBase64String(File.ReadAllBytes(entry)) : "directory")}"));
+
+    private static string Lines(params string[] lines) => string.Concat(lines.Select(line => line + Environment.NewLine));
+
     private CookExitCode CookTriangle(string output, params string[] extra) =>
         ShaderCommand.Run(
-            [Fixture.Path("triangle.slang"), "--entry", "vertMain:vertex", "--entry", "fragMain:fragment", "--output-dir", output, .. extra],
+            [Fixture.Shader("triangle.slang"), "--entry", "vertMain:vertex", "--entry", "fragMain:fragment", "--output-dir", output, .. extra],
             _stdout,
             _stderr);
 }

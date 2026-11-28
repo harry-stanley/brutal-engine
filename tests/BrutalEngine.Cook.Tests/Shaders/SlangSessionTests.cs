@@ -25,11 +25,11 @@ public sealed class SlangSessionTests : IDisposable
         ShaderEntry vertex = new("vertMain", ShaderStage.Vertex);
         ShaderCookOptions options = outcome switch
         {
-            "success" => Options("triangle.slang", vertex),
-            "compile failure" => Options("syntax-error.slang", vertex),
-            "missing entry" => Options("triangle.slang", vertex, new ShaderEntry("noSuchEntry", ShaderStage.Fragment)),
-            "undefined stage" => Options("triangle.slang", vertex, new ShaderEntry("fragMain", (ShaderStage)(-1))),
-            _ => Options("triangle.slang", vertex) with { MatrixLayout = (MatrixLayout)2 },
+            "success" => Options(Fixture.Shader("triangle.slang"), vertex),
+            "compile failure" => Options(Fixture.Path("syntax-error.slang"), vertex),
+            "missing entry" => Options(Fixture.Shader("triangle.slang"), vertex, new ShaderEntry("noSuchEntry", ShaderStage.Fragment)),
+            "undefined stage" => Options(Fixture.Shader("triangle.slang"), vertex, new ShaderEntry("fragMain", (ShaderStage)(-1))),
+            _ => Options(Fixture.Shader("triangle.slang"), vertex) with { MatrixLayout = (MatrixLayout)2 },
         };
         var compiler = new SlangShaderCompiler(runtime);
         byte[][] code = [];
@@ -60,7 +60,7 @@ public sealed class SlangSessionTests : IDisposable
     {
         var compiler = new SlangShaderCompiler(new CountingSlangRuntime());
         ShaderCookOptions options = Options(
-            "triangle.slang", new ShaderEntry("fragMain", ShaderStage.Fragment), new ShaderEntry("vertMain", ShaderStage.Vertex));
+            Fixture.Shader("triangle.slang"), new ShaderEntry("fragMain", ShaderStage.Fragment), new ShaderEntry("vertMain", ShaderStage.Vertex));
 
         CookExitCode exit = compiler.Compile(options, _stderr, out byte[][] code);
 
@@ -76,7 +76,7 @@ public sealed class SlangSessionTests : IDisposable
         var runtime = new CountingSlangRuntime { CreateFails = true };
         var compiler = new SlangShaderCompiler(runtime);
 
-        CookExitCode exit = compiler.Compile(Options("triangle.slang", new ShaderEntry("vertMain", ShaderStage.Vertex)), _stderr, out byte[][] code);
+        CookExitCode exit = compiler.Compile(Options(Fixture.Shader("triangle.slang"), new ShaderEntry("vertMain", ShaderStage.Vertex)), _stderr, out byte[][] code);
 
         Assert.Equal(CookExitCode.ToolFailure, exit);
         Assert.Empty(code);
@@ -96,7 +96,7 @@ public sealed class SlangSessionTests : IDisposable
         };
         var compiler = new SlangShaderCompiler(runtime);
 
-        CookExitCode exit = compiler.Compile(Options("triangle.slang", new ShaderEntry("vertMain", ShaderStage.Vertex)), _stderr, out byte[][] code);
+        CookExitCode exit = compiler.Compile(Options(Fixture.Shader("triangle.slang"), new ShaderEntry("vertMain", ShaderStage.Vertex)), _stderr, out byte[][] code);
 
         Assert.Equal(CookExitCode.ToolFailure, exit);
         Assert.Empty(code);
@@ -104,6 +104,6 @@ public sealed class SlangSessionTests : IDisposable
         Assert.Contains("the Slang runtime failed to load: Unable to load shared library 'slang'", _stderr.ToString(), StringComparison.Ordinal);
     }
 
-    private static ShaderCookOptions Options(string fixture, params ShaderEntry[] entries) =>
-        new(Fixture.Path(fixture), entries, "unused", MatrixLayout.ColumnMajor);
+    private static ShaderCookOptions Options(string source, params ShaderEntry[] entries) =>
+        new(source, entries, "unused", MatrixLayout.ColumnMajor);
 }
