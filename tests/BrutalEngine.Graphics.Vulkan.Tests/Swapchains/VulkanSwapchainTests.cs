@@ -93,7 +93,9 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     [Fact]
     public void Recreate_WithOldSwapchain_Succeeds()
     {
-        OnEveryPresentingAdapter(gpu =>
+        // The proof that the recreation passed the old swapchain, on every driver: the old one is retired, so the layer
+        // reports an acquire from it (lavapipe accepts a second swapchain on the surface either way, and still acquires).
+        OnEveryPresentingAdapter(Retired, gpu =>
         {
             VulkanSwapchain.DestroyCounts oldDestroys = new();
             VulkanSwapchain old = gpu.Create(2, destroys: oldDestroys);
@@ -102,6 +104,12 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             gpu.WaitIdle();
 
             VulkanSwapchain replacement = gpu.Create(2, old: old);
+            if (old.Acquire(0, 0).Status is SwapchainStatus.Success or SwapchainStatus.Suboptimal)
+            {
+                loop.Consume(old, 0);
+            }
+
+            gpu.WaitIdle();
 
             // The front end destroys the retired swapchain after the device is idle, whether creation succeeded or not.
             Assert.False(old.IsDisposed);
@@ -355,23 +363,36 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
     private static void Check(VkResult result, string call) => Assert.True(result == VkResult.Success, $"{call}: {result}");
 
+    // The layer's report of an acquire from a retired swapchain, by its VUID's stable prefix (the layer renames VUIDs).
+    private static bool Retired(string message) =>
+        message.Contains("VUID-vkAcquireNextImageKHR-swapchain-", StringComparison.Ordinal) && message.Contains("retired", StringComparison.Ordinal);
+
+    private void OnEveryPresentingAdapter(Action<Gpu> body) => OnEveryPresentingAdapter(null, body);
+
     // Runs the body once per adapter that can present to the class's raw surface, then checks that validation reported
-    // no error during it, through every device's destruction (leaked children are reported there).
-    private void OnEveryPresentingAdapter(Action<Gpu> body)
+    // no error during it, through every device's destruction (leaked children are reported there). With an expected
+    // error, each adapter's run must report it, and it is the only error allowed.
+    private void OnEveryPresentingAdapter(Func<string, bool>? expected, Action<Gpu> body)
     {
         RawSurface raw = fixture.Raw;
         int before = fixture.Sink.Entries.Count;
         List<string> ran = [];
         foreach (GpuDevices.Adapter adapter in raw.Presenting())
         {
-            using Gpu gpu = new(raw, adapter);
-            body(gpu);
-            ran.Add($"{adapter.Candidate.Name} ({gpu.Plan.PresentMode}, {gpu.Plan.Format}, maintenance1 {gpu.Core.Extensions.SwapchainMaintenance1 ?? "off"})");
+            int start = fixture.Sink.Entries.Count;
+            using (Gpu gpu = new(raw, adapter))
+            {
+                body(gpu);
+                ran.Add($"{adapter.Candidate.Name} ({gpu.Plan.PresentMode}, {gpu.Plan.Format}, maintenance1 {gpu.Core.Extensions.SwapchainMaintenance1 ?? "off"})");
+            }
+
+            bool reported = expected is null || fixture.Sink.Entries.Skip(start).Any(e => e.Level == LogLevel.Error && expected(e.Message));
+            Assert.True(reported, $"{adapter.Candidate.Name}: the expected validation error wasn't reported");
         }
 
         Assert.NotEmpty(ran);
         TestContext.Current.TestOutputHelper?.WriteLine("adapters: " + string.Join("; ", ran));
-        string[] errors = [.. fixture.Sink.Entries.Skip(before).Where(e => e.Level == LogLevel.Error).Select(e => e.Message)];
+        string[] errors = [.. fixture.Sink.Entries.Skip(before).Where(e => e.Level == LogLevel.Error && expected?.Invoke(e.Message) != true).Select(e => e.Message)];
         Assert.True(errors.Length == 0, string.Join('\n', errors));
     }
 
@@ -590,6 +611,19 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             Assert.InRange(acquired.ImageIndex, 0, swapchain.ImageCount - 1);
             Submit(swapchain, slot, acquired.ImageIndex);
             return acquired.ImageIndex;
+        }
+
+        // Waits on the slot's acquire semaphore in a submit of its own, so it is unsignalled again; the slot is idle after.
+        public void Consume(VulkanSwapchain swapchain, int slot)
+        {
+            Device device = _gpu.Core.Device;
+            WaitSlot(slot);
+            VkSemaphoreSubmitInfo wait = new() { Semaphore = swapchain.GetAcquireSemaphore(slot), StageMask = VkPipelineStageFlags2.AllCommandsBit };
+            VkSubmitInfo2 submit = new() { WaitSemaphoreInfoCount = 1, WaitSemaphoreInfos = &wait };
+            VkFence fence = _fences[slot];
+            Check(device.PInvoke.vkResetFences.Invoke(device.Handle, 1, &fence), "vkResetFences");
+            Check(device.PInvoke.vkQueueSubmit2.Invoke(_gpu.Core.Queue, 1, &submit, fence), "vkQueueSubmit2");
+            WaitSlot(slot);
         }
 
         public void Submit(VulkanSwapchain swapchain, int slot, int image)
