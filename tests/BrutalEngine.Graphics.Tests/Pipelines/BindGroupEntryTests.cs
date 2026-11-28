@@ -158,12 +158,13 @@ public sealed class BindGroupEntryTests
     [Fact]
     public void FromTransient_SizeIsCheckedAgainstTheAllocationsOwnLength()
     {
-        // A 32-byte allocation inside a larger ring: its own length is the limit, not the ring's.
+        // A 32-byte allocation at offset 512 inside a larger ring: its own length is the limit, not the ring's and not
+        // its offset plus its length.
         byte[] ring = new byte[64];
 
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => BindGroupEntry.FromTransient(0, new TransientAllocation(_alias, 0, ring.AsSpan(0, 32)), 33));
-        Assert.Equal(32, BindGroupEntry.FromTransient(0, new TransientAllocation(_alias, 0, ring.AsSpan(0, 32)), 32).Buffer.Size);
+            () => BindGroupEntry.FromTransient(0, new TransientAllocation(_alias, 512, ring.AsSpan(0, 32)), 33));
+        Assert.Equal(32, BindGroupEntry.FromTransient(0, new TransientAllocation(_alias, 512, ring.AsSpan(0, 32)), 32).Buffer.Size);
     }
 
     [Fact]

@@ -29,12 +29,25 @@ public sealed class BindGroupTypesTests
         var group = new BindGroupDescription { Layout = default, Entries = entries };
 
         Assert.Equal(1, layoutEntry.Count);
+        Assert.Equal(0, default(BindGroupLayoutEntry).Count);
+        Assert.Equal(0, new BindGroupLayoutEntry { Binding = 0, Visibility = ShaderStages.Fragment, Type = BindingType.Sampler }.Count);
         Assert.Equal(0, binding.Offset);
         Assert.Equal(0, binding.Size);
         Assert.Null(layout.DebugName);
         Assert.Equal(BindGroupLifetime.Persistent, group.Lifetime);
         Assert.Null(group.DebugName);
         Assert.Equal(1, group.Entries.Length);
+    }
+
+    [Fact]
+    public void BindGroupLayoutDescription_Equality_ComparesEntriesByReference()
+    {
+        BindGroupLayoutEntry[] entries = [new(0, ShaderStages.Vertex, BindingType.UniformBuffer)];
+        var layout = new BindGroupLayoutDescription { Entries = entries, DebugName = "a" };
+
+        Assert.Equal(layout, layout with { DebugName = new string("a".AsSpan()) });
+        Assert.NotEqual(layout, layout with { Entries = (BindGroupLayoutEntry[])entries.Clone() });
+        Assert.NotEqual(layout, layout with { DebugName = "A" });
     }
 
     [Fact]

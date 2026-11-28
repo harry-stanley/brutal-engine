@@ -6,7 +6,7 @@ namespace BrutalEngine.Graphics.Tests.Pipelines;
 
 /// <summary>
 /// Frame bind groups are described in the frame loop without a managed allocation (docs/design/graphics.md section 8):
-/// every factory, every read property, the entries' and layout entries' equality and hash, and a description over a
+/// every factory, every read property, the entries', layout entries' and buffer bindings' equality and hash, and a description over a
 /// stack span are measured here. The project
 /// turns background garbage collection off, which AllocationMeasurementTests guards, so the counts are exact.
 /// </summary>
@@ -59,7 +59,8 @@ public sealed class BindGroupEntryAllocationTests
         sum += entries[2] != entries[3] ? 1 : 0;
         sum += entries[0].GetHashCode() == entries[0].GetHashCode() ? 1 : 0;
         var layoutEntry = new BindGroupLayoutEntry(0, ShaderStages.Vertex, BindingType.UniformBuffer);
-        sum += layoutEntry == new BindGroupLayoutEntry(0, ShaderStages.Vertex, BindingType.UniformBuffer, Count: 1) ? 1 : 0;
+        sum += layoutEntry == new BindGroupLayoutEntry(0, ShaderStages.Vertex, BindingType.UniformBuffer, Count: 1)
+            && layoutEntry.GetHashCode() == new BindGroupLayoutEntry(0, ShaderStages.Vertex, BindingType.UniformBuffer).GetHashCode() ? 1 : 0;
         sum += entries[0].Buffer.Equals(new BufferBinding(buffer, 256, 64)) && entries[0].Buffer.GetHashCode() == new BufferBinding(buffer, 256, 64).GetHashCode() ? 1 : 0;
         return sum;
     }

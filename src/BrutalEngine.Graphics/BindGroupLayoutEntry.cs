@@ -6,7 +6,10 @@ namespace BrutalEngine.Graphics;
 /// <param name="Binding">The binding number shaders declare: 0 or more, unique in the layout.</param>
 /// <param name="Visibility">The shader stages that access the binding.</param>
 /// <param name="Type">The kind of resource bound.</param>
-/// <param name="Count">The array size: at least 1, the default; above 1 makes the binding an array of resources.</param>
+/// <param name="Count">
+/// The array size: at least 1; above 1 makes the binding an array of resources. 1 by default with the positional
+/// constructor only: <c>default(BindGroupLayoutEntry)</c> and an object initializer without it give 0, which is rejected.
+/// </param>
 /// <remarks>
 /// The device checks a layout when it is created (docs/design/graphics.md section 8): a duplicate binding number or a
 /// <paramref name="Count"/> below 1 throws <see cref="System.ArgumentException"/>. A plain unmanaged value. Equality
