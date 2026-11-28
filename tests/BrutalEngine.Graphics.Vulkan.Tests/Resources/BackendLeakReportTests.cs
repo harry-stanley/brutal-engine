@@ -21,14 +21,14 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Resources;
 /// </summary>
 public sealed class BackendLeakReportTests(GpuResourceFixture fixture) : IClassFixture<GpuResourceFixture>
 {
-    // Three textures and two buffers, the middle texture unnamed and one more of each destroyed before the report:
-    // textures newest first, then buffers newest first, each line in the documented format.
+    // Three textures and two buffers, the middle texture's name null and the newer buffer's empty, and one more of each
+    // destroyed before the report: textures newest first, then buffers newest first, each line in the documented format.
     private static readonly string[] _expectedLines =
     [
         "Backend leak: texture 'third texture' was still alive at disposal and is destroyed now",
         "Backend leak: texture (unnamed) was still alive at disposal and is destroyed now",
         "Backend leak: texture 'first texture' was still alive at disposal and is destroyed now",
-        "Backend leak: buffer 'second buffer' was still alive at disposal and is destroyed now",
+        "Backend leak: buffer (unnamed) was still alive at disposal and is destroyed now",
         "Backend leak: buffer 'first buffer' was still alive at disposal and is destroyed now",
     ];
 
@@ -141,7 +141,7 @@ public sealed class BackendLeakReportTests(GpuResourceFixture fixture) : IClassF
         return (lines, logger, logger.CreateCategory("Graphics.Vulkan"));
     }
 
-    // Creates four textures (the second unnamed) and three buffers, then destroys the second-newest texture and the
+    // Creates four textures (the second with a null name) and three buffers (the second with an empty name), then destroys the second-newest texture and the
     // newest buffer, so the report must skip removed entries in the middle and at the head of each table.
     private static void Fill(TextureFactory textures, BufferFactory buffers, Action? onTexture = null, Action? onBuffer = null)
     {
@@ -155,7 +155,7 @@ public sealed class BackendLeakReportTests(GpuResourceFixture fixture) : IClassF
             onTexture?.Invoke();
         }
 
-        string[] bufferNames = ["first buffer", "second buffer", "gone buffer"];
+        string[] bufferNames = ["first buffer", "", "gone buffer"];
         ulong[] bufferIds = new ulong[bufferNames.Length];
         for (int i = 0; i < bufferNames.Length; i++)
         {
