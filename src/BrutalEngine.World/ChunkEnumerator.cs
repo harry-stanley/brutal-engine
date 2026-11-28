@@ -11,8 +11,18 @@ namespace BrutalEngine.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Order.</b> Chunks come archetype by archetype, in the order the archetypes were created, and in chunk order
-/// within each. Each matching chunk is yielded once.
+/// <b>Order and filters.</b> Chunks come archetype by archetype, in the order the archetypes were created, and in
+/// chunk order within each. Each matching chunk is yielded once, unless the query's <c>Changed</c> or <c>Added</c>
+/// filters reject it: after the query's first completed enumeration, a chunk is yielded only when, for every filter, the
+/// component's tick in that chunk is newer than <see cref="Query.LastRunTick"/>. A filter on a tag never holds then,
+/// because a tag has no ticks. Until then every chunk is yielded.
+/// </para>
+/// <para>
+/// <b>Completion.</b> When <see cref="MoveNext"/> returns <see langword="false"/> the first time, the enumeration has
+/// completed: the query's <see cref="Query.LastRunTick"/> becomes the world's <see cref="EcsWorld.ChangeTick"/>,
+/// <see cref="Query.HasRun"/> becomes <see langword="true"/>, and the world advances its change tick, so writes made
+/// during the loop aren't newer than the last run and later writes are. An enumeration disposed before that (a
+/// <c>break</c>, or an exception) changes nothing.
 /// </para>
 /// <para>
 /// <b>Disposal.</b> <c>foreach</c> always disposes the enumerator; code that calls <see cref="Query.GetEnumerator"/>
@@ -46,14 +56,15 @@ public ref struct ChunkEnumerator
     /// <remarks>Allocates nothing.</remarks>
     public readonly ChunkView Current => _current;
 
-    /// <summary>Moves to the next matching chunk.</summary>
+    /// <summary>Moves to the next matching chunk that passes the query's filters.</summary>
     /// <returns>
-    /// <see langword="true"/> if there is one; <see langword="false"/> at the end, after <see cref="Dispose"/>, and for
-    /// a default enumerator.
+    /// <see langword="true"/> if there is one; <see langword="false"/> at the end, and for a default enumerator. The
+    /// first <see langword="false"/> completes the enumeration (see the type's remarks); after <see cref="Dispose"/>
+    /// it returns <see langword="false"/> without completing it.
     /// </returns>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The query or its world was disposed during the enumeration.</exception>
-    /// <remarks>Allocates nothing.</remarks>
+    /// <remarks>Allocates nothing. Takes time proportional to the chunks it skips.</remarks>
     public bool MoveNext()
     {
         if (_query is null || _finished)
@@ -74,7 +85,7 @@ public ref struct ChunkEnumerator
                 _entry++;
                 _chunk = -1;
             }
-            else
+            else if (_query.PassesFilters(_entry, archetype, _chunk))
             {
                 _current = new ChunkView(_query, _entry, _chunk);
                 return true;
@@ -83,6 +94,7 @@ public ref struct ChunkEnumerator
 
         _finished = true;
         _current = default;
+        _query.CompleteRun();
         return false;
     }
 
