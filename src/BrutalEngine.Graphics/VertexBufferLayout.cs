@@ -20,8 +20,8 @@ public readonly record struct VertexBufferLayout(int Stride, VertexStepMode Step
     /// <c>VertexBufferLayout { Stride = 20, StepMode = Vertex, Attributes = System.ReadOnlyMemory&lt;VertexAttribute&gt;[2] }</c>.
     /// </summary>
     /// <returns>
-    /// A diagnostic string, formatted with the invariant culture whatever the current culture is, so negative values
-    /// always use an ASCII minus sign. Allocates.
+    /// A diagnostic string whose numeric fields are formatted with the invariant culture whatever the current culture is;
+    /// an undefined enum value prints its number as <see cref="System.Enum.ToString()"/> does. Allocates.
     /// </returns>
     public override string ToString() => string.Create(
         CultureInfo.InvariantCulture, $"VertexBufferLayout {{ Stride = {Stride}, StepMode = {StepMode}, Attributes = {Attributes} }}");

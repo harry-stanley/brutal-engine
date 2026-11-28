@@ -22,8 +22,8 @@ public readonly record struct PushConstantRange(ShaderStages Stages, int Size)
     /// Returns every field in the record's usual form, for example <c>PushConstantRange { Stages = Vertex, Fragment, Size = 64 }</c>.
     /// </summary>
     /// <returns>
-    /// A diagnostic string, formatted with the invariant culture whatever the current culture is, so negative values
-    /// always use an ASCII minus sign. Allocates.
+    /// A diagnostic string whose numeric fields are formatted with the invariant culture whatever the current culture is;
+    /// an undefined enum value prints its number as <see cref="System.Enum.ToString()"/> does. Allocates.
     /// </returns>
     public override string ToString() => string.Create(
         CultureInfo.InvariantCulture, $"PushConstantRange {{ Stages = {Stages}, Size = {Size} }}");

@@ -41,5 +41,7 @@ public sealed class PipelineDescriptionDefaultsTests
         Assert.Equal(CullMode.None, new RasterState().CullMode);
         Assert.Equal(FrontFace.CounterClockwise, new RasterState().FrontFace);
         Assert.Equal(default, new RasterState());
+        Assert.Equal(ColorWriteMask.None, default(ColorTargetState).WriteMask);
+        Assert.Equal(CompareFunction.Never, default(DepthState).Compare);
     }
 }

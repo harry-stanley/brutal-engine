@@ -25,6 +25,6 @@ public enum ColorWriteMask
     /// <summary>The alpha channel.</summary>
     Alpha = 8,
 
-    /// <summary>Every channel; the default of <see cref="ColorTargetState"/>.</summary>
+    /// <summary>Every channel; <see cref="ColorTargetState"/>'s positional constructor default (<c>default</c> gives <see cref="None"/>).</summary>
     All = Red | Green | Blue | Alpha,
 }

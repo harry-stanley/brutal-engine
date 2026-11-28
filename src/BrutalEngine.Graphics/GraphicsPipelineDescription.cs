@@ -64,8 +64,8 @@ public sealed record GraphicsPipelineDescription
     /// memory properties show their element type and length.
     /// </summary>
     /// <returns>
-    /// A diagnostic string, formatted with the invariant culture whatever the current culture is, so negative values
-    /// always use an ASCII minus sign. Allocates.
+    /// A diagnostic string whose numeric fields are formatted with the invariant culture whatever the current culture is;
+    /// an undefined enum value prints its number as <see cref="System.Enum.ToString()"/> does. Allocates.
     /// </returns>
     public override string ToString() => string.Create(
         CultureInfo.InvariantCulture,

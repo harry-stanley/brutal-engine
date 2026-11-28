@@ -5,7 +5,8 @@ namespace BrutalEngine.Graphics;
 /// <param name="Write">Whether passing fragments write their depth.</param>
 /// <param name="Compare">
 /// The depth test: a fragment passes when <c>Compare(fragment depth, stored depth)</c> holds;
-/// <see cref="CompareFunction.LessOrEqual"/> by default.
+/// <see cref="CompareFunction.LessOrEqual"/> by default with the positional constructor only: <c>default(DepthState)</c> and
+/// an object initializer without it give <see cref="CompareFunction.Never"/>, which fails every fragment.
 /// </param>
 /// <remarks>
 /// There is no stencil state in M1 (docs/design/graphics.md section 7). Clip-space depth runs from 0 to 1 on every
