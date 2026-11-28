@@ -162,7 +162,8 @@ public sealed partial class GraphicsDevice
     /// <summary>Waits until the GPU has finished every submitted frame.</summary>
     /// <returns>
     /// Success, after which <see cref="CompletedFrameNumber"/> is the last submitted frame. Fails with
-    /// <see cref="ErrorKind.Unavailable"/> on a lost device, without waiting; a backend failure is returned unchanged, and
+    /// <see cref="ErrorKind.Unavailable"/> on a lost device, with the loss's native code, without waiting; a backend
+    /// failure is returned unchanged, and
     /// an <see cref="ErrorKind.Unavailable"/> or <see cref="ErrorKind.Timeout"/> one also marks the device lost and raises
     /// <see cref="DeviceLost"/>.
     /// </returns>
@@ -178,7 +179,7 @@ public sealed partial class GraphicsDevice
         ThrowIfUnusable(WaitIdleApi);
         if (IsLostCore)
         {
-            return new EngineError(ErrorKind.Unavailable, "WaitIdle: the device is lost.");
+            return new EngineError(ErrorKind.Unavailable, "WaitIdle: the device is lost.", LostNativeCode);
         }
 
         Result result = Faults.TryTake(FaultSeam.Operation.WaitIdle, out EngineError fault) ? fault : _backend.WaitIdle();

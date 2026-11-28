@@ -7,6 +7,8 @@ namespace BrutalEngine.Graphics;
 /// <content>Device loss: the fault seam and the DeviceLost event (docs/design/graphics.md section 12).</content>
 public sealed partial class GraphicsDevice
 {
+    private const string LostSuffix = ": the device is lost.";
+
     private DeviceLostEventArgs? _detectedLoss;
 
     /// <summary>
@@ -58,7 +60,7 @@ public sealed partial class GraphicsDevice
     {
         if (IsLostCore)
         {
-            error = new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost.", LostNativeCode);
+            error = LostError(api);
             return true;
         }
 
@@ -82,8 +84,14 @@ public sealed partial class GraphicsDevice
         }
 
         MarkLost(api[(api.LastIndexOf('.') + 1)..], error);
-        return RaiseDetectedLoss(error.Kind == ErrorKind.Unavailable
-            ? error
-            : new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost ({error.Message}).", error.NativeCode));
+        return RaiseDetectedLoss(AsUnavailable(api, error));
     }
+
+    // A loss as a creation or write reports it: Unavailable, with the loss's native code (a Timeout is rewritten).
+    private static EngineError AsUnavailable(string api, in EngineError loss) => loss.Kind == ErrorKind.Unavailable
+        ? loss
+        : new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost ({loss.Message}).", loss.NativeCode);
+
+    // A call's refusal on a lost device: Unavailable, with the loss's native code.
+    private EngineError LostError(string api) => new(ErrorKind.Unavailable, api + LostSuffix, LostNativeCode);
 }

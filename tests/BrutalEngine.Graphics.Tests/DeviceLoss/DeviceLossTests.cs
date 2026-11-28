@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using BrutalEngine.Core;
 using BrutalEngine.Graphics.Internal;
+using BrutalEngine.Graphics.Tests.Backend;
 using BrutalEngine.Graphics.Tests.Device;
 using Xunit;
+using static BrutalEngine.Graphics.Tests.Swapchains.SwapchainTestKit;
 using Op = BrutalEngine.TestUtilities.FakeBackendOperation;
 
 namespace BrutalEngine.Graphics.Tests.DeviceLoss;
@@ -124,7 +126,9 @@ public sealed class DeviceLossTests : IDisposable
             Assert.Equal((FrameStatus.DeviceLost, AcquireStatus.DeviceLost, FrameStatus.DeviceLost), rig.Frame());
         }
 
-        Assert.Equal(ErrorKind.Unavailable, rig.Device.WaitIdle().Error.Kind);
+        // WaitIdle refuses with the loss's native code, as the creations and writes do.
+        Result idle = rig.Device.WaitIdle();
+        Assert.Equal((ErrorKind.Unavailable, LossCode), (idle.Error.Kind, idle.Error.NativeCode));
         Assert.Equal(ErrorKind.Unavailable, rig.Device.CreateBuffer(new BufferDescription { Size = 4, Usage = BufferUsage.Vertex }).Error.Kind);
         Assert.Equal(ErrorKind.Unavailable, rig.Device.WriteBuffer(rig.Buffer, 0, [1]).Error.Kind);
         Assert.Single(rig.Events);
@@ -267,6 +271,77 @@ public sealed class DeviceLossTests : IDisposable
     }
 
     public static TheoryData<string> CreationScenarios() => [.. LossKit.Creations];
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CreateSwapchain_RetiredSwapchainWaitDetectsLoss_Unavailable(bool timedOut)
+    {
+        var rig = new LossRig(_fixture);
+        FakeWindow window = RetireSwapchain(rig);
+        var loss = new EngineError(timedOut ? ErrorKind.Timeout : ErrorKind.Unavailable, "hung", timedOut ? 7 : LossCode);
+        rig.Device.Faults.InjectLoss(FaultSeam.Operation.WaitIdle, 1, loss);
+        int surfaces = rig.Backend.Calls.Count(call => call.Operation == Op.CreateSurface);
+
+        var result = rig.Device.CreateSwapchain(window, new SwapchainOptions()).ToResult();
+
+        // The wait detected the loss and raised the event as "WaitIdle"; the creation reports the loss as any creation
+        // does (Unavailable with its native code, never Timeout) and creates nothing.
+        Assert.Equal((ErrorKind.Unavailable, loss.NativeCode), (result.Error.Kind, result.Error.NativeCode));
+        Assert.Equal(timedOut ? "CreateSwapchain: the device is lost (hung)." : "hung", Unqualified(result.Error.Message));
+        Assert.Equal(("WaitIdle", loss.NativeCode, timedOut), (rig.Device.LostOperation, rig.Device.LostNativeCode, rig.Device.LostTimedOut));
+        Assert.Equal([(rig.Device, "WaitIdle", loss.NativeCode, timedOut)], rig.Events);
+        Assert.Equal(surfaces, rig.Backend.Calls.Count(call => call.Operation == Op.CreateSurface));
+    }
+
+    [Fact]
+    public void CreateSwapchain_RetiredSwapchainWaitFailsWithoutLoss_ReturnedUnchanged()
+    {
+        var rig = new LossRig(_fixture);
+        FakeWindow window = RetireSwapchain(rig);
+        var failure = new EngineError(ErrorKind.Native, "driver failure", 9);
+        _fixture.Script.FailNext(Op.WaitIdle, failure);
+
+        var result = rig.Device.CreateSwapchain(window, new SwapchainOptions()).ToResult();
+
+        Assert.Equal(failure, result.Error);
+        Assert.False(rig.Device.IsLost);
+        Assert.Empty(rig.Events);
+    }
+
+    [Fact]
+    public void CreateSwapchain_AfterTimedOutLoss_RefusedBeforeTheRetiredSwapchainWait()
+    {
+        var rig = new LossRig(_fixture);
+        FakeWindow window = RetireSwapchain(rig);
+        rig.Device.Faults.InjectLoss(FaultSeam.Operation.WaitForFrame, 1, new EngineError(ErrorKind.Timeout, "hung", 2));
+        Assert.Equal((FrameStatus.DeviceLost, AcquireStatus.DeviceLost, FrameStatus.DeviceLost), rig.Frame());
+        // The destroyed swapchain's frame never completed, so the window's next swapchain would have to wait for it.
+        Assert.Equal(1, rig.Device.RetiringSwapchainCount);
+        int calls = rig.Backend.Calls.Count;
+
+        var result = rig.Device.CreateSwapchain(window, new SwapchainOptions()).ToResult();
+
+        // Refused as every creation on a lost device is: the loss's native code, no wait, no backend call.
+        Assert.Equal(
+            (ErrorKind.Unavailable, "GraphicsDevice.CreateSwapchain: the device is lost.", 2),
+            (result.Error.Kind, result.Error.Message, result.Error.NativeCode));
+        Assert.Equal(calls, rig.Backend.Calls.Count);
+        Assert.Equal([(rig.Device, "BeginFrame", 2, true)], rig.Events);
+    }
+
+    // A second window whose swapchain was destroyed in a submitted frame that hasn't completed: the window's next
+    // CreateSwapchain waits for the GPU first.
+    private static FakeWindow RetireSwapchain(LossRig rig)
+    {
+        FakeWindow window = Window();
+        SwapchainHandle old = rig.Device.CreateSwapchain(window, new SwapchainOptions { DebugName = "retired" }).Value;
+        Assert.Equal(FrameStatus.Ready, rig.Device.BeginFrame(out CommandList commands));
+        rig.Device.Destroy(old);
+        Assert.Equal(FrameStatus.Ready, rig.Device.SubmitFrame(commands));
+        Assert.Equal(1, rig.Device.RetiringSwapchainCount);
+        return window;
+    }
 
     // A creation or write, in a frame for a transient allocation.
     private static Result Creation(LossRig rig, string scenario)
