@@ -76,6 +76,26 @@ public sealed class ChunkViewTests
     }
 
     [Fact]
+    public void Access_WithoutGrantsNone()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            _ = world.Spawn(new Position(1, 2));
+            using Query query = world.Query().Read<Position>().Without<Health>().Build();
+            foreach (ChunkView chunk in query)
+            {
+                InvalidOperationException read = Assert.IsType<InvalidOperationException>(RunHealth(chunk, ViewOp.Read));
+                Assert.Contains("doesn't declare read access", read.Message, StringComparison.Ordinal);
+                InvalidOperationException write = Assert.IsType<InvalidOperationException>(RunHealth(chunk, ViewOp.Write));
+                Assert.Contains("doesn't declare write access", write.Message, StringComparison.Ordinal);
+            }
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void Access_UnregisteredType_RejectedAndHasNeedsNoTerm()
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
@@ -100,8 +120,11 @@ public sealed class ChunkViewTests
         tracking.ThrowIfLeaks();
     }
 
-    [Fact]
-    public void Write_StampsWithoutRows()
+    // Payload is column 0 of (Payload, Health); written second, its data term (1) differs from its column.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Write_StampsWithoutRows(bool writeTermFirst)
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
@@ -110,8 +133,11 @@ public sealed class ChunkViewTests
             Archetype archetype = EnumerationSupport.ArchetypeOf(world, entities[0]);
             int payload = EnumerationSupport.ColumnOf<Payload>(world, archetype);
             int health = EnumerationSupport.ColumnOf<Health>(world, archetype);
+            Assert.Equal(0, payload);
             world.SetChangeTickForTesting(100);
-            using Query query = world.Query().Write<Payload>().Read<Health>().Build();
+            using Query query = writeTermFirst
+                ? world.Query().Write<Payload>().Read<Health>().Build()
+                : world.Query().Read<Health>().Write<Payload>().Build();
             int index = 0;
             foreach (ChunkView chunk in query)
             {

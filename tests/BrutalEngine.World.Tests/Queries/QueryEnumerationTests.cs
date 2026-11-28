@@ -71,6 +71,42 @@ public sealed class QueryEnumerationTests
     }
 
     [Fact]
+    public void Foreach_SkipsEmptiedArchetypes()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            // Five matching archetypes in creation order; the first, the middle and the last are emptied after they
+            // were cached, so each keeps its cache entry with no chunk.
+            Entity first = world.Spawn(new Payload(1));
+            Entity kept = world.Spawn(new Payload(2), new Health(2));
+            Entity middle = world.Spawn(new Payload(3), new Position(3, 3));
+            Entity alsoKept = world.Spawn(new Payload(4), new Marker());
+            Entity last = world.Spawn(new Payload(5), new Position(5, 5), new Health(5));
+            using Query query = world.Query().Read<Payload>().Build();
+            Assert.Equal(5, EnumerationSupport.Yielded(world, query).Count);
+            Archetype firstArchetype = EnumerationSupport.ArchetypeOf(world, first);
+            Archetype middleArchetype = EnumerationSupport.ArchetypeOf(world, middle);
+            Archetype lastArchetype = EnumerationSupport.ArchetypeOf(world, last);
+
+            // A move and two despawns: the swap-remove returns each archetype's only chunk to the pool.
+            world.Add(first, new Health(1));
+            world.Despawn(middle);
+            world.Despawn(last);
+            Assert.Equal(0, firstArchetype.Chunks.ChunkCount);
+            Assert.Equal(0, middleArchetype.Chunks.ChunkCount);
+            Assert.Equal(0, lastArchetype.Chunks.ChunkCount);
+            Assert.Equal(5, query.Cache.Count);
+
+            int keptIndex = EnumerationSupport.ArchetypeOf(world, kept).Index;
+            int alsoKeptIndex = EnumerationSupport.ArchetypeOf(world, alsoKept).Index;
+            Assert.Equal([(keptIndex, 0), (alsoKeptIndex, 0)], EnumerationSupport.Yielded(world, query));
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void Million_DoesNotAllocate()
     {
         const int Entities = 1_000_000;
