@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Background (concurrent) garbage collection off, so the allocation tests measure exactly. When a background
+    collection ends its mark phase, the .NET runtime (10.0.15 and 11.0.0) voids every thread's allocation context
+    without taking the unused tail off that thread's count, so GC.GetAllocatedBytesForCurrentThread jumps by up to
+    a few KB on a thread that allocated nothing. Tests running in parallel cause such collections (large-object allocations
+    start them). Blocking collections count correctly, and this setting doesn't change what the code under test
+    allocates. AllocationMeasurementTests guards it; docs/05-testing-strategy.md, "Allocation tests", explains it.
+  -->
+  <PropertyGroup>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/BrutalEngine.Runtime/BrutalEngine.Runtime.csproj" />
+  </ItemGroup>
+
+  <!--
+    The engine's layer map, compiled in unchanged, so RuntimeProjectTests reads Runtime's entry from the same map the
+    architecture tests enforce. LayerMap.cs holds the map's types; EngineLayers.cs holds the entries.
+  -->
+  <ItemGroup>
+    <Compile Include="../BrutalEngine.Architecture.Tests/LayerMap.cs" Link="Architecture/LayerMap.cs" />
+    <Compile Include="../BrutalEngine.Architecture.Tests/EngineLayers.cs" Link="Architecture/EngineLayers.cs" />
+  </ItemGroup>
+</Project>

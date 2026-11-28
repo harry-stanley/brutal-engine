@@ -41,9 +41,9 @@ public sealed class ShipGateTests
     }
 
     [Fact]
-    public void Expected_ReleaseMilestone1_IsTheSixM0AndM1Libraries()
+    public void Expected_ReleaseMilestone1_IsTheSevenM0AndM1Libraries()
     {
-        // Libraries of milestone 0 or 1 created later (Runtime, DebugOverlay) join this list in the PR that adds them.
+        // Libraries of milestone 0 or 1 created later (DebugOverlay) join this list in the PR that adds them.
         Assert.Equal(
             [
                 "BrutalEngine.Core",
@@ -51,6 +51,7 @@ public sealed class ShipGateTests
                 "BrutalEngine.Graphics.Vulkan",
                 "BrutalEngine.Platform",
                 "BrutalEngine.Platform.Sdl3",
+                "BrutalEngine.Runtime",
                 "BrutalEngine.World",
             ],
             CheckRepository().Expected(1));

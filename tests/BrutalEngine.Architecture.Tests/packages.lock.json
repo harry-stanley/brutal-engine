@@ -343,6 +343,12 @@
           "BrutalEngine.Platform": "[1.0.0, )"
         }
       },
+      "brutalengine.runtime": {
+        "type": "Project",
+        "dependencies": {
+          "BrutalEngine.Core": "[1.0.0, )"
+        }
+      },
       "brutalengine.world": {
         "type": "Project",
         "dependencies": {
