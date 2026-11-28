@@ -135,7 +135,13 @@ while read -r project; do
       echo "::error::$project declares the Gpu trait but ran no Gpu tests (exit code $NO_TESTS_RAN)."
       ;;
     "$HOST_EXITED_UNEXPECTEDLY")
-      echo "::error::The test host of $project crashed: it exited unexpectedly (exit code $status).${dir:+ Its TRX file and crash report are in $dir.}"
+      evidence=""
+      if [ ${#crash_env[@]} -ne 0 ]; then
+        evidence=" Its TRX file and crash report are in $dir."
+      elif [ -n "$dir" ]; then
+        evidence=" Its TRX file is in $dir."
+      fi
+      echo "::error::The test host of $project crashed: it exited unexpectedly (exit code $status).$evidence"
       ;;
     129 | 1[3-8][0-9] | 19[0-2])
       echo "::error::The test host of $project crashed with SIG$(kill -l "$((status - 128))") (exit code $status)."

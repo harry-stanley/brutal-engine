@@ -73,6 +73,30 @@ public sealed unsafe class CapabilityTests
 
     [Fact]
     [Trait("Category", "Gpu")]
+    public void RealDevice_WrongObjectType_ReachesValidation()
+    {
+        // Proves names reach the driver's layers: a handle named as the wrong type is a validation error.
+        ValidationLog sink = new();
+        (Logger logger, LogCategory category) = ValidationLog.Create(sink);
+        using (logger)
+        {
+            using VulkanInstance instance = GpuDevices.CreateInstance(category, []);
+            List<GpuDevices.Adapter> adapters = GpuDevices.Suitable(instance);
+            Assert.NotEmpty(adapters);
+            foreach (GpuDevices.Adapter adapter in adapters)
+            {
+                using VulkanDeviceCore core = GpuDevices.Create(instance, adapter, new VulkanCallGate(), null).Value;
+                long before = instance.ValidationErrors;
+
+                DebugNames.Set(core, VkObjectType.Image, (ulong)core.Device.Handle.VkHandle, "not an image"u8);
+
+                Assert.True(instance.ValidationErrors > before, adapter.Candidate.Name);
+            }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
     public void RealDevice_WithoutDebugUtils_NamingIsOff()
     {
         using Logger logger = new(new LoggerOptions { Sinks = [] });

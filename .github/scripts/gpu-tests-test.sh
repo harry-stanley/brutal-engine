@@ -196,6 +196,12 @@ expect "the exit 7 report names the project, the status and where the evidence i
   grep -qx '::error::The test host of tests/Alpha.Tests crashed: it exited unexpectedly (exit code 7). Its TRX file and crash report are in out/gpu/Alpha.Tests.' <<< "$output"
 expect "a crash names no crash report when the runtime wrote none" \
   grep -qx 'No crash report in out/gpu/Alpha.Tests.' <<< "$output"
+fresh; mixed_tree; exits Alpha.Tests 7; with GPU_TESTS_RESULTS=out/gpu GPU_TESTS_OS=MINGW64_NT-10.0-26100; run_script Release
+expect "off Linux the exit 7 report points at the TRX file only, since no crash report was asked for" \
+  grep -qx '::error::The test host of tests/Alpha.Tests crashed: it exited unexpectedly (exit code 7). Its TRX file is in out/gpu/Alpha.Tests.' <<< "$output"
+fresh; mixed_tree; exits Alpha.Tests 7; run_script Release
+expect "without a results directory the exit 7 report points at no files" \
+  grep -qx '::error::The test host of tests/Alpha.Tests crashed: it exited unexpectedly (exit code 7).' <<< "$output"
 
 # Crash reports: the runtime's JSON (createdump), trimmed to the fields the summary reads.
 readonly CRASH_REPORT='{"payload":{"threads":[
