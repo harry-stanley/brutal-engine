@@ -1,3 +1,4 @@
+using System;
 using BrutalEngine.Core;
 using Xunit;
 
@@ -31,6 +32,17 @@ public sealed class PipelineDescriptionDefaultsTests
         Assert.Equal(_layout, pipeline.Layout);
         Assert.Equal(_stage, pipeline.Compute);
         Assert.Null(pipeline.DebugName);
+    }
+
+    [Fact]
+    public void GraphicsPipelineDescription_Equality_ComparesMemoryByReference()
+    {
+        ColorTargetState[] targets = [new(TextureFormat.Rgba8Unorm, BlendState.AlphaBlending)];
+        var pipeline = new GraphicsPipelineDescription { Layout = _layout, Vertex = _stage, ColorTargets = targets, DebugName = "a" };
+
+        Assert.Equal(pipeline, pipeline with { DebugName = new string("a".AsSpan()) });
+        Assert.NotEqual(pipeline, pipeline with { ColorTargets = (ColorTargetState[])targets.Clone() });
+        Assert.NotEqual(pipeline, pipeline with { SampleCount = 4 });
     }
 
     [Fact]
