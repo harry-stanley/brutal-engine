@@ -188,7 +188,8 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <returns>The backend's answer; <see cref="FormatSupport.None"/> when the format can't be used at all.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="format"/> is <see cref="TextureFormat.Undefined"/> or not a <see cref="TextureFormat"/> member.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The device has no backend device to ask: a <see cref="Recover"/> failed before making one.
+    /// The device has no backend device to ask: a <see cref="Recover"/> failed before making one, or it was abandoned after
+    /// a GPU timeout.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
@@ -203,7 +204,7 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         return _backendGone
-            ? throw new InvalidOperationException("GetFormatSupport: the device has no backend device (a recovery failed).")
+            ? throw new InvalidOperationException("GetFormatSupport: the device has no backend device (a recovery failed, or it was abandoned after a GPU timeout).")
             : _backend.GetFormatSupport(format);
     }
 
@@ -338,8 +339,9 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <remarks>
     /// The wait happens only when a frame was submitted and the device isn't lost; if it fails, that is logged at
     /// <see cref="LogLevel.Error"/> and the objects are destroyed anyway. A frame may be open: it is never submitted.
-    /// After a <see cref="Recover"/> that failed before making a backend device, nothing waits or is destroyed and the
-    /// backend isn't called: only the device's own memory is freed.
+    /// After a loss to a GPU timeout, or a <see cref="Recover"/> that failed before making a backend device, nothing waits
+    /// or is destroyed and the backend isn't called: only the device's own memory is freed (a timed-out backend device is
+    /// abandoned, logged once at <see cref="LogLevel.Error"/>, as <see cref="Recover"/> does).
     /// Each leaked object is one <see cref="LogLevel.Error"/> line under <c>"Graphics"</c>, oldest first, with its kind and
     /// debug name. Afterwards every member except <see cref="Dispose"/>, <see cref="Adapter"/> and <see cref="Capabilities"/>
     /// throws <see cref="ObjectDisposedException"/>. The backend, logger, allocator and compatible window are left alone.
@@ -354,8 +356,9 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         _disposed = true;
-        if (_backendGone)
+        if (LostTimedOut || _backendGone)
         {
+            Abandon();
             DisposeSlots(_slots);
             _planner.Dispose();
             _deferred?.Dispose();

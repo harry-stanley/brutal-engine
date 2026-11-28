@@ -16,10 +16,11 @@ public sealed partial class GraphicsDevice
     private DeviceLostEventArgs? _detectedLoss;
     private bool _recovering;
 
-    // True once the backend device is gone: disposed by a recovery that couldn't make a new one. Nothing calls it then.
+    // True once the backend device is gone: disposed by a recovery that couldn't make a new one, or abandoned after a GPU
+    // timeout. Nothing calls it then.
     private bool _backendGone;
 
-    // The validation counts of the backend devices recovery replaced, which Statistics adds to the current one's.
+    // The validation counts of the backend devices recovery replaced or abandoned, which Statistics adds to the current one's.
     private long _pastValidationErrors;
     private long _pastValidationWarnings;
 
@@ -79,7 +80,8 @@ public sealed partial class GraphicsDevice
     /// gives each swapchain a new surface, then has the owners make their resources again.
     /// </summary>
     /// <returns>
-    /// Success once the device and every owner are back. Every failure is fatal for the host (docs/03 3.2): the
+    /// Success once the device and every owner are back. Every failure is fatal for the host (docs/03 3.2):
+    /// <see cref="ErrorKind.Timeout"/> after a loss to a GPU timeout, whose backend device is abandoned instead; the
     /// failure of finding the adapter or creating the device, as <see cref="Create"/> reports it, or of creating a surface;
     /// <see cref="ErrorKind.NotFound"/> when the selection no longer gives this adapter with these capabilities; or the
     /// first owner's failure. A failure before the owners are called leaves the device lost without a backend device, and
@@ -103,7 +105,12 @@ public sealed partial class GraphicsDevice
     /// What survives: this object, its options, logger, statistics and frame numbers, the owners, the
     /// <see cref="SwapchainHandle"/>s (<see cref="GetSwapchainInfo"/> reports the old swapchain until the next acquire) and
     /// the <see cref="DebugLabel"/>s. Writes not yet submitted are dropped. An owner's exception propagates, leaving the
-    /// device as far as the recovery got. Owner thread. Allocates.
+    /// device as far as the recovery got.
+    /// </para>
+    /// <para>
+    /// After a loss to a GPU timeout (<see cref="DeviceLostEventArgs.TimedOut"/>) nothing waits for or destroys anything:
+    /// the backend device is abandoned with one <see cref="Core.Logging.LogLevel.Error"/> line, no backend call is made,
+    /// and every call returns <see cref="ErrorKind.Timeout"/>. Owner thread. Allocates.
     /// </para>
     /// </remarks>
     public Result Recover()
@@ -113,6 +120,12 @@ public sealed partial class GraphicsDevice
         {
             throw new InvalidOperationException(!IsLostCore ? "Recover: the device isn't lost."
                 : _frameOpen ? $"Recover: frame {_frameNumber} is open; submit it first." : "Recover: a recovery is already running.");
+        }
+
+        if (LostTimedOut)
+        {
+            Abandon();
+            return new EngineError(ErrorKind.Timeout, "Recover: the device was lost to a GPU timeout; its backend device is abandoned.", LostNativeCode);
         }
 
         _recovering = true;
@@ -236,6 +249,17 @@ public sealed partial class GraphicsDevice
         AllocateTransientApi => AllocateTransientApi + LostSuffix,
         _ => api + LostSuffix, // a call not listed above makes its message
     };
+
+    // After a GPU timeout the backend device is left alone: waiting could hang and destroying could fault. Logged once.
+    private void Abandon()
+    {
+        if (!_backendGone)
+        {
+            (_pastValidationErrors, _pastValidationWarnings) = (ValidationErrorCount, ValidationWarningCount);
+            _backendGone = true;
+            _log.Error($"Device abandoned after a GPU timeout: native objects leaked.");
+        }
+    }
 
     // Recovery's teardown: every id held for the old backend device is dropped without a backend call (disposing the
     // backend device destroys its objects) and every handle released, then the device is disposed. A retry after a failed
