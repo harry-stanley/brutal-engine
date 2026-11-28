@@ -10,7 +10,10 @@ namespace BrutalEngine.Graphics;
 /// </param>
 /// <remarks>
 /// There is no stencil state in M1 (docs/design/graphics.md section 7). Clip-space depth runs from 0 to 1 on every
-/// backend. A plain unmanaged value. Equality compares every field. Immutable and safe to use from any thread. No member
+/// backend. When the pipeline is created, a <paramref name="Format"/> that isn't a depth format
+/// (<see cref="TextureFormat.Depth16Unorm"/> or <see cref="TextureFormat.Depth32Float"/>) throws
+/// <see cref="System.ArgumentException"/>, and a value outside its enum <see cref="System.ArgumentOutOfRangeException"/>;
+/// whether the device supports the format is the device's check. A plain unmanaged value. Equality compares every field. Immutable and safe to use from any thread. No member
 /// allocates, except <see cref="object.ToString"/>.
 /// </remarks>
 public readonly record struct DepthState(TextureFormat Format, bool Write, CompareFunction Compare = CompareFunction.LessOrEqual);

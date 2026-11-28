@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 
 namespace BrutalEngine.Graphics.Validation;
 
@@ -214,6 +215,222 @@ internal static class PipelineValidator
             }
         }
     }
+
+    /// <summary>
+    /// Checks a graphics pipeline description: entry points, state values, targets, sample count and vertex layouts.
+    /// </summary>
+    /// <param name="description">The description to check.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="description"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// A value is outside its enum (topology, cull mode, front face, a format, a blend factor or operation, a write mask,
+    /// the depth comparison, a step mode); the sample count isn't 1, 2, 4, 8 or 16; a stride, location or offset is
+    /// negative; or an attribute ends past its buffer's stride.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// An entry point is <see langword="null"/> or empty; there is neither a color target nor a depth state; the depth
+    /// format isn't a depth format or a color target's format isn't a color format; or two attributes share a location.
+    /// </exception>
+    public static void Validate(GraphicsPipelineDescription description)
+    {
+        ArgumentNullException.ThrowIfNull(description);
+        const string Type = nameof(GraphicsPipelineDescription);
+        string? name = description.DebugName;
+        CheckEntryPoint(nameof(description), Type, nameof(GraphicsPipelineDescription.Vertex), description.Vertex, name);
+        if (description.Fragment is { } fragment)
+        {
+            CheckEntryPoint(nameof(description), Type, nameof(GraphicsPipelineDescription.Fragment), fragment, name);
+        }
+
+        if ((uint)description.Topology > (uint)PrimitiveTopology.LineStrip)
+        {
+            ThrowOutOfRange(nameof(description), Type, nameof(GraphicsPipelineDescription.Topology), -1, null, "isn't a PrimitiveTopology member", (long)description.Topology, name);
+        }
+
+        if ((uint)description.Raster.CullMode > (uint)CullMode.Back)
+        {
+            ThrowOutOfRange(nameof(description), Type, nameof(GraphicsPipelineDescription.Raster), -1, nameof(RasterState.CullMode), "isn't a CullMode member", (long)description.Raster.CullMode, name);
+        }
+
+        if ((uint)description.Raster.FrontFace > (uint)FrontFace.Clockwise)
+        {
+            ThrowOutOfRange(nameof(description), Type, nameof(GraphicsPipelineDescription.Raster), -1, nameof(RasterState.FrontFace), "isn't a FrontFace member", (long)description.Raster.FrontFace, name);
+        }
+
+        int samples = description.SampleCount;
+        if (samples < 1 || samples > 16 || !BitOperations.IsPow2(samples))
+        {
+            ThrowOutOfRange(nameof(description), Type, nameof(GraphicsPipelineDescription.SampleCount), -1, null, "must be 1, 2, 4, 8 or 16", samples, name);
+        }
+
+        ReadOnlySpan<ColorTargetState> targets = description.ColorTargets.Span;
+        if (targets.IsEmpty && description.Depth is null)
+        {
+            ThrowInvalid(nameof(description), Type, nameof(GraphicsPipelineDescription.ColorTargets), -1, null, "must not be empty when there is no Depth state", name);
+        }
+
+        if (description.Depth is { } depth)
+        {
+            CheckFormat(nameof(description), nameof(GraphicsPipelineDescription.Depth), -1, depth.Format, wantDepth: true, name);
+            if ((uint)depth.Compare > (uint)CompareFunction.Always)
+            {
+                ThrowOutOfRange(nameof(description), Type, nameof(GraphicsPipelineDescription.Depth), -1, nameof(DepthState.Compare), "isn't a CompareFunction member", (long)depth.Compare, name);
+            }
+        }
+
+        for (int i = 0; i < targets.Length; i++)
+        {
+            ColorTargetState target = targets[i];
+            CheckFormat(nameof(description), nameof(GraphicsPipelineDescription.ColorTargets), i, target.Format, wantDepth: false, name);
+            if ((target.WriteMask & ~ColorWriteMask.All) != 0)
+            {
+                ThrowOutOfRange(nameof(description), Type, nameof(GraphicsPipelineDescription.ColorTargets), i, nameof(ColorTargetState.WriteMask), "has flags that aren't ColorWriteMask members", (long)target.WriteMask, name);
+            }
+
+            if (target.Blend is { } blend)
+            {
+                CheckBlend(nameof(description), i, "Blend.Color", blend.Color, name);
+                CheckBlend(nameof(description), i, "Blend.Alpha", blend.Alpha, name);
+            }
+        }
+
+        CheckVertexBuffers(nameof(description), description.VertexBuffers.Span, name);
+    }
+
+    /// <summary>Returns the bytes one attribute of <paramref name="format"/> occupies.</summary>
+    /// <param name="format">A <see cref="VertexFormat"/> member.</param>
+    /// <returns>4, 8, 12 or 16, as each member's documentation gives.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="format"/> isn't a member of the enum.</exception>
+    internal static int VertexFormatSize(VertexFormat format) => format switch
+    {
+        VertexFormat.Float32 or VertexFormat.Float16x2 or VertexFormat.Unorm8x4 or VertexFormat.Uint8x4
+            or VertexFormat.Uint32 or VertexFormat.Sint32 => 4,
+        VertexFormat.Float32x2 or VertexFormat.Float16x4 or VertexFormat.Uint32x2 => 8,
+        VertexFormat.Float32x3 => 12,
+        VertexFormat.Float32x4 => 16,
+        _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Not a VertexFormat member."),
+    };
+
+    // Each buffer's stride and step mode, then each attribute's location, offset, format and extent, and no location
+    // twice across all buffers (checked against every earlier attribute, so nothing is allocated).
+    private static void CheckVertexBuffers(string paramName, ReadOnlySpan<VertexBufferLayout> buffers, string? debugName)
+    {
+        const string Type = nameof(GraphicsPipelineDescription);
+        const string Field = nameof(GraphicsPipelineDescription.VertexBuffers);
+        for (int b = 0; b < buffers.Length; b++)
+        {
+            VertexBufferLayout buffer = buffers[b];
+            if (buffer.Stride < 0)
+            {
+                ThrowOutOfRange(paramName, Type, Field, b, nameof(VertexBufferLayout.Stride), "must be 0 or more", buffer.Stride, debugName);
+            }
+
+            if ((uint)buffer.StepMode > (uint)VertexStepMode.Instance)
+            {
+                ThrowOutOfRange(paramName, Type, Field, b, nameof(VertexBufferLayout.StepMode), "isn't a VertexStepMode member", (long)buffer.StepMode, debugName);
+            }
+
+            ReadOnlySpan<VertexAttribute> attributes = buffer.Attributes.Span;
+            for (int a = 0; a < attributes.Length; a++)
+            {
+                VertexAttribute attribute = attributes[a];
+                if (attribute.Location < 0)
+                {
+                    ThrowOutOfRange(paramName, Type, Field, b, Attribute(a, nameof(VertexAttribute.Location)), "must be 0 or more", attribute.Location, debugName);
+                }
+
+                if (attribute.Offset < 0)
+                {
+                    ThrowOutOfRange(paramName, Type, Field, b, Attribute(a, nameof(VertexAttribute.Offset)), "must be 0 or more", attribute.Offset, debugName);
+                }
+
+                if ((uint)attribute.Format > (uint)VertexFormat.Sint32)
+                {
+                    ThrowOutOfRange(paramName, Type, Field, b, Attribute(a, nameof(VertexAttribute.Format)), "isn't a VertexFormat member", (long)attribute.Format, debugName);
+                }
+
+                // Offset and size are both non-negative here, so their sum can't overflow a long.
+                int size = VertexFormatSize(attribute.Format);
+                if ((long)attribute.Offset + size > buffer.Stride)
+                {
+                    ThrowOutOfRange(
+                        paramName,
+                        Type,
+                        Field,
+                        b,
+                        Attribute(a, nameof(VertexAttribute.Offset)),
+                        string.Create(CultureInfo.InvariantCulture, $"must leave room for its {attribute.Format} ({size} bytes) inside the buffer's Stride ({buffer.Stride})"),
+                        attribute.Offset,
+                        debugName);
+                }
+
+                CheckLocationUnique(paramName, buffers, b, a, attribute.Location, debugName);
+            }
+        }
+    }
+
+    // The attribute at (buffer, index) against every attribute before it, in its own buffer and in earlier buffers.
+    private static void CheckLocationUnique(string paramName, ReadOnlySpan<VertexBufferLayout> buffers, int buffer, int index, int location, string? debugName)
+    {
+        for (int b = 0; b <= buffer; b++)
+        {
+            ReadOnlySpan<VertexAttribute> earlier = buffers[b].Attributes.Span;
+            int count = b == buffer ? index : earlier.Length;
+            for (int a = 0; a < count; a++)
+            {
+                if (earlier[a].Location == location)
+                {
+                    ThrowInvalid(
+                        paramName,
+                        nameof(GraphicsPipelineDescription),
+                        nameof(GraphicsPipelineDescription.VertexBuffers),
+                        buffer,
+                        Attribute(index, nameof(VertexAttribute.Location)),
+                        string.Create(CultureInfo.InvariantCulture, $"must be unique across the vertex buffers, but {location} is also VertexBuffers[{b}].Attributes[{a}]'s"),
+                        debugName);
+                }
+            }
+        }
+    }
+
+    // A format outside the enum is out of range; a defined format of the wrong kind (Undefined, or depth for a color
+    // target, or color for the depth state) is invalid.
+    private static void CheckFormat(string paramName, string field, int index, TextureFormat format, bool wantDepth, string? debugName)
+    {
+        const string Type = nameof(GraphicsPipelineDescription);
+        if ((uint)format > (uint)TextureFormat.Depth32Float)
+        {
+            ThrowOutOfRange(paramName, Type, field, index, nameof(ColorTargetState.Format), "isn't a TextureFormat member", (long)format, debugName);
+        }
+
+        bool isDepth = format is TextureFormat.Depth16Unorm or TextureFormat.Depth32Float;
+        if (format == TextureFormat.Undefined || isDepth != wantDepth)
+        {
+            ThrowInvalid(paramName, Type, field, index, nameof(ColorTargetState.Format), string.Create(CultureInfo.InvariantCulture, $"must be a {(wantDepth ? "depth" : "color")} format, but is {format}"), debugName);
+        }
+    }
+
+    private static void CheckBlend(string paramName, int index, string member, BlendComponent component, string? debugName)
+    {
+        const string Type = nameof(GraphicsPipelineDescription);
+        const string Field = nameof(GraphicsPipelineDescription.ColorTargets);
+        if ((uint)component.Source > (uint)BlendFactor.OneMinusDestinationAlpha)
+        {
+            ThrowOutOfRange(paramName, Type, Field, index, member + ".Source", "isn't a BlendFactor member", (long)component.Source, debugName);
+        }
+
+        if ((uint)component.Destination > (uint)BlendFactor.OneMinusDestinationAlpha)
+        {
+            ThrowOutOfRange(paramName, Type, Field, index, member + ".Destination", "isn't a BlendFactor member", (long)component.Destination, debugName);
+        }
+
+        if ((uint)component.Operation > (uint)BlendOperation.Max)
+        {
+            ThrowOutOfRange(paramName, Type, Field, index, member + ".Operation", "isn't a BlendOperation member", (long)component.Operation, debugName);
+        }
+    }
+
+    private static string Attribute(int index, string member) =>
+        string.Create(CultureInfo.InvariantCulture, $"{nameof(VertexBufferLayout.Attributes)}[{index}].{member}");
 
     // A shader stage's entry point must name a function; the module handle is the device's check.
     private static void CheckEntryPoint(string paramName, string type, string field, in ShaderStage stage, string? debugName)

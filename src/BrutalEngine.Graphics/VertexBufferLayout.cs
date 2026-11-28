@@ -4,7 +4,9 @@ using System.Globalization;
 namespace BrutalEngine.Graphics;
 
 /// <summary>The layout of one vertex buffer a graphics pipeline reads: its element size, step rate and attributes.</summary>
-/// <param name="Stride">The bytes from one element to the next: at least 0, and every attribute lies inside it.</param>
+/// <param name="Stride">
+/// The bytes from one element to the next: at least 0, with no alignment rule, and every attribute lies inside it.
+/// </param>
 /// <param name="StepMode">Whether the buffer advances per vertex or per instance.</param>
 /// <param name="Attributes">The attributes each element holds; may be empty.</param>
 /// <remarks>

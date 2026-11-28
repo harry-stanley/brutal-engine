@@ -7,7 +7,7 @@ namespace BrutalEngine.Graphics.Tests.Pipelines;
 
 /// <summary>
 /// A valid description passes the pipeline validator without allocating, so a frame bind group can be checked in the
-/// frame loop. Every Validate overload in this part runs inside the measured window, each over a description that
+/// frame loop. Every Validate overload runs inside a measured window, each over a description that
 /// reaches all of its loops. The project turns background garbage collection off, which AllocationMeasurementTests
 /// guards, so the counts are exact.
 /// </summary>
@@ -44,6 +44,36 @@ public sealed class PipelineValidatorAllocationTests
         for (int i = 0; i < Iterations; i++)
         {
             Exercise(module, layout, compute, groupLayout, buffer, view, sampler);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
+    [Fact]
+    public void ValidGraphicsPipeline_DoesNotAllocate()
+    {
+        // Every branch a valid pipeline takes: a fragment stage, a depth state, two blended targets, two vertex buffers
+        // whose attributes reach the cross-buffer location scan.
+        var pipeline = new GraphicsPipelineDescription
+        {
+            Layout = default,
+            Vertex = new ShaderStage(default, "vs"),
+            Fragment = new ShaderStage(default, "fs"),
+            VertexBuffers = new[]
+            {
+                new VertexBufferLayout(20, VertexStepMode.Vertex, new VertexAttribute[] { new(0, VertexFormat.Float32x3, 0), new(1, VertexFormat.Float32x2, 12) }),
+                new VertexBufferLayout(4, VertexStepMode.Instance, new VertexAttribute[] { new(2, VertexFormat.Unorm8x4, 0) }),
+            },
+            Depth = new DepthState(TextureFormat.Depth32Float, Write: true),
+            ColorTargets = new[] { new ColorTargetState(TextureFormat.Bgra8Unorm, BlendState.AlphaBlending), new ColorTargetState(TextureFormat.Rgba16Float, BlendState.Additive) },
+            SampleCount = 4,
+        };
+
+        PipelineValidator.Validate(pipeline);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < Iterations; i++)
+        {
+            PipelineValidator.Validate(pipeline);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);

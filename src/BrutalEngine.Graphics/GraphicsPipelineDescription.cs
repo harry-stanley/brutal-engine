@@ -13,8 +13,10 @@ namespace BrutalEngine.Graphics;
 /// <see cref="SampleCount"/>), because dynamic rendering has no render pass objects. Viewport and scissor are always
 /// dynamic; everything else is baked, so a pipeline never recompiles at draw time (docs/design/graphics.md section 7).
 /// The device checks the description's structure when the pipeline is created: entry points not empty, at least one
-/// color target or a depth state, a sample count of 1, 2, 4, 8 or 16, and vertex attribute locations unique with each
-/// attribute inside its buffer's stride.
+/// color target or a depth state, depth and color formats of the right kind, a sample count of exactly 1, 2, 4, 8 or
+/// 16, non-negative strides, locations and offsets, each attribute inside its buffer's stride, and vertex attribute
+/// locations unique across the buffers (there is no stride alignment rule). A broken rule throws
+/// <see cref="ArgumentException"/>, or <see cref="ArgumentOutOfRangeException"/> for a value out of its range or enum.
 /// </para>
 /// <para>
 /// A <see langword="sealed"/> record class: it holds arrays and is created at load time, never per frame. Immutable once
