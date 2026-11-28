@@ -1,0 +1,40 @@
+#nullable enable
+BrutalEngine.Runtime.FixedStepClock
+BrutalEngine.Runtime.FixedStepClock.Advance(long timestamp) -> BrutalEngine.Runtime.FrameTiming
+BrutalEngine.Runtime.FixedStepClock.FixedDelta.get -> System.TimeSpan
+BrutalEngine.Runtime.FixedStepClock.FixedStepClock(BrutalEngine.Runtime.FrameLoopOptions! options, long timestampFrequency, long startTimestamp) -> void
+BrutalEngine.Runtime.FixedStepClock.FrameCount.get -> long
+BrutalEngine.Runtime.FixedStepClock.Rebase(long timestamp) -> void
+BrutalEngine.Runtime.FixedStepClock.SpiralCount.get -> long
+BrutalEngine.Runtime.FixedStepClock.StepCount.get -> long
+BrutalEngine.Runtime.FrameLoopOptions
+BrutalEngine.Runtime.FrameLoopOptions.<Clone>$() -> BrutalEngine.Runtime.FrameLoopOptions!
+BrutalEngine.Runtime.FrameLoopOptions.Equals(BrutalEngine.Runtime.FrameLoopOptions? other) -> bool
+BrutalEngine.Runtime.FrameLoopOptions.FixedUpdateRate.get -> int
+BrutalEngine.Runtime.FrameLoopOptions.FixedUpdateRate.init -> void
+BrutalEngine.Runtime.FrameLoopOptions.FrameLoopOptions() -> void
+BrutalEngine.Runtime.FrameLoopOptions.MaxFrameDelta.get -> System.TimeSpan
+BrutalEngine.Runtime.FrameLoopOptions.MaxFrameDelta.init -> void
+BrutalEngine.Runtime.FrameTiming
+BrutalEngine.Runtime.FrameTiming.Alpha.get -> float
+BrutalEngine.Runtime.FrameTiming.Alpha.init -> void
+BrutalEngine.Runtime.FrameTiming.Clamped.get -> bool
+BrutalEngine.Runtime.FrameTiming.Clamped.init -> void
+BrutalEngine.Runtime.FrameTiming.Deconstruct(out int Steps, out float Alpha, out System.TimeSpan Delta, out bool Clamped) -> void
+BrutalEngine.Runtime.FrameTiming.Delta.get -> System.TimeSpan
+BrutalEngine.Runtime.FrameTiming.Delta.init -> void
+BrutalEngine.Runtime.FrameTiming.Equals(BrutalEngine.Runtime.FrameTiming other) -> bool
+BrutalEngine.Runtime.FrameTiming.FrameTiming() -> void
+BrutalEngine.Runtime.FrameTiming.FrameTiming(int Steps, float Alpha, System.TimeSpan Delta, bool Clamped) -> void
+BrutalEngine.Runtime.FrameTiming.Steps.get -> int
+BrutalEngine.Runtime.FrameTiming.Steps.init -> void
+override BrutalEngine.Runtime.FrameLoopOptions.Equals(object? obj) -> bool
+override BrutalEngine.Runtime.FrameLoopOptions.GetHashCode() -> int
+override BrutalEngine.Runtime.FrameLoopOptions.ToString() -> string!
+override BrutalEngine.Runtime.FrameTiming.GetHashCode() -> int
+static BrutalEngine.Runtime.FrameLoopOptions.operator !=(BrutalEngine.Runtime.FrameLoopOptions? left, BrutalEngine.Runtime.FrameLoopOptions? right) -> bool
+static BrutalEngine.Runtime.FrameLoopOptions.operator ==(BrutalEngine.Runtime.FrameLoopOptions? left, BrutalEngine.Runtime.FrameLoopOptions? right) -> bool
+static BrutalEngine.Runtime.FrameTiming.operator !=(BrutalEngine.Runtime.FrameTiming left, BrutalEngine.Runtime.FrameTiming right) -> bool
+static BrutalEngine.Runtime.FrameTiming.operator ==(BrutalEngine.Runtime.FrameTiming left, BrutalEngine.Runtime.FrameTiming right) -> bool
+~override BrutalEngine.Runtime.FrameTiming.Equals(object obj) -> bool
+~override BrutalEngine.Runtime.FrameTiming.ToString() -> string

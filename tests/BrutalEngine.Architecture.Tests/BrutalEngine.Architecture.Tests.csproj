@@ -9,6 +9,7 @@
     <ProjectReference Include="../../src/BrutalEngine.Graphics.Vulkan/BrutalEngine.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../../src/BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
     <ProjectReference Include="../../src/BrutalEngine.Platform.Sdl3/BrutalEngine.Platform.Sdl3.csproj" />
+    <ProjectReference Include="../../src/BrutalEngine.Runtime/BrutalEngine.Runtime.csproj" />
     <ProjectReference Include="../../src/BrutalEngine.World/BrutalEngine.World.csproj" />
   </ItemGroup>
 </Project>

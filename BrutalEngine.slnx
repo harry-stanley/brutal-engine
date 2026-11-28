@@ -6,6 +6,7 @@
     <Project Path="src/BrutalEngine.Graphics.Vulkan/BrutalEngine.Graphics.Vulkan.csproj" />
     <Project Path="src/BrutalEngine.Platform/BrutalEngine.Platform.csproj" />
     <Project Path="src/BrutalEngine.Platform.Sdl3/BrutalEngine.Platform.Sdl3.csproj" />
+    <Project Path="src/BrutalEngine.Runtime/BrutalEngine.Runtime.csproj" />
     <Project Path="src/BrutalEngine.World/BrutalEngine.World.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -20,6 +21,7 @@
     <Project Path="tests/BrutalEngine.Graphics.Vulkan.Tests/BrutalEngine.Graphics.Vulkan.Tests.csproj" />
     <Project Path="tests/BrutalEngine.Platform.Tests/BrutalEngine.Platform.Tests.csproj" />
     <Project Path="tests/BrutalEngine.Platform.Sdl3.Tests/BrutalEngine.Platform.Sdl3.Tests.csproj" />
+    <Project Path="tests/BrutalEngine.Runtime.Tests/BrutalEngine.Runtime.Tests.csproj" />
     <Project Path="tests/BrutalEngine.World.Tests/BrutalEngine.World.Tests.csproj" />
     <Project Path="tests/HelloWindow.Tests/HelloWindow.Tests.csproj" />
     <Project Path="tests/TestUtilities/TestUtilities.csproj" />

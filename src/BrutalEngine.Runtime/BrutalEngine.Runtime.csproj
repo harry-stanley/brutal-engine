@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>BrutalEngine runtime host: the start-up and shutdown order, the module registry and the fixed-step frame loop.</Description>
+    <PackageTags>gamedev;game-engine;2d;brutal;runtime</PackageTags>
+    <BrutalEngineMilestone>1</BrutalEngineMilestone>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../BrutalEngine.Core/BrutalEngine.Core.csproj" />
+  </ItemGroup>
+</Project>
