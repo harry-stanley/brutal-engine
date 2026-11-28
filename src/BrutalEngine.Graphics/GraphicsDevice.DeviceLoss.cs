@@ -85,7 +85,8 @@ public sealed partial class GraphicsDevice
     /// <returns>
     /// Success once the device and every owner are back. Every failure is fatal for the host (docs/03 3.2):
     /// <see cref="ErrorKind.Timeout"/> after a loss to a GPU timeout, whose backend device is abandoned instead; the
-    /// failure of finding the adapter or creating the device, as <see cref="Create"/> reports it, or of creating a surface;
+    /// failure of finding the adapter or creating the device, as <see cref="Create"/> reports it (its message names
+    /// <c>Recover</c>), or of creating a surface;
     /// <see cref="ErrorKind.NotFound"/> when the selection no longer gives this adapter with these capabilities; or the
     /// first owner's failure. A failure before the owners are called leaves the device lost without a backend device, and
     /// a later call tries again. After an owner's failure the device isn't lost, and the owners after it aren't called.
@@ -347,7 +348,7 @@ public sealed partial class GraphicsDevice
     // device's adapter with its capabilities, then a new surface for each swapchain.
     private Result RecreateBackendDevice()
     {
-        Result<IBackendDevice> opened = OpenBackendDevice(_factory, _request, _options, _log, _objects);
+        Result<IBackendDevice> opened = OpenBackendDevice(nameof(Recover), _factory, _request, _options, _log, _objects);
         if (!opened.TryGetValue(out IBackendDevice? device))
         {
             return opened.Error;

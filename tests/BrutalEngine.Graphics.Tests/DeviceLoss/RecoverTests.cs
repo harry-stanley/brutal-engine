@@ -220,7 +220,7 @@ public sealed class RecoverTests : IDisposable
 
         (ErrorKind kind, string message) = failure switch
         {
-            "AdapterGone" => (ErrorKind.Unsupported, "Create: no suitable adapter."),
+            "AdapterGone" => (ErrorKind.Unsupported, "Recover: no suitable adapter."),
             "AdapterChanged" or "NameChanged" or "IndexChanged" or "CapabilitiesChanged" => (ErrorKind.NotFound, "Recover: adapter 0 'Fake GPU 0' is gone or has changed."),
             _ => (ErrorKind.Native, "injected"),
         };

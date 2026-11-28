@@ -135,7 +135,7 @@ public sealed partial class GraphicsDevice : IDisposable
 
         LogCategory log = options.Logger.CreateCategory(LogCategoryName);
         var objects = new BackendObjectTable();
-        Result<IBackendDevice> opened = OpenBackendDevice(backend, request, options, log, objects);
+        Result<IBackendDevice> opened = OpenBackendDevice(nameof(Create), backend, request, options, log, objects);
         if (!opened.TryGetValue(out IBackendDevice? device))
         {
             return opened.Error;
@@ -400,8 +400,8 @@ public sealed partial class GraphicsDevice : IDisposable
     }
 
     // Enumerates the adapters, logs the rejected ones, selects one and creates its backend device, which must have every
-    // required feature; on a failure nothing is left alive. Create and Recover share it.
-    private static Result<IBackendDevice> OpenBackendDevice(IGraphicsBackend backend, BackendDeviceRequest request, GraphicsDeviceOptions options, LogCategory log, BackendObjectTable objects)
+    // required feature; on a failure nothing is left alive. Create and Recover share it: api names the caller in messages.
+    private static Result<IBackendDevice> OpenBackendDevice(string api, IGraphicsBackend backend, BackendDeviceRequest request, GraphicsDeviceOptions options, LogCategory log, BackendObjectTable objects)
     {
         Result<IReadOnlyList<GraphicsAdapterInfo>> adapters = backend.EnumerateAdapters(request);
         if (!adapters.TryGetValue(out IReadOnlyList<GraphicsAdapterInfo>? list))
@@ -410,7 +410,7 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         LogRejections(log, list);
-        if (!TrySelect(list, options.Adapter, out int adapterIndex, out EngineError error))
+        if (!TrySelect(api, list, options.Adapter, out int adapterIndex, out EngineError error))
         {
             return error;
         }
@@ -427,7 +427,7 @@ public sealed partial class GraphicsDevice : IDisposable
             device.Dispose();
             return new EngineError(ErrorKind.Unsupported, string.Create(
                 CultureInfo.InvariantCulture,
-                $"Create: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
+                $"{api}: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
         }
 
         return new Result<IBackendDevice>(device);
@@ -464,7 +464,7 @@ public sealed partial class GraphicsDevice : IDisposable
         return true;
     }
 
-    private static bool TrySelect(IReadOnlyList<GraphicsAdapterInfo> adapters, AdapterSelection selection, out int index, out EngineError error)
+    private static bool TrySelect(string api, IReadOnlyList<GraphicsAdapterInfo> adapters, AdapterSelection selection, out int index, out EngineError error)
     {
         GraphicsAdapterInfo? best = null;
         foreach (GraphicsAdapterInfo adapter in adapters)
@@ -486,8 +486,8 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         var message = new StringBuilder(selection.Kind == AdapterSelectionKind.Auto
-            ? "Create: no suitable adapter."
-            : string.Create(CultureInfo.InvariantCulture, $"Create: the adapter override '{selection}' matches no suitable adapter."));
+            ? api + ": no suitable adapter."
+            : string.Create(CultureInfo.InvariantCulture, $"{api}: the adapter override '{selection}' matches no suitable adapter."));
         if (adapters.Count == 0)
         {
             _ = message.Append(" The backend found no adapters.");
