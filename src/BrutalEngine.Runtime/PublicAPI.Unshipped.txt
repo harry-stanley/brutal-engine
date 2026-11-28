@@ -1,4 +1,12 @@
 #nullable enable
+BrutalEngine.Runtime.FixedStepClock
+BrutalEngine.Runtime.FixedStepClock.Advance(long timestamp) -> BrutalEngine.Runtime.FrameTiming
+BrutalEngine.Runtime.FixedStepClock.FixedDelta.get -> System.TimeSpan
+BrutalEngine.Runtime.FixedStepClock.FixedStepClock(BrutalEngine.Runtime.FrameLoopOptions! options, long timestampFrequency, long startTimestamp) -> void
+BrutalEngine.Runtime.FixedStepClock.FrameCount.get -> long
+BrutalEngine.Runtime.FixedStepClock.Rebase(long timestamp) -> void
+BrutalEngine.Runtime.FixedStepClock.SpiralCount.get -> long
+BrutalEngine.Runtime.FixedStepClock.StepCount.get -> long
 BrutalEngine.Runtime.FrameLoopOptions
 BrutalEngine.Runtime.FrameLoopOptions.<Clone>$() -> BrutalEngine.Runtime.FrameLoopOptions!
 BrutalEngine.Runtime.FrameLoopOptions.Equals(BrutalEngine.Runtime.FrameLoopOptions? other) -> bool

@@ -2,9 +2,9 @@ using System;
 
 namespace BrutalEngine.Runtime;
 
-/// <summary>What one <c>FixedStepClock.Advance</c> call measured: the work and interpolation for one frame.</summary>
+/// <summary>What one <see cref="FixedStepClock.Advance"/> call measured: the work and interpolation for one frame.</summary>
 /// <param name="Steps">
-/// The whole fixed steps to simulate this frame, each <c>FixedStepClock.FixedDelta</c> long. Zero or more, and
+/// The whole fixed steps to simulate this frame, each <see cref="FixedStepClock.FixedDelta"/> long. Zero or more, and
 /// at most the cap that <see cref="FrameLoopOptions.MaxFrameDelta"/> sets.
 /// </param>
 /// <param name="Alpha">
@@ -17,7 +17,7 @@ namespace BrutalEngine.Runtime;
 /// </param>
 /// <param name="Clamped">
 /// <see langword="true"/> when the elapsed time was longer than <see cref="FrameLoopOptions.MaxFrameDelta"/> and was
-/// clamped; such a frame counts in <c>FixedStepClock.SpiralCount</c>.
+/// clamped; such a frame counts in <see cref="FixedStepClock.SpiralCount"/>.
 /// </param>
 /// <remarks>Plain immutable data: safe to share between threads, and copying or reading it allocates nothing.</remarks>
 public readonly record struct FrameTiming(int Steps, float Alpha, TimeSpan Delta, bool Clamped);
