@@ -27,6 +27,7 @@ All BRUTAL packages are published as `Ahwoo.Brutal.*` with CalVer versions (2026
 | `Ahwoo.Brutal.Logging` | Bridged into the engine logger by the backends (M1) | managed only |
 | `Ahwoo.Brutal.Localization` | String tables, `LString` formatting | managed only |
 | `Ahwoo.Brutal.Sdl` (+ `.Native`) | Windows, events, input, gamepads, audio device, Vulkan surface (`SDL_Vulkan_CreateSurface`) | SDL 3.4 (`libSDL3.so.0.4.12`), 3 RIDs |
+| `Ahwoo.Brutal.Sdl.Mixer` (+ `.Native`) | Decoding only, never playback or mixing (M2): WAV, Ogg Vorbis, FLAC and MP3 in the cook-time audio importer, and streamed Ogg Vorbis music in `Audio.Sdl3` ([ADR-0017](adr/0017-audio-decoding.md)) | SDL_mixer 3.2.4 (`libSDL3_mixer.so.0.2.4`) with stb_vorbis, dr_flac and dr_mp3, no Opus. 3 RIDs |
 | `Ahwoo.Brutal.Vulkan` (+ `.Native`) | Vulkan 1.3 bindings and function tables | 3 RIDs (helper library, not the loader) |
 | `Ahwoo.Brutal.Vulkan.Vma` (+ `.Native`) | GPU memory allocation | 3 RIDs |
 | `Ahwoo.Brutal.Slang` (+ `.Native`) | Offline shader compilation in the cooker (tools only, never shipped in games). In M1, `tools/BrutalEngine.Cook` has only a Slang shader command; built-in shaders' SPIR-V is committed, and a Linux CI job re-cooks it and fails on any byte difference ([ADR-0012](adr/0012-m1-shader-cooking.md)) | Native package is ~99 MB. 3 RIDs (spike S4) |
@@ -39,7 +40,7 @@ All BRUTAL packages are published as `Ahwoo.Brutal.*` with CalVer versions (2026
 | `Ahwoo.Brutal.Sdl.Ttf` | Candidate for complex-script text shaping (HarfBuzz) in localisation. Decided in spike S8 | 3 RIDs |
 | `Ahwoo.Brutal.RakNet` | Candidate networking transport. Decided in spike S7 | 3 RIDs |
 
-Not used: GLFW (SDL3 replaces it, [ADR-0003](adr/0003-sdl3-platform.md)), OpenGL, OpenAL and SDL_mixer (our own mixer, [ADR-0004](adr/0004-audio.md)), Jolt, glTF and MeshOptimizer (3D), FMOD (an optional plugin after v1), NotCurses.
+Not used: GLFW (SDL3 replaces it, [ADR-0003](adr/0003-sdl3-platform.md)), OpenGL, OpenAL and SDL_mixer's playback and mixing (our own mixer, [ADR-0004](adr/0004-audio.md); SDL_mixer is only a decoder, [ADR-0017](adr/0017-audio-decoding.md)), Jolt, glTF and MeshOptimizer (3D), FMOD (an optional plugin after v1), NotCurses.
 
 ### Not bundled by BRUTAL: we ship these ourselves
 

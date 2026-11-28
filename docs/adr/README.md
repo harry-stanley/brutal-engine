@@ -20,3 +20,4 @@ One file per decision that is expensive to reverse. See the [ADR process](../08-
 | [0014](0014-dotnet-11.md) | Target .NET 11 | Accepted |
 | [0015](0015-tested-platforms-windows-linux.md) | Windows and Linux are the tested targets; macOS is best-effort and leaves CI | Accepted |
 | [0016](0016-trunk-based-milestones.md) | Develop milestones on trunk and gate what each release ships | Accepted |
+| [0017](0017-audio-decoding.md) | Decode compressed audio with SDL3_mixer, used as a decoder only | Accepted |
