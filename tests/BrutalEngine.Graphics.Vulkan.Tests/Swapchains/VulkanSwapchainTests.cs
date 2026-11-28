@@ -16,10 +16,11 @@ namespace BrutalEngine.Graphics.Vulkan.Tests.Swapchains;
 // docs/design/graphics-vulkan.md section 4: the swapchain component on a raw surface, on every adapter that can present
 // to it (lavapipe headless; the RTX too when SDL_VIDEO_DRIVER=wayland is set for a local run), with validation on.
 [Trait("Category", "Gpu")]
-public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixture fixture) : IClassFixture<VulkanSwapchainTests.SurfaceFixture>
+[Collection(nameof(SharedRawSurface))]
+public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixture fixture)
 {
     // Every wait in the harness, and the acquire timeout (GpuTimeout's form: nanoseconds as BRUTAL's nint).
-    private const long WaitNanoseconds = 5_000_000_000;
+    internal const long WaitNanoseconds = 5_000_000_000;
     private const string ZeroExtent = "surface extent is zero";
     private static readonly nint _timeout = unchecked((nint)WaitNanoseconds);
 
@@ -223,7 +224,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             faults.FailNth((VulkanCall)call, Of(occurrence), (VkResult)code);
             VulkanSwapchain.DestroyCounts destroys = new();
 
-            Result<VulkanSwapchain> result = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, null, Frames, new VulkanCallGate { Faults = faults }, destroys);
+            Result<VulkanSwapchain> result = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, null, Frames, new VulkanCallGate { Faults = faults }, _timeout, destroys);
 
             Assert.Equal(VkCheck.Error((VkResult)code, (VulkanCall)call), result.Error);
             Assert.False(faults.TryTake((VulkanCall)call, out _), "the fault didn't fire");
@@ -247,7 +248,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             VulkanSwapchain.DestroyCounts destroys = new();
 
             Result<VulkanSwapchain> result = VulkanSwapchain.Create(
-                gpu.Core, gpu.Raw.Surface, gpu.Plan with { Width = width, Height = height }, null, 2, new VulkanCallGate { Faults = faults }, destroys);
+                gpu.Core, gpu.Raw.Surface, gpu.Plan with { Width = width, Height = height }, null, 2, new VulkanCallGate { Faults = faults }, _timeout, destroys);
 
             Assert.Equal(new EngineError(ErrorKind.Cancelled, ZeroExtent), result.Error);
             Assert.True(faults.TryTake(VulkanCall.CreateSwapchain, out _), "a driver call was made");
@@ -304,10 +305,10 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
             // The getters, over every image and slot, on the lost swapchain (it stays readable).
             long gettersBefore = GC.GetAllocatedBytesForCurrentThread();
-            nint handles = swapchain.Handle.VkHandle + swapchain.Plan.Width + swapchain.FramesInFlight + (swapchain.IsDisposed ? 1 : 0);
+            nint handles = swapchain.Handle.VkHandle + swapchain.Plan.Width + swapchain.FramesInFlight + (swapchain.IsDisposed ? 1 : 0) + (swapchain.UsesPresentFences ? 1 : 0);
             for (int i = 0; i < swapchain.ImageCount; i++)
             {
-                handles += swapchain.GetImage(i).VkHandle + swapchain.GetView(i).VkHandle + swapchain.GetRenderFinished(i).VkHandle;
+                handles += swapchain.GetImage(i).VkHandle + swapchain.GetView(i).VkHandle + swapchain.GetRenderFinished(i).VkHandle + swapchain.GetPresentFence(i).VkHandle;
             }
 
             for (int slot = 0; slot < swapchain.FramesInFlight; slot++)
@@ -337,13 +338,13 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             using VulkanDeviceCore gone = gpu.Raw.CreateDevice(gpu.Adapter, new VulkanCallGate());
             gone.Dispose();
 
-            Assert.Throws<ArgumentNullException>("core", () => VulkanSwapchain.Create(null!, surface, gpu.Plan, null, 2, gate));
-            Assert.Throws<ArgumentNullException>("gate", () => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, null, 2, null!));
-            Assert.Throws<ArgumentException>("surface", () => VulkanSwapchain.Create(gpu.Core, default, gpu.Plan, null, 2, gate));
-            Assert.Throws<ArgumentOutOfRangeException>("framesInFlight", () => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, null, 0, gate));
-            Assert.Throws<ArgumentOutOfRangeException>("framesInFlight", () => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, null, 4, gate));
-            Assert.Throws<ObjectDisposedException>(() => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, disposed, 2, gate));
-            Assert.Throws<ObjectDisposedException>(() => VulkanSwapchain.Create(gone, surface, gpu.Plan, null, 2, gate));
+            Assert.Throws<ArgumentNullException>("core", () => VulkanSwapchain.Create(null!, surface, gpu.Plan, null, 2, gate, _timeout));
+            Assert.Throws<ArgumentNullException>("gate", () => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, null, 2, null!, _timeout));
+            Assert.Throws<ArgumentException>("surface", () => VulkanSwapchain.Create(gpu.Core, default, gpu.Plan, null, 2, gate, _timeout));
+            Assert.Throws<ArgumentOutOfRangeException>("framesInFlight", () => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, null, 0, gate, _timeout));
+            Assert.Throws<ArgumentOutOfRangeException>("framesInFlight", () => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, null, 4, gate, _timeout));
+            Assert.Throws<ObjectDisposedException>(() => VulkanSwapchain.Create(gpu.Core, surface, gpu.Plan, disposed, 2, gate, _timeout));
+            Assert.Throws<ObjectDisposedException>(() => VulkanSwapchain.Create(gone, surface, gpu.Plan, null, 2, gate, _timeout));
             Assert.True(faults.TryTake(VulkanCall.CreateSwapchain, out _), "a driver call was made");
 
             VulkanSwapchain swapchain = gpu.Create(2);
@@ -369,7 +370,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
         Assert.Equal(new BackendAcquire(SwapchainStatus.DeviceLost, -1, (int)VkResult.ErrorDeviceLost), swapchain.Acquire(1, _timeout));
         Assert.Equal(new BackendPresent(SwapchainStatus.DeviceLost, (int)VkResult.ErrorDeviceLost), swapchain.Present(gpu.Core.Queue, 0));
-        Result<VulkanSwapchain> created = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, swapchain, 2, gate, destroys);
+        Result<VulkanSwapchain> created = VulkanSwapchain.Create(gpu.Core, gpu.Raw.Surface, gpu.Plan, swapchain, 2, gate, _timeout, destroys);
 
         Assert.Equal(new EngineError(ErrorKind.Unavailable, "device is lost", (int)VkResult.ErrorDeviceLost), created.Error);
         Assert.True(faults.TryTake(VulkanCall.AcquireNextImage, out _), "acquire reached the driver");
@@ -392,12 +393,15 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     private static bool Retired(string message) =>
         message.Contains("VUID-vkAcquireNextImageKHR-swapchain-", StringComparison.Ordinal) && message.Contains("retired", StringComparison.Ordinal);
 
-    private void OnEveryPresentingAdapter(Action<Gpu> body) => OnEveryPresentingAdapter(null, body);
+    private void OnEveryPresentingAdapter(Action<Gpu> body) => OnEveryPresentingAdapter(fixture, false, null, body);
+
+    private void OnEveryPresentingAdapter(Func<string, bool>? expected, Action<Gpu> body) => OnEveryPresentingAdapter(fixture, false, expected, body);
 
     // Runs the body once per adapter that can present to the class's raw surface, then checks that validation reported
     // no error during it, through every device's destruction (leaked children are reported there). With an expected
-    // error, each adapter's run must report it, and it is the only error allowed.
-    private void OnEveryPresentingAdapter(Func<string, bool>? expected, Action<Gpu> body)
+    // error, each adapter's run must report it, and it is the only error allowed. Each device is made without swapchain
+    // maintenance1 when asked, so the fallback without present fences runs on any adapter.
+    internal static void OnEveryPresentingAdapter(SurfaceFixture fixture, bool withoutMaintenance1, Func<string, bool>? expected, Action<Gpu> body)
     {
         RawSurface raw = fixture.Raw;
         int before = fixture.Sink.Entries.Count;
@@ -405,7 +409,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
         foreach (GpuDevices.Adapter adapter in raw.Presenting())
         {
             int start = fixture.Sink.Entries.Count;
-            using (Gpu gpu = new(raw, adapter))
+            using (Gpu gpu = new(raw, adapter, withoutMaintenance1))
             {
                 body(gpu);
                 ran.Add($"{adapter.Candidate.Name} ({gpu.Plan.PresentMode}, {gpu.Plan.Format}, maintenance1 {gpu.Core.Extensions.SwapchainMaintenance1 ?? "off"})");
@@ -422,14 +426,14 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     }
 
     /// <summary>
-    /// One validated instance, hidden window and raw surface for the whole class, so the class creates one instance
-    /// rather than one per test: on the NVIDIA host every instance's driver scan uses up more of the process's static TLS,
-    /// and once it runs out the NVIDIA driver no longer loads (#434). Tests run one at a time within a class, so sharing is
-    /// safe; each test checks only the validation messages logged while it ran. The cost: the validation layer stops
-    /// repeating a message after 10 reports per instance (its duplicate-message limit; the instance is made without
-    /// layer settings, so the limit stays), so once a regression has been reported ten times, later tests in the class
-    /// may not see it again. Whichever test meets a regression first fails, so the class still fails; which test that is
-    /// depends on the order.
+    /// One validated instance, hidden window and raw surface for the swapchain classes (<see cref="SharedRawSurface"/>),
+    /// so they create one instance rather than one per test: on the NVIDIA host every instance's driver scan uses up more
+    /// of the process's static TLS, and once it runs out the NVIDIA driver no longer loads (#434). Tests of a collection
+    /// run one at a time, so sharing is safe; each test checks only the validation messages logged while it ran. The cost:
+    /// the validation layer stops repeating a message after 10 reports per instance (its duplicate-message limit; the
+    /// instance is made without layer settings, so the limit stays), so once a regression has been reported ten times,
+    /// later tests may not see it again. Whichever test meets a regression first fails, so the run still fails; which test
+    /// that is depends on the order.
     /// </summary>
     public sealed class SurfaceFixture : IDisposable
     {
@@ -478,16 +482,16 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     // window (mailbox where offered, so a hidden window's compositor never holds the frame loop back; FIFO otherwise).
     // It owns the swapchains it creates and disposes them after the queue is idle, so a failed assertion leaves none on
     // the class's surface (a test may dispose one itself first).
-    private sealed class Gpu : IDisposable
+    internal sealed class Gpu : IDisposable
     {
         private readonly List<VulkanSwapchain> _swapchains = [];
         private bool _stuck;
 
-        public Gpu(RawSurface raw, GpuDevices.Adapter adapter)
+        public Gpu(RawSurface raw, GpuDevices.Adapter adapter, bool withoutMaintenance1 = false)
         {
             Raw = raw;
             Adapter = adapter;
-            Core = raw.CreateDevice(adapter, new VulkanCallGate());
+            Core = raw.CreateDevice(adapter, new VulkanCallGate(), withoutMaintenance1);
             Result<SurfaceFacts> facts = SurfaceQueries.Read(Core, raw.Surface, new VulkanCallGate());
             Assert.True(facts.IsSuccess, facts.ToString());
             Result<SwapchainPlan> plan = SwapchainPlanner.Plan(facts.Value, new VkExtent2D(64, 64), new SwapchainOptions { PresentMode = PresentMode.Mailbox });
@@ -505,7 +509,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
         public VulkanSwapchain Create(int framesInFlight, VulkanCallGate? gate = null, VulkanSwapchain? old = null, VulkanSwapchain.DestroyCounts? destroys = null)
         {
-            Result<VulkanSwapchain> created = VulkanSwapchain.Create(Core, Raw.Surface, Plan, old, framesInFlight, gate ?? new VulkanCallGate(), destroys);
+            Result<VulkanSwapchain> created = VulkanSwapchain.Create(Core, Raw.Surface, Plan, old, framesInFlight, gate ?? new VulkanCallGate(), _timeout, destroys);
             Assert.True(created.IsSuccess, created.ToString());
             _swapchains.Add(created.Value);
             return created.Value;
@@ -574,7 +578,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     // command buffer that moves the acquired image to PRESENT_SRC, waiting on the slot's acquire semaphore and
     // signalling the image's render-finished semaphore, both at COLOR_ATTACHMENT_OUTPUT as M0 does
     // (samples/HelloWindow/FrameRenderer.cs:114-116, :318-333).
-    private sealed class FrameLoop : IDisposable
+    internal sealed class FrameLoop : IDisposable
     {
         private readonly Gpu _gpu;
         private readonly VkFence[] _fences;

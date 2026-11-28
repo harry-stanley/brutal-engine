@@ -76,10 +76,26 @@ internal sealed unsafe class RawSurface : IDisposable
         return adapters;
     }
 
-    /// <summary>Creates a device on a presenting adapter, with the swapchain extension the surface's instance allows.</summary>
-    public VulkanDeviceCore CreateDevice(GpuDevices.Adapter adapter, VulkanCallGate gate)
+    /// <summary>
+    /// Creates a device on a presenting adapter, with the swapchain extension the surface's instance allows; without
+    /// swapchain maintenance1 when <paramref name="withoutMaintenance1"/> is set, as on a driver that doesn't offer it.
+    /// </summary>
+    public VulkanDeviceCore CreateDevice(GpuDevices.Adapter adapter, VulkanCallGate gate, bool withoutMaintenance1 = false)
     {
-        Result<VulkanDeviceCore> created = GpuDevices.Create(Instance, adapter, gate, null);
+        Result<VulkanDeviceCore> created;
+        if (withoutMaintenance1)
+        {
+            FeatureChain.NegotiatedFeatures features = FeatureChain.Negotiate(adapter.Candidate, adapter.Family, GraphicsFeatures.None, FeatureChain.Negotiable);
+            DeviceExtensionSet.Selection chosen = DeviceExtensionSet.Choose(new HashSet<string>(adapter.Candidate.DeviceExtensions.ToArray(), StringComparer.Ordinal), Instance.EnabledExtensions);
+            string? maintenance1 = chosen.SwapchainMaintenance1;
+            chosen = chosen with { Extensions = Array.FindAll(chosen.Extensions, name => name != maintenance1), SwapchainMaintenance1 = null };
+            created = VulkanDeviceCore.Create(Instance, adapter.Device, adapter.Family, features, chosen, gate);
+        }
+        else
+        {
+            created = GpuDevices.Create(Instance, adapter, gate, null);
+        }
+
         Assert.True(created.IsSuccess, created.ToString());
         return created.Value;
     }
