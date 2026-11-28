@@ -26,7 +26,7 @@ namespace BrutalEngine.World;
 /// <b>Enumeration.</b> <c>foreach (ChunkView chunk in query)</c> yields the matching chunks that pass the query's
 /// <c>Changed</c> and <c>Added</c> filters, with span access to the declared columns (see <see cref="ChunkEnumerator"/>
 /// and <see cref="ChunkView"/>). A completed enumeration sets <see cref="LastRunTick"/> and <see cref="HasRun"/> and
-/// advances the world's change tick.
+/// advances the world's change tick; structural changes to the world throw while an enumeration is live.
 /// </para>
 /// <para>
 /// <b>Lifetime and ownership.</b> The world owns the query. <see cref="Dispose"/> releases it early; disposing the world
@@ -170,20 +170,25 @@ public sealed class Query : IDisposable
     }
 
     /// <summary>
-    /// Starts an enumeration of the matching chunks: <c>foreach (ChunkView chunk in query)</c>. Refreshes the cache
-    /// first, so archetypes created since the last refresh are enumerated.
+    /// Starts an enumeration of the matching chunks: <c>foreach (ChunkView chunk in query)</c>. Refreshes the cache,
+    /// then enters the world's iteration guard, which the enumerator's <see cref="ChunkEnumerator.Dispose"/> ends.
     /// </summary>
     /// <returns>An enumerator before the first chunk. Dispose it once, and don't copy it.</returns>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
     /// <exception cref="OutOfMemoryException">
-    /// The allocator can't grow the cache while it refreshes, as for <see cref="CountEntities"/>. No enumeration starts.
+    /// The allocator can't grow the cache while it refreshes, as for <see cref="CountEntities"/>. No enumeration starts,
+    /// and the guard isn't entered.
     /// </exception>
-    /// <remarks>Allocates no managed memory, the refresh included.</remarks>
+    /// <remarks>
+    /// Allocates no managed memory, the refresh included. Until the enumerator is disposed, structural changes to the
+    /// world throw <see cref="InvalidOperationException"/>.
+    /// </remarks>
     public ChunkEnumerator GetEnumerator()
     {
         ThrowIfUnusable("Query.GetEnumerator");
         _cache.Refresh();
+        _world.IterationGuard.Enter();
         return new ChunkEnumerator(this);
     }
 

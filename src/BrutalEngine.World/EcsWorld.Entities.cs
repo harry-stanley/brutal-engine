@@ -38,7 +38,8 @@ public sealed partial class EcsWorld
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Every slot allowed by <see cref="WorldOptions.MaxEntities"/> is live, pending or retired; the message names the
-    /// option. The world is unchanged.
+    /// option. Or a chunk enumeration of the world is live (see <see cref="Query.GetEnumerator"/>). The world is
+    /// unchanged.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The allocator can't provide a grown entity table, a new chunk or grown chunk arrays. The entity is rolled back:
@@ -55,7 +56,7 @@ public sealed partial class EcsWorld
     /// </remarks>
     public Entity Spawn()
     {
-        ThrowIfUnusable("EcsWorld.Spawn");
+        ThrowIfStructuralUnusable("EcsWorld.Spawn");
         return SpawnRow(_archetypes.Empty, out _, out _);
     }
 
@@ -70,7 +71,8 @@ public sealed partial class EcsWorld
     /// table. <see cref="StaleHandleException.Handle"/> holds its index and generation.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// <paramref name="entity"/> is pending: reserved by a command buffer and not placed yet.
+    /// <paramref name="entity"/> is pending: reserved by a command buffer and not placed yet; or a chunk enumeration of
+    /// the world is live, which is checked first.
     /// </exception>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The world is disposed.</exception>
@@ -90,7 +92,7 @@ public sealed partial class EcsWorld
     /// </remarks>
     public void Despawn(Entity entity)
     {
-        ThrowIfUnusable("EcsWorld.Despawn");
+        ThrowIfStructuralUnusable("EcsWorld.Despawn");
         EntityRecord record = _entities.Validate(entity);
         Archetype archetype = _archetypes[record.Archetype];
         Entity moved = archetype.SwapRemove(record.Chunk, record.Row);
@@ -119,8 +121,8 @@ public sealed partial class EcsWorld
     /// <exception cref="InvalidOperationException">
     /// <typeparamref name="T1"/> is new and can't be registered (a stable-id conflict, or the registry is full); or
     /// the archetype is new and its row is too wide for a chunk; or every slot allowed by
-    /// <see cref="WorldOptions.MaxEntities"/> is live, pending or retired. The message names the cause. No entity is
-    /// spawned; a type registered or an archetype created before the failure stays, as both are permanent.
+    /// <see cref="WorldOptions.MaxEntities"/> is live, pending or retired; or a chunk enumeration of the world is live,
+    /// which is checked first, so nothing changes. The message names the cause. No entity is spawned; a type registered or an archetype created before the failure stays, as both are permanent.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The allocator can't provide what the spawn needs. The entity is rolled back as for <see cref="Spawn()"/>.
@@ -136,7 +138,7 @@ public sealed partial class EcsWorld
     public Entity Spawn<T1>(in T1 c1)
         where T1 : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Spawn");
+        ThrowIfStructuralUnusable("EcsWorld.Spawn");
         Span<ComponentId> ids = stackalloc ComponentId[1];
         ids[0] = _components.Register<T1>();
         Archetype archetype = _archetypes.GetOrCreate(ids);
@@ -167,7 +169,7 @@ public sealed partial class EcsWorld
         where T1 : unmanaged, IComponent
         where T2 : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Spawn");
+        ThrowIfStructuralUnusable("EcsWorld.Spawn");
         ThrowIfSameType<T1, T2>(nameof(c2));
         Span<ComponentId> ids = stackalloc ComponentId[2];
         ids[0] = _components.Register<T1>();
@@ -204,7 +206,7 @@ public sealed partial class EcsWorld
         where T2 : unmanaged, IComponent
         where T3 : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Spawn");
+        ThrowIfStructuralUnusable("EcsWorld.Spawn");
         ThrowIfSameType<T1, T2>(nameof(c2));
         ThrowIfSameType<T1, T3>(nameof(c3));
         ThrowIfSameType<T2, T3>(nameof(c3));
@@ -249,7 +251,7 @@ public sealed partial class EcsWorld
         where T3 : unmanaged, IComponent
         where T4 : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Spawn");
+        ThrowIfStructuralUnusable("EcsWorld.Spawn");
         ThrowIfSameType<T1, T2>(nameof(c2));
         ThrowIfSameType<T1, T3>(nameof(c3));
         ThrowIfSameType<T2, T3>(nameof(c3));

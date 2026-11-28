@@ -18,9 +18,10 @@ namespace BrutalEngine.World;
 /// <see cref="Write{T}"/> throw for it.
 /// </para>
 /// <para>
-/// <b>Lifetime.</b> Use a view inside the loop that produced it. Spans are valid until the enumeration ends, the next
-/// structural change to the world, or the query or the world is disposed. A view kept past a structural change that
-/// removed its chunk is misuse: its members then throw <see cref="ArgumentOutOfRangeException"/>.
+/// <b>Lifetime.</b> Use a view inside the loop that produced it: the iteration guard keeps its rows in place only while
+/// its enumerator is live. Spans are valid until then, or until the query or the world is disposed. A view kept after
+/// its enumeration, past a structural change that removed its chunk, is misuse: its members then throw
+/// <see cref="ArgumentOutOfRangeException"/>.
 /// </para>
 /// <para>
 /// <b>Allocation and threading.</b> No member allocates managed memory, except to throw. A view lives on the stack of the

@@ -25,9 +25,10 @@ namespace BrutalEngine.World;
 /// <c>break</c>, or an exception) changes nothing.
 /// </para>
 /// <para>
-/// <b>Disposal.</b> <c>foreach</c> always disposes the enumerator; code that calls <see cref="Query.GetEnumerator"/>
-/// itself must dispose it, and must not copy it. Don't make structural changes to the world (spawn, despawn, add, set
-/// or remove) while an enumeration is live: they move rows between chunks.
+/// <b>Iteration guard.</b> From <see cref="Query.GetEnumerator"/> until <see cref="Dispose"/>, structural changes to the
+/// world (spawn, despawn, add, set and remove) throw <see cref="InvalidOperationException"/>. Enumerating other queries,
+/// or the same one, inside the loop is allowed. <c>foreach</c> always disposes the enumerator; code that calls
+/// <see cref="Query.GetEnumerator"/> itself must dispose it, and must not copy it.
 /// </para>
 /// <para>
 /// <b>Allocation and threading.</b> No member allocates managed memory, except to throw. The enumerator lives on the
@@ -39,14 +40,16 @@ public ref struct ChunkEnumerator
     private readonly Query? _query;
     private int _entry;
     private int _chunk;
+    private bool _guarded;
     private bool _finished;
     private ChunkView _current;
 
-    /// <summary>Starts before the first chunk.</summary>
+    /// <summary>Starts before the first chunk. The caller has entered the world's iteration guard for it.</summary>
     internal ChunkEnumerator(Query query)
     {
         _query = query;
         _chunk = -1;
+        _guarded = true;
     }
 
     /// <summary>
@@ -75,7 +78,7 @@ public ref struct ChunkEnumerator
         _query.ThrowIfUnusable("ChunkEnumerator.MoveNext");
         ArchetypeMatchCache cache = _query.Cache;
 
-        // Bounded: each pass moves to the next chunk or the next entry, and no chunk or entry is added meanwhile.
+        // Bounded: each pass moves to the next chunk or the next entry, and the guard keeps both counts fixed.
         while (_entry < cache.Count)
         {
             Archetype archetype = cache.GetArchetype(_entry);
@@ -98,11 +101,22 @@ public ref struct ChunkEnumerator
         return false;
     }
 
-    /// <summary>Ends the enumeration: <see cref="MoveNext"/> returns <see langword="false"/> from then on. Idempotent.</summary>
+    /// <summary>
+    /// Ends the enumeration and its iteration guard: <see cref="MoveNext"/> returns <see langword="false"/> from then on.
+    /// Idempotent, and ends no guard for a default enumerator.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The world has no live enumerator to end: a copy of this enumerator was disposed already.
+    /// </exception>
     /// <remarks>Allocates nothing. Works after the query or the world is disposed.</remarks>
     public void Dispose()
     {
         _finished = true;
         _current = default;
+        if (_guarded)
+        {
+            _guarded = false;
+            _query!.Owner.IterationGuard.Exit();
+        }
     }
 }
