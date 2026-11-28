@@ -10,9 +10,9 @@ namespace BrutalEngine.Graphics;
 /// </param>
 /// <remarks>
 /// A layout declares one range, shared by every stage in <see cref="Stages"/> (docs/design/graphics.md section 7). The
-/// device checks it when the layout is created: a negative size, a size that isn't a multiple of 4 or flags outside
-/// <see cref="ShaderStages"/> throw <see cref="System.ArgumentException"/> (<see cref="System.ArgumentOutOfRangeException"/>
-/// for a value out of its range).
+/// device checks it when the layout is created: a negative size or flags outside <see cref="ShaderStages"/> throw
+/// <see cref="System.ArgumentOutOfRangeException"/>; a size that isn't a multiple of 4, or a size above 0 with no stages,
+/// throws <see cref="System.ArgumentException"/>.
 /// A plain unmanaged value. Equality compares every field. Immutable and safe to use from any thread. No member
 /// allocates, except <see cref="ToString"/>.
 /// </remarks>

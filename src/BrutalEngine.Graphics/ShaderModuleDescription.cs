@@ -7,8 +7,9 @@ namespace BrutalEngine.Graphics;
 /// <para>
 /// The runtime never compiles shader source: <see cref="Code"/> holds bytecode cooked offline, in one or more formats, and
 /// the backend picks the format it consumes (docs/design/graphics.md section 7). A module with no format the backend
-/// consumes is the device's <c>Unsupported</c> result. SPIR-V that fails the structural check throws
-/// <see cref="ArgumentException"/>, because cooked bytecode that fails it is a build error; a driver rejecting
+/// consumes is the device's <c>Unsupported</c> result. Two entries in the same format, or SPIR-V that fails the
+/// structural check, throw <see cref="ArgumentException"/>, because cooked bytecode that fails them is a build error; a
+/// format outside <see cref="ShaderCodeFormat"/> throws <see cref="ArgumentOutOfRangeException"/>. A driver rejecting
 /// valid-looking code is the device's <c>InvalidData</c> result.
 /// </para>
 /// <para>
@@ -19,7 +20,7 @@ namespace BrutalEngine.Graphics;
 /// </remarks>
 public readonly record struct ShaderModuleDescription
 {
-    /// <summary>The module's code, one entry per format; the backend uses the first entry in its own format.</summary>
+    /// <summary>The module's code, at most one entry per format; the backend uses the entry in its own format.</summary>
     public required ReadOnlyMemory<ShaderCode> Code { get; init; }
 
     /// <summary>

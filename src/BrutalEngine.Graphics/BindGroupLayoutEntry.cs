@@ -11,8 +11,9 @@ namespace BrutalEngine.Graphics;
 /// constructor only: <c>default(BindGroupLayoutEntry)</c> and an object initializer without it give 0, which is rejected.
 /// </param>
 /// <remarks>
-/// The device checks a layout when it is created (docs/design/graphics.md section 8): a duplicate binding number or a
-/// <paramref name="Count"/> below 1 throws <see cref="System.ArgumentException"/>. A plain unmanaged value. Equality
+/// The device checks a layout when it is created (docs/design/graphics.md section 8): a negative binding number, a
+/// <paramref name="Count"/> below 1 or a value outside its enum throws <see cref="System.ArgumentOutOfRangeException"/>,
+/// and a duplicate binding number <see cref="System.ArgumentException"/>. A plain unmanaged value. Equality
 /// compares every field. Immutable and safe to use from any thread. No member allocates, except <see cref="ToString"/>.
 /// </remarks>
 public readonly record struct BindGroupLayoutEntry(int Binding, ShaderStages Visibility, BindingType Type, int Count = 1)
