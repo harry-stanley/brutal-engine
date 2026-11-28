@@ -81,7 +81,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     {
         OnEveryPresentingAdapter(gpu =>
         {
-            using VulkanSwapchain swapchain = gpu.Create(framesInFlight);
+            VulkanSwapchain swapchain = gpu.Create(framesInFlight);
             using FrameLoop loop = new(gpu, framesInFlight);
 
             // Past every image twice, so each render-finished semaphore and acquire semaphore is reused, which validation
@@ -101,7 +101,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             loop.Run(old, 2);
             gpu.WaitIdle();
 
-            using VulkanSwapchain replacement = gpu.Create(2, old: old);
+            VulkanSwapchain replacement = gpu.Create(2, old: old);
 
             // The front end destroys the retired swapchain after the device is idle, whether creation succeeded or not.
             Assert.False(old.IsDisposed);
@@ -109,9 +109,6 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             Assert.Equal((1, old.ImageCount), (oldDestroys.Swapchains, oldDestroys.Views));
             Assert.NotEqual(old.GetImage(0).VkHandle, replacement.GetImage(0).VkHandle);
             loop.Run(replacement, replacement.ImageCount + 2);
-
-            // The replacement is disposed before the frame loop (declared after it), so wait here.
-            gpu.WaitIdle();
         });
     }
 
@@ -128,7 +125,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
         {
             VulkanFaultInjector faults = new();
             VulkanCallGate gate = new() { Faults = faults };
-            using VulkanSwapchain swapchain = gpu.Create(2, gate);
+            VulkanSwapchain swapchain = gpu.Create(2, gate);
             faults.FailNth(VulkanCall.AcquireNextImage, 1, code);
 
             Assert.Equal(new BackendAcquire(status, -1, (int)code), swapchain.Acquire(0, _timeout));
@@ -160,7 +157,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
         {
             VulkanFaultInjector faults = new();
             VulkanCallGate gate = new() { Faults = faults };
-            using VulkanSwapchain swapchain = gpu.Create(2, gate);
+            VulkanSwapchain swapchain = gpu.Create(2, gate);
             using FrameLoop loop = new(gpu, 2);
             int image = loop.AcquireAndSubmit(swapchain, 0);
             faults.FailNth(VulkanCall.QueuePresent, 1, code);
@@ -232,7 +229,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
         {
             VulkanFaultInjector faults = new();
             VulkanCallGate gate = new() { Faults = faults };
-            using VulkanSwapchain swapchain = gpu.Create(2, gate);
+            VulkanSwapchain swapchain = gpu.Create(2, gate);
             using FrameLoop loop = new(gpu, 2);
             loop.Run(swapchain, swapchain.ImageCount + 2);
             VkQueue queue = gpu.Core.Queue;
@@ -316,7 +313,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             Assert.Throws<ObjectDisposedException>(() => VulkanSwapchain.Create(gone, surface, gpu.Plan, null, 2, gate));
             Assert.True(faults.TryTake(VulkanCall.CreateSwapchain, out _), "a driver call was made");
 
-            using VulkanSwapchain swapchain = gpu.Create(2);
+            VulkanSwapchain swapchain = gpu.Create(2);
             Assert.Throws<ArgumentOutOfRangeException>("slot", () => swapchain.Acquire(-1, _timeout));
             Assert.Throws<ArgumentOutOfRangeException>("slot", () => swapchain.Acquire(2, _timeout));
             Assert.Throws<ArgumentOutOfRangeException>("imageIndex", () => swapchain.Present(gpu.Core.Queue, -1));
@@ -383,8 +380,10 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
     /// rather than one per test: on the NVIDIA host every instance's driver scan uses up more of the process's static TLS,
     /// and once it runs out the NVIDIA driver no longer loads (#434). Tests run one at a time within a class, so sharing is
     /// safe; each test checks only the validation messages logged while it ran. The cost: the validation layer stops
-    /// repeating a message after 10 reports per instance, so once one test has failed on a message ten times, later
-    /// tests in the class may not see it again. The first test to meet a regression still fails.
+    /// repeating a message after 10 reports per instance (its duplicate-message limit; the instance is made without
+    /// layer settings, so the limit stays), so once a regression has been reported ten times, later tests in the class
+    /// may not see it again. Whichever test meets a regression first fails, so the class still fails; which test that is
+    /// depends on the order.
     /// </summary>
     public sealed class SurfaceFixture : IDisposable
     {
@@ -397,17 +396,19 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             try
             {
                 Raw = new RawSurface(category);
+
+                // Instance creation is where the loader probes drivers. The only errors allowed here are the two of the
+                // NVIDIA host's static-TLS failure (#434), which mean the RTX isn't enumerated; the tests then run on the
+                // others.
+                string[] errors = [.. Sink.Entries.Where(e => e.Level == LogLevel.Error && !IsLoaderTlsFailure(e.Message)).Select(e => e.Message)];
+                Assert.True(errors.Length == 0, string.Join('\n', errors));
             }
             catch
             {
+                Raw?.Dispose();
                 _logger.Dispose();
                 throw;
             }
-
-            // Instance creation is where the loader probes drivers. The only errors allowed here are the two of the NVIDIA
-            // host's static-TLS failure (#434), which mean the RTX isn't enumerated; the tests then run on the others.
-            string[] errors = [.. Sink.Entries.Where(e => e.Level == LogLevel.Error && !IsLoaderTlsFailure(e.Message)).Select(e => e.Message)];
-            Assert.True(errors.Length == 0, string.Join('\n', errors));
         }
 
         internal ValidationLog Sink { get; }
@@ -429,8 +430,13 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
     // One device on a presenting adapter, with the extensions the device table picks, and the plan for the 64x64 test
     // window (mailbox where offered, so a hidden window's compositor never holds the frame loop back; FIFO otherwise).
+    // It owns the swapchains it creates and disposes them after the queue is idle, so a failed assertion leaves none on
+    // the class's surface (a test may dispose one itself first).
     private sealed class Gpu : IDisposable
     {
+        private readonly List<VulkanSwapchain> _swapchains = [];
+        private bool _stuck;
+
         public Gpu(RawSurface raw, GpuDevices.Adapter adapter)
         {
             Raw = raw;
@@ -455,6 +461,7 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
         {
             Result<VulkanSwapchain> created = VulkanSwapchain.Create(Core, Raw.Surface, Plan, old, framesInFlight, gate ?? new VulkanCallGate(), destroys);
             Assert.True(created.IsSuccess, created.ToString());
+            _swapchains.Add(created.Value);
             return created.Value;
         }
 
@@ -473,15 +480,47 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
             return images[..count];
         }
 
-        public void WaitIdle() => Check(Core.Device.PInvoke.vkDeviceWaitIdle.Invoke(Core.Device.Handle), "vkDeviceWaitIdle");
+        public void WaitIdle() => Assert.True(TryWaitIdle(), "the queue didn't go idle within the wait: a submit waits forever");
+
+        // vkDeviceWaitIdle has no timeout, so the queue is waited on first with a bound: an empty submit's fence signals
+        // once all earlier work on the queue is complete. If it doesn't, the device is stuck and stays alive (a failing
+        // run leaks it rather than hanging the test host).
+        public bool TryWaitIdle()
+        {
+            if (_stuck)
+            {
+                return false;
+            }
+
+            Device device = Core.Device;
+            VkFenceCreateInfo info = new();
+            VkFence fence = default;
+            Check(device.PInvoke.vkCreateFence.Invoke(device.Handle, &info, null, &fence), "vkCreateFence");
+            Check(device.PInvoke.vkQueueSubmit2.Invoke(Core.Queue, 0, null, fence), "vkQueueSubmit2");
+            _stuck = device.PInvoke.vkWaitForFences.Invoke(device.Handle, 1, &fence, true, _timeout) != VkResult.Success;
+            if (_stuck)
+            {
+                return false;
+            }
+
+            device.PInvoke.vkDestroyFence.Invoke(device.Handle, fence, null);
+            Check(device.PInvoke.vkDeviceWaitIdle.Invoke(device.Handle), "vkDeviceWaitIdle");
+            return true;
+        }
 
         public void Dispose()
         {
-            if (!Core.IsDisposed)
+            if (Core.IsDisposed || !TryWaitIdle())
             {
-                WaitIdle();
-                Core.Dispose();
+                return;
             }
+
+            for (int i = _swapchains.Count - 1; i >= 0; i--)
+            {
+                _swapchains[i].Dispose();
+            }
+
+            Core.Dispose();
         }
     }
 
@@ -594,7 +633,11 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
 
         public void Dispose()
         {
-            _gpu.WaitIdle();
+            if (!_gpu.TryWaitIdle())
+            {
+                return;
+            }
+
             Device device = _gpu.Core.Device;
             for (int slot = 0; slot < _fences.Length; slot++)
             {
