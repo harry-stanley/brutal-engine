@@ -18,7 +18,8 @@ namespace BrutalEngine.World;
 /// </para>
 /// <para>
 /// <b>Lifetime.</b> Use a view inside the loop that produced it. Spans are valid until the enumeration ends, the next
-/// structural change to the world, or the query or the world is disposed.
+/// structural change to the world, or the query or the world is disposed. A view kept past a structural change that
+/// removed its chunk is misuse: its members then throw <see cref="ArgumentOutOfRangeException"/>.
 /// </para>
 /// <para>
 /// <b>Allocation and threading.</b> No member allocates managed memory, except to throw. A view lives on the stack of the
@@ -74,7 +75,10 @@ public readonly unsafe ref struct ChunkView
     /// component it lacks, or a tag); or the view is default. The message names the component and the cause.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
-    /// <remarks>Allocates nothing, except to throw.</remarks>
+    /// <remarks>
+    /// Allocates nothing, except to throw. The access check searches the query's data terms, so it takes time
+    /// proportional to their number; call it once per chunk, not per row.
+    /// </remarks>
     public ReadOnlySpan<T> Read<T>()
         where T : unmanaged, IComponent
     {
@@ -96,7 +100,10 @@ public readonly unsafe ref struct ChunkView
     /// is default. Nothing is stamped.
     /// </exception>
     /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
-    /// <remarks>Allocates nothing, except to throw.</remarks>
+    /// <remarks>
+    /// Allocates nothing, except to throw. The access check searches the query's data terms, so it takes time
+    /// proportional to their number; call it once per chunk, not per row.
+    /// </remarks>
     public Span<T> Write<T>()
         where T : unmanaged, IComponent
     {

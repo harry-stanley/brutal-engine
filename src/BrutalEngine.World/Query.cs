@@ -88,8 +88,9 @@ public sealed class Query : IDisposable
     }
 
     /// <summary>
-    /// Whether a full enumeration of the query has completed. Until then its change filters match every chunk. No
-    /// enumeration exists in this version, so it is always <see langword="false"/>.
+    /// Whether a full enumeration of the query has completed. Until then its change filters match every chunk. In this
+    /// version an enumeration doesn't record a completed run yet, so it is always <see langword="false"/>, and
+    /// <c>Changed</c> and <c>Added</c> terms only require their component: every matching chunk is yielded.
     /// </summary>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
