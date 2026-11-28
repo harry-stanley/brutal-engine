@@ -82,7 +82,7 @@ public sealed unsafe class TextureFactoryTests(GpuResourceFixture fixture) : ICl
     [Trait("Category", "Gpu")]
     public void Create_UnsupportedCombination_IsUnsupportedWithoutVma()
     {
-        long errors = fixture.Instance.ValidationErrors;
+        (long errors, long warnings) = (fixture.Instance.ValidationErrors, fixture.Instance.ValidationWarnings);
         foreach (GpuResourceFixture.Gpu gpu in fixture.Gpus)
         {
             RecordingTextures native = new() { Inner = new TextureFactory.NativeTextures(gpu.Core.Device, gpu.Vma) };
@@ -107,7 +107,7 @@ public sealed unsafe class TextureFactoryTests(GpuResourceFixture fixture) : ICl
             Assert.False(gpu.Gate.IsLost);
         }
 
-        Assert.Equal(errors, fixture.Instance.ValidationErrors);
+        Assert.Equal((errors, warnings), (fixture.Instance.ValidationErrors, fixture.Instance.ValidationWarnings));
     }
 
     // Restricted or not, and the sample count and layers asked for: only a restricted multisampled array is refused,
@@ -154,6 +154,7 @@ public sealed unsafe class TextureFactoryTests(GpuResourceFixture fixture) : ICl
     [InlineData(false, VkResult.ErrorDeviceLost, ErrorKind.Unavailable, false, true)]
     public void Create_InjectedResults_MapKinds(bool create, VkResult code, ErrorKind kind, bool budgets, bool lost)
     {
+        (long errors, long warnings) = (fixture.Instance.ValidationErrors, fixture.Instance.ValidationWarnings);
         ValidationLog lines = new();
         (Logger logger, _) = ValidationLog.Create(lines);
         using (logger)
@@ -184,6 +185,8 @@ public sealed unsafe class TextureFactoryTests(GpuResourceFixture fixture) : ICl
                 Assert.Equal(0u, AllocationCount(gpu.Vma));
             }
         }
+
+        Assert.Equal((errors, warnings), (fixture.Instance.ValidationErrors, fixture.Instance.ValidationWarnings));
     }
 
     [Fact]
