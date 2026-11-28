@@ -309,8 +309,14 @@ jobs:
       # Tests marked [Trait("Category", "Gpu")] need a Vulkan driver, so build-test excludes them and they run here on
       # lavapipe with the validation layers. The tests run headless on Linux, which has no display (they use SDL's
       # offscreen driver), and windowed on Windows, in the runner's desktop session. gpu-tests.sh (self-tested by the
-      # tier job) finds the test projects that declare the trait, and fails if one of them runs no Gpu tests.
+      # tier job) finds the test projects that declare the trait, and fails if one of them runs no Gpu tests. Each
+      # project writes a TRX report into TestResults/gpu/<project>/, and on Linux a crashed test host also leaves the
+      # .NET runtime's crash report there (every thread's managed and native stack), which the script summarizes in
+      # the log: the crashed thread's stack and the test each thread was in.
       - name: GPU-trait tests
+        id: gpu-tests
+        env:
+          GPU_TESTS_RESULTS: TestResults/gpu
         run: |
           set -euo pipefail
           projects=$(bash .github/scripts/gpu-tests.sh --list)
@@ -318,6 +324,14 @@ jobs:
             [ -z "$project" ] || dotnet build "$project" -c Release
           done <<< "$projects"
           bash .github/scripts/gpu-tests.sh Release
+      - name: Upload GPU-trait test results
+        if: failure() && steps.gpu-tests.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gpu-test-results-${{ matrix.os }}
+          path: TestResults/gpu/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Build smoke harness
         run: dotnet build tests/BrutalEngine.Aot.Smoke -c Release --no-restore
       # SMOKE_ARGS is split into words on purpose.
