@@ -405,14 +405,67 @@ BrutalEngine.Graphics.Backend.WindowSurfaceSource.IsMinimised.get -> bool
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.PixelHeight.get -> int
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.PixelWidth.get -> int
 BrutalEngine.Graphics.Backend.WindowSurfaceSource.RequiredInstanceExtensionCount.get -> int
+BrutalEngine.Graphics.BindGroupDescription
+BrutalEngine.Graphics.BindGroupDescription.BindGroupDescription() -> void
+BrutalEngine.Graphics.BindGroupDescription.DebugName.get -> string?
+BrutalEngine.Graphics.BindGroupDescription.DebugName.init -> void
+BrutalEngine.Graphics.BindGroupDescription.Entries.get -> System.ReadOnlySpan<BrutalEngine.Graphics.BindGroupEntry>
+BrutalEngine.Graphics.BindGroupDescription.Entries.init -> void
+BrutalEngine.Graphics.BindGroupDescription.Layout.get -> BrutalEngine.Graphics.BindGroupLayoutHandle
+BrutalEngine.Graphics.BindGroupDescription.Layout.init -> void
+BrutalEngine.Graphics.BindGroupDescription.Lifetime.get -> BrutalEngine.Graphics.BindGroupLifetime
+BrutalEngine.Graphics.BindGroupDescription.Lifetime.init -> void
+BrutalEngine.Graphics.BindGroupEntry
+BrutalEngine.Graphics.BindGroupEntry.ArrayElement.get -> int
+BrutalEngine.Graphics.BindGroupEntry.BindGroupEntry() -> void
+BrutalEngine.Graphics.BindGroupEntry.Binding.get -> int
+BrutalEngine.Graphics.BindGroupEntry.Buffer.get -> BrutalEngine.Graphics.BufferBinding
+BrutalEngine.Graphics.BindGroupEntry.Equals(BrutalEngine.Graphics.BindGroupEntry other) -> bool
+BrutalEngine.Graphics.BindGroupEntry.Kind.get -> BrutalEngine.Graphics.BindGroupEntryKind
+BrutalEngine.Graphics.BindGroupEntry.Sampler.get -> BrutalEngine.Graphics.SamplerHandle
+BrutalEngine.Graphics.BindGroupEntry.View.get -> BrutalEngine.Graphics.TextureViewHandle
+BrutalEngine.Graphics.BindGroupEntryKind
+BrutalEngine.Graphics.BindGroupEntryKind.Buffer = 0 -> BrutalEngine.Graphics.BindGroupEntryKind
+BrutalEngine.Graphics.BindGroupEntryKind.Sampler = 2 -> BrutalEngine.Graphics.BindGroupEntryKind
+BrutalEngine.Graphics.BindGroupEntryKind.Texture = 1 -> BrutalEngine.Graphics.BindGroupEntryKind
 BrutalEngine.Graphics.BindGroupHandle
 BrutalEngine.Graphics.BindGroupHandle.BindGroupHandle() -> void
 BrutalEngine.Graphics.BindGroupHandle.Equals(BrutalEngine.Graphics.BindGroupHandle other) -> bool
 BrutalEngine.Graphics.BindGroupHandle.IsNull.get -> bool
+BrutalEngine.Graphics.BindGroupLayoutDescription
+BrutalEngine.Graphics.BindGroupLayoutDescription.BindGroupLayoutDescription() -> void
+BrutalEngine.Graphics.BindGroupLayoutDescription.DebugName.get -> string?
+BrutalEngine.Graphics.BindGroupLayoutDescription.DebugName.init -> void
+BrutalEngine.Graphics.BindGroupLayoutDescription.Entries.get -> System.ReadOnlyMemory<BrutalEngine.Graphics.BindGroupLayoutEntry>
+BrutalEngine.Graphics.BindGroupLayoutDescription.Entries.init -> void
+BrutalEngine.Graphics.BindGroupLayoutDescription.Equals(BrutalEngine.Graphics.BindGroupLayoutDescription other) -> bool
+BrutalEngine.Graphics.BindGroupLayoutEntry
+BrutalEngine.Graphics.BindGroupLayoutEntry.BindGroupLayoutEntry() -> void
+BrutalEngine.Graphics.BindGroupLayoutEntry.BindGroupLayoutEntry(int Binding, BrutalEngine.Graphics.ShaderStages Visibility, BrutalEngine.Graphics.BindingType Type, int Count = 1) -> void
+BrutalEngine.Graphics.BindGroupLayoutEntry.Binding.get -> int
+BrutalEngine.Graphics.BindGroupLayoutEntry.Binding.init -> void
+BrutalEngine.Graphics.BindGroupLayoutEntry.Count.get -> int
+BrutalEngine.Graphics.BindGroupLayoutEntry.Count.init -> void
+BrutalEngine.Graphics.BindGroupLayoutEntry.Deconstruct(out int Binding, out BrutalEngine.Graphics.ShaderStages Visibility, out BrutalEngine.Graphics.BindingType Type, out int Count) -> void
+BrutalEngine.Graphics.BindGroupLayoutEntry.Equals(BrutalEngine.Graphics.BindGroupLayoutEntry other) -> bool
+BrutalEngine.Graphics.BindGroupLayoutEntry.Type.get -> BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindGroupLayoutEntry.Type.init -> void
+BrutalEngine.Graphics.BindGroupLayoutEntry.Visibility.get -> BrutalEngine.Graphics.ShaderStages
+BrutalEngine.Graphics.BindGroupLayoutEntry.Visibility.init -> void
 BrutalEngine.Graphics.BindGroupLayoutHandle
 BrutalEngine.Graphics.BindGroupLayoutHandle.BindGroupLayoutHandle() -> void
 BrutalEngine.Graphics.BindGroupLayoutHandle.Equals(BrutalEngine.Graphics.BindGroupLayoutHandle other) -> bool
 BrutalEngine.Graphics.BindGroupLayoutHandle.IsNull.get -> bool
+BrutalEngine.Graphics.BindGroupLifetime
+BrutalEngine.Graphics.BindGroupLifetime.Frame = 1 -> BrutalEngine.Graphics.BindGroupLifetime
+BrutalEngine.Graphics.BindGroupLifetime.Persistent = 0 -> BrutalEngine.Graphics.BindGroupLifetime
+BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindingType.ReadOnlyStorageBuffer = 2 -> BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindingType.SampledTexture = 3 -> BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindingType.Sampler = 5 -> BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindingType.StorageBuffer = 1 -> BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindingType.StorageTexture = 4 -> BrutalEngine.Graphics.BindingType
+BrutalEngine.Graphics.BindingType.UniformBuffer = 0 -> BrutalEngine.Graphics.BindingType
 BrutalEngine.Graphics.BlendComponent
 BrutalEngine.Graphics.BlendComponent.BlendComponent() -> void
 BrutalEngine.Graphics.BlendComponent.BlendComponent(BrutalEngine.Graphics.BlendFactor Source, BrutalEngine.Graphics.BlendFactor Destination, BrutalEngine.Graphics.BlendOperation Operation = BrutalEngine.Graphics.BlendOperation.Add) -> void
@@ -454,6 +507,17 @@ BrutalEngine.Graphics.BorderColor
 BrutalEngine.Graphics.BorderColor.OpaqueBlack = 1 -> BrutalEngine.Graphics.BorderColor
 BrutalEngine.Graphics.BorderColor.OpaqueWhite = 2 -> BrutalEngine.Graphics.BorderColor
 BrutalEngine.Graphics.BorderColor.TransparentBlack = 0 -> BrutalEngine.Graphics.BorderColor
+BrutalEngine.Graphics.BufferBinding
+BrutalEngine.Graphics.BufferBinding.Buffer.get -> BrutalEngine.Graphics.BufferHandle
+BrutalEngine.Graphics.BufferBinding.Buffer.init -> void
+BrutalEngine.Graphics.BufferBinding.BufferBinding() -> void
+BrutalEngine.Graphics.BufferBinding.BufferBinding(BrutalEngine.Graphics.BufferHandle Buffer, long Offset = 0, long Size = 0) -> void
+BrutalEngine.Graphics.BufferBinding.Deconstruct(out BrutalEngine.Graphics.BufferHandle Buffer, out long Offset, out long Size) -> void
+BrutalEngine.Graphics.BufferBinding.Equals(BrutalEngine.Graphics.BufferBinding other) -> bool
+BrutalEngine.Graphics.BufferBinding.Offset.get -> long
+BrutalEngine.Graphics.BufferBinding.Offset.init -> void
+BrutalEngine.Graphics.BufferBinding.Size.get -> long
+BrutalEngine.Graphics.BufferBinding.Size.init -> void
 BrutalEngine.Graphics.BufferCopy
 BrutalEngine.Graphics.BufferCopy.BufferCopy() -> void
 BrutalEngine.Graphics.BufferCopy.Destination.get -> BrutalEngine.Graphics.BufferHandle
@@ -1203,14 +1267,21 @@ override BrutalEngine.Graphics.Backend.BackendSwapchainRequest.GetHashCode() -> 
 override BrutalEngine.Graphics.Backend.BackendSwapchainRequest.ToString() -> string!
 override BrutalEngine.Graphics.Backend.SwapchainImageUse.GetHashCode() -> int
 override BrutalEngine.Graphics.Backend.SwapchainImageUse.ToString() -> string!
+override BrutalEngine.Graphics.BindGroupEntry.GetHashCode() -> int
+override BrutalEngine.Graphics.BindGroupEntry.ToString() -> string!
 override BrutalEngine.Graphics.BindGroupHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BindGroupHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BindGroupHandle.ToString() -> string!
+override BrutalEngine.Graphics.BindGroupLayoutDescription.GetHashCode() -> int
+override BrutalEngine.Graphics.BindGroupLayoutEntry.GetHashCode() -> int
+override BrutalEngine.Graphics.BindGroupLayoutEntry.ToString() -> string!
 override BrutalEngine.Graphics.BindGroupLayoutHandle.Equals(object? obj) -> bool
 override BrutalEngine.Graphics.BindGroupLayoutHandle.GetHashCode() -> int
 override BrutalEngine.Graphics.BindGroupLayoutHandle.ToString() -> string!
 override BrutalEngine.Graphics.BlendComponent.GetHashCode() -> int
 override BrutalEngine.Graphics.BlendState.GetHashCode() -> int
+override BrutalEngine.Graphics.BufferBinding.GetHashCode() -> int
+override BrutalEngine.Graphics.BufferBinding.ToString() -> string!
 override BrutalEngine.Graphics.BufferCopy.GetHashCode() -> int
 override BrutalEngine.Graphics.BufferCopy.ToString() -> string!
 override BrutalEngine.Graphics.BufferDescription.GetHashCode() -> int
@@ -1331,8 +1402,18 @@ static BrutalEngine.Graphics.Backend.BackendSwapchainRequest.operator !=(BrutalE
 static BrutalEngine.Graphics.Backend.BackendSwapchainRequest.operator ==(BrutalEngine.Graphics.Backend.BackendSwapchainRequest left, BrutalEngine.Graphics.Backend.BackendSwapchainRequest right) -> bool
 static BrutalEngine.Graphics.Backend.SwapchainImageUse.operator !=(BrutalEngine.Graphics.Backend.SwapchainImageUse left, BrutalEngine.Graphics.Backend.SwapchainImageUse right) -> bool
 static BrutalEngine.Graphics.Backend.SwapchainImageUse.operator ==(BrutalEngine.Graphics.Backend.SwapchainImageUse left, BrutalEngine.Graphics.Backend.SwapchainImageUse right) -> bool
+static BrutalEngine.Graphics.BindGroupEntry.FromBuffer(int binding, in BrutalEngine.Graphics.BufferBinding buffer) -> BrutalEngine.Graphics.BindGroupEntry
+static BrutalEngine.Graphics.BindGroupEntry.FromSampler(int binding, BrutalEngine.Graphics.SamplerHandle sampler, int arrayElement = 0) -> BrutalEngine.Graphics.BindGroupEntry
+static BrutalEngine.Graphics.BindGroupEntry.FromTexture(int binding, BrutalEngine.Graphics.TextureViewHandle view, int arrayElement = 0) -> BrutalEngine.Graphics.BindGroupEntry
+static BrutalEngine.Graphics.BindGroupEntry.FromTransient(int binding, in BrutalEngine.Graphics.TransientAllocation allocation, long size) -> BrutalEngine.Graphics.BindGroupEntry
+static BrutalEngine.Graphics.BindGroupEntry.operator !=(BrutalEngine.Graphics.BindGroupEntry left, BrutalEngine.Graphics.BindGroupEntry right) -> bool
+static BrutalEngine.Graphics.BindGroupEntry.operator ==(BrutalEngine.Graphics.BindGroupEntry left, BrutalEngine.Graphics.BindGroupEntry right) -> bool
 static BrutalEngine.Graphics.BindGroupHandle.operator !=(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupHandle.operator ==(BrutalEngine.Graphics.BindGroupHandle left, BrutalEngine.Graphics.BindGroupHandle right) -> bool
+static BrutalEngine.Graphics.BindGroupLayoutDescription.operator !=(BrutalEngine.Graphics.BindGroupLayoutDescription left, BrutalEngine.Graphics.BindGroupLayoutDescription right) -> bool
+static BrutalEngine.Graphics.BindGroupLayoutDescription.operator ==(BrutalEngine.Graphics.BindGroupLayoutDescription left, BrutalEngine.Graphics.BindGroupLayoutDescription right) -> bool
+static BrutalEngine.Graphics.BindGroupLayoutEntry.operator !=(BrutalEngine.Graphics.BindGroupLayoutEntry left, BrutalEngine.Graphics.BindGroupLayoutEntry right) -> bool
+static BrutalEngine.Graphics.BindGroupLayoutEntry.operator ==(BrutalEngine.Graphics.BindGroupLayoutEntry left, BrutalEngine.Graphics.BindGroupLayoutEntry right) -> bool
 static BrutalEngine.Graphics.BindGroupLayoutHandle.operator !=(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
 static BrutalEngine.Graphics.BindGroupLayoutHandle.operator ==(BrutalEngine.Graphics.BindGroupLayoutHandle left, BrutalEngine.Graphics.BindGroupLayoutHandle right) -> bool
 static BrutalEngine.Graphics.BlendComponent.operator !=(BrutalEngine.Graphics.BlendComponent left, BrutalEngine.Graphics.BlendComponent right) -> bool
@@ -1342,6 +1423,8 @@ static BrutalEngine.Graphics.BlendState.AlphaBlending.get -> BrutalEngine.Graphi
 static BrutalEngine.Graphics.BlendState.PremultipliedAlpha.get -> BrutalEngine.Graphics.BlendState
 static BrutalEngine.Graphics.BlendState.operator !=(BrutalEngine.Graphics.BlendState left, BrutalEngine.Graphics.BlendState right) -> bool
 static BrutalEngine.Graphics.BlendState.operator ==(BrutalEngine.Graphics.BlendState left, BrutalEngine.Graphics.BlendState right) -> bool
+static BrutalEngine.Graphics.BufferBinding.operator !=(BrutalEngine.Graphics.BufferBinding left, BrutalEngine.Graphics.BufferBinding right) -> bool
+static BrutalEngine.Graphics.BufferBinding.operator ==(BrutalEngine.Graphics.BufferBinding left, BrutalEngine.Graphics.BufferBinding right) -> bool
 static BrutalEngine.Graphics.BufferCopy.operator !=(BrutalEngine.Graphics.BufferCopy left, BrutalEngine.Graphics.BufferCopy right) -> bool
 static BrutalEngine.Graphics.BufferCopy.operator ==(BrutalEngine.Graphics.BufferCopy left, BrutalEngine.Graphics.BufferCopy right) -> bool
 static BrutalEngine.Graphics.BufferDescription.operator !=(BrutalEngine.Graphics.BufferDescription left, BrutalEngine.Graphics.BufferDescription right) -> bool
@@ -1441,10 +1524,15 @@ static BrutalEngine.Graphics.Viewport.operator ==(BrutalEngine.Graphics.Viewport
 ~override BrutalEngine.Graphics.Backend.BackendSwapchain.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.Backend.BackendSwapchainRequest.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.Backend.SwapchainImageUse.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.BindGroupEntry.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.BindGroupLayoutDescription.Equals(object obj) -> bool
+~override BrutalEngine.Graphics.BindGroupLayoutDescription.ToString() -> string
+~override BrutalEngine.Graphics.BindGroupLayoutEntry.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BlendComponent.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BlendComponent.ToString() -> string
 ~override BrutalEngine.Graphics.BlendState.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BlendState.ToString() -> string
+~override BrutalEngine.Graphics.BufferBinding.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferCopy.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.BufferDescription.Equals(object obj) -> bool
 ~override BrutalEngine.Graphics.ColorTargetState.Equals(object obj) -> bool
