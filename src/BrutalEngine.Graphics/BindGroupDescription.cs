@@ -7,8 +7,10 @@ namespace BrutalEngine.Graphics;
 /// A <see langword="ref"/> struct over a span of entries, so a <see cref="BindGroupLifetime.Frame"/> group is described
 /// in the frame loop without a managed allocation, for example over a <see langword="stackalloc"/> span
 /// (docs/design/graphics.md section 8). A group is immutable once created: to bind different resources, create another.
-/// The device validates the entries against the layout when the group is created and keeps no reference to the
-/// description or its span. Used on the device's owner thread. No member allocates.
+/// The device checks the description when the group is created: a <see cref="Lifetime"/> outside the enum throws
+/// <see cref="ArgumentOutOfRangeException"/>, and an entry not made by a factory (its resource is the null handle) or a
+/// repeated binding and array element throws <see cref="ArgumentException"/>; then it validates the entries against the
+/// layout. It keeps no reference to the description or its span. Used on the device's owner thread. No member allocates.
 /// </remarks>
 public readonly ref struct BindGroupDescription
 {
