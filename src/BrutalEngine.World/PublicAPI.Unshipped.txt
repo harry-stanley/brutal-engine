@@ -1,4 +1,16 @@
 #nullable enable
+BrutalEngine.World.ChunkEnumerator
+BrutalEngine.World.ChunkEnumerator.ChunkEnumerator() -> void
+BrutalEngine.World.ChunkEnumerator.Current.get -> BrutalEngine.World.ChunkView
+BrutalEngine.World.ChunkEnumerator.Dispose() -> void
+BrutalEngine.World.ChunkEnumerator.MoveNext() -> bool
+BrutalEngine.World.ChunkView
+BrutalEngine.World.ChunkView.ChunkView() -> void
+BrutalEngine.World.ChunkView.Count.get -> int
+BrutalEngine.World.ChunkView.Entities.get -> System.ReadOnlySpan<BrutalEngine.World.Entity>
+BrutalEngine.World.ChunkView.Has<T>() -> bool
+BrutalEngine.World.ChunkView.Read<T>() -> System.ReadOnlySpan<T>
+BrutalEngine.World.ChunkView.Write<T>() -> System.Span<T>
 BrutalEngine.World.ComponentId
 BrutalEngine.World.ComponentId.ComponentId() -> void
 BrutalEngine.World.ComponentId.Equals(BrutalEngine.World.ComponentId other) -> bool
@@ -88,6 +100,7 @@ BrutalEngine.World.IComponent.Info.get -> BrutalEngine.World.ComponentInfo
 BrutalEngine.World.Query
 BrutalEngine.World.Query.CountEntities() -> int
 BrutalEngine.World.Query.Dispose() -> void
+BrutalEngine.World.Query.GetEnumerator() -> BrutalEngine.World.ChunkEnumerator
 BrutalEngine.World.Query.HasRun.get -> bool
 BrutalEngine.World.Query.LastRunTick.get -> uint
 BrutalEngine.World.Query.World.get -> BrutalEngine.World.EcsWorld!

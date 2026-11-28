@@ -21,6 +21,10 @@ namespace BrutalEngine.World;
 /// <see cref="QueryBuilder.Build"/>.
 /// </para>
 /// <para>
+/// <b>Enumeration.</b> <c>foreach (ChunkView chunk in query)</c> yields the matching chunks, with span access to the
+/// declared columns (see <see cref="ChunkEnumerator"/> and <see cref="ChunkView"/>).
+/// </para>
+/// <para>
 /// <b>Lifetime and ownership.</b> The world owns the query. <see cref="Dispose"/> releases it early; disposing the world
 /// releases every query it still holds. The cache comes from the world's allocator. Afterwards every member but
 /// <see cref="Dispose"/> throws <see cref="ObjectDisposedException"/>.
@@ -84,8 +88,9 @@ public sealed class Query : IDisposable
     }
 
     /// <summary>
-    /// Whether a full enumeration of the query has completed. Until then its change filters match every chunk. No
-    /// enumeration exists in this version, so it is always <see langword="false"/>.
+    /// Whether a full enumeration of the query has completed. Until then its change filters match every chunk. In this
+    /// version an enumeration doesn't record a completed run yet, so it is always <see langword="false"/>, and
+    /// <c>Changed</c> and <c>Added</c> terms only require their component: every matching chunk is yielded.
     /// </summary>
     /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
     /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
@@ -100,6 +105,9 @@ public sealed class Query : IDisposable
             return false;
         }
     }
+
+    /// <summary>The world, without the checks.</summary>
+    internal EcsWorld Owner => _world;
 
     /// <summary>The query's terms in matching form.</summary>
     internal QueryTerms Terms => _terms;
@@ -146,6 +154,24 @@ public sealed class Query : IDisposable
     }
 
     /// <summary>
+    /// Starts an enumeration of the matching chunks: <c>foreach (ChunkView chunk in query)</c>. Refreshes the cache
+    /// first, so archetypes created since the last refresh are enumerated.
+    /// </summary>
+    /// <returns>An enumerator before the first chunk. Dispose it once, and don't copy it.</returns>
+    /// <exception cref="WrongThreadException">Called on a thread other than the owner thread.</exception>
+    /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
+    /// <exception cref="OutOfMemoryException">
+    /// The allocator can't grow the cache while it refreshes, as for <see cref="CountEntities"/>. No enumeration starts.
+    /// </exception>
+    /// <remarks>Allocates no managed memory, the refresh included.</remarks>
+    public ChunkEnumerator GetEnumerator()
+    {
+        ThrowIfUnusable("Query.GetEnumerator");
+        _cache.Refresh();
+        return new ChunkEnumerator(this);
+    }
+
+    /// <summary>
     /// Releases the query: frees its cache, releases its last-run tick slot (a later query reuses it) and removes it from
     /// the world. Idempotent, and does nothing once the world is disposed, which has released the query already.
     /// </summary>
@@ -175,7 +201,9 @@ public sealed class Query : IDisposable
         _cache.Dispose();
     }
 
-    private void ThrowIfUnusable(string apiName)
+    /// <summary>Checks the owner thread, the world's disposal and the query's, for a member of the query or its enumeration.</summary>
+    /// <param name="apiName">The member's name, for the exception message.</param>
+    internal void ThrowIfUnusable(string apiName)
     {
         _world.ThrowIfUnusableFor(apiName);
         ObjectDisposedException.ThrowIf(_disposed, this);
