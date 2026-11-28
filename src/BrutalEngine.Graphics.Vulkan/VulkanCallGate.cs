@@ -12,6 +12,8 @@ namespace BrutalEngine.Graphics.Vulkan;
 /// <para>
 /// A call site asks <see cref="TryTakeFault"/> first and, when no fault fires, makes the native call and passes its
 /// result to <see cref="Check"/>. <c>VK_ERROR_DEVICE_LOST</c> from any call marks the device lost, and it stays lost.
+/// A wait that runs out of <c>GpuTimeout</c> marks it lost as a timeout instead (<see cref="MarkLost"/>), which the gate
+/// remembers, so later calls report <see cref="ErrorKind.Timeout"/> (<see cref="LostError"/>).
 /// </para>
 /// <para>
 /// The rules every call site follows are in
@@ -36,15 +38,44 @@ namespace BrutalEngine.Graphics.Vulkan;
 /// </list>
 /// <para>
 /// Not thread-safe: the device's owner thread calls it, never re-entrantly. <see cref="Check"/> and
-/// <see cref="TryTakeFault"/> allocate nothing.
+/// <see cref="TryTakeFault"/> and <see cref="MarkLost"/> allocate nothing.
 /// </para>
 /// </remarks>
 internal sealed class VulkanCallGate
 {
     private bool _isLost;
+    private bool _timedOut;
 
-    /// <summary><see langword="true"/> once any call returned <c>VK_ERROR_DEVICE_LOST</c>; never reset.</summary>
+    /// <summary><see langword="true"/> once any call returned <c>VK_ERROR_DEVICE_LOST</c> or <see cref="MarkLost"/> ran; never reset.</summary>
     public bool IsLost => _isLost;
+
+    /// <summary>
+    /// <see langword="true"/> when the loss came from a timeout (<see cref="MarkLost"/>): a fence or present-fence
+    /// wait that ran out, so the GPU may be hung and still using what it was given. Never reset; a loss already reported
+    /// as <c>VK_ERROR_DEVICE_LOST</c> stays a reported loss.
+    /// </summary>
+    public bool LostTimedOut => _timedOut;
+
+    /// <summary>
+    /// Gets the error that calls on a lost device return without calling the driver (docs/design/graphics-vulkan.md
+    /// section 12): <see cref="ErrorKind.Timeout"/> ("device is lost after a GPU timeout", <c>VK_TIMEOUT</c>) after a
+    /// timeout loss, otherwise <see cref="ErrorKind.Unavailable"/> ("device is lost", <c>VK_ERROR_DEVICE_LOST</c>).
+    /// </summary>
+    public EngineError LostError => _timedOut
+        ? new EngineError(ErrorKind.Timeout, "device is lost after a GPU timeout", (int)VkResult.Timeout)
+        : new EngineError(ErrorKind.Unavailable, "device is lost", (int)VkResult.ErrorDeviceLost);
+
+    /// <summary>Marks the device lost without a failed result: a wait that ran out of <c>GpuTimeout</c>.</summary>
+    /// <param name="timedOut">Whether the loss is a timeout (<see cref="LostTimedOut"/>).</param>
+    /// <remarks>The first loss decides the kind: on a device already lost this changes nothing.</remarks>
+    public void MarkLost(bool timedOut)
+    {
+        if (!_isLost)
+        {
+            _isLost = true;
+            _timedOut = timedOut;
+        }
+    }
 
     /// <summary>The fault seam; <see langword="null"/> in production, set only by the backend's tests.</summary>
     public VulkanFaultInjector? Faults { get; set; }
