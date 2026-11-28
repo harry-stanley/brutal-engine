@@ -201,6 +201,20 @@ public sealed partial class PipelineValidatorTests
         Assert.Throws<ArgumentNullException>(() => PipelineValidator.Validate((ComputePipelineDescription)null!));
     }
 
+    [Fact]
+    public void Rejection_WithoutDebugName_SaysNoDebugName()
+    {
+        // Both exception kinds go through the same description of the debug name; a null one reads "no debug name".
+        var layout = new PipelineLayoutDescription { BindGroupLayouts = ReadOnlyMemory<BindGroupLayoutHandle>.Empty, PushConstants = new(ShaderStages.Vertex, 6) };
+        var module = new ShaderModuleDescription { Code = new[] { new ShaderCode((ShaderCodeFormat)1, _spirV) } };
+
+        ArgumentException invalid = Assert.Throws<ArgumentException>(() => PipelineValidator.Validate(layout));
+        ArgumentOutOfRangeException outOfRange = Assert.Throws<ArgumentOutOfRangeException>(() => PipelineValidator.Validate(module));
+
+        Assert.Contains("PipelineLayoutDescription.PushConstants.Size must be a multiple of 4, but is 6 (no debug name).", invalid.Message, StringComparison.Ordinal);
+        Assert.Contains("ShaderModuleDescription.Code[0].Format isn't a ShaderCodeFormat member, but is 1 (no debug name).", outOfRange.Message, StringComparison.Ordinal);
+    }
+
     private static void AssertRejected(Type exceptionType, string error, Action validate)
     {
         // Exact type: an ArgumentOutOfRangeException where an ArgumentException is documented fails, and vice versa.
