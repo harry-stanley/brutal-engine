@@ -115,8 +115,18 @@ internal sealed unsafe class PresentFences
     /// <param name="image">The image that was presented.</param>
     /// <param name="result">The present's result.</param>
     /// <param name="injected">Whether <paramref name="result"/> was injected in place of the call.</param>
-    public void AfterPresent(int image, VkResult result, bool injected) =>
-        _armed[image] = !injected && result is VkResult.Success or VkResult.SuboptimalKHR or VkResult.ErrorOutOfDateKHR
+    public void AfterPresent(int image, VkResult result, bool injected) => _armed[image] = WasEnqueued(result, injected);
+
+    /// <summary>Whether a present was enqueued, so the fence it carried will signal.</summary>
+    /// <param name="result">The present's result.</param>
+    /// <param name="injected">Whether <paramref name="result"/> was injected in place of the call.</param>
+    /// <returns>
+    /// <see langword="true"/> for a real <c>SUCCESS</c>, <c>SUBOPTIMAL_KHR</c>, <c>ERROR_OUT_OF_DATE_KHR</c>,
+    /// <c>ERROR_SURFACE_LOST_KHR</c> or <c>ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT</c>, which the specification still
+    /// enqueues; <see langword="false"/> for any other result and for every injected one.
+    /// </returns>
+    internal static bool WasEnqueued(VkResult result, bool injected) =>
+        !injected && result is VkResult.Success or VkResult.SuboptimalKHR or VkResult.ErrorOutOfDateKHR
             or VkResult.ErrorSurfaceLostKHR or VkResult.ErrorFullScreenExclusiveModeLostEXT;
 
     /// <summary>Waits for every armed fence in one bounded call; no call when none is armed.</summary>
