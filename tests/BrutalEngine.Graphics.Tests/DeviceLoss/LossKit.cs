@@ -102,6 +102,9 @@ internal sealed class LossRig
 
     public List<bool> LostInHandler { get; } = [];
 
+    /// <summary>The frame the last <see cref="Run"/> began for its scenario, for a test whose detecting call threw.</summary>
+    public CommandList OpenFrame { get; private set; }
+
     /// <summary>A frame that acquires the swapchain and submits, with its statuses.</summary>
     public (FrameStatus Begun, AcquireStatus Acquired, FrameStatus Submitted) Frame()
     {
@@ -112,9 +115,10 @@ internal sealed class LossRig
 
     /// <summary>
     /// Arms <paramref name="loss"/> for the scenario's operation, then makes the scenario's detecting call. Returns what
-    /// it returned (a status or a result) and how many calls of the gated operation reached the backend during it.
+    /// it returned (a status or a result), how many calls of the gated operation reached the backend during it, and how
+    /// many DeviceLost events had been raised when it returned (before a frame it left open is closed).
     /// </summary>
-    public (object Returned, int BackendCalls) Run(string scenario, in EngineError loss)
+    public (object Returned, int BackendCalls, int Events) Run(string scenario, in EngineError loss)
     {
         FaultSeam.Operation operation = LossKit.Scenarios[scenario].Operation;
         CommandList commands = default;
@@ -128,6 +132,7 @@ internal sealed class LossRig
                 }
 
                 _ = Device.BeginFrame(out commands);
+                OpenFrame = commands;
                 if (scenario == "Present")
                 {
                     _ = commands.AcquireSwapchainImage(Swapchain, out _);
@@ -152,6 +157,7 @@ internal sealed class LossRig
             _ => Creation(scenario, commands),
         };
         int calls = LossKit.Count(Backend, operation) - before;
+        int events = Events.Count;
 
         // Close a frame the scenario left open, so every scenario ends between frames.
         if (scenario is "WaitForFrame" or "BeginFrame" or "AcquireImage" or "Recreation" or "RecreationWait" or "AllocateTransient")
@@ -159,7 +165,7 @@ internal sealed class LossRig
             _ = Device.SubmitFrame(commands);
         }
 
-        return (returned, calls);
+        return (returned, calls, events);
     }
 
     /// <summary>A creation or write scenario's call; a transient allocation goes into <paramref name="commands"/>' frame.</summary>

@@ -55,10 +55,12 @@ public sealed class DeviceLossTests : IDisposable
         string detected = LossKit.Scenarios[scenario].Detected;
         var loss = new EngineError(timedOut ? ErrorKind.Timeout : ErrorKind.Unavailable, "Injected loss.", timedOut ? 7 : LossCode);
 
-        (object returned, int backendCalls) = rig.Run(scenario, loss);
+        (object returned, int backendCalls, int eventsAtReturn) = rig.Run(scenario, loss);
 
-        // The seam replaced the backend call: it never reached the backend.
+        // The seam replaced the backend call: it never reached the backend. The detecting call itself raised the event,
+        // not a later call (the SubmitFrame that closes the frame).
         Assert.Equal(0, backendCalls);
+        Assert.Equal(1, eventsAtReturn);
         switch (returned)
         {
             case FrameStatus frame:
@@ -137,7 +139,10 @@ public sealed class DeviceLossTests : IDisposable
 
     [Theory]
     [InlineData("WaitForFrame")]
+    [InlineData("BeginFrame")]
     [InlineData("Execute")]
+    [InlineData("AcquireImage")]
+    [InlineData("WaitIdle")]
     [InlineData("CreateBuffer")]
     [InlineData("WriteBuffer")]
     public void Event_HandlerException_PropagatesAndDeviceStaysConsistent(string scenario)
@@ -151,9 +156,16 @@ public sealed class DeviceLossTests : IDisposable
 
         Assert.Same(thrown, caught);
         Assert.True(rig.Device.IsLost);
-        // A frame detected at BeginFrame wasn't opened; one detected at SubmitFrame was closed first.
-        // (The WaitForFrame scenario submits one frame before the one it fails to open.)
-        Assert.Equal(scenario is "WaitForFrame" or "Execute" ? frames + 1 : frames, rig.Device.FrameNumber);
+        if (scenario == "AcquireImage")
+        {
+            // The acquire's frame stays open, as after any acquire: its caller still submits it.
+            Assert.Equal(frames, rig.Device.FrameNumber);
+            Assert.Equal(FrameStatus.DeviceLost, rig.Device.SubmitFrame(rig.OpenFrame));
+        }
+
+        // A frame detected at BeginFrame (its wait or its open) wasn't opened; one detected at SubmitFrame was closed
+        // first. (The WaitForFrame and BeginFrame scenarios submit one frame before the one they fail to open.)
+        Assert.Equal(scenario is "WaitForFrame" or "BeginFrame" or "Execute" or "AcquireImage" ? frames + 1 : frames, rig.Device.FrameNumber);
         // Frames still begin and submit, and the event isn't raised again.
         Assert.Equal((FrameStatus.DeviceLost, AcquireStatus.DeviceLost, FrameStatus.DeviceLost), rig.Frame());
         Assert.Single(rig.Events);
