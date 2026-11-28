@@ -147,6 +147,7 @@ public sealed class MilestoneReferenceTests
     [InlineData("""<ProjectReference Include="..\Fixture.Next\Fixture.Next.csproj" />""")]
     [InlineData("""<ProjectReference Include="Fixture.Next.csproj" />""")]
     [InlineData("""<ProjectReference Include="../Fixture.Core/Fixture.Core.csproj; ../Fixture.Next/Fixture.Next.csproj ;" />""")]
+    [InlineData("""<ProjectReference Include="Fixture.Core.csproj; Fixture.Next.csproj" />""")]
     [InlineData("""<projectreference Include="../Fixture.Next/Fixture.Next.csproj" />""")]
     [InlineData("""<ProjectReference Include="../Fixture.Next/Fixture.Next.csproj" Condition="'$(Configuration)' == 'Release'" />""")]
     [InlineData("""<ProjectReference Include="$(MSBuildThisFileDirectory)../Fixture.Next/Fixture.Next.csproj" />""")]
