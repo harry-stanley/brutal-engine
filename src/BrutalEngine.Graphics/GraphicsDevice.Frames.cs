@@ -242,7 +242,8 @@ public sealed partial class GraphicsDevice
     // frame when nothing is pending, when nothing can still use the object.
     private DeletionQueue? ReserveDeletion()
     {
-        if (!_frameOpen && !CurrentUploads.Written.IsEmpty)
+        // Without a backend device nothing is destroyed: the deferred queue is dropped by Recover or Dispose.
+        if (_backendGone || (!_frameOpen && !CurrentUploads.Written.IsEmpty))
         {
             // Pending copies of the next frame may still use the object.
             return DeferredDeletions();

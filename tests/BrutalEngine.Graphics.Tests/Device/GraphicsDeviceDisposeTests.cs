@@ -36,7 +36,7 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
         "Destroy(BindGroupLayout)", "Destroy(PipelineLayout)", "Destroy(BindGroup)", "Destroy(GraphicsPipeline)",
         "Destroy(ComputePipeline)", "Destroy(Swapchain)", "CreateDebugLabel", "GetDebugLabelName", "Statistics", "ThrowIfLeaks",
         "BeginFrame", "SubmitFrame", "FrameNumber", "CompletedFrameNumber", "WaitIdle", "IsLost",
-        "WriteBuffer", "WriteTexture", "TryReadBuffer", "CreateSwapchain", "GetSwapchainInfo",
+        "WriteBuffer", "WriteTexture", "TryReadBuffer", "CreateSwapchain", "GetSwapchainInfo", "RegisterOwner", "Recover",
     ];
 
     [Theory]
@@ -166,6 +166,12 @@ public sealed partial class GraphicsDeviceDisposeTests : IDisposable
                 break;
             case "GetSwapchainInfo":
                 _ = device.GetSwapchainInfo(new SwapchainHandle(anyHandle));
+                break;
+            case "RegisterOwner":
+                _ = device.RegisterOwner(new DeviceLoss.RecordingOwner("owner", []));
+                break;
+            case "Recover":
+                _ = device.Recover();
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(member), member, null);

@@ -46,8 +46,11 @@ public sealed partial class GraphicsDevice : IDisposable
 {
     private const string LogCategoryName = "Graphics";
 
-    private readonly IBackendDevice _backend;
+    private readonly IGraphicsBackend _factory;
+    private readonly BackendDeviceRequest _request;
+    private readonly GraphicsDeviceOptions _options;
     private readonly BackendObjectTable _objects;
+    private IBackendDevice _backend;
     private readonly HandleTables _handles;
     private readonly HandleAllocator _labels = new();
     private readonly Dictionary<string, DebugLabel> _labelsByName = new(StringComparer.Ordinal);
@@ -56,10 +59,12 @@ public sealed partial class GraphicsDevice : IDisposable
     private string[] _labelNames = [];
     private bool _disposed;
 
-    private GraphicsDevice(IBackendDevice backend, BackendObjectTable objects, LogCategory log, ThreadAffinity owner, GraphicsDeviceOptions options, WindowSurfaceSource? compatibleSurface)
+    private GraphicsDevice(IGraphicsBackend factory, BackendDeviceRequest request, IBackendDevice backend, BackendObjectTable objects, LogCategory log, GraphicsDeviceOptions options)
     {
+        (_factory, _request, _options) = (factory, request, options);
         _compatibleWindow = options.CompatibleWindow;
-        _compatibleSurface = compatibleSurface;
+        // The request's surface source is kept: the backend hands the selection surface over for that instance only.
+        _compatibleSurface = request.CompatibleSurface;
         _slots = CreateSlots(options.FramesInFlight, options.Allocator);
         _allocator = options.Allocator;
         _planner = new FramePlanner(options.Allocator);
@@ -68,7 +73,7 @@ public sealed partial class GraphicsDevice : IDisposable
         _objects = objects;
         _handles = new HandleTables(objects);
         _log = log;
-        _owner = owner;
+        _owner = ThreadAffinity.CurrentThread();
         Adapter = backend.Adapter;
         Capabilities = backend.Capabilities;
     }
@@ -128,39 +133,17 @@ public sealed partial class GraphicsDevice : IDisposable
             return error;
         }
 
-        Result<IReadOnlyList<GraphicsAdapterInfo>> adapters = backend.EnumerateAdapters(request);
-        if (!adapters.TryGetValue(out IReadOnlyList<GraphicsAdapterInfo>? list))
-        {
-            return adapters.Error;
-        }
-
         LogCategory log = options.Logger.CreateCategory(LogCategoryName);
-        LogRejections(log, list);
-        if (!TrySelect(list, options.Adapter, out int adapterIndex, out error))
-        {
-            return error;
-        }
-
         var objects = new BackendObjectTable();
-        Result<IBackendDevice> created = backend.CreateDevice(request, adapterIndex, objects);
-        if (!created.TryGetValue(out IBackendDevice? device))
+        Result<IBackendDevice> opened = OpenBackendDevice(backend, request, options, log, objects);
+        if (!opened.TryGetValue(out IBackendDevice? device))
         {
-            return created.Error;
-        }
-
-        GraphicsFeatures missing = options.RequiredFeatures & ~device.Capabilities.Features;
-        if (missing != GraphicsFeatures.None)
-        {
-            device.Dispose();
-            return new EngineError(ErrorKind.Unsupported, string.Create(
-                CultureInfo.InvariantCulture,
-                $"Create: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
+            return opened.Error;
         }
 
         try
         {
-            // The request's surface source is kept: the backend hands the selection surface over for that instance only.
-            return new GraphicsDevice(device, objects, log, ThreadAffinity.CurrentThread(), options, request.CompatibleSurface);
+            return new GraphicsDevice(backend, request, device, objects, log, options);
         }
         catch
         {
@@ -204,6 +187,9 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <param name="format">A defined format other than <see cref="TextureFormat.Undefined"/>.</param>
     /// <returns>The backend's answer; <see cref="FormatSupport.None"/> when the format can't be used at all.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="format"/> is <see cref="TextureFormat.Undefined"/> or not a <see cref="TextureFormat"/> member.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The device has no backend device to ask: a <see cref="Recover"/> failed before making one.
+    /// </exception>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread.</exception>
     /// <remarks>Constant for the device's lifetime. Owner thread. Allocates nothing, except the exception.</remarks>
@@ -216,7 +202,9 @@ public sealed partial class GraphicsDevice : IDisposable
             throw new ArgumentOutOfRangeException(nameof(format), format, "GetFormatSupport: not a defined TextureFormat other than Undefined.");
         }
 
-        return _backend.GetFormatSupport(format);
+        return _backendGone
+            ? throw new InvalidOperationException("GetFormatSupport: the device has no backend device (a recovery failed).")
+            : _backend.GetFormatSupport(format);
     }
 
     /// <summary>A snapshot of the device's counters.</summary>
@@ -224,7 +212,7 @@ public sealed partial class GraphicsDevice : IDisposable
     /// The frames submitted (<see cref="FrameNumber"/>), the bytes the last submitted frame uploaded and the bytes ever
     /// uploaded outside the ring (<see cref="WriteBuffer"/>), the live objects over every kind (default texture views and
     /// swapchains included; swapchain images and transient allocations' buffers never count) and the backend's
-    /// validation counts.
+    /// validation counts, those of the backend devices <see cref="Recover"/> replaced included.
     /// </value>
     /// <exception cref="ObjectDisposedException">The device has been disposed.</exception>
     /// <exception cref="WrongThreadException">Read from a thread other than the owner thread.</exception>
@@ -234,7 +222,7 @@ public sealed partial class GraphicsDevice : IDisposable
         get
         {
             ThrowIfUnusable(nameof(GraphicsDevice) + "." + nameof(Statistics));
-            return new GraphicsStatistics(_frameNumber, _uploadBytesLastFrame, _uploadOverflowBytes, LiveObjectCount, _backend.ValidationErrors, _backend.ValidationWarnings);
+            return new GraphicsStatistics(_frameNumber, _uploadBytesLastFrame, _uploadOverflowBytes, LiveObjectCount, ValidationErrorCount, ValidationWarningCount);
         }
     }
 
@@ -350,6 +338,8 @@ public sealed partial class GraphicsDevice : IDisposable
     /// <remarks>
     /// The wait happens only when a frame was submitted and the device isn't lost; if it fails, that is logged at
     /// <see cref="LogLevel.Error"/> and the objects are destroyed anyway. A frame may be open: it is never submitted.
+    /// After a <see cref="Recover"/> that failed before making a backend device, nothing waits or is destroyed and the
+    /// backend isn't called: only the device's own memory is freed.
     /// Each leaked object is one <see cref="LogLevel.Error"/> line under <c>"Graphics"</c>, oldest first, with its kind and
     /// debug name. Afterwards every member except <see cref="Dispose"/>, <see cref="Adapter"/> and <see cref="Capabilities"/>
     /// throws <see cref="ObjectDisposedException"/>. The backend, logger, allocator and compatible window are left alone.
@@ -364,6 +354,14 @@ public sealed partial class GraphicsDevice : IDisposable
         }
 
         _disposed = true;
+        if (_backendGone)
+        {
+            DisposeSlots(_slots);
+            _planner.Dispose();
+            _deferred?.Dispose();
+            return;
+        }
+
         if (_frameNumber > 0 && !IsLostCore && _backend.WaitIdle().TryGetError(out EngineError idle))
         {
             // Destroying is still valid on a hung or lost device; the objects go anyway.
@@ -392,6 +390,40 @@ public sealed partial class GraphicsDevice : IDisposable
         DisposeSlots(_slots);
         _planner.Dispose();
         _deferred?.Dispose();
+    }
+
+    // Enumerates the adapters, logs the rejected ones, selects one and creates its backend device, which must have every
+    // required feature; on a failure nothing is left alive. Create and Recover share it.
+    private static Result<IBackendDevice> OpenBackendDevice(IGraphicsBackend backend, BackendDeviceRequest request, GraphicsDeviceOptions options, LogCategory log, BackendObjectTable objects)
+    {
+        Result<IReadOnlyList<GraphicsAdapterInfo>> adapters = backend.EnumerateAdapters(request);
+        if (!adapters.TryGetValue(out IReadOnlyList<GraphicsAdapterInfo>? list))
+        {
+            return adapters.Error;
+        }
+
+        LogRejections(log, list);
+        if (!TrySelect(list, options.Adapter, out int adapterIndex, out EngineError error))
+        {
+            return error;
+        }
+
+        Result<IBackendDevice> created = backend.CreateDevice(request, adapterIndex, objects);
+        if (!created.TryGetValue(out IBackendDevice? device))
+        {
+            return created.Error;
+        }
+
+        GraphicsFeatures missing = options.RequiredFeatures & ~device.Capabilities.Features;
+        if (missing != GraphicsFeatures.None)
+        {
+            device.Dispose();
+            return new EngineError(ErrorKind.Unsupported, string.Create(
+                CultureInfo.InvariantCulture,
+                $"Create: the device on adapter {adapterIndex} '{device.Adapter.Name}' lacks the required features {missing}."));
+        }
+
+        return new Result<IBackendDevice>(device);
     }
 
     private static bool TryBuildRequest(GraphicsDeviceOptions options, out BackendDeviceRequest request, out EngineError error)

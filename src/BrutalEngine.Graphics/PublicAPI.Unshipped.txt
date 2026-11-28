@@ -541,6 +541,8 @@ BrutalEngine.Graphics.FormatSupport.Storage = 32 -> BrutalEngine.Graphics.Format
 BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.FrameStatus.DeviceLost = 1 -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.FrameStatus.Ready = 0 -> BrutalEngine.Graphics.FrameStatus
+BrutalEngine.Graphics.GpuOwnerRegistration
+BrutalEngine.Graphics.GpuOwnerRegistration.Dispose() -> void
 BrutalEngine.Graphics.GpuResourceLeakException
 BrutalEngine.Graphics.GpuResourceLeakException.GpuResourceLeakException() -> void
 BrutalEngine.Graphics.GpuResourceLeakException.GpuResourceLeakException(System.Collections.Generic.IReadOnlyList<string!>! leakedObjects) -> void
@@ -601,6 +603,8 @@ BrutalEngine.Graphics.GraphicsDevice.GetDefaultView(BrutalEngine.Graphics.Textur
 BrutalEngine.Graphics.GraphicsDevice.GetFormatSupport(BrutalEngine.Graphics.TextureFormat format) -> BrutalEngine.Graphics.FormatSupport
 BrutalEngine.Graphics.GraphicsDevice.GetSwapchainInfo(BrutalEngine.Graphics.SwapchainHandle swapchain) -> BrutalEngine.Graphics.SwapchainInfo
 BrutalEngine.Graphics.GraphicsDevice.IsLost.get -> bool
+BrutalEngine.Graphics.GraphicsDevice.Recover() -> BrutalEngine.Core.Result
+BrutalEngine.Graphics.GraphicsDevice.RegisterOwner(BrutalEngine.Graphics.IGpuResourceOwner! owner) -> BrutalEngine.Graphics.GpuOwnerRegistration!
 BrutalEngine.Graphics.GraphicsDevice.Statistics.get -> BrutalEngine.Graphics.GraphicsStatistics
 BrutalEngine.Graphics.GraphicsDevice.SubmitFrame(BrutalEngine.Graphics.CommandList commands) -> BrutalEngine.Graphics.FrameStatus
 BrutalEngine.Graphics.GraphicsDevice.ThrowIfLeaks() -> void
@@ -684,6 +688,9 @@ BrutalEngine.Graphics.GraphicsStatistics.ValidationErrors.get -> long
 BrutalEngine.Graphics.GraphicsStatistics.ValidationErrors.init -> void
 BrutalEngine.Graphics.GraphicsStatistics.ValidationWarnings.get -> long
 BrutalEngine.Graphics.GraphicsStatistics.ValidationWarnings.init -> void
+BrutalEngine.Graphics.IGpuResourceOwner
+BrutalEngine.Graphics.IGpuResourceOwner.OnDeviceLost(BrutalEngine.Graphics.GraphicsDevice! device) -> void
+BrutalEngine.Graphics.IGpuResourceOwner.OnDeviceRecreated(BrutalEngine.Graphics.GraphicsDevice! device) -> BrutalEngine.Core.Result
 BrutalEngine.Graphics.IndexFormat
 BrutalEngine.Graphics.IndexFormat.Uint16 = 0 -> BrutalEngine.Graphics.IndexFormat
 BrutalEngine.Graphics.IndexFormat.Uint32 = 1 -> BrutalEngine.Graphics.IndexFormat
