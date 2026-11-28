@@ -326,6 +326,27 @@ public sealed class RecoverTests : IDisposable
     }
 
     [Fact]
+    public void OwnerDisposingTheDevice_ThrowsAndRecoveryCompletes()
+    {
+        GraphicsDevice device = _fixture.Create();
+        Exception? disposing = null;
+        _ = device.RegisterOwner(new RecordingOwner("owner", _log) { WhenLost = d => disposing = Record.Exception(d.Dispose) });
+        Lose(device);
+
+        Assert.True(device.Recover().IsSuccess);
+
+        Assert.Equal(
+            "Dispose: a recovery is running; an owner can't call the device from its callbacks.",
+            Assert.IsType<InvalidOperationException>(disposing).Message);
+        // Nothing was disposed: the device works, and disposing it later leaves no native memory behind.
+        Assert.Equal(["lost owner", "recreated owner"], _log);
+        Assert.Equal(FrameStatus.Ready, device.BeginFrame(out CommandList commands));
+        Assert.Equal(FrameStatus.Ready, device.SubmitFrame(commands));
+        device.Dispose();
+        _fixture.Allocator.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void FailedRecovery_DisposeMakesNoBackendCall()
     {
         var rig = new LossRig(_fixture);

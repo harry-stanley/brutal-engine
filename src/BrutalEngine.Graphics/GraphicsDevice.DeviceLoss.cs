@@ -176,6 +176,15 @@ public sealed partial class GraphicsDevice
         }
     }
 
+    // Owners must not dispose the device from their callbacks: the recovery would go on with freed memory.
+    private void ThrowIfRecovering(string api)
+    {
+        if (_recovering)
+        {
+            throw new InvalidOperationException($"{api}: a recovery is running; an owner can't call the device from its callbacks.");
+        }
+    }
+
     // The registration's side of GpuOwnerRegistration.Dispose: a removed registration isn't found again.
     internal void Unregister(GpuOwnerRegistration registration)
     {

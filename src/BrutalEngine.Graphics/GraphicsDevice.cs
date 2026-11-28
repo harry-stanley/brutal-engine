@@ -336,6 +336,9 @@ public sealed partial class GraphicsDevice : IDisposable
     /// newest first, then disposes the backend device and frees the frame slots, once; later calls do nothing.
     /// </summary>
     /// <exception cref="WrongThreadException">Called from a thread other than the owner thread, also when already disposed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Called by a resource owner during <see cref="Recover"/>, which owners must not call the device from; nothing changed.
+    /// </exception>
     /// <remarks>
     /// The wait happens only when a frame was submitted and the device isn't lost; if it fails, that is logged at
     /// <see cref="LogLevel.Error"/> and the objects are destroyed anyway. A frame may be open: it is never submitted.
@@ -355,6 +358,7 @@ public sealed partial class GraphicsDevice : IDisposable
             return;
         }
 
+        ThrowIfRecovering(nameof(Dispose));
         _disposed = true;
         if (LostTimedOut || _backendGone)
         {
