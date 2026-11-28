@@ -107,6 +107,27 @@ public sealed class QueryEnumerationTests
     }
 
     [Fact]
+    public void Dispose_EndsWithoutCompleting()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            _ = EnumerationSupport.SpawnChunks(world, chunks: 2, lastRows: 1);
+            using Query query = world.Query().Read<Payload>().Build();
+            ChunkEnumerator enumerator = query.GetEnumerator();
+            Assert.True(enumerator.MoveNext());
+            enumerator.Dispose();
+
+            // A disposed enumerator yields nothing more, and ending early isn't completing.
+            Assert.False(enumerator.MoveNext());
+            Assert.False(query.HasRun);
+            Assert.Equal(1u, world.ChangeTick);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void Million_DoesNotAllocate()
     {
         const int Entities = 1_000_000;
@@ -119,19 +140,29 @@ public sealed class QueryEnumerationTests
             }
 
             using Query movers = world.Query().Write<Position>().Read<Health>().OptionalRead<Payload>().Build();
-            long checksum = Round(movers, out _);
-            int[] rows = new int[3];
+            using Query filtered = world.Query().Read<Position>().Changed<Position>().Added<Health>().Build();
+            using Query changed = world.Query().Changed<Position>().Build();
+
+            // Two warm-up rounds: the first is every query's first run, the second takes the filtered paths.
+            long checksum = Round(movers, filtered, changed, out _) + Round(movers, filtered, changed, out _);
+            var counts = new (int Rows, int Filtered, int Changed)[3];
             long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int round = 0; round < rows.Length; round++)
+            for (int round = 0; round < counts.Length; round++)
             {
-                checksum += Round(movers, out rows[round]);
+                checksum += Round(movers, filtered, changed, out counts[round]);
             }
 
             long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
             Assert.Equal(0, allocated);
 
-            // Each round's loop visits every row once.
-            Assert.Equal([Entities, Entities, Entities], rows);
+            // Each round's movers loop visits every row once; the changed loop sees every chunk the movers wrote; the
+            // filtered one sees none, as nothing was added since its first run.
+            foreach ((int rows, int filteredChunks, int changedChunks) in counts)
+            {
+                Assert.Equal(Entities, rows);
+                Assert.Equal(0, filteredChunks);
+                Assert.Equal(world.ChunkCount, changedChunks);
+            }
 
             Assert.True(world.ChunkCount > 100, "the rows fit too few chunks");
             Assert.NotEqual(0, checksum);
@@ -140,12 +171,12 @@ public sealed class QueryEnumerationTests
         tracking.ThrowIfLeaks();
     }
 
-    // One frame's worth of enumeration, every view member included: a full loop and an early break. Returns a checksum
-    // of what it read.
-    private static long Round(Query movers, out int rows)
+    // One frame's worth of enumeration, every view member included: a full movers loop, an early break, and the two
+    // filtered queries. Returns a checksum of what it read.
+    private static long Round(Query movers, Query filtered, Query changed, out (int Rows, int Filtered, int Changed) counts)
     {
         long checksum = 0;
-        rows = 0;
+        counts = default;
         foreach (ChunkView chunk in movers)
         {
             Span<Position> positions = chunk.Write<Position>();
@@ -155,8 +186,8 @@ public sealed class QueryEnumerationTests
                 positions[i].Y += health[i].Value;
             }
 
-            rows += chunk.Count;
-            checksum += chunk.Entities[0].Index + (chunk.Has<Payload>() ? 1 : 2);
+            counts.Rows += chunk.Count;
+            checksum += chunk.Entities[0].Index + (chunk.Has<Payload>() ? 1 : 2) + (chunk.Changed<Position>() ? 1 : 2) + (chunk.Added<Health>() ? 1 : 2);
         }
 
         foreach (ChunkView chunk in movers)
@@ -165,6 +196,18 @@ public sealed class QueryEnumerationTests
             break;
         }
 
-        return checksum;
+        foreach (ChunkView chunk in filtered)
+        {
+            checksum += (long)chunk.Read<Position>()[0].X;
+            counts.Filtered++;
+        }
+
+        foreach (ChunkView chunk in changed)
+        {
+            checksum += chunk.Count + (chunk.Changed<Position>() ? 1 : 0);
+            counts.Changed++;
+        }
+
+        return checksum + (movers.HasRun ? 1 : 0) + movers.LastRunTick;
     }
 }

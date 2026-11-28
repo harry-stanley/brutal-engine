@@ -28,14 +28,17 @@ public sealed class QueryTests
             using Query unfiltered = world.Query().Read<Position>().With<Health>().Without<Marker>().Build();
             using Query changedOnly = world.Query().Changed<Position>().Build();
 
-            // Every stamp is older than each query's last-run tick, so a chunk filter would yield nothing.
-            world.AdvanceChangeTick();
-            world.AdvanceChangeTick();
+            // A completed enumeration ends each query's first run. Every stamp is older than its last run then, so the
+            // filtered queries' chunk filters reject every chunk, while the unfiltered one still yields its chunk.
             foreach (Query query in new[] { filtered, unfiltered, changedOnly })
             {
-                world.TickConsumers.Set(query.TickSlot, world.ChangeTick);
-                Assert.Equal(world.ChangeTick, query.LastRunTick);
+                _ = EnumerationSupport.YieldedChunks(world, query);
+                Assert.True(query.HasRun);
             }
+
+            Assert.Empty(EnumerationSupport.YieldedChunks(world, filtered));
+            Assert.Empty(EnumerationSupport.YieldedChunks(world, changedOnly));
+            Assert.Single(EnumerationSupport.YieldedChunks(world, unfiltered));
 
             // The filters count only as required components: Changed<Position> requires Position, Added<Health> Health.
             Assert.Equal(2, filtered.CountEntities());

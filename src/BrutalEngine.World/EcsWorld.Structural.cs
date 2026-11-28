@@ -1,5 +1,6 @@
 using System;
 using BrutalEngine.Core;
+using BrutalEngine.World.Queries;
 using BrutalEngine.World.Storage;
 
 namespace BrutalEngine.World;
@@ -9,6 +10,12 @@ namespace BrutalEngine.World;
 // (docs/design/world.md, sections 2 and 4, "Moves").
 public sealed partial class EcsWorld
 {
+    // Counts the world's live chunk enumerators; structural entry points throw while any is live (section 5).
+    private readonly IterationGuard _iterationGuard = new();
+
+    /// <summary>The world's iteration guard, which its queries' enumerators enter and exit.</summary>
+    internal IterationGuard IterationGuard => _iterationGuard;
+
     /// <summary>Returns an <see cref="EntityRef"/> for <paramref name="entity"/>, after checking it as the other direct calls do.</summary>
     /// <param name="entity">An alive entity of this world.</param>
     /// <returns>A reference holding this world and <paramref name="entity"/>.</returns>
@@ -51,7 +58,8 @@ public sealed partial class EcsWorld
     /// <paramref name="entity"/> is pending; or it already has <typeparamref name="T"/> (use <c>Set</c> to replace a
     /// value), which the message says, naming the entity and the component; or <typeparamref name="T"/> is new and
     /// can't be registered (a stable-id conflict, or the registry is full); or the target archetype is new and its row
-    /// is too wide for a chunk, which the message says, naming the components.
+    /// is too wide for a chunk, which the message says, naming the components; or a chunk enumeration of the world is
+    /// live (see <see cref="Query.GetEnumerator"/>), which is checked first, so nothing changes.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The allocator can't provide what the move needs: a new chunk for the target archetype (its block or the grown
@@ -87,7 +95,7 @@ public sealed partial class EcsWorld
     public void Add<T>(Entity entity, in T value)
         where T : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Add");
+        ThrowIfStructuralUnusable("EcsWorld.Add");
         EntityRecord record = _entities.Validate(entity);
         Archetype source = _archetypes[record.Archetype];
 
@@ -121,7 +129,8 @@ public sealed partial class EcsWorld
     /// <exception cref="InvalidOperationException">
     /// <paramref name="entity"/> is pending; or <typeparamref name="T"/> is new and can't be registered (a stable-id
     /// conflict, or the registry is full); or the entity lacks <typeparamref name="T"/> and the target archetype is new
-    /// and its row is too wide for a chunk, which the message says, naming the components.
+    /// and its row is too wide for a chunk, which the message says, naming the components; or a chunk enumeration of the
+    /// world is live, whether or not the entity has <typeparamref name="T"/>, which is checked first, so nothing changes.
     /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The entity lacks <typeparamref name="T"/> and the allocator can't provide what the move needs: a new chunk for
@@ -151,7 +160,7 @@ public sealed partial class EcsWorld
     public void Set<T>(Entity entity, in T value)
         where T : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Set");
+        ThrowIfStructuralUnusable("EcsWorld.Set");
         EntityRecord record = _entities.Validate(entity);
         Archetype source = _archetypes[record.Archetype];
         if (_components.TryGetId<T>(out ComponentId present) && source.Signature.Contains(present.Index))
@@ -185,7 +194,10 @@ public sealed partial class EcsWorld
     /// <exception cref="StaleHandleException">
     /// <paramref name="entity"/> is stale: despawned, its slot retired, or its index outside this world's table.
     /// </exception>
-    /// <exception cref="InvalidOperationException"><paramref name="entity"/> is pending: reserved and not placed yet.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="entity"/> is pending: reserved and not placed yet; or a chunk enumeration of the world is live,
+    /// whether or not the entity has <typeparamref name="T"/>, which is checked first, so nothing changes.
+    /// </exception>
     /// <exception cref="OutOfMemoryException">
     /// The allocator can't provide what the move needs: a new chunk for the target archetype (its block or the grown
     /// chunk arrays), or a grown edge table. The entity keeps <typeparamref name="T"/>, its row, values and stamps,
@@ -215,7 +227,7 @@ public sealed partial class EcsWorld
     public bool Remove<T>(Entity entity)
         where T : unmanaged, IComponent
     {
-        ThrowIfUnusable("EcsWorld.Remove");
+        ThrowIfStructuralUnusable("EcsWorld.Remove");
         EntityRecord record = _entities.Validate(entity);
         Archetype source = _archetypes[record.Archetype];
         if (!_components.TryGetId<T>(out ComponentId id) || !source.Signature.Contains(id.Index))
@@ -227,6 +239,17 @@ public sealed partial class EcsWorld
         Archetype target = source.WithRemoved(id);
         _ = MoveRow(entity, record, source, target);
         return true;
+    }
+
+    /// <summary>
+    /// The checks of a structural entry point: the owner thread and disposal, then the iteration guard, before any
+    /// argument is looked at.
+    /// </summary>
+    /// <param name="apiName">The member's name, for the exception message.</param>
+    private void ThrowIfStructuralUnusable(string apiName)
+    {
+        ThrowIfUnusable(apiName);
+        _iterationGuard.ThrowIfLive(apiName);
     }
 
     /// <summary>

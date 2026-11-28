@@ -1,6 +1,7 @@
 using System;
 using BrutalEngine.World.Queries;
 using BrutalEngine.World.Storage;
+using BrutalEngine.World.Ticks;
 
 namespace BrutalEngine.World;
 
@@ -17,9 +18,10 @@ namespace BrutalEngine.World;
 /// <see cref="Write{T}"/> throw for it.
 /// </para>
 /// <para>
-/// <b>Lifetime.</b> Use a view inside the loop that produced it. Spans are valid until the enumeration ends, the next
-/// structural change to the world, or the query or the world is disposed. A view kept past a structural change that
-/// removed its chunk is misuse: its members then throw <see cref="ArgumentOutOfRangeException"/>.
+/// <b>Lifetime.</b> Use a view inside the loop that produced it: the iteration guard keeps its rows in place only while
+/// its enumerator is live. Spans are valid until then, or until the query or the world is disposed. A view kept after
+/// its enumeration, past a structural change that removed its chunk, is misuse: its members then throw
+/// <see cref="ArgumentOutOfRangeException"/>.
 /// </para>
 /// <para>
 /// <b>Allocation and threading.</b> No member allocates managed memory, except to throw. A view lives on the stack of the
@@ -126,6 +128,34 @@ public readonly unsafe ref struct ChunkView
         return _query!.Owner.Components.TryGetId<T>(out ComponentId id) && archetype.Signature.Contains(id.Index);
     }
 
+    /// <summary>
+    /// Returns whether <typeparamref name="T"/>'s <c>Changed</c> tick in this chunk is newer than the query's
+    /// <see cref="Query.LastRunTick"/>, or <see langword="true"/> until the query's first completed enumeration.
+    /// </summary>
+    /// <typeparam name="T">A component the query declares with read access (see the type's remarks).</typeparam>
+    /// <returns>
+    /// Whether the chunk's <typeparamref name="T"/> values may have changed since the last run. <see langword="false"/>
+    /// for an optional component the chunk lacks; for a tag, which has no ticks, <see langword="true"/> only before the
+    /// first completed enumeration.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The query doesn't declare read access to <typeparamref name="T"/>, or the view is default.</exception>
+    /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
+    /// <remarks>Allocates nothing, except to throw.</remarks>
+    public bool Changed<T>()
+        where T : unmanaged, IComponent => IsNewer<T>("ChunkView.Changed", added: false);
+
+    /// <summary>
+    /// Returns whether <typeparamref name="T"/>'s <c>Added</c> tick in this chunk is newer than the query's
+    /// <see cref="Query.LastRunTick"/>, or <see langword="true"/> until the query's first completed enumeration.
+    /// </summary>
+    /// <typeparam name="T">A component the query declares with read access (see the type's remarks).</typeparam>
+    /// <returns>Whether rows with <typeparamref name="T"/> may have arrived since the last run, with the same cases as <see cref="Changed{T}"/>.</returns>
+    /// <exception cref="InvalidOperationException">The query doesn't declare read access to <typeparamref name="T"/>, or the view is default.</exception>
+    /// <exception cref="ObjectDisposedException">The query or its world is disposed.</exception>
+    /// <remarks>Allocates nothing, except to throw.</remarks>
+    public bool Added<T>()
+        where T : unmanaged, IComponent => IsNewer<T>("ChunkView.Added", added: true);
+
     private Archetype Archetype(string apiName)
     {
         if (_query is null)
@@ -179,5 +209,20 @@ public readonly unsafe ref struct ChunkView
         // sizeof(T) bytes (the registry takes the size from T), aligned to T; the row count is at most that capacity.
         count = archetype.Chunks.GetCount(_chunk);
         return (T*)(archetype.Chunks.GetData(_chunk) + _query.Cache.GetOffset(_entry, term));
+    }
+
+    private bool IsNewer<T>(string apiName, bool added)
+        where T : unmanaged, IComponent
+    {
+        int term = DataTerm<T>(apiName, ReadAccess, out Archetype archetype);
+        int column = _query!.Cache.GetColumn(_entry, term);
+        if (column < 0)
+        {
+            // No ticks: an absent optional component never changed here; a tag is new only before the first run.
+            return !_query.HasRunCore && archetype.Signature.Contains(_query.Terms.GetDataTerm(term).Component);
+        }
+
+        Span<uint> ticks = added ? archetype.Chunks.GetAdded(_chunk) : archetype.Chunks.GetChanged(_chunk);
+        return !_query.HasRunCore || TickMath.IsNewer(ticks[column], _query.LastRunTickCore);
     }
 }

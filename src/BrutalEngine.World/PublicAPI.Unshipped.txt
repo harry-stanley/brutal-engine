@@ -5,6 +5,8 @@ BrutalEngine.World.ChunkEnumerator.Current.get -> BrutalEngine.World.ChunkView
 BrutalEngine.World.ChunkEnumerator.Dispose() -> void
 BrutalEngine.World.ChunkEnumerator.MoveNext() -> bool
 BrutalEngine.World.ChunkView
+BrutalEngine.World.ChunkView.Added<T>() -> bool
+BrutalEngine.World.ChunkView.Changed<T>() -> bool
 BrutalEngine.World.ChunkView.ChunkView() -> void
 BrutalEngine.World.ChunkView.Count.get -> int
 BrutalEngine.World.ChunkView.Entities.get -> System.ReadOnlySpan<BrutalEngine.World.Entity>

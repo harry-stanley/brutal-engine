@@ -17,21 +17,23 @@ public sealed class ChunkViewTests
     {
         Read,
         Write,
+        Changed,
+        Added,
     }
 
-    // The expected outcome of each view member per term on Position, written from the design's access rules: Read
-    // needs any data term; Write needs Write or OptionalWrite; With and an undeclared type grant none.
+    // The expected outcome of each view member per term on Position, written from the design's access rules: Read,
+    // Changed and Added need any data term; Write needs Write or OptionalWrite; With and an undeclared type grant none.
     public static TheoryData<string, ViewOp, bool> AccessRows => new()
     {
-        { "Read", ViewOp.Read, true }, { "Read", ViewOp.Write, false },
-        { "Write", ViewOp.Read, true }, { "Write", ViewOp.Write, true },
-        { "With", ViewOp.Read, false }, { "With", ViewOp.Write, false },
-        { "OptionalRead", ViewOp.Read, true }, { "OptionalRead", ViewOp.Write, false },
-        { "OptionalWrite", ViewOp.Read, true }, { "OptionalWrite", ViewOp.Write, true },
-        { "Changed", ViewOp.Read, true }, { "Changed", ViewOp.Write, false },
-        { "Added", ViewOp.Read, true }, { "Added", ViewOp.Write, false },
+        { "Read", ViewOp.Read, true }, { "Read", ViewOp.Write, false }, { "Read", ViewOp.Changed, true }, { "Read", ViewOp.Added, true },
+        { "Write", ViewOp.Read, true }, { "Write", ViewOp.Write, true }, { "Write", ViewOp.Changed, true }, { "Write", ViewOp.Added, true },
+        { "With", ViewOp.Read, false }, { "With", ViewOp.Write, false }, { "With", ViewOp.Changed, false }, { "With", ViewOp.Added, false },
+        { "OptionalRead", ViewOp.Read, true }, { "OptionalRead", ViewOp.Write, false }, { "OptionalRead", ViewOp.Changed, true }, { "OptionalRead", ViewOp.Added, true },
+        { "OptionalWrite", ViewOp.Read, true }, { "OptionalWrite", ViewOp.Write, true }, { "OptionalWrite", ViewOp.Changed, true }, { "OptionalWrite", ViewOp.Added, true },
+        { "Changed", ViewOp.Read, true }, { "Changed", ViewOp.Write, false }, { "Changed", ViewOp.Changed, true }, { "Changed", ViewOp.Added, true },
+        { "Added", ViewOp.Read, true }, { "Added", ViewOp.Write, false }, { "Added", ViewOp.Changed, true }, { "Added", ViewOp.Added, true },
         { "WriteChanged", ViewOp.Read, true }, { "WriteChanged", ViewOp.Write, true }, { "WithAdded", ViewOp.Read, true }, { "WithAdded", ViewOp.Write, false },
-        { "Undeclared", ViewOp.Read, false }, { "Undeclared", ViewOp.Write, false },
+        { "Undeclared", ViewOp.Read, false }, { "Undeclared", ViewOp.Write, false }, { "Undeclared", ViewOp.Changed, false }, { "Undeclared", ViewOp.Added, false },
     };
 
     [Theory]
@@ -53,7 +55,7 @@ public sealed class ChunkViewTests
                 if (allowed)
                 {
                     Assert.Null(thrown);
-                    Assert.Equal(3f, firstX);
+                    Assert.True(op is not (ViewOp.Read or ViewOp.Write) || firstX == 3, "the span isn't the Position column");
                 }
                 else
                 {
@@ -176,7 +178,7 @@ public sealed class ChunkViewTests
             foreach (ChunkView chunk in query)
             {
                 checksum += chunk.Read<Payload>()[0].Values[0] + chunk.Read<Health>()[chunk.Count - 1].Value + chunk.Count + chunk.Entities.Length;
-                checksum += chunk.Has<Payload>() ? 1 : 0;
+                checksum += (chunk.Has<Payload>() ? 1 : 0) + (chunk.Changed<Payload>() ? 1 : 0) + (chunk.Added<Health>() ? 1 : 0);
             }
 
             Assert.Equal(before, EnumerationSupport.Ticks(archetype));
@@ -206,6 +208,10 @@ public sealed class ChunkViewTests
                     InvalidOperationException read = Assert.IsType<InvalidOperationException>(RunHealth(chunk, ViewOp.Read));
                     Assert.Contains("has no column", read.Message, StringComparison.Ordinal);
                     Assert.IsType<InvalidOperationException>(RunHealth(chunk, ViewOp.Write));
+
+                    // Before the first run everything that exists is new, but an absent component doesn't exist here.
+                    Assert.False(chunk.Changed<Health>());
+                    Assert.False(chunk.Added<Health>());
                 }
                 else
                 {
@@ -213,6 +219,7 @@ public sealed class ChunkViewTests
                     Assert.True(chunk.Has<Health>());
                     Assert.Equal(7, chunk.Read<Health>()[0].Value);
                     chunk.Write<Health>()[0].Value = 8;
+                    Assert.True(chunk.Changed<Health>());
                 }
             }
 
@@ -282,8 +289,14 @@ public sealed class ChunkViewTests
                 case ViewOp.Read:
                     firstX = chunk.Read<Position>()[0].X;
                     break;
-                default:
+                case ViewOp.Write:
                     firstX = chunk.Write<Position>()[0].X;
+                    break;
+                case ViewOp.Changed:
+                    _ = chunk.Changed<Position>();
+                    break;
+                default:
+                    _ = chunk.Added<Position>();
                     break;
             }
 
