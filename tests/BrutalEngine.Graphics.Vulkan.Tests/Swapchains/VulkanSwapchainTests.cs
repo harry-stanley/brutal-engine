@@ -120,6 +120,31 @@ public sealed unsafe class VulkanSwapchainTests(VulkanSwapchainTests.SurfaceFixt
         });
     }
 
+    [Fact]
+    public void Acquire_NoImageFree_ReturnsOutOfDateWithoutIndex()
+    {
+        OnEveryPresentingAdapter(gpu =>
+        {
+            VulkanSwapchain swapchain = gpu.Create(1);
+            using FrameLoop loop = new(gpu, 1);
+
+            // Hold every image the driver hands out (none is presented), then ask once more without waiting: the driver
+            // itself answers NOT_READY (or TIMEOUT), a status with no image.
+            int held = 0;
+            BackendAcquire acquired = swapchain.Acquire(0, 0);
+            while (acquired.Status is SwapchainStatus.Success or SwapchainStatus.Suboptimal)
+            {
+                Assert.True(++held <= swapchain.ImageCount, $"{held} images held of {swapchain.ImageCount}");
+                loop.Consume(swapchain, 0);
+                acquired = swapchain.Acquire(0, 0);
+            }
+
+            Assert.Equal(SwapchainStatus.OutOfDate, acquired.Status);
+            Assert.Equal(-1, acquired.ImageIndex);
+            Assert.Contains((VkResult)acquired.NativeCode, (VkResult[])[VkResult.NotReady, VkResult.Timeout]);
+        });
+    }
+
     [Theory]
     [InlineData(VkResult.ErrorOutOfDateKHR, SwapchainStatus.OutOfDate)]
     [InlineData(VkResult.ErrorSurfaceLostKHR, SwapchainStatus.SurfaceLost)]

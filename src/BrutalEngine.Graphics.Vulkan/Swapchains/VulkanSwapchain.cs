@@ -215,9 +215,11 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         }
 
         Device device = _core.Device;
-        int index = -1;
+        // Not -1: a failed acquire leaves it as it was (or as the driver left it), so only the status below decides
+        // whether an index is reported.
+        int index = 0;
 
-        // Sound: index is a local the driver writes before returning.
+        // Sound: index is a local that outlives the call; the driver writes at most one uint32 into it.
         VkResult result = _gate.TryTakeFault(VulkanCall.AcquireNextImage, out VkResult injected) ? injected
             : device.PInvoke.vkAcquireNextImageKHR.Invoke(device.Handle, _handle, timeout, _acquired[slot], default, &index);
 
