@@ -36,7 +36,8 @@ public sealed partial class GraphicsDevice
     /// <returns>
     /// Success once the bytes are staged. Fails with <see cref="ErrorKind.Unavailable"/> on a lost device, or with the
     /// backend's failure (<see cref="ErrorKind.OutOfMemory"/>) when a staging block can't be created; then nothing is
-    /// written.
+    /// written. A staging block's creation that reports loss marks the device lost, raises <see cref="DeviceLost"/> and
+    /// fails with <see cref="ErrorKind.Unavailable"/>, never <see cref="ErrorKind.Timeout"/>.
     /// </returns>
     /// <exception cref="ArgumentException">
     /// <paramref name="buffer"/> is the null handle or lacks <see cref="BufferUsage.CopyDestination"/>.
@@ -179,14 +180,14 @@ public sealed partial class GraphicsDevice
         (block, offset, overflow, error) = (null, -1, false, default);
         if (IsLostCore)
         {
-            error = new EngineError(ErrorKind.Unavailable, $"{api}: the device is lost.");
+            error = LostError(api);
             return false;
         }
 
         FrameSlot slot = _slots[CurrentSlot()];
         if (_frameOpen)
         {
-            if (slot.Ring is null && !TryCreateBlock(_ringBytes, out block, out error))
+            if (slot.Ring is null && !TryCreateBlock(_ringBytes, api, out block, out error))
             {
                 return false;
             }
@@ -199,7 +200,7 @@ public sealed partial class GraphicsDevice
             block = _pendingUploads.TryReserve(size, out offset);
             if (block is null && size <= _ringBytes)
             {
-                if (!TryCreateBlock(_ringBytes, out block, out error))
+                if (!TryCreateBlock(_ringBytes, api, out block, out error))
                 {
                     return false;
                 }
@@ -216,7 +217,7 @@ public sealed partial class GraphicsDevice
 
         // Overflow: the queue gets room before the block exists, so a block is never left unqueued.
         DeletionQueue queue = _frameOpen ? ReserveDeletion()! : DeferredDeletions();
-        if (!TryCreateBlock(size, out block, out error))
+        if (!TryCreateBlock(size, api, out block, out error))
         {
             return false;
         }
@@ -227,13 +228,16 @@ public sealed partial class GraphicsDevice
         return true;
     }
 
-    private bool TryCreateBlock(long size, [NotNullWhen(true)] out UploadRing? block, out EngineError error)
+    // A staging block of the given size; a failure that reports loss marks the device lost (CreationFailed).
+    private bool TryCreateBlock(long size, string api, [NotNullWhen(true)] out UploadRing? block, out EngineError error)
     {
         BufferUsage usage = _frameOpen ? StagingUsage : BufferUsage.CopySource;
         var description = new BufferDescription { Size = size, Usage = usage, Memory = MemoryIntent.Upload };
-        Result<BackendBuffer> created = _backend.CreateBuffer(description, BackendMemory.HostUpload);
+        Result<BackendBuffer> created = Faults.TryTake(FaultSeam.Operation.CreateBuffer, out EngineError fault)
+            ? fault
+            : _backend.CreateBuffer(description, BackendMemory.HostUpload);
         block = created.TryGetValue(out BackendBuffer buffer) ? new UploadRing(buffer, size) : null;
-        error = block is null ? created.Error : default;
+        error = block is null ? CreationFailed(api, created.Error) : default;
         return block is not null;
     }
 
