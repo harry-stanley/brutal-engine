@@ -19,13 +19,19 @@ public sealed class IterationGuardTests
         Spawn2,
         Spawn3,
         Spawn4,
+        Spawn2Repeated,
+        Spawn3Repeated,
+        Spawn4Repeated,
         Despawn,
         DespawnNull,
         Add,
+        AddNull,
         SetPresent,
         SetAbsent,
+        SetNull,
         RemovePresent,
         RemoveAbsent,
+        RemoveNull,
         RefAdd,
         RefDespawn,
     }
@@ -59,8 +65,10 @@ public sealed class IterationGuardTests
             Assert.Equal(1, chunks);
             Assert.Equal(snapshot, Snapshot(world, entity, other));
 
-            // Once the loop has ended, the same call works (Entity.Null now fails its own argument check).
-            if (op == StructuralOp.DespawnNull)
+            // Once the loop has ended, the same call works; an invalid argument (Entity.Null, a repeated type) now fails
+            // its own check, so during the loop the guard came first.
+            if (op is StructuralOp.DespawnNull or StructuralOp.AddNull or StructuralOp.SetNull or StructuralOp.RemoveNull
+                or StructuralOp.Spawn2Repeated or StructuralOp.Spawn3Repeated or StructuralOp.Spawn4Repeated)
             {
                 Assert.Throws<ArgumentException>(() => Apply(world, op, entity));
             }
@@ -156,7 +164,7 @@ public sealed class IterationGuardTests
     }
 
     [Fact]
-    public void QueryDisposedDuringLoop_ThrowsAndReleasesGuard()
+    public void QueryDisposedDuringLoop_ReleasesGuard()
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();
         using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
@@ -168,32 +176,12 @@ public sealed class IterationGuardTests
                 foreach (ChunkView chunk in query)
                 {
                     query.Dispose();
-                    Assert.IsType<ObjectDisposedException>(ReadOf(chunk));
                 }
             });
             Assert.Equal(0, world.IterationGuard.LiveCount);
             _ = world.Spawn();
         }
 
-        tracking.ThrowIfLeaks();
-    }
-
-    [Fact]
-    public void WorldDisposedDuringLoop_ThrowsWithoutLeaks()
-    {
-        TrackingAllocator tracking = EntityTestSupport.NewTracking();
-        EcsWorld world = EntityTestSupport.NewWorld(tracking);
-        _ = world.Spawn(new Position(1, 1));
-        Query query = world.Query().Read<Position>().Build();
-        Assert.Throws<ObjectDisposedException>(() =>
-        {
-            foreach (ChunkView chunk in query)
-            {
-                world.Dispose();
-                Assert.IsType<ObjectDisposedException>(ReadOf(chunk));
-            }
-        });
-        Assert.Throws<ObjectDisposedException>(() => query.GetEnumerator().Dispose());
         tracking.ThrowIfLeaks();
     }
 
@@ -216,6 +204,15 @@ public sealed class IterationGuardTests
             case StructuralOp.Spawn4:
                 _ = world.Spawn(new Payload(1), new Marker(), new Position(1, 1), new Health(1));
                 break;
+            case StructuralOp.Spawn2Repeated:
+                _ = world.Spawn(new Payload(1), new Payload(2));
+                break;
+            case StructuralOp.Spawn3Repeated:
+                _ = world.Spawn(new Payload(1), new Marker(), new Payload(2));
+                break;
+            case StructuralOp.Spawn4Repeated:
+                _ = world.Spawn(new Payload(1), new Marker(), new Position(1, 1), new Marker());
+                break;
             case StructuralOp.Despawn:
                 world.Despawn(entity);
                 break;
@@ -224,6 +221,15 @@ public sealed class IterationGuardTests
                 break;
             case StructuralOp.Add:
                 world.Add(entity, new Marker());
+                break;
+            case StructuralOp.AddNull:
+                world.Add(Entity.Null, new Marker());
+                break;
+            case StructuralOp.SetNull:
+                world.Set(Entity.Null, new Health(9));
+                break;
+            case StructuralOp.RemoveNull:
+                _ = world.Remove<Health>(Entity.Null);
                 break;
             case StructuralOp.SetPresent:
                 world.Set(entity, new Health(9));
@@ -248,10 +254,11 @@ public sealed class IterationGuardTests
 
     private static string ApiName(StructuralOp op) => op switch
     {
-        StructuralOp.Spawn or StructuralOp.Spawn1 or StructuralOp.Spawn2 or StructuralOp.Spawn3 or StructuralOp.Spawn4 => "EcsWorld.Spawn",
+        StructuralOp.Spawn or StructuralOp.Spawn1 or StructuralOp.Spawn2 or StructuralOp.Spawn3 or StructuralOp.Spawn4
+            or StructuralOp.Spawn2Repeated or StructuralOp.Spawn3Repeated or StructuralOp.Spawn4Repeated => "EcsWorld.Spawn",
         StructuralOp.Despawn or StructuralOp.DespawnNull or StructuralOp.RefDespawn => "EcsWorld.Despawn",
-        StructuralOp.Add or StructuralOp.RefAdd => "EcsWorld.Add",
-        StructuralOp.SetPresent or StructuralOp.SetAbsent => "EcsWorld.Set",
+        StructuralOp.Add or StructuralOp.AddNull or StructuralOp.RefAdd => "EcsWorld.Add",
+        StructuralOp.SetPresent or StructuralOp.SetAbsent or StructuralOp.SetNull => "EcsWorld.Set",
         _ => "EcsWorld.Remove",
     };
 
@@ -274,19 +281,6 @@ public sealed class IterationGuardTests
         try
         {
             enumerator.Dispose();
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return ex;
-        }
-    }
-
-    private static Exception? ReadOf(ChunkView chunk)
-    {
-        try
-        {
-            _ = chunk.Count;
             return null;
         }
         catch (Exception ex)

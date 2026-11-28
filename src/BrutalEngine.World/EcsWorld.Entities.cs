@@ -157,8 +157,8 @@ public sealed partial class EcsWorld
     /// <param name="c2">The second component's value, copied into the entity's row. Ignored for a tag.</param>
     /// <returns>The new entity, issued as by <see cref="Spawn()"/>.</returns>
     /// <exception cref="ArgumentException">
-    /// The same type is given twice, which is checked before anything else, so nothing changes; or a type is new and
-    /// breaks a registration rule, as for <see cref="Spawn{T1}(in T1)"/>.
+    /// The same type is given twice, which is checked before anything else but the iteration guard, so
+    /// nothing changes; or a type is new and breaks a registration rule, as for <see cref="Spawn{T1}(in T1)"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">As for <see cref="Spawn{T1}(in T1)"/>.</exception>
     /// <exception cref="OutOfMemoryException">As for <see cref="Spawn{T1}(in T1)"/>.</exception>
@@ -193,8 +193,8 @@ public sealed partial class EcsWorld
     /// <param name="c3">The third component's value, copied into the entity's row. Ignored for a tag.</param>
     /// <returns>The new entity, issued as by <see cref="Spawn()"/>.</returns>
     /// <exception cref="ArgumentException">
-    /// A type is given more than once, which is checked before anything else, so nothing changes; or a type is new and
-    /// breaks a registration rule, as for <see cref="Spawn{T1}(in T1)"/>.
+    /// A type is given more than once, which is checked before anything else but the iteration guard, so
+    /// nothing changes; or a type is new and breaks a registration rule, as for <see cref="Spawn{T1}(in T1)"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">As for <see cref="Spawn{T1}(in T1)"/>.</exception>
     /// <exception cref="OutOfMemoryException">As for <see cref="Spawn{T1}(in T1)"/>.</exception>
@@ -237,8 +237,8 @@ public sealed partial class EcsWorld
     /// <param name="c4">The fourth component's value, copied into the entity's row. Ignored for a tag.</param>
     /// <returns>The new entity, issued as by <see cref="Spawn()"/>.</returns>
     /// <exception cref="ArgumentException">
-    /// A type is given more than once, which is checked before anything else, so nothing changes; or a type is new and
-    /// breaks a registration rule, as for <see cref="Spawn{T1}(in T1)"/>.
+    /// A type is given more than once, which is checked before anything else but the iteration guard, so
+    /// nothing changes; or a type is new and breaks a registration rule, as for <see cref="Spawn{T1}(in T1)"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">As for <see cref="Spawn{T1}(in T1)"/>.</exception>
     /// <exception cref="OutOfMemoryException">As for <see cref="Spawn{T1}(in T1)"/>.</exception>
