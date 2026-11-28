@@ -1,6 +1,7 @@
 using System;
 using Brutal.VulkanApi;
 using BrutalEngine.Core;
+using BrutalEngine.Core.Logging;
 using BrutalEngine.Graphics.Backend;
 using BrutalEngine.Graphics.Vulkan.Devices;
 
@@ -8,8 +9,8 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 
 /// <summary>
 /// One Vulkan swapchain on a raw surface (docs/design/graphics-vulkan.md section 4): the swapchain, a view and a
-/// render-finished semaphore per image, and an acquire semaphore per frame slot; it acquires and presents through the
-/// raw device function table.
+/// render-finished semaphore per image, an acquire semaphore per frame slot, and with swapchain maintenance1 a present
+/// fence per image; it acquires and presents through the raw device function table.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,12 +28,22 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 /// calling the driver.
 /// </para>
 /// <para>
-/// The swapchain owns its images; <see cref="Dispose"/> destroys the semaphores, the views and the swapchain, never the
-/// surface. The owner disposes it once the device is idle and before the device.
+/// Present fences (section 4, "Present fences") are used exactly when the device enabled a swapchain maintenance1
+/// extension (<see cref="DeviceExtensionSet.Selection.SwapchainMaintenance1"/>): each <see cref="Present"/> carries
+/// its image's fence (<see cref="PresentFences"/>), and <see cref="Dispose"/> waits for them, bounded by the
+/// creation's timeout, so the presents need no idle wait. Without the extension the owner's idle wait before
+/// <see cref="Dispose"/> is the fallback, as in M0.
+/// </para>
+/// <para>
+/// The swapchain owns its images; <see cref="Dispose"/> destroys the present fences, the semaphores, the views and the
+/// swapchain, never the surface. The owner disposes it before the device: once the device is idle, or, with present
+/// fences, once every submit that used its images or semaphores has completed (the frames' fences waited; the presents
+/// are waited for here). After a timeout loss it destroys nothing (see <see cref="Dispose"/>).
 /// </para>
 /// <para>
 /// Not thread-safe: the device's owner thread creates, uses and disposes it. Creation allocates (this object and its
-/// arrays); <see cref="Acquire"/>, <see cref="Present"/> and the getters allocate nothing.
+/// arrays); <see cref="Acquire"/>, <see cref="Present"/> (with or without present fences, on every failure path too)
+/// and the getters allocate nothing.
 /// </para>
 /// </remarks>
 internal sealed unsafe class VulkanSwapchain : IDisposable
@@ -44,14 +55,21 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     private readonly VulkanCallGate _gate;
     private readonly DestroyCounts? _destroys;
     private readonly VkSemaphore[] _acquired;
+    private readonly nint _timeout;
+    private readonly LogCategory _log;
+    private readonly bool _fenced;
     private VkImage[] _images = [];
     private VkImageView[] _views = [];
     private VkSemaphore[] _renderFinished = [];
+    private PresentFences? _presentFences;
     private VkSwapchainKHR _handle;
     private bool _disposed;
 
-    private VulkanSwapchain(VulkanDeviceCore core, VulkanCallGate gate, in SwapchainPlan plan, VkSwapchainKHR handle, int framesInFlight, DestroyCounts? destroys)
+    private VulkanSwapchain(VulkanDeviceCore core, VulkanCallGate gate, in SwapchainPlan plan, VkSwapchainKHR handle, int framesInFlight, nint timeout, LogCategory log, DestroyCounts? destroys)
     {
+        _timeout = timeout;
+        _log = log;
+        _fenced = core.Extensions.SwapchainMaintenance1 is not null;
         _core = core;
         _gate = gate;
         Plan = plan;
@@ -63,7 +81,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <summary>Gets the plan the swapchain was created with: its format, extent, usage and present mode.</summary>
     public SwapchainPlan Plan { get; }
 
-    /// <summary>Gets the swapchain's handle; the null handle once disposed.</summary>
+    /// <summary>Gets the swapchain's handle; the null handle once destroyed (a swapchain kept after a timeout loss keeps it).</summary>
     public VkSwapchainKHR Handle => _handle;
 
     /// <summary>Gets the number of images the driver created; at least the plan's image count.</summary>
@@ -71,6 +89,9 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
     /// <summary>Gets the number of frame slots, each with its own acquire semaphore.</summary>
     public int FramesInFlight => _acquired.Length;
+
+    /// <summary>Gets whether the swapchain uses present fences: the device enabled swapchain maintenance1.</summary>
+    public bool UsesPresentFences => _fenced;
 
     /// <summary>Gets whether <see cref="Dispose"/> has run.</summary>
     public bool IsDisposed => _disposed;
@@ -85,10 +106,16 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// </param>
     /// <param name="framesInFlight">The device's frame slots, 1 to 3.</param>
     /// <param name="gate">The device's gate.</param>
+    /// <param name="timeout">
+    /// <c>GpuTimeout</c> in nanoseconds, as BRUTAL's <c>nint</c> for <c>uint64_t</c> (section 13, rule 7): it bounds every
+    /// present-fence wait, in <see cref="Present"/> and in <see cref="Dispose"/>.
+    /// </param>
     /// <param name="destroys">A test's counters of destroyed objects, or <see langword="null"/>.</param>
+    /// <param name="log">Where <see cref="Dispose"/> logs a swapchain kept after a timeout loss; <c>default</c> for nowhere.</param>
     /// <returns>
     /// The swapchain, owned by the caller. Or a failure, after which everything this call created has been destroyed:
-    /// <see cref="ErrorKind.Unavailable"/> when the gate is lost (no driver call); <see cref="ErrorKind.Cancelled"/>
+    /// the gate's loss when it is lost (<see cref="VulkanCallGate.LostError"/>: <see cref="ErrorKind.Timeout"/> after a
+    /// timeout loss, <see cref="ErrorKind.Unavailable"/> otherwise; no driver call); <see cref="ErrorKind.Cancelled"/>
     /// ("surface extent is zero") for a plan with no area (no driver call); or the first failed call's error
     /// (<see cref="VkCheck.Error"/>), such as <see cref="ErrorKind.OutOfMemory"/>.
     /// </returns>
@@ -103,7 +130,9 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         VulkanSwapchain? oldSwapchain,
         int framesInFlight,
         VulkanCallGate gate,
-        DestroyCounts? destroys = null)
+        nint timeout,
+        DestroyCounts? destroys = null,
+        LogCategory log = default)
     {
         ArgumentNullException.ThrowIfNull(core);
         ArgumentNullException.ThrowIfNull(gate);
@@ -119,7 +148,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         Device device = core.Device;
         if (gate.IsLost)
         {
-            return new EngineError(ErrorKind.Unavailable, "device is lost", (int)VkResult.ErrorDeviceLost);
+            return gate.LostError;
         }
 
         if (plan.Width <= 0 || plan.Height <= 0)
@@ -152,7 +181,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
             return created.Error;
         }
 
-        VulkanSwapchain swapchain = new(core, gate, plan, handle, framesInFlight, destroys);
+        VulkanSwapchain swapchain = new(core, gate, plan, handle, framesInFlight, timeout, log, destroys);
         Result filled = swapchain.CreateImageObjects(device);
         if (filled.IsFailure)
         {
@@ -186,6 +215,17 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <returns>The semaphore.</returns>
     /// <exception cref="IndexOutOfRangeException"><paramref name="slot"/> is out of range.</exception>
     public VkSemaphore GetAcquireSemaphore(int slot) => _acquired[slot];
+
+    /// <summary>Gets an image's present fence, which its presents carry; the null handle without present fences.</summary>
+    /// <param name="index">The image's index.</param>
+    /// <returns>The fence.</returns>
+    /// <exception cref="IndexOutOfRangeException"><paramref name="index"/> is out of range.</exception>
+    public VkFence GetPresentFence(int index)
+    {
+        // The image array checks the index, with or without present fences.
+        _ = _images[index];
+        return _presentFences?.Get(index) ?? default;
+    }
 
     /// <summary>Acquires the next image for a frame slot, signalling the slot's acquire semaphore when it is ready.</summary>
     /// <param name="slot">The frame slot, from 0 to <see cref="FramesInFlight"/> minus 1.</param>
@@ -232,7 +272,13 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <summary>Presents an acquired image on a queue, waiting on the image's render-finished semaphore.</summary>
     /// <param name="queue">The device's queue, which can present to the surface.</param>
     /// <param name="imageIndex">The image's index, from an acquire whose frame signals its render-finished semaphore.</param>
-    /// <returns>The status (<see cref="VkCheck.SwapchainStatusOf"/>) and the <c>VkResult</c> as the native code.</returns>
+    /// <returns>
+    /// The status (<see cref="VkCheck.SwapchainStatusOf"/>) and the <c>VkResult</c> as the native code. With present
+    /// fences, the image's fence is first waited for (bounded by the creation's timeout) and reset, then chained to the
+    /// present; if that fails, nothing is presented and the failed call's result is returned as
+    /// <see cref="SwapchainStatus.DeviceLost"/>. A wait that fails without a reported loss (a timeout) marks the gate lost
+    /// as a timeout (<see cref="PresentFences"/>).
+    /// </returns>
     /// <exception cref="ObjectDisposedException">The swapchain or its device is disposed.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="imageIndex"/> is out of range.</exception>
     /// <remarks>Allocates nothing.</remarks>
@@ -253,18 +299,51 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         VkSwapchainKHR handle = _handle;
         VkSemaphore wait = _renderFinished[imageIndex];
 
-        // Sound: every pointer is to a local or a parameter of this method, which outlive the call.
+        // Sound: every pointer is to a local or a parameter of this method, which outlive the call; the driver copies
+        // the fence's handle, not its address.
         VkPresentInfoKHR info = new() { WaitSemaphoreCount = 1, WaitSemaphores = &wait, SwapchainCount = 1, Swapchains = &handle, ImageIndices = &imageIndex };
-        VkResult result = _gate.TryTakeFault(VulkanCall.QueuePresent, out VkResult injected) ? injected : device.PInvoke.vkQueuePresentKHR.Invoke(queue, &info);
+        VkFence fence = default;
+        VkSwapchainPresentFenceInfoKHR fenceInfo = new() { SwapchainCount = 1, Fences = &fence };
+        if (_presentFences is not null)
+        {
+            Result ready = _presentFences.BeforePresent(device, _gate, imageIndex, _timeout);
+            if (ready.IsFailure)
+            {
+                return new BackendPresent(SwapchainStatus.DeviceLost, ready.Error.NativeCode);
+            }
+
+            fence = _presentFences.Get(imageIndex);
+            info.Next = &fenceInfo;
+        }
+
+        bool isInjected = _gate.TryTakeFault(VulkanCall.QueuePresent, out VkResult injected);
+        VkResult result = isInjected ? injected : device.PInvoke.vkQueuePresentKHR.Invoke(queue, &info);
+        _presentFences?.AfterPresent(imageIndex, result, isInjected);
 
         // Only to mark a lost device; the status below says what happened.
         _ = _gate.Check(result, VulkanCall.QueuePresent);
         return new BackendPresent(VkCheck.SwapchainStatusOf(result, acquire: false), (int)result);
     }
 
-    /// <summary>Destroys the acquire semaphores, then each image's semaphore and view, then the swapchain; once.</summary>
+    /// <summary>
+    /// Destroys the present fences, the acquire semaphores, then each image's semaphore and view, then the swapchain;
+    /// once. With present fences it first waits for every present that carried one, in one call bounded by the
+    /// creation's timeout (skipped once the gate is lost).
+    /// </summary>
     /// <exception cref="ObjectDisposedException">The device was disposed first (misuse); nothing is destroyed.</exception>
-    /// <remarks>The device must be idle. Never destroys the surface or the device.</remarks>
+    /// <remarks>
+    /// <para>
+    /// Without present fences the device must be idle; with them, every submit that used the swapchain's images or
+    /// semaphores must have completed. Never destroys the surface or the device.
+    /// </para>
+    /// <para>
+    /// After a timeout loss (<see cref="VulkanCallGate.LostTimedOut"/>: this wait ran out or failed without a reported
+    /// loss, which marks it, or an earlier wait did) the swapchain's native objects are leaked on purpose: a hung GPU may
+    /// still use them, and destroying them then is undefined (section 4). It logs one <see cref="LogLevel.Error"/> line
+    /// and destroys nothing; the getters still return the kept handles. After a reported loss
+    /// (<c>VK_ERROR_DEVICE_LOST</c>) destroying stays valid, and everything is destroyed.
+    /// </para>
+    /// </remarks>
     public void Dispose()
     {
         if (_disposed)
@@ -274,6 +353,20 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
         _disposed = true;
         Device device = _core.Device;
+        if (_presentFences is not null && !_gate.IsLost)
+        {
+            // A failure needs no handling here: a timeout marks the gate below, and a reported loss allows destroying.
+            _ = _presentFences.WaitAll(device, _gate, _timeout);
+        }
+
+        if (_gate.LostTimedOut)
+        {
+            // Deliberately leaked: never destroyed while a present or submit a hung GPU hasn't finished may use them.
+            _log.Error($"device lost after a GPU timeout: swapchain {_handle.VkHandle:X} and its {_images.Length} images' views, semaphores and present fences are kept, not destroyed");
+            return;
+        }
+
+        _presentFences?.Destroy(device, _destroys);
         foreach (VkSemaphore semaphore in _acquired)
         {
             DestroySemaphore(device, semaphore);
@@ -298,8 +391,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         throw new ArgumentOutOfRangeException(name, value, "Out of the swapchain's range.");
 
     // Reads the images with the two-call pattern (their number is fixed, so VK_INCOMPLETE is a failure), then creates a
-    // view and a render-finished semaphore per image and an acquire semaphore per slot. Each object is stored as soon
-    // as it exists, so Dispose destroys exactly what was created.
+    // view and a render-finished semaphore per image, an acquire semaphore per slot, and with maintenance1 a present
+    // fence per image. Each object is stored as soon as it exists, so Dispose destroys exactly what was created.
     private Result CreateImageObjects(Device device)
     {
         int count = 0;
@@ -323,6 +416,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
             _images = [];
             return read;
         }
+
+        _presentFences = _fenced ? new PresentFences(_images.Length) : null;
 
         _views = new VkImageView[_images.Length];
         _renderFinished = new VkSemaphore[_images.Length];
@@ -361,7 +456,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
             }
         }
 
-        return Result.Success;
+        return _presentFences?.CreateAll(device, _gate) ?? Result.Success;
     }
 
     private Result CreateSemaphore(Device device, out VkSemaphore semaphore)
@@ -396,6 +491,9 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         /// <summary>Gets the number of semaphores destroyed.</summary>
         public int Semaphores { get; private set; }
 
+        /// <summary>Gets the number of present fences destroyed.</summary>
+        public int Fences { get; private set; }
+
         /// <summary>Records a destroyed swapchain.</summary>
         internal void OnSwapchain() => Swapchains++;
 
@@ -404,5 +502,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
         /// <summary>Records a destroyed semaphore.</summary>
         internal void OnSemaphore() => Semaphores++;
+
+        /// <summary>Records a destroyed present fence.</summary>
+        internal void OnFence() => Fences++;
     }
 }
