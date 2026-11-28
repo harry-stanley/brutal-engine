@@ -54,7 +54,13 @@ public sealed unsafe class PresentFenceTests(VulkanSwapchainTests.SurfaceFixture
             {
                 loop.Run(swapchain, (2 * images) + Frames);
 
-                // No idle wait first: the present fences are what make destroying the swapchain safe.
+                // No idle wait first: the frames' own fences cover their submits (and so the acquire semaphores they
+                // waited on), and the present fences are what make destroying the rest safe while presents may be pending.
+                for (int slot = 0; slot < Frames; slot++)
+                {
+                    loop.WaitSlot(slot);
+                }
+
                 swapchain.Dispose();
             }
 

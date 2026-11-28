@@ -31,14 +31,14 @@ namespace BrutalEngine.Graphics.Vulkan.Swapchains;
 /// Present fences (section 4, "Present fences") are used exactly when the device enabled a swapchain maintenance1
 /// extension (<see cref="DeviceExtensionSet.Selection.SwapchainMaintenance1"/>): each <see cref="Present"/> carries
 /// its image's fence (<see cref="PresentFences"/>), and <see cref="Dispose"/> waits for them, bounded by the
-/// creation's timeout, so destroying is safe without an idle wait. Without the extension the owner's idle wait before
+/// creation's timeout, so the presents need no idle wait. Without the extension the owner's idle wait before
 /// <see cref="Dispose"/> is the fallback, as in M0.
 /// </para>
 /// <para>
 /// The swapchain owns its images; <see cref="Dispose"/> destroys the present fences, the semaphores, the views and the
 /// swapchain, never the surface. The owner disposes it before the device: once the device is idle, or, with present
-/// fences, once nothing it submitted still uses the images. After a timeout loss it destroys nothing (see
-/// <see cref="Dispose"/>).
+/// fences, once every submit that used its images or semaphores has completed (the frames' fences waited; the presents
+/// are waited for here). After a timeout loss it destroys nothing (see <see cref="Dispose"/>).
 /// </para>
 /// <para>
 /// Not thread-safe: the device's owner thread creates, uses and disposes it. Creation allocates (this object and its
@@ -333,7 +333,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <exception cref="ObjectDisposedException">The device was disposed first (misuse); nothing is destroyed.</exception>
     /// <remarks>
     /// <para>
-    /// Without present fences the device must be idle. Never destroys the surface or the device.
+    /// Without present fences the device must be idle; with them, every submit that used the swapchain's images or
+    /// semaphores must have completed. Never destroys the surface or the device.
     /// </para>
     /// <para>
     /// After a timeout loss (<see cref="VulkanCallGate.LostTimedOut"/>: this wait ran out or failed without a reported
