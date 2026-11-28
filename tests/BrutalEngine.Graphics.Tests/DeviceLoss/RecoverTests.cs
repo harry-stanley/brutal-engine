@@ -89,13 +89,14 @@ public sealed class RecoverTests : IDisposable
 
         // The old device only got disposed; the new one never hears of an old id (the fake rejects unknown ids).
         Assert.Equal([Op.Dispose], old.Calls.Skip(calls).Select(call => call.Operation));
+        // The destroyed swapchain's window gets a new one at once, without waiting for the old device's frame.
+        Assert.True(device.CreateSwapchain(second, new SwapchainOptions()).IsSuccess);
+        Assert.DoesNotContain(_fixture.BackendDevice.Calls, call => call.Operation == Op.WaitIdle);
         for (int frame = 0; frame < 4; frame++)
         {
             Assert.Equal(FrameStatus.Ready, rig.Frame().Submitted);
         }
 
-        // The destroyed swapchain's window gets a new one, without waiting for the old device.
-        Assert.True(device.CreateSwapchain(second, new SwapchainOptions()).IsSuccess);
         Assert.DoesNotContain(_fixture.BackendDevice.Calls, call => call.Operation == Op.Destroy);
     }
 
@@ -174,7 +175,8 @@ public sealed class RecoverTests : IDisposable
         Assert.Equal(FrameStatus.Ready, device.SubmitFrame(commands));
     }
 
-    public static TheoryData<string> BackendFailures() => ["EnumerateAdapters", "CreateDevice", "AdapterGone", "AdapterChanged", "CapabilitiesChanged", "CreateSurface"];
+    public static TheoryData<string> BackendFailures() =>
+        ["EnumerateAdapters", "CreateDevice", "AdapterGone", "AdapterChanged", "NameChanged", "IndexChanged", "CapabilitiesChanged", "CreateSurface"];
 
     [Theory]
     [MemberData(nameof(BackendFailures))]
@@ -200,6 +202,15 @@ public sealed class RecoverTests : IDisposable
                 _fixture.Script.Adapters[0] = FakeBackendScript.CreateAdapter(0, "unplugged");
                 _fixture.Script.Adapters.Add(FakeBackendScript.CreateAdapter(1));
                 break;
+            case "NameChanged":
+                // The same index, another name.
+                _fixture.Script.Adapters[0] = FakeBackendScript.CreateAdapter(0) with { Name = "Other GPU" };
+                break;
+            case "IndexChanged":
+                // The same name, another index: adapter 0 is rejected and adapter 1 takes its name.
+                _fixture.Script.Adapters[0] = FakeBackendScript.CreateAdapter(0, "unplugged");
+                _fixture.Script.Adapters.Add(FakeBackendScript.CreateAdapter(1) with { Name = "Fake GPU 0" });
+                break;
             default:
                 _fixture.Script.Capabilities = capabilities with { Limits = capabilities.Limits with { MaxColorTargets = 4 } };
                 break;
@@ -210,7 +221,7 @@ public sealed class RecoverTests : IDisposable
         (ErrorKind kind, string message) = failure switch
         {
             "AdapterGone" => (ErrorKind.Unsupported, "Create: no suitable adapter."),
-            "AdapterChanged" or "CapabilitiesChanged" => (ErrorKind.NotFound, "Recover: adapter 0 'Fake GPU 0' is gone or has changed."),
+            "AdapterChanged" or "NameChanged" or "IndexChanged" or "CapabilitiesChanged" => (ErrorKind.NotFound, "Recover: adapter 0 'Fake GPU 0' is gone or has changed."),
             _ => (ErrorKind.Native, "injected"),
         };
         Assert.Equal(kind, result.Error.Kind);
@@ -230,10 +241,71 @@ public sealed class RecoverTests : IDisposable
         _fixture.Script.Adapters.RemoveRange(1, _fixture.Script.Adapters.Count - 1);
         device.Destroy(rig.Swapchain);
         Assert.True(device.Recover().IsSuccess);
+        Assert.Equal(1, old.DisposeCalls);
         Assert.Equal(["lost owner", "lost owner", "recreated owner"], _log);
         Assert.Equal(FrameStatus.Ready, device.BeginFrame(out CommandList commands));
         Assert.Equal(FrameStatus.Ready, device.SubmitFrame(commands));
         Assert.DoesNotContain(_fixture.BackendDevice.Calls, call => call.Operation is Op.DestroySurface or Op.DestroySwapchain);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Statistics_AfterFailedRecoveryOrAbandon_CountTheOldDeviceOnce(bool timedOut)
+    {
+        GraphicsDevice device = _fixture.Create(_fixture.Options() with { Validation = true });
+        FakeBackendDevice old = _fixture.BackendDevice;
+        old.AddValidationMessages(3, 2);
+        device.Faults.InjectLoss(
+            timedOut ? FaultSeam.Operation.WaitForFrame : FaultSeam.Operation.Execute,
+            1,
+            new EngineError(timedOut ? ErrorKind.Timeout : ErrorKind.Unavailable, "lost", 2));
+        _ = device.BeginFrame(out CommandList commands);
+        Assert.Equal(FrameStatus.DeviceLost, device.SubmitFrame(commands));
+
+        // Twice: a failed recovery (or the abandon) and a later call that fails again.
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            if (!timedOut)
+            {
+                _fixture.Script.FailNext(Op.CreateDevice, new EngineError(ErrorKind.Native, "injected", -3));
+            }
+
+            Assert.True(device.Recover().IsFailure);
+            Assert.Equal((3L, 2L), (device.Statistics.ValidationErrors, device.Statistics.ValidationWarnings));
+        }
+
+        Assert.Equal(timedOut, !old.IsDisposed);
+        device.Dispose();
+        // An abandoned device's memory is freed by the test, as the process would at exit.
+        old.Dispose();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BackendGoneBeforeAnyFrame_DestroyMakesNoBackendCall(bool timedOut)
+    {
+        var rig = new LossRig(_fixture);
+        // Lost before any frame, so a destroyed object would otherwise be destroyed at once.
+        rig.Device.Faults.InjectLoss(FaultSeam.Operation.CreateBuffer, 1, new EngineError(timedOut ? ErrorKind.Timeout : ErrorKind.Unavailable, "lost", 2));
+        Assert.True(rig.Creation("CreateBuffer", default).IsFailure);
+        Assert.Equal((0L, timedOut), (rig.Device.FrameNumber, rig.Device.LostTimedOut));
+        if (!timedOut)
+        {
+            _fixture.Script.FailNext(Op.CreateDevice, new EngineError(ErrorKind.Native, "injected", -3));
+        }
+
+        Assert.True(rig.Device.Recover().IsFailure);
+        int calls = rig.Backend.Calls.Count;
+
+        rig.Device.Destroy(rig.Swapchain);
+
+        // The old backend device, disposed or hung, is never called.
+        Assert.Equal(calls, rig.Backend.Calls.Count);
+        rig.Device.Dispose();
+        Assert.Equal(calls, rig.Backend.Calls.Count);
+        rig.Backend.Dispose();
     }
 
     [Fact]
