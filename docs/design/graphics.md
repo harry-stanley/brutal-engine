@@ -563,6 +563,7 @@ public enum VertexFormat { Float32, Float32x2, Float32x3, Float32x4, Float16x2, 
 
 - **Render target formats are part of the pipeline** (`ColorTargets`, `Depth.Format`, `SampleCount`), because dynamic rendering has no render pass objects: the backend passes them as `VkPipelineRenderingCreateInfo` (#55). A pass whose attachments don't match the bound pipeline's formats throws `InvalidOperationException` at `SetPipeline`.
 - Viewport and scissor are always dynamic state (section 9). Everything else is baked, so a pipeline never needs recompiling at draw time.
+- **Clip space** is y-up with depth 0 to 1 on every backend (the WebGPU, Direct3D and Metal convention), so shaders and `FrontFace` winding mean the same everywhere; framebuffer coordinates (`Viewport`, `ScissorRect`, copy regions) keep their top-left origin, and the Vulkan backend matches the convention with negative-height viewports ([Vulkan backend note, section 9](graphics-vulkan.md#9-shader-modules-and-pipelines)).
 - Pipeline descriptions are `sealed record` classes: they hold arrays and are created at load time, never per frame. Creating a pipeline may take milliseconds (driver compilation); pipeline caching on disk is out of scope for M1.
 
 ## 8. Bind groups
