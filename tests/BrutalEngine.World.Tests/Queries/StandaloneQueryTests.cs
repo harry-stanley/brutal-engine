@@ -59,6 +59,43 @@ public sealed class StandaloneQueryTests
     }
 
     [Fact]
+    public void NestedSameQuery_InnerCompletionFiltersTheOuterLoop()
+    {
+        TrackingAllocator tracking = EntityTestSupport.NewTracking();
+        using (EcsWorld world = EntityTestSupport.NewWorld(tracking))
+        {
+            Entity[] entities = EnumerationSupport.SpawnChunks(world, chunks: 2, lastRows: 1);
+            using Query query = world.Query().Changed<Payload>().Build();
+            Assert.Equal([0, 1], EnumerationSupport.YieldedChunks(world, query));
+
+            // Both chunks are written at tick 3, after the first run (last run 1, the world at 2, then 3).
+            world.AdvanceChangeTick();
+            world.Write<Payload>(entities[0]).Values[0] = 1;
+            world.Write<Payload>(entities[^1]).Values[0] = 2;
+            int outer = 0;
+            int[] inner = [];
+            foreach (ChunkView chunk in query)
+            {
+                // The inner loop sees both chunks and completes a run at tick 3, so the outer loop's remaining chunk is
+                // filtered against that run and skipped.
+                outer++;
+                inner = EnumerationSupport.YieldedChunks(world, query);
+                Assert.Equal(3u, query.LastRunTick);
+                Assert.Equal(4u, world.ChangeTick);
+            }
+
+            Assert.Equal(1, outer);
+            Assert.Equal([0, 1], inner);
+
+            // The outer loop's own completion records another run.
+            Assert.Equal(4u, query.LastRunTick);
+            Assert.Equal(5u, world.ChangeTick);
+        }
+
+        tracking.ThrowIfLeaks();
+    }
+
+    [Fact]
     public void FirstRunEndedEarly_StaysFirstRun()
     {
         TrackingAllocator tracking = EntityTestSupport.NewTracking();

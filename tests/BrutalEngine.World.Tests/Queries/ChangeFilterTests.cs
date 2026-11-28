@@ -105,7 +105,7 @@ public sealed class ChangeFilterTests
         {
             world.SetChangeTickForTesting(uint.MaxValue - 1);
             Entity entity = world.Spawn(new Payload(1), new Health(1));
-            using Query query = world.Query().Changed<Payload>().Build();
+            using Query query = world.Query().Changed<Payload>().Read<Health>().Build();
             Assert.Single(EnumerationSupport.YieldedChunks(world, query));
             Assert.Equal(uint.MaxValue - 1, query.LastRunTick);
 
@@ -114,8 +114,19 @@ public sealed class ChangeFilterTests
             Assert.Single(EnumerationSupport.YieldedChunks(world, query));
             Assert.Equal(uint.MaxValue, query.LastRunTick);
             Assert.Equal(0u, world.ChangeTick);
+
+            // Stamped at 0 against a last run of uint.MaxValue: the view's Changed and Added see it too.
             world.Write<Payload>(entity).Values[0] = 3;
-            Assert.Single(EnumerationSupport.YieldedChunks(world, query));
+            _ = world.Spawn(new Payload(4), new Health(4));
+            int seen = 0;
+            foreach (ChunkView chunk in query)
+            {
+                Assert.True(chunk.Changed<Payload>());
+                Assert.True(chunk.Added<Health>());
+                seen++;
+            }
+
+            Assert.Equal(1, seen);
             Assert.Equal(0u, query.LastRunTick);
             Assert.Empty(EnumerationSupport.YieldedChunks(world, query));
         }

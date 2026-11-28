@@ -27,7 +27,9 @@ namespace BrutalEngine.World;
 /// <para>
 /// <b>Iteration guard.</b> From <see cref="Query.GetEnumerator"/> until <see cref="Dispose"/>, structural changes to the
 /// world (spawn, despawn, add, set and remove) throw <see cref="InvalidOperationException"/>. Enumerating other queries,
-/// or the same one, inside the loop is allowed. <c>foreach</c> always disposes the enumerator; code that calls
+/// or the same one, inside the loop is allowed. A completed enumeration of the same query inside the loop records a run
+/// at once: the outer loop's remaining chunks are then filtered against it, and the outer loop's own completion records
+/// another. <c>foreach</c> always disposes the enumerator; code that calls
 /// <see cref="Query.GetEnumerator"/> itself must dispose it, and must not copy it.
 /// </para>
 /// <para>
